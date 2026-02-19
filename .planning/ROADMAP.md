@@ -30,7 +30,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Gradients flow through the refractive projection (autograd backward pass completes without error; numerical gradient check passes for depth, x, y inputs)
   3. Given a 2D pixel, ray casting produces a 3D underwater ray direction consistent with Snell's law at the air-water interface
   4. A one-time Z-uncertainty characterization report exists for the 13-camera top-down geometry, quantifying expected X/Y/Z reconstruction error at 3+ tank depths separately
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 01-01-PLAN.md — Port calibration loader and refractive projection model from AquaMVS with cross-validation tests
+- [ ] 01-02-PLAN.md — Z-uncertainty analytical characterization report
 
 ### Phase 2: Segmentation Pipeline
 **Goal**: The system can produce corrected binary fish masks for any input frame across all 13 cameras, achieving recall targets even for low-contrast females
@@ -97,7 +99,7 @@ Note: Phase 3 depends only on Phase 1 (not Phase 2), so Phases 2 and 3 can devel
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Calibration and Refractive Geometry | 0/TBD | Not started | - |
+| 1. Calibration and Refractive Geometry | 0/2 | Planned | - |
 | 2. Segmentation Pipeline | 0/TBD | Not started | - |
 | 3. Fish Mesh Model and 3D Initialization | 0/TBD | Not started | - |
 | 4. Single-Fish Reconstruction | 0/TBD | Not started | - |

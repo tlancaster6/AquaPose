@@ -30,6 +30,7 @@ dependencies = [
     "opencv-python>=4.8",
     "scipy>=1.11",
     "h5py>=3.9",
+    "aquacal",
 ]
 
 # pytorch3d must be installed separately (not on PyPI):

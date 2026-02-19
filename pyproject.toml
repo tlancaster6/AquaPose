@@ -5,25 +5,35 @@ build-backend = "hatchling.build"
 [project]
 name = "aquapose"
 version = "0.1.0"
-description = "TODO: Short project description"
+description = "3D fish pose estimation via differentiable refractive rendering"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [{name = "Tucker Lancaster"}]
-keywords = []
+keywords = ["pose-estimation", "3d-reconstruction", "computer-vision", "pytorch", "differentiable-rendering", "fish", "behavioral-neuroscience"]
 
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
-dependencies = []
+dependencies = [
+    "torch>=2.0",
+    "numpy>=1.24",
+    "opencv-python>=4.8",
+    "scipy>=1.11",
+    "h5py>=3.9",
+]
+
+# pytorch3d must be installed separately (not on PyPI):
+#   pip install pytorch3d -f https://dl.fbaipubliccode.com/pytorch3d/packaging/wheels/{torch_version}/download.html
 
 [project.urls]
 Homepage = "https://github.com/tlancaster6/aquapose"

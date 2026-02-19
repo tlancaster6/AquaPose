@@ -1,6 +1,6 @@
-# Aquapose
+# AquaPose
 
-TODO: Short project description.
+3D fish pose estimation via differentiable refractive rendering. AquaPose fits a parametric fish mesh to multi-view silhouettes from a 13-camera aquarium rig, producing dense 3D trajectories and midline kinematics for behavioral research on cichlids.
 
 ## Installation
 
@@ -11,7 +11,18 @@ pip install aquapose
 ## Quick Start
 
 ```python
-import aquapose
+from aquapose.calibration import load_calibration
+from aquapose.segmentation import segment_frame
+from aquapose.optimization import optimize_pose
+
+# Load multi-camera calibration (from AquaCal)
+cameras = load_calibration("calibration.json")
+
+# Segment fish in a multi-view frame
+masks = segment_frame(frame, cameras)
+
+# Reconstruct 3D pose via analysis-by-synthesis
+pose = optimize_pose(masks, cameras)
 ```
 
 ## Development

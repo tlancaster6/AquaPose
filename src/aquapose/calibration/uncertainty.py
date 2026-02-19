@@ -383,7 +383,7 @@ observability than X/Y observability: rays from top-down cameras converge nearly
 parallel in the Z direction, so small pixel errors produce large depth errors.
 
 **Implication for optimizer (Phase 4):** The loss function should weight X and Y
-reprojection errors more aggressively than Z — or equivalently, apply a
+reprojection errors more aggressively than Z, or equivalently, apply a
 prior/regularizer on Z that is approximately {mean_ratio:.0f}x stronger than the
 equivalent X/Y constraint. This anisotropy is a fundamental geometric property of
 the rig, not a calibration deficiency.

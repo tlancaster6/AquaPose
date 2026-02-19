@@ -98,39 +98,39 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CALIB-01 | — | Pending |
-| CALIB-02 | — | Pending |
-| CALIB-03 | — | Pending |
-| CALIB-04 | — | Pending |
-| SEG-01 | — | Pending |
-| SEG-02 | — | Pending |
-| SEG-03 | — | Pending |
-| SEG-04 | — | Pending |
-| SEG-05 | — | Pending |
-| MESH-01 | — | Pending |
-| MESH-02 | — | Pending |
-| MESH-03 | — | Pending |
-| RECON-01 | — | Pending |
-| RECON-02 | — | Pending |
-| RECON-03 | — | Pending |
-| RECON-04 | — | Pending |
-| RECON-05 | — | Pending |
-| TRACK-01 | — | Pending |
-| TRACK-02 | — | Pending |
-| TRACK-03 | — | Pending |
-| TRACK-04 | — | Pending |
-| SEX-01 | — | Pending |
-| SEX-02 | — | Pending |
-| SEX-03 | — | Pending |
-| OUT-01 | — | Pending |
-| OUT-02 | — | Pending |
-| OUT-03 | — | Pending |
+| CALIB-01 | Phase 1 | Pending |
+| CALIB-02 | Phase 1 | Pending |
+| CALIB-03 | Phase 1 | Pending |
+| CALIB-04 | Phase 1 | Pending |
+| SEG-01 | Phase 2 | Pending |
+| SEG-02 | Phase 2 | Pending |
+| SEG-03 | Phase 2 | Pending |
+| SEG-04 | Phase 2 | Pending |
+| SEG-05 | Phase 2 | Pending |
+| MESH-01 | Phase 3 | Pending |
+| MESH-02 | Phase 3 | Pending |
+| MESH-03 | Phase 3 | Pending |
+| RECON-01 | Phase 4 | Pending |
+| RECON-02 | Phase 4 | Pending |
+| RECON-03 | Phase 4 | Pending |
+| RECON-04 | Phase 4 | Pending |
+| RECON-05 | Phase 4 | Pending |
+| TRACK-01 | Phase 5 | Pending |
+| TRACK-02 | Phase 5 | Pending |
+| TRACK-03 | Phase 5 | Pending |
+| TRACK-04 | Phase 5 | Pending |
+| SEX-01 | Phase 5 | Pending |
+| SEX-02 | Phase 5 | Pending |
+| SEX-03 | Phase 5 | Pending |
+| OUT-01 | Phase 6 | Pending |
+| OUT-02 | Phase 6 | Pending |
+| OUT-03 | Phase 6 | Pending |
 
 **Coverage:**
 - v1 requirements: 27 total
-- Mapped to phases: 0
-- Unmapped: 27 ⚠️
+- Mapped to phases: 27
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-19*
-*Last updated: 2026-02-19 after initial definition*
+*Last updated: 2026-02-19 — Traceability completed during roadmap creation*

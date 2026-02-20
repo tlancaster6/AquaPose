@@ -5,32 +5,33 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 1 — Calibration and Refractive Geometry
+**Current focus:** Phase 2 — Segmentation Pipeline
 
 ## Current Position
 
-Phase: 1 of 6 (Calibration and Refractive Geometry)
-Plan: 2 of TBD in current phase
+Phase: 2 of 6 (Segmentation Pipeline)
+Plan: 1 of 3 in current phase
 Status: Executing
-Last activity: 2026-02-19 — Completed 01-02: Z-uncertainty characterization
+Last activity: 2026-02-19 — Completed 02-01: MOG2 fish detector
 
-Progress: [██░░░░░░░░] 20%
+Progress: [███░░░░░░░] 30%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2
-- Average duration: 25 min
-- Total execution time: 0.83 hours
+- Total plans completed: 3
+- Average duration: 19 min
+- Total execution time: 0.97 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-calibration-and-refractive-geometry | 2 | 50 min | 25 min |
+| 02-segmentation-pipeline | 1 | 8 min | 8 min |
 
 **Recent Trend:**
-- Last 5 plans: 45 min, 5 min
+- Last 5 plans: 45 min, 5 min, 8 min
 - Trend: —
 
 *Updated after each plan completion*
@@ -50,6 +51,8 @@ Recent decisions affecting current work:
 - [01-01]: K_inv float32 inversion tolerance set to atol=1e-4 — float32 with fx=1400 produces ~6e-5 error, expected float32 precision not a bug
 - [01-02]: Z/XY anisotropy is 132x mean (30x-577x range) at 0.5px noise — Phase 4 optimizer should weight Z loss approximately 100x smaller than XY
 - [01-02]: build_synthetic_rig uses water_z = height_above_water (0.75m) since AquaCal places cameras at world Z=0 with Z increasing downward into water
+- [02-01]: Shadow exclusion via threshold at 254 (MOG2 outputs 127 for shadows, 255 for foreground)
+- [02-01]: Detection.mask is full-frame sized (not cropped to bbox) to feed directly into SAM as mask prompt
 
 ### Pending Todos
 
@@ -64,5 +67,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Phase 3 context gathered
-Resume file: .planning/phases/03-fish-mesh-model-and-3d-initialization/03-CONTEXT.md
+Stopped at: Executing phase 2, plan 02-01 complete, starting 02-02
+Resume file: .planning/phases/02-segmentation-pipeline/02-01-SUMMARY.md

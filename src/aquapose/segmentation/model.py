@@ -6,29 +6,38 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-import pycocotools.mask as mask_util
 import torch
 import torchvision
 from torch import nn
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
 
+from .crop import CropRegion
+
 
 @dataclass
 class SegmentationResult:
-    """A single instance segmentation result.
+    """A single instance segmentation result in crop-space coordinates.
+
+    The mask is in crop-space (relative to the crop, not the full frame).
+    Callers who need a full-frame mask should call
+    ``paste_mask(result.mask, result.crop_region)``.
 
     Attributes:
-        bbox: Bounding box as (x1, y1, x2, y2) in pixel coordinates.
-        mask_rle: pycocotools RLE dict with 'counts' (bytes) and 'size' [h, w].
+        bbox: Bounding box as (x1, y1, x2, y2) in crop-space pixel coordinates.
+        mask: Binary mask in crop-space, shape (H_crop, W_crop), dtype uint8
+            with values 0 or 255. NOT full-frame.
         confidence: Detection confidence score.
         label: Class label (always 1 for fish).
+        crop_region: Metadata for reconstructing the full-frame mask via
+            ``paste_mask(result.mask, result.crop_region)``.
     """
 
     bbox: tuple[int, int, int, int]
-    mask_rle: dict
+    mask: np.ndarray
     confidence: float
     label: int
+    crop_region: CropRegion
 
 
 class MaskRCNNSegmentor:
@@ -37,6 +46,15 @@ class MaskRCNNSegmentor:
     Wraps ``torchvision.models.detection.maskrcnn_resnet50_fpn_v2`` with
     proper head replacement for the target number of classes. Supports
     loading trained weights and batch inference.
+
+    The primary inference entry point is :meth:`segment`, which accepts
+    pre-cropped images and their associated :class:`~.crop.CropRegion`
+    metadata. This fits the detect -> crop -> segment pipeline:
+
+    1. **detect**: MOG2 or YOLO detector finds fish bounding boxes.
+    2. **crop**: :func:`~.crop.extract_crop` cuts the region.
+    3. **segment**: This method runs Mask R-CNN on the crop and returns
+       crop-space masks + metadata for full-frame reconstruction.
 
     Args:
         num_classes: Number of classes including background (default 2: bg + fish).
@@ -81,25 +99,49 @@ class MaskRCNNSegmentor:
         )
         return model
 
-    def predict(self, images: list[np.ndarray]) -> list[list[SegmentationResult]]:
-        """Run inference on a batch of images.
+    def segment(
+        self,
+        crops: list[np.ndarray],
+        crop_regions: list[CropRegion],
+    ) -> list[list[SegmentationResult]]:
+        """Run inference on a batch of pre-cropped images.
+
+        This is the primary inference entry point in the detect -> crop ->
+        segment pipeline. Accepts crops produced by
+        :func:`~.crop.extract_crop` together with their associated
+        :class:`~.crop.CropRegion` metadata.
+
+        All crops are processed in a single forward pass through the model
+        for GPU throughput. Mask R-CNN's FPN + RoI pooling handles crops of
+        different sizes natively.
 
         Args:
-            images: List of BGR uint8 images of shape (H, W, 3).
+            crops: List of BGR uint8 crop images of shape (H, W, 3). Sizes
+                may differ between crops.
+            crop_regions: List of :class:`~.crop.CropRegion` objects
+                corresponding 1-to-1 with ``crops``.
 
         Returns:
-            Nested list: outer per image, inner per detection.
-            Each detection is a :class:`SegmentationResult`.
+            Nested list: outer per crop, inner per detection.
+            Each detection is a :class:`SegmentationResult` with
+            crop-space ``mask`` and ``bbox``, plus the ``crop_region``
+            needed to paste back into the full frame.
         """
         import cv2
+
+        if len(crops) != len(crop_regions):
+            raise ValueError(
+                f"crops and crop_regions must have equal length, "
+                f"got {len(crops)} vs {len(crop_regions)}"
+            )
 
         self._model.eval()
         device = next(self._model.parameters()).device
 
-        # Convert images to float tensors [C, H, W] in [0, 1]
-        tensors = []
-        for img in images:
-            rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # Convert crops to float tensors [C, H, W] in [0, 1]
+        tensors: list[torch.Tensor] = []
+        for crop in crops:
+            rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
             t = torch.from_numpy(rgb).permute(2, 0, 1).float() / 255.0
             tensors.append(t.to(device))
 
@@ -107,36 +149,61 @@ class MaskRCNNSegmentor:
             outputs = self._model(tensors)
 
         results: list[list[SegmentationResult]] = []
-        for output in outputs:
+        for output, region in zip(outputs, crop_regions, strict=True):
             detections: list[SegmentationResult] = []
             scores = output["scores"].cpu().numpy()
             boxes = output["boxes"].cpu().numpy()
             labels = output["labels"].cpu().numpy()
-            masks = output["masks"].cpu().numpy()  # (N, 1, H, W)
+            masks = output["masks"].cpu().numpy()  # (N, 1, H_crop, W_crop)
 
             for i, score in enumerate(scores):
                 if score < self._confidence_threshold:
                     continue
 
-                # Threshold mask at 0.5 to get binary
-                binary_mask = (masks[i, 0] > 0.5).astype(np.uint8)
-
-                # Encode as pycocotools RLE
-                mask_f = np.asfortranarray(binary_mask)
-                rle = mask_util.encode(mask_f)
+                # Threshold mask at 0.5 to get binary uint8 (0/255)
+                binary_mask = (masks[i, 0] > 0.5).astype(np.uint8) * 255
 
                 x1, y1, x2, y2 = boxes[i].astype(int)
                 detections.append(
                     SegmentationResult(
                         bbox=(int(x1), int(y1), int(x2), int(y2)),
-                        mask_rle=rle,  # pyright: ignore[reportArgumentType]
+                        mask=binary_mask,
                         confidence=float(score),
                         label=int(labels[i]),
+                        crop_region=region,
                     )
                 )
             results.append(detections)
 
         return results
+
+    def predict(self, images: list[np.ndarray]) -> list[list[SegmentationResult]]:
+        """Run inference on a batch of images (backward-compatible entry point).
+
+        Internally calls :meth:`segment` with trivial :class:`~.crop.CropRegion`
+        objects covering the full image. Use :meth:`segment` directly when
+        you have pre-cropped images from :func:`~.crop.extract_crop`.
+
+        Args:
+            images: List of BGR uint8 images of shape (H, W, 3).
+
+        Returns:
+            Nested list: outer per image, inner per detection.
+            Each detection is a :class:`SegmentationResult` with a trivial
+            ``crop_region`` covering the full image.
+        """
+        crop_regions = [
+            CropRegion(
+                x1=0,
+                y1=0,
+                x2=img.shape[1],
+                y2=img.shape[0],
+                frame_h=img.shape[0],
+                frame_w=img.shape[1],
+            )
+            for img in images
+        ]
+        return self.segment(images, crop_regions)
 
     def get_model(self) -> nn.Module:
         """Return the underlying torchvision model for training access.

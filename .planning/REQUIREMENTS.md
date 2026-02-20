@@ -16,7 +16,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Segmentation
 
-- [ ] **SEG-01**: System detects fish via MOG2 background subtraction with shadow suppression, producing padded bounding boxes with ≥95% per-camera recall (including females). Without tracker safety net, this recall target is load-bearing.
+- [x] **SEG-01**: System detects fish via MOG2 background subtraction with shadow suppression, producing padded bounding boxes with ≥95% per-camera recall (including females). Without tracker safety net, this recall target is load-bearing.
 - [ ] **SEG-02**: System generates pseudo-label masks by feeding bounding boxes as prompts to SAM single-frame
 - [ ] **SEG-03**: System supports Label Studio annotation workflow (export images + pseudo-labels, import corrected masks)
 - [ ] **SEG-04**: System segments fish on cropped and resized patches (256×256) from detection bounding boxes, not full 1600×1200 frames
@@ -102,7 +102,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CALIB-02 | Phase 1 | Pending |
 | CALIB-03 | Phase 1 | Pending |
 | CALIB-04 | Phase 1 | Pending |
-| SEG-01 | Phase 2 | Pending |
+| SEG-01 | Phase 2 | Complete |
 | SEG-02 | Phase 2 | Pending |
 | SEG-03 | Phase 2 | Pending |
 | SEG-04 | Phase 2 | Pending |

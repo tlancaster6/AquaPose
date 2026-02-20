@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 3 complete — moving to Phase 4 (Differentiable Rendering)
+**Current focus:** Phase 02.1 (Segmentation Troubleshooting) — Plan 01 complete
 
 ## Current Position
 
-Phase: 3 of 6 (Fish Mesh Model and 3D Initialization) — COMPLETE
-Plan: 2 of 2 in current phase — COMPLETE
-Status: Ready for Phase 4
-Last activity: 2026-02-20 — Completed 03-02: Cold-start 3D initialization pipeline
+Phase: 02.1 of 6 (Segmentation Troubleshooting) — IN PROGRESS
+Plan: 1 of 3 in current phase — completed 02.1-01
+Status: Plan 02.1-01 complete; ready for 02.1-02 (SAM2 evaluation)
+Last activity: 2026-02-20 — Completed 02.1-01: MOG2 diagnostic script consolidation and validation
 
 Progress: [████░░░░░░] 50%
 
@@ -30,9 +30,10 @@ Progress: [████░░░░░░] 50%
 | 01-calibration-and-refractive-geometry | 2 | 50 min | 25 min |
 | 02-segmentation-pipeline | 3 | 35 min | 12 min |
 | 03-fish-mesh-model-and-3d-initialization | 2 | 19 min | 10 min |
+| 02.1-segmentation-troubleshooting | 1 (of 3) | 8 min | 8 min |
 
 **Recent Trend:**
-- Last 5 plans: 8 min, 12 min, 15 min, 10 min, 9 min
+- Last 5 plans: 8 min, 8 min, 12 min, 15 min, 10 min
 - Trend: stable/fast
 
 *Updated after each plan completion*
@@ -66,6 +67,8 @@ Recent decisions affecting current work:
 - [03-02]: >=3 cameras enforced at triangulate_keypoint level (triangulate_rays technically needs only 2)
 - [03-02]: kappa=0 at cold-start initialization; head/tail disambiguation deferred to Phase 4 optimizer
 - [03-02]: Synthetic test cameras: t = (-cam_x, -cam_y, 0.0) with R=I, cameras at Z=0, water at Z=1.0 in world
+- [02.1-01]: No automated PASS/FAIL in test_mog2.py — detection quality assessed visually from annotated stills
+- [02.1-01]: 2-stage shadow fix in detector.py: Stage 1 merges shadow+foreground (fg_mask>=127); Stage 2 watershed-splits merged blobs using foreground-only (255) cores as seeds
 
 ### Roadmap Evolution
 
@@ -78,11 +81,11 @@ None.
 ### Blockers/Concerns
 
 - [Phase 1 - RESOLVED]: Z-uncertainty budget quantified: Z error is 132x larger than XY for top-down 13-camera rig (see docs/reports/z_uncertainty_report.md)
-- [Phase 2]: MOG2 female recall under worst-case conditions (stationary, low contrast) not yet measured — most likely operational failure mode
+- [Phase 02.1 - IN PROGRESS]: MOG2 validated on 2 cameras — e3v83eb frame 006765 shows 0 detections (possible stationary-fish failure); counts up to 18 suggest over-splitting; visual review of output/test_mog2/ stills needed before proceeding to SAM2 plan
 - [Phase 4]: PyTorch3D sigma/gamma hyperparameters for this rig's fish pixel sizes unknown — empirical sweep needed during Phase 4 development
 
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Phase 02.1 context gathered
-Resume file: .planning/phases/02.1-segmentation-troubleshooting/02.1-CONTEXT.md
+Stopped at: Completed 02.1-01-PLAN.md
+Resume file: .planning/phases/02.1-segmentation-troubleshooting/02.1-02-PLAN.md

@@ -1,3 +1,5 @@
 """Multi-view fish segmentation pipeline."""
 
-__all__: list[str] = []
+from .detector import Detection, MOG2Detector
+
+__all__ = ["Detection", "MOG2Detector"]

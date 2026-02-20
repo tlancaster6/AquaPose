@@ -53,38 +53,97 @@ class AnnotatedFrame:
     camera_id: str
 
 
-def _mask_to_logits(mask: np.ndarray, target_size: int = 256) -> np.ndarray:
-    """Convert a binary mask to logits and resize for SAM2 input.
+def _select_largest_mask(masks: np.ndarray) -> np.ndarray:
+    """Select the mask with the most nonzero pixels from a stack of masks.
 
-    SAM2's mask_input expects logits (not binary). Values > 0 mean foreground.
-    Resizes to target_size x target_size as SAM2 expects 256x256 input.
+    Used when SAM2 returns multiple candidate masks (multimask_output=True)
+    to keep the largest area segmentation.
 
     Args:
-        mask: Binary mask (uint8, 0/255) of any size.
-        target_size: Target spatial dimension for SAM2 (default 256).
+        masks: Array of shape (N, H, W), bool or float32. Values > 0.5 are
+            treated as foreground.
 
     Returns:
-        Logits array of shape (1, target_size, target_size), float32.
+        Single mask of shape (H, W), uint8 with values 0 or 255.
     """
-    # Convert 0/255 to logits: foreground=+4.0, background=-4.0
-    logits = np.where(mask > 0, 4.0, -4.0).astype(np.float32)
-    # Resize to SAM2 expected input size
-    resized = cv2.resize(
-        logits, (target_size, target_size), interpolation=cv2.INTER_LINEAR
+    # Count foreground pixels per mask
+    counts = [(masks[i] > 0.5).sum() for i in range(len(masks))]
+    best_idx = int(np.argmax(counts))
+    return (masks[best_idx] > 0.5).astype(np.uint8) * 255
+
+
+def filter_mask(
+    mask: np.ndarray,
+    detection: Detection,
+    min_conf: float = 0.3,
+    min_fill: float = 0.15,
+    max_fill: float = 0.85,
+    min_area: int = 150,
+) -> np.ndarray | None:
+    """Apply quality filters to a SAM2-generated mask.
+
+    Filters on detection confidence, mask area, and fill ratio relative to
+    the detection bounding box. Also reduces the mask to its largest
+    connected component to remove stray pixels.
+
+    Args:
+        mask: Binary mask (uint8, 0/255) in full-frame coordinates.
+        detection: Detection object that produced this mask.
+        min_conf: Minimum YOLO detection confidence threshold.
+        min_fill: Minimum mask fill ratio of bbox area.
+        max_fill: Maximum mask fill ratio of bbox area.
+        min_area: Minimum mask pixel area.
+
+    Returns:
+        Cleaned mask (largest connected component only) or None if filtered.
+    """
+    # Step 1: Confidence gate
+    if detection.confidence < min_conf:
+        return None
+
+    # Step 2: Keep only the largest connected component
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+        mask, connectivity=8
     )
-    return resized[np.newaxis, :, :]  # (1, H, W)
+    if num_labels > 1:
+        # Label 0 is background; find largest among 1..N
+        areas = stats[1:, cv2.CC_STAT_AREA]
+        best_label = int(np.argmax(areas)) + 1
+        cleaned = np.zeros_like(mask)
+        cleaned[labels == best_label] = 255
+        mask = cleaned
+
+    # Step 3: Area gate
+    mask_area = int(cv2.countNonZero(mask))
+    if mask_area < min_area:
+        return None
+
+    # Step 4: Fill ratio gate relative to detection bbox
+    _, _, bw, bh = detection.bbox
+    bbox_area = bw * bh
+    if bbox_area == 0:
+        return None
+
+    fill = mask_area / bbox_area
+    if fill < min_fill or fill > max_fill:
+        return None
+
+    return mask
 
 
 class SAMPseudoLabeler:
     """Generate high-quality pseudo-label masks from fish detections using SAM2.
 
     Wraps SAM2ImagePredictor to refine rough detection masks (from MOG2 or YOLO)
-    into precise segmentation masks suitable for human review in Label Studio.
+    into precise segmentation masks suitable for training data generation.
 
     Each detection is cropped from the full frame (with padding) before being
     fed to SAM2. This gives SAM2 better scale context for small objects and
     reduces background leakage. The resulting crop mask is pasted back into
     the full frame.
+
+    SAM2 always uses box-only prompting (no mask prompt). This produces
+    dramatically better masks than mask-prompted mode per empirical testing.
 
     The SAM2 model is lazily loaded on first use to avoid GPU memory
     allocation on import.
@@ -94,6 +153,9 @@ class SAMPseudoLabeler:
         device: Torch device string. Auto-detects cuda/cpu if None.
         crop_padding: Fractional padding around detection bbox for cropping.
             0.25 means 25% of bbox dimension added on each side.
+        draw_pseudolabels: When True, saves annotated debug images (with
+            mask contours overlaid) to a ``debug/`` subdirectory next to
+            each output image. For developer use only.
     """
 
     def __init__(
@@ -101,10 +163,12 @@ class SAMPseudoLabeler:
         model_variant: str = "facebook/sam2.1-hiera-large",
         device: str | None = None,
         crop_padding: float = 0.25,
+        draw_pseudolabels: bool = False,
     ) -> None:
         self._model_variant = model_variant
         self._device = device
         self._crop_padding = crop_padding
+        self._draw_pseudolabels = draw_pseudolabels
         self._predictor: SAM2ImagePredictor | None = None
 
     def _load_predictor(self) -> SAM2ImagePredictor:
@@ -130,20 +194,17 @@ class SAMPseudoLabeler:
         self,
         image: np.ndarray,
         detections: list[Detection],
-        use_mask_prompt: bool = True,
     ) -> list[np.ndarray]:
-        """Generate refined masks from fish detections using SAM2.
+        """Generate refined masks from fish detections using SAM2 box-only prompting.
 
         For each detection, crops the image around the bounding box (with
-        padding), runs SAM2 on the crop for better scale context, then
-        pastes the mask back into the full frame.
+        padding), runs SAM2 on the crop with box-only prompting for better
+        scale context, then pastes the mask back into the full frame.
 
         Args:
             image: Full-frame BGR image as uint8 array of shape (H, W, 3).
             detections: List of Detection objects from any detector (MOG2Detector
                 or YOLODetector via make_detector).
-            use_mask_prompt: Whether to pass the detection mask as a logit
-                prompt alongside the box. Falls back to box-only if False.
 
         Returns:
             List of binary masks (uint8, 0/255, full frame size),
@@ -185,27 +246,54 @@ class SAMPseudoLabeler:
                     dtype=np.float32,
                 )
 
-                predict_kwargs: dict = {
-                    "box": box_in_crop,
-                    "multimask_output": False,
-                }
-
-                if use_mask_prompt:
-                    # Extract the detection mask crop and convert to logits
-                    crop_mask = extract_crop(det.mask, region)
-                    mask_logits = _mask_to_logits(crop_mask)
-                    predict_kwargs["mask_input"] = mask_logits
-
-                masks, _scores, _logits = predictor.predict(**predict_kwargs)
+                # Box-only prompting — no mask input
+                masks, _scores, _logits = predictor.predict(
+                    box=box_in_crop,
+                    multimask_output=False,
+                )
 
                 # masks shape: (1, crop_H, crop_W) with multimask_output=False
-                crop_binary = (masks[0] > 0.5).astype(np.uint8) * 255
+                # Use _select_largest_mask in case SAM2 ever returns multimask
+                if len(masks) > 1:
+                    crop_binary = _select_largest_mask(masks)
+                else:
+                    crop_binary = (masks[0] > 0.5).astype(np.uint8) * 255
 
                 # Paste crop mask back into full frame
                 full_mask = paste_mask(crop_binary, region)
+
+                # Optionally save debug visualization
+                if self._draw_pseudolabels:
+                    self._save_debug(crop_bgr, crop_binary, det)
+
                 masks_out.append(full_mask)
 
         return masks_out
+
+    def _save_debug(
+        self,
+        crop_bgr: np.ndarray,
+        crop_mask: np.ndarray,
+        det: Detection,
+    ) -> None:
+        """Save annotated debug image with mask contours overlaid.
+
+        Args:
+            crop_bgr: Cropped BGR image.
+            crop_mask: Binary mask (uint8, 0/255) at crop resolution.
+            det: Detection that produced this mask.
+        """
+        debug_img = crop_bgr.copy()
+        contours, _ = cv2.findContours(
+            crop_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        cv2.drawContours(debug_img, contours, -1, (0, 255, 0), 2)
+
+        # Save to debug/ subdirectory next to the image path
+        debug_dir = Path("debug")
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        debug_name = f"debug_conf{det.confidence:.2f}.jpg"
+        cv2.imwrite(str(debug_dir / debug_name), debug_img)
 
 
 def to_coco_dataset(

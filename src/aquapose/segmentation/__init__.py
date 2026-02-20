@@ -8,6 +8,7 @@ from .pseudo_labeler import (
     AnnotatedFrame,
     FrameAnnotation,
     SAMPseudoLabeler,
+    filter_mask,
     to_coco_dataset,
 )
 from .training import evaluate, train
@@ -26,6 +27,7 @@ __all__ = [
     "compute_crop_region",
     "evaluate",
     "extract_crop",
+    "filter_mask",
     "make_detector",
     "paste_mask",
     "to_coco_dataset",

@@ -64,5 +64,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-segmentation-pipeline/02-CONTEXT.md
+Stopped at: Phase 3 context gathered
+Resume file: .planning/phases/03-fish-mesh-model-and-3d-initialization/03-CONTEXT.md

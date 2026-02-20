@@ -26,15 +26,20 @@ classifiers = [
 
 dependencies = [
     "torch>=2.0",
+    "torchvision>=0.15",
     "numpy>=1.24",
     "opencv-python>=4.8",
     "scipy>=1.11",
     "h5py>=3.9",
     "aquacal",
+    "pycocotools>=2.0",
+    "label-studio-converter",
 ]
 
 # pytorch3d must be installed separately (not on PyPI):
-#   pip install pytorch3d -f https://dl.fbaipubliccode.com/pytorch3d/packaging/wheels/{torch_version}/download.html
+# pip install pytorch3d -f https://dl.fbaipubliccode.com/pytorch3d/packaging/wheels/{torch_version}/download.html
+# sam2 must be installed separately (not on PyPI stable):
+# git clone https://github.com/facebookresearch/sam2.git && pip install -e sam2/
 
 [project.urls]
 Homepage = "https://github.com/tlancaster6/aquapose"

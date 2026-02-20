@@ -65,7 +65,7 @@ Plans:
 **Goal:** Replace MOG2 background subtraction with a YOLOv8 object detector as a runtime-configurable alternative first-stage fish localizer, trained on 150 manually annotated frames, achieving higher recall than MOG2 on a stratified validation set
 **Depends on:** Phase 02.1
 **Requirements:** SEG-01, SEG-04
-**Plans:** 3 plans
+**Plans:** 1/3 plans complete
 
 Plans:
 - [x] 02.1.1-01-PLAN.md — MOG2-guided frame sampling and Label Studio bounding box annotation
@@ -132,7 +132,7 @@ Note: Phase 3 depends only on Phase 1 (not Phase 2), so Phases 2 and 3 can devel
 | 1. Calibration and Refractive Geometry | 2/2 | Complete | 2026-02-19 |
 | 2. Segmentation Pipeline | 0/3 | Planning complete | - |
 | 02.1 Segmentation Troubleshooting | 1/3 | In progress | - |
-| 02.1.1 Object-detection alternative to MOG2 | 2/3 | In progress | - |
+| 02.1.1 Object-detection alternative to MOG2 | 2/3 | Complete    | 2026-02-20 |
 | 3. Fish Mesh Model and 3D Initialization | 0/2 | Planning complete | - |
 | 4. Single-Fish Reconstruction | 0/TBD | Not started | - |
 | 5. Tracking and Sex Classification | 0/TBD | Not started | - |

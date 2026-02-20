@@ -1,20 +1,27 @@
 """Evaluate SAM2 pseudo-label quality against manual ground truth masks.
 
 Loads SAM2 pseudo-label masks from a Label Studio tasks JSON (produced by
-verify_pseudo_labels.py generate), loads user-annotated binary PNG ground
+run_pseudo_labels.py --detector yolo), loads user-annotated binary PNG ground
 truth masks, computes per-frame mask IoU, and saves side-by-side comparison
-images.
+images.  Detections are sourced from YOLO (not MOG2) for higher recall and
+no warmup dependency.
 
 Usage:
-    # Annotate GT masks first (one binary PNG per fish per frame):
+    # Step 1: Generate YOLO-sourced pseudo-labels (if not already done):
+    #   hatch run python scripts/run_pseudo_labels.py \\
+    #       --video-dir <path> --detector yolo \\
+    #       --yolo-weights runs/detect/output/yolo_fish/train_v1/weights/best.pt \\
+    #       --output-dir output/pseudo_labels --max-frames-per-camera 5
+    #
+    # Step 2: Annotate GT masks (one binary PNG per fish per frame):
     #   {frame_id}_gt_0.png, {frame_id}_gt_1.png, ...  in --gt-dir
     #
-    # Then run:
+    # Step 3: Run evaluation:
     hatch run python scripts/test_sam2.py --gt-dir output/sam2_gt
 
     # Full example with explicit paths:
     hatch run python scripts/test_sam2.py \\
-        --pseudo-labels-dir output/verify_pseudo_labels \\
+        --pseudo-labels-dir output/pseudo_labels \\
         --gt-dir output/sam2_gt \\
         --output-dir output/test_sam2 \\
         --threshold 0.70
@@ -388,8 +395,11 @@ def main() -> None:
     parser.add_argument(
         "--pseudo-labels-dir",
         type=Path,
-        default=Path("output/verify_pseudo_labels"),
-        help="Directory containing the *_tasks.json from verify_pseudo_labels.py generate",
+        default=Path("output/pseudo_labels"),
+        help=(
+            "Directory containing the *_tasks.json produced by "
+            "run_pseudo_labels.py --detector yolo (default: output/pseudo_labels)"
+        ),
     )
     parser.add_argument(
         "--gt-dir",
@@ -520,6 +530,7 @@ def main() -> None:
     print(f"Threshold        : {threshold:.2f}")
     print(f"Status           : {status}")
     print()
+    print("Note: SAM2 detections sourced from YOLO (not MOG2).")
     print(f"Side-by-side comparisons saved to: {output_dir}/")
 
     sys.exit(0 if status == "PASS" else 1)

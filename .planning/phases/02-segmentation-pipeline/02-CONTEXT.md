@@ -30,9 +30,11 @@ Produce binary fish masks for any input frame across all cameras. Covers YOLO/MO
 
 ### Training data pipeline
 - Dataset format: COCO JSON
+- temporal sampling of input video, the full-frame yolo detection, then crop to bbox for SAM2 input 
+- do not use a mask prompt for SAM2
 - Per-camera stratified 80/20 train/val split — each camera represented proportionally
 - MOG2 activity-based frame sampling is for YOLO training only; Mask R-CNN uses all YOLO-detected crops
-- Include negative examples (background crops with no fish) so model learns to predict "no fish"
+- Include negative examples (background crops with no fish) so model learns to predict "no fish". ~10% of the final dataset should be backgrounds.
 - Single "fish" class — no sex-specific labels or evaluation subsets
 - ImageNet-pretrained ResNet-50 backbone — standard transfer learning
 - Standard augmentation: flips, rotations, brightness/contrast jitter
@@ -48,8 +50,6 @@ Produce binary fish masks for any input frame across all cameras. Covers YOLO/MO
 ### Cleanup
 - Delete all Label Studio code completely — functions, imports, and label-studio-sdk dependency from pyproject.toml
 - Delete all debug/test scripts: _debug_mask.py, _test_single.py, diagnose_mog2.py, verify_mog2_recall.py, etc.
-- Refactor segmentation module into submodules: detector/, pseudo_labeler/, mask_rcnn/ — maps to separate pipeline stages
-
 ### Claude's Discretion
 - MOG2 hyperparameters (history length, variance threshold, learning rate)
 - SAM2 model variant selection
@@ -72,7 +72,7 @@ Produce binary fish masks for any input frame across all cameras. Covers YOLO/MO
 <deferred>
 ## Deferred Ideas
 
-None — discussion stayed within phase scope
+- Refactor segmentation module into submodules: detector/, pseudo_labeler/, mask_rcnn/ — maps to separate pipeline stages. Deferred because current flat file layout works and refactoring mid-phase risks breaking imports across all plans.
 
 </deferred>
 

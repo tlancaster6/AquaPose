@@ -40,8 +40,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Requirements**: SEG-01, SEG-02, SEG-03, SEG-04, SEG-05
 **Success Criteria** (what must be TRUE):
   1. MOG2 detection produces padded bounding boxes with ≥95% per-camera recall measured on a held-out sample including female fish and stationary subjects
-  2. SAM pseudo-labels can be generated for any set of bounding boxes and imported into Label Studio as starting annotations for human correction
-  3. A trained Mask R-CNN model produces binary mask predictions on 256×256 crops achieving ≥0.90 mean mask IoU overall and ≥0.85 for female-only subsets
+  2. SAM2 pseudo-labels are generated via box-only prompting with quality filtering, producing masks suitable for direct Mask R-CNN training without manual correction
+  3. A trained Mask R-CNN model produces binary mask predictions on variable-size bbox crops achieving ≥0.90 mean mask IoU on the validation split
   4. The segmentation pipeline accepts N fish as input (returning a list of masks) even in the single-fish v1 operating mode
 **Plans**: 4 plans
 - [ ] 02-01-PLAN.md — Delete Label Studio code, remove debug scripts, clean dependencies

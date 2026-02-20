@@ -18,9 +18,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **SEG-01**: System detects fish via MOG2 background subtraction with shadow suppression, producing padded bounding boxes with ≥95% per-camera recall (including females). Without tracker safety net, this recall target is load-bearing.
 - [ ] **SEG-02**: System generates pseudo-label masks by feeding bounding boxes as prompts to SAM single-frame
-- [ ] **SEG-03**: System supports Label Studio annotation workflow (export images + pseudo-labels, import corrected masks)
-- [x] **SEG-04**: System segments fish on cropped and resized patches (256×256) from detection bounding boxes, not full 1600×1200 frames
-- [ ] **SEG-05**: System trains Mask R-CNN (Detectron2) on corrected crop annotations, achieving ≥0.90 mean mask IoU (≥0.85 for females)
+- [ ] **SEG-03**: System generates quality-filtered pseudo-label masks directly from SAM2 (box-only prompt), bypassing manual annotation — quality filtering replaces human correction
+- [x] **SEG-04**: System segments fish on cropped patches from detection bounding boxes (variable crop dimensions matching bbox), not full 1600×1200 frames
+- [ ] **SEG-05**: System trains Mask R-CNN on pseudo-label crop annotations, achieving ≥0.90 mean mask IoU on validation split
 
 ### Fish Model
 

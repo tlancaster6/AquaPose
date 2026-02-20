@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 02-segmentation-pipeline Plan 01 complete — codebase cleanup done (Label Studio removed, debug scripts deleted, 182 tests passing); ready for Plan 02
+**Current focus:** Phase 02-segmentation-pipeline Plan 02 complete — box-only SAM2, quality filtering, variable-size CropDataset, stratified split, negative examples; 203 tests passing
 
 ## Current Position
 
 Phase: 02-segmentation-pipeline
-Plan: 01 of N complete
-Status: Clean baseline established; Label Studio fully removed; to_coco_dataset preserved in pseudo_labeler.py
-Last activity: 2026-02-20 — 02-01 complete (commits 86529f5, d366610)
+Plan: 02 of N complete
+Status: Pseudo-labeling pipeline fully updated; CropDataset native-resolution; build_training_data.py generates train.json/val.json with negatives
+Last activity: 2026-02-20 — 02-02 complete (commits 003e8de, 2766e7d)
 
-Progress: [█████░░░░░] 57% (11 plans complete)
+Progress: [██████░░░░] 60% (12 plans complete)
 
 ## Performance Metrics
 
@@ -32,7 +32,7 @@ Progress: [█████░░░░░] 57% (11 plans complete)
 | 03-fish-mesh-model-and-3d-initialization | 2 | 19 min | 10 min |
 | 02.1-segmentation-troubleshooting | 1 (of 3) | 8 min | 8 min |
 | 02.1.1-object-detection-alternative-to-mog2 | 3 (of 3) | ~3 sessions | - |
-| 02-segmentation-pipeline (new) | 1 (of N) | 20 min | 20 min |
+| 02-segmentation-pipeline (new) | 2 (of N) | 31 min | 15 min |
 
 **Recent Trend:**
 - Last 5 plans: 8 min, 8 min, 12 min, 15 min, 10 min
@@ -83,6 +83,10 @@ Recent decisions affecting current work:
 - [02.1.1-03]: Integration tests mock SAMPseudoLabeler.predict() via monkeypatch rather than patching SAM2 internals — keeps tests GPU-free and fast while still exercising the full pipeline chain
 - [02-01 new]: to_coco_dataset lives in pseudo_labeler.py — COCO conversion co-located with pseudo-label generation, not in Label Studio module
 - [02-01 new]: Label Studio fully removed from segmentation module — label-studio-converter dependency deleted, no remaining references in src/
+- [02-02]: filter_mask() lives in pseudo_labeler.py — quality filtering is a pseudo-label concern, not a build-script concern
+- [02-02]: CropDataset drops crop_size parameter entirely — Mask R-CNN FPN+RoI handles variable inputs natively
+- [02-02]: stratified_split groups by camera_id COCO field — each camera gets proportional val representation
+- [02-02]: build_training_data.py writes train.json + val.json + coco_annotations.json — three files, one source of truth
 
 ### Roadmap Evolution
 
@@ -102,5 +106,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 02-segmentation-pipeline 02-01-PLAN.md
-Next action: Execute 02-segmentation-pipeline Plan 02 (build_training_data.py consolidation)
+Stopped at: Completed 02-segmentation-pipeline 02-02-PLAN.md
+Next action: Execute 02-segmentation-pipeline Plan 03 (Mask R-CNN training on generated dataset)

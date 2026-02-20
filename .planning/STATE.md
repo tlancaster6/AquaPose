@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 02.1.1 (Object-detection alternative to MOG2) — Plan 02 at Task 3 checkpoint (human-verify YOLO recall vs MOG2)
+**Current focus:** Phase 02.1.1 (Object-detection alternative to MOG2) — Plan 03 (pipeline integration wiring)
 
 ## Current Position
 
 Phase: 02.1.1 of 6 (Object-detection alternative to MOG2) — IN PROGRESS
-Plan: 2 of 3 in current phase — 02.1.1-02 Tasks 1-2 complete, paused at Task 3 checkpoint (human-verify)
-Status: YOLODetector wired into segmentation package; eval script ready; awaiting user review of YOLO recall vs MOG2
-Last activity: 2026-02-20 — Task 2 of 02.1.1-02: training + eval scripts committed (e4596bf)
+Plan: 3 of 3 in current phase — 02.1.1-02 complete (YOLO trained and verified), 02.1.1-03 is next
+Status: YOLODetector wired into segmentation package; user approved YOLO val metrics (recall=0.780, mAP50=0.799); ready for pipeline integration
+Last activity: 2026-02-20 — 02.1.1-02 Task 3 checkpoint approved by user
 
-Progress: [████░░░░░░] 50%
+Progress: [████░░░░░░] 53% (9 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8
+- Total plans completed: 9
 - Average duration: 15 min
 - Total execution time: ~2 hours
 
@@ -31,7 +31,7 @@ Progress: [████░░░░░░] 50%
 | 02-segmentation-pipeline | 3 | 35 min | 12 min |
 | 03-fish-mesh-model-and-3d-initialization | 2 | 19 min | 10 min |
 | 02.1-segmentation-troubleshooting | 1 (of 3) | 8 min | 8 min |
-| 02.1.1-object-detection-alternative-to-mog2 | 1 (of 3) | ~2 sessions | - |
+| 02.1.1-object-detection-alternative-to-mog2 | 2 (of 3) | ~3 sessions | - |
 
 **Recent Trend:**
 - Last 5 plans: 8 min, 8 min, 12 min, 15 min, 10 min
@@ -75,6 +75,7 @@ Recent decisions affecting current work:
 - [02.1.1-02]: make_detector factory uses **kwargs forwarding; model_path is a required kwarg for 'yolo'
 - [02.1.1-02]: eval script creates fresh MOG2Detector() per val image; optional video warmup via --video-dir for fair temporal comparison
 - [02.1.1-02]: Trained YOLOv8n early-stopped at epoch 10: recall=0.780, mAP50=0.799, precision=0.760
+- [02.1.1-02]: Formal YOLO vs MOG2 comparison deferred — MOG2 requires video warmup context unavailable for isolated val frames; YOLO val metrics accepted as sufficient validation evidence (user-approved)
 
 ### Roadmap Evolution
 
@@ -94,5 +95,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Phase 02.1.1 Plan 02 Task 3 — human-verify checkpoint (YOLO recall vs MOG2 on val set)
-Resume file: .planning/phases/02.1.1-object-detection-alternative-to-mog2/02.1.1-02-PLAN.md (Task 3)
+Stopped at: Phase 02.1.1 Plan 02 — COMPLETE (Task 3 human-verify approved)
+Resume file: .planning/phases/02.1.1-object-detection-alternative-to-mog2/02.1.1-03-PLAN.md (Task 1)

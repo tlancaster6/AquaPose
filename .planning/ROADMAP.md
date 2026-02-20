@@ -70,7 +70,7 @@ Plans:
 Plans:
 - [x] 02.1.1-01-PLAN.md — MOG2-guided frame sampling and Label Studio bounding box annotation
 - [x] 02.1.1-02-PLAN.md — YOLOv8 training, YOLODetector implementation, and comparative evaluation vs MOG2
-- [ ] 02.1.1-03-PLAN.md — Pipeline integration: wire YOLODetector into SAM2 pseudo-labeler and full segmentation workflow
+- [x] 02.1.1-03-PLAN.md — Pipeline integration: wire YOLODetector into SAM2 pseudo-labeler and full segmentation workflow
 
 ### Phase 3: Fish Mesh Model and 3D Initialization
 **Goal**: A fully differentiable parametric fish mesh model exists and can produce a plausible first-frame 3D state estimate from coarse keypoint detections, ready to be handed to the optimizer

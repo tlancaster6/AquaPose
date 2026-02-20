@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 02.1.1 (Object-detection alternative to MOG2) — Plan 03 needs PLANNING then execution
+**Current focus:** Phase 02.1.1 (Object-detection alternative to MOG2) — COMPLETE (all 3 plans done)
 
 ## Current Position
 
-Phase: 02.1.1 of 6 (Object-detection alternative to MOG2) — IN PROGRESS
-Plan: 2 of 3 complete — 02.1.1-03 (pipeline integration) exists in ROADMAP.md but has NO plan file yet; needs `/gsd:plan-phase 02.1.1` to create it
-Status: YOLODetector class and make_detector factory exist in detector.py; YOLO trained (recall=0.780, mAP50=0.799); Plan 03 must wire YOLODetector into SAM2 pseudo-labeler and full segmentation workflow
-Last activity: 2026-02-20 — 02.1.1-02 Task 3 checkpoint approved by user
+Phase: 02.1.1 of 6 (Object-detection alternative to MOG2) — COMPLETE
+Plan: 3 of 3 complete — all plans done
+Status: YOLO trained, YOLODetector wired into SAM2 pipeline, end-to-end script and integration tests in place
+Last activity: 2026-02-20 — 02.1.1-03 complete
 
-Progress: [████░░░░░░] 53% (9 plans complete)
+Progress: [█████░░░░░] 57% (10 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9
+- Total plans completed: 10
 - Average duration: 15 min
 - Total execution time: ~2 hours
 
@@ -31,7 +31,7 @@ Progress: [████░░░░░░] 53% (9 plans complete)
 | 02-segmentation-pipeline | 3 | 35 min | 12 min |
 | 03-fish-mesh-model-and-3d-initialization | 2 | 19 min | 10 min |
 | 02.1-segmentation-troubleshooting | 1 (of 3) | 8 min | 8 min |
-| 02.1.1-object-detection-alternative-to-mog2 | 2 (of 3) | ~3 sessions | - |
+| 02.1.1-object-detection-alternative-to-mog2 | 3 (of 3) | ~3 sessions | - |
 
 **Recent Trend:**
 - Last 5 plans: 8 min, 8 min, 12 min, 15 min, 10 min
@@ -76,6 +76,8 @@ Recent decisions affecting current work:
 - [02.1.1-02]: eval script creates fresh MOG2Detector() per val image; optional video warmup via --video-dir for fair temporal comparison
 - [02.1.1-02]: Trained YOLOv8n early-stopped at epoch 10: recall=0.780, mAP50=0.799, precision=0.760
 - [02.1.1-02]: Formal YOLO vs MOG2 comparison deferred — MOG2 requires video warmup context unavailable for isolated val frames; YOLO val metrics accepted as sufficient validation evidence (user-approved)
+- [02.1.1-03]: run_pseudo_labels.py validates YOLO weights path at startup before loading any models — fail-fast pattern for misconfigured CLI usage
+- [02.1.1-03]: Integration tests mock SAMPseudoLabeler.predict() via monkeypatch rather than patching SAM2 internals — keeps tests GPU-free and fast while still exercising the full pipeline chain
 
 ### Roadmap Evolution
 
@@ -95,6 +97,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Phase 02.1.1 — Plans 01+02 complete, Plan 03 (pipeline integration) NOT YET PLANNED
-Next action: `/gsd:plan-phase 02.1.1` to create 02.1.1-03-PLAN.md, then `/gsd:execute-phase 02.1.1`
-What Plan 03 needs to do: Wire YOLODetector into SAM2 pseudo-labeler as a drop-in replacement for MOG2Detector box prompts. Key: SAMPseudoLabeler.predict() already accepts list[Detection] — YOLODetector.detect() returns the same type. May just need config/CLI plumbing to select detector at runtime.
+Stopped at: Phase 02.1.1 — All 3 plans complete. Phase 02.1.1 DONE.
+Next action: Continue with Phase 02.1 remaining plans or next phase in ROADMAP.md

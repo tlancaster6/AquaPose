@@ -8,13 +8,13 @@ from .loader import (
     load_calibration_data,
     undistort_image,
 )
-from .projection import RefractiveProjectionModel
+from .projection import RefractiveProjectionModel, triangulate_rays
 from .uncertainty import (
     UncertaintyResult,
+    build_rig_from_calibration,
     build_synthetic_rig,
     compute_triangulation_uncertainty,
     generate_uncertainty_report,
-    triangulate_rays,
 )
 
 __all__ = [
@@ -23,6 +23,7 @@ __all__ = [
     "RefractiveProjectionModel",
     "UncertaintyResult",
     "UndistortionMaps",
+    "build_rig_from_calibration",
     "build_synthetic_rig",
     "compute_triangulation_uncertainty",
     "compute_undistortion_maps",

@@ -50,10 +50,6 @@ class UndistortionMaps:
     map_y: np.ndarray  # shape (H, W), float32
 
 
-# Alias for backwards compatibility with AquaMVS name
-UndistortionData = UndistortionMaps
-
-
 @dataclass
 class CalibrationData:
     """Complete calibration data converted to PyTorch tensors.

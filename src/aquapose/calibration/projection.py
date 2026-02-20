@@ -1,6 +1,50 @@
 """Differentiable refractive projection model with Snell's law ray tracing."""
 
+from __future__ import annotations
+
 import torch
+
+
+def triangulate_rays(
+    origins: torch.Tensor,
+    directions: torch.Tensor,
+) -> torch.Tensor:
+    """Triangulate 3D point from multiple rays using least-squares (SVD).
+
+    Solves: sum_i (I - d_i @ d_i^T) @ p = sum_i (I - d_i @ d_i^T) @ o_i
+
+    Args:
+        origins: Ray origin points, shape (N, 3), float32.
+        directions: Unit ray direction vectors, shape (N, 3), float32. Must
+            be unit vectors.
+
+    Returns:
+        Estimated 3D point, shape (3,), float32.
+
+    Raises:
+        ValueError: If fewer than 2 rays are provided.
+    """
+    if origins.shape[0] < 2:
+        raise ValueError(f"Need at least 2 rays, got {origins.shape[0]}")
+
+    device = origins.device
+    dtype = origins.dtype
+
+    # Build normal equations: A @ p = b where A = sum_i (I - d_i d_i^T)
+    A = torch.zeros(3, 3, device=device, dtype=dtype)
+    b = torch.zeros(3, device=device, dtype=dtype)
+
+    eye3 = torch.eye(3, device=device, dtype=dtype)
+    for i in range(origins.shape[0]):
+        d = directions[i]  # (3,)
+        o = origins[i]  # (3,)
+        M = eye3 - d.unsqueeze(1) @ d.unsqueeze(0)  # (3, 3)
+        A = A + M
+        b = b + M @ o
+
+    # Solve via least-squares (handles degenerate cases like parallel rays)
+    result = torch.linalg.lstsq(A, b.unsqueeze(1))
+    return result.solution.squeeze(1)
 
 
 class RefractiveProjectionModel:
@@ -45,7 +89,7 @@ class RefractiveProjectionModel:
         self.C = -R.T @ t  # camera center in world frame, shape (3,)
         self.n_ratio = n_air / n_water  # scalar float
 
-    def to(self, device: str | torch.device) -> "RefractiveProjectionModel":
+    def to(self, device: str | torch.device) -> RefractiveProjectionModel:
         """Move all internal tensors to the specified device.
 
         Args:

@@ -5,11 +5,11 @@ import math
 import pytest
 import torch
 
+from aquapose.calibration.projection import triangulate_rays
 from aquapose.calibration.uncertainty import (
     UncertaintyResult,
     build_synthetic_rig,
     compute_triangulation_uncertainty,
-    triangulate_rays,
 )
 
 # ---------------------------------------------------------------------------
@@ -132,7 +132,9 @@ class TestComputeTriangulationUncertainty:
 
     @pytest.fixture(scope="class")
     def result(self, rig) -> UncertaintyResult:
-        depths = torch.linspace(0.80, 1.20, 5)
+        # Deep enough that ring cameras can see the rig center (xy_position
+        # defaults to centroid; ring cameras need depth for FOV coverage)
+        depths = torch.linspace(1.50, 2.00, 5)
         return compute_triangulation_uncertainty(rig, depths, pixel_noise=0.5)
 
     def test_output_is_uncertainty_result(self, result) -> None:

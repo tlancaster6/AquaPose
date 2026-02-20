@@ -37,10 +37,10 @@ re_verification: false
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
 | `src/aquapose/calibration/loader.py` | AquaCal bridge -- load JSON into PyTorch tensors | VERIFIED | 216 lines; load_calibration_data, CameraData, CalibrationData, UndistortionMaps, compute_undistortion_maps, undistort_image all present |
-| `src/aquapose/calibration/projection.py` | Differentiable refractive projection and ray casting | VERIFIED | 214 lines; RefractiveProjectionModel with project(), cast_ray(), to(); non-in-place ops and epsilon guards throughout |
+| `src/aquapose/calibration/projection.py` | Differentiable refractive projection, ray casting, and triangulation | VERIFIED | RefractiveProjectionModel with project(), cast_ray(), to(); triangulate_rays() moved here from uncertainty.py during post-phase cleanup; non-in-place ops and epsilon guards throughout |
 | `src/aquapose/calibration/__init__.py` | Public API for calibration module | VERIFIED | Exports 12 public symbols via __all__; covers both plan 01-01 and 01-02 symbols |
 | `tests/integration/test_calibration_cross_validation.py` | Cross-validation tests against AquaCal reference | VERIFIED | 12 tests in 2 classes (TestCastRayCrossValidation, TestProjectCrossValidation); all @pytest.mark.slow; all pass at atol=1e-5 |
-| `src/aquapose/calibration/uncertainty.py` | Z-uncertainty analytical characterization | VERIFIED | 405 lines; compute_triangulation_uncertainty, triangulate_rays, build_synthetic_rig, generate_uncertainty_report, UncertaintyResult all present |
+| `src/aquapose/calibration/uncertainty.py` | Z-uncertainty analytical characterization | VERIFIED | compute_triangulation_uncertainty, build_synthetic_rig, build_rig_from_calibration, generate_uncertainty_report, UncertaintyResult all present; triangulate_rays moved to projection.py |
 | `tests/unit/calibration/test_uncertainty.py` | Unit tests for uncertainty calculations | VERIFIED | 16 tests across 3 classes; includes test_compute_triangulation_uncertainty; all pass |
 | `docs/reports/z_uncertainty_report.md` | Z-uncertainty characterization report with numeric data | VERIFIED | Numeric Z/XY ratios in depth table; anisotropy interpretation paragraph present; embedded plot links |
 
@@ -51,8 +51,8 @@ re_verification: false
 | `loader.py` | `aquacal.io.serialization.load_calibration` | import and call | WIRED | Line 9: `from aquacal.io.serialization import load_calibration as aquacal_load_calibration`; called on line 121 |
 | `projection.py` | `loader.py` CameraData tensors (K, R, t) | RefractiveProjectionModel constructor | WIRED | Constructor accepts K, R, t directly; cross-validation tests build both from same params dict confirming protocol compatibility |
 | `tests/integration/test_calibration_cross_validation.py` | `aquacal.core.refractive_geometry` | NumPy reference comparison | WIRED | Lines 11-12: imports refractive_project, trace_ray_air_to_water; called for every test point in both project and cast_ray test classes |
-| `uncertainty.py` | `projection.py` RefractiveProjectionModel | uses project() and cast_ray() | WIRED | Line 11: `from .projection import RefractiveProjectionModel`; project() called line 119, cast_ray() called line 128 |
-| `uncertainty.py` | `aquacal.datasets.synthetic` | build_synthetic_rig() | WIRED | Line 172: `from aquacal.datasets.synthetic import generate_real_rig_array`; called line 173 with height_above_water=0.75, seed=42 |
+| `uncertainty.py` | `projection.py` RefractiveProjectionModel + triangulate_rays | uses project(), cast_ray(), and triangulate_rays() | WIRED | `from .projection import RefractiveProjectionModel, triangulate_rays` |
+| `uncertainty.py` | `aquacal.datasets.synthetic` | build_synthetic_rig() | WIRED | Lazy import of `generate_camera_intrinsics` inside build_synthetic_rig() |
 
 ### Requirements Coverage
 

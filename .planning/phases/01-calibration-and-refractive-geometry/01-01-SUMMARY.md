@@ -10,6 +10,7 @@ provides:
   - "load_calibration_data(): loads AquaCal JSON into PyTorch CameraData/CalibrationData tensors"
   - "RefractiveProjectionModel.project(): differentiable 3D->2D refractive projection via Newton-Raphson"
   - "RefractiveProjectionModel.cast_ray(): 2D->3D ray casting via Snell's law at air-water interface"
+  - "triangulate_rays(): SVD least-squares ray intersection (moved from uncertainty.py during post-phase cleanup)"
   - "compute_undistortion_maps(): OpenCV fisheye/pinhole undistortion remap tables"
   - "Cross-validated against AquaCal NumPy at atol=1e-5"
 affects:
@@ -82,8 +83,8 @@ completed: 2026-02-19
 
 ## Files Created/Modified
 
-- `src/aquapose/calibration/loader.py` — CameraData, CalibrationData, UndistortionMaps, load_calibration_data(), compute_undistortion_maps(), undistort_image()
-- `src/aquapose/calibration/projection.py` — RefractiveProjectionModel with project() and cast_ray()
+- `src/aquapose/calibration/loader.py` — CameraData, CalibrationData, UndistortionMaps, load_calibration_data(), compute_undistortion_maps(), undistort_image() (UndistortionData alias removed during post-phase cleanup)
+- `src/aquapose/calibration/projection.py` — RefractiveProjectionModel with project() and cast_ray(); triangulate_rays() (moved here from uncertainty.py during post-phase cleanup)
 - `src/aquapose/calibration/__init__.py` — Public API with sorted __all__
 - `pyproject.toml` — Added aquacal dependency
 - `tests/unit/calibration/test_loader.py` — 22 unit tests for loader module

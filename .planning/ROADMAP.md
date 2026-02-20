@@ -57,7 +57,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Free cross-section mode allows per-section height and width to be optimizable parameters (shape profile self-calibration runs without error)
   3. Given coarse head/center/tail keypoints from at least 3 cameras, epipolar initialization produces a 3D state estimate within plausible range of the fish's actual position (visually reasonable when overlaid on camera views)
   4. All mesh and initialization APIs accept lists of fish states (batch-first design) even when called with a single-element list
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 03-01-PLAN.md — Differentiable parametric fish mesh (FishState, spine, cross-sections, builder, PyTorch3D Meshes)
+- [ ] 03-02-PLAN.md — PCA keypoint extraction and refractive triangulation for 3D initialization
 
 ### Phase 4: Single-Fish Reconstruction
 **Goal**: The full analysis-by-synthesis loop works end-to-end on real data — a single fish's pose is recovered frame-by-frame with cross-view holdout IoU demonstrating the system generalizes beyond the cameras it was fit on
@@ -104,7 +107,7 @@ Note: Phase 3 depends only on Phase 1 (not Phase 2), so Phases 2 and 3 can devel
 |-------|----------------|--------|-----------|
 | 1. Calibration and Refractive Geometry | 2/2 | Complete | 2026-02-19 |
 | 2. Segmentation Pipeline | 0/3 | Planning complete | - |
-| 3. Fish Mesh Model and 3D Initialization | 0/TBD | Not started | - |
+| 3. Fish Mesh Model and 3D Initialization | 0/2 | Planning complete | - |
 | 4. Single-Fish Reconstruction | 0/TBD | Not started | - |
 | 5. Tracking and Sex Classification | 0/TBD | Not started | - |
 | 6. Output and Visualization | 0/TBD | Not started | - |

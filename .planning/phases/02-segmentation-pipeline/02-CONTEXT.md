@@ -6,7 +6,7 @@
 <domain>
 ## Phase Boundary
 
-Produce binary fish masks for any input frame across all cameras. Covers YOLO/MOG2 detection (mutually exclusive), SAM2 pseudo-label generation, Mask R-CNN training/inference, and pipeline cleanup. Must achieve recall targets including low-contrast females and stationary subjects. Pipeline accepts N fish as input even in single-fish v1 mode.
+Produce binary fish masks for any input frame across all cameras. Covers YOLO/MOG2 detection (mutually exclusive), SAM2 pseudo-label generation, Mask R-CNN training/inference, and pipeline cleanup. Must achieve recall targets including low-contrast fish and stationary subjects. Pipeline accepts N fish as input even in single-fish v1 mode.
 
 </domain>
 
@@ -33,7 +33,7 @@ Produce binary fish masks for any input frame across all cameras. Covers YOLO/MO
 - Per-camera stratified 80/20 train/val split — each camera represented proportionally
 - MOG2 activity-based frame sampling is for YOLO training only; Mask R-CNN uses all YOLO-detected crops
 - Include negative examples (background crops with no fish) so model learns to predict "no fish"
-- Single "fish" class (no male/female distinction) — track female IoU separately during evaluation
+- Single "fish" class — no sex-specific labels or evaluation subsets
 - ImageNet-pretrained ResNet-50 backbone — standard transfer learning
 - Standard augmentation: flips, rotations, brightness/contrast jitter
 
@@ -64,8 +64,6 @@ Produce binary fish masks for any input frame across all cameras. Covers YOLO/MO
 ## Specific Ideas
 
 - Confidence threshold of 0.1 chosen to filter only the worst predictions while keeping high recall
-- Female fish are the hardest case due to low contrast — the 0.85 IoU female subset target is the binding constraint
-- Stationary fish will be missed by MOG2 but caught by the trained Mask R-CNN — acceptable gap in detection stage
 - Crop utilities already exist in src/aquapose/segmentation/crop.py (CropRegion, compute_crop_region, extract_crop, paste_mask)
 - The `scripts/` folder contains disorganized but relevant code from Phase 2 exploration — researchers and planners MUST scan scripts/*.py for reusable logic (pseudo-labeling, SAM2 invocation, dataset building, visualization) before writing new code
 

@@ -1,4 +1,4 @@
-"""SAM2 pseudo-label generation from MOG2 detections."""
+"""SAM2 pseudo-label generation from fish detections."""
 
 from __future__ import annotations
 
@@ -74,10 +74,10 @@ def _mask_to_logits(mask: np.ndarray, target_size: int = 256) -> np.ndarray:
 
 
 class SAMPseudoLabeler:
-    """Generate high-quality pseudo-label masks from MOG2 detections using SAM2.
+    """Generate high-quality pseudo-label masks from fish detections using SAM2.
 
-    Wraps SAM2ImagePredictor to refine rough MOG2 detection masks into
-    precise segmentation masks suitable for human review in Label Studio.
+    Wraps SAM2ImagePredictor to refine rough detection masks (from MOG2 or YOLO)
+    into precise segmentation masks suitable for human review in Label Studio.
 
     The SAM2 model is lazily loaded on first use to avoid GPU memory
     allocation on import.
@@ -121,7 +121,7 @@ class SAMPseudoLabeler:
         detections: list[Detection],
         use_mask_prompt: bool = True,
     ) -> list[np.ndarray]:
-        """Generate refined masks from MOG2 detections using SAM2.
+        """Generate refined masks from fish detections using SAM2.
 
         Sets the full image on the SAM2 predictor (not cropped -- SAM2
         uses full image context for better mask boundaries). For each
@@ -130,7 +130,8 @@ class SAMPseudoLabeler:
 
         Args:
             image: Full-frame BGR image as uint8 array of shape (H, W, 3).
-            detections: List of Detection objects from MOG2Detector.
+            detections: List of Detection objects from any detector (MOG2Detector
+                or YOLODetector via make_detector).
             use_mask_prompt: Whether to pass the detection mask as a logit
                 prompt alongside the box. Falls back to box-only if False.
 

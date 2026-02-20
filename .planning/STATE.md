@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 02.1.1 (Object-detection alternative to MOG2) — Plan 01 at checkpoint, awaiting user frame annotation in Label Studio
+**Current focus:** Phase 02.1.1 (Object-detection alternative to MOG2) — Plan 01 complete, proceeding to Plan 02 (YOLO training)
 
 ## Current Position
 
 Phase: 02.1.1 of 6 (Object-detection alternative to MOG2) — IN PROGRESS
-Plan: 1 of 3 in current phase — 02.1.1-01 Task 1 complete, awaiting checkpoint:human-verify
-Status: scripts/sample_yolo_frames.py built and committed; user must run sampling, annotate 150 frames in Label Studio, and organize YOLO dataset
-Last activity: 2026-02-20 — Task 1 of 02.1.1-01: MOG2-guided frame sampling script created (commit 3627a48)
+Plan: 2 of 3 in current phase — 02.1.1-01 complete, next: 02.1.1-02 (YOLO training)
+Status: YOLO dataset ready at data/yolo_fish/ (120 train / 30 val, stratified by camera); dataset.yaml configured for model.train()
+Last activity: 2026-02-20 — Task 2 of 02.1.1-01: 150 annotated frames organized into YOLO dataset (commit 3fb9f45)
 
 Progress: [████░░░░░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
+- Total plans completed: 8
 - Average duration: 15 min
-- Total execution time: 1.85 hours
+- Total execution time: ~2 hours
 
 **By Phase:**
 
@@ -31,6 +31,7 @@ Progress: [████░░░░░░] 50%
 | 02-segmentation-pipeline | 3 | 35 min | 12 min |
 | 03-fish-mesh-model-and-3d-initialization | 2 | 19 min | 10 min |
 | 02.1-segmentation-troubleshooting | 1 (of 3) | 8 min | 8 min |
+| 02.1.1-object-detection-alternative-to-mog2 | 1 (of 3) | ~2 sessions | - |
 
 **Recent Trend:**
 - Last 5 plans: 8 min, 8 min, 12 min, 15 min, 10 min
@@ -89,5 +90,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Phase 02.1.1 Plan 01 Task 1 complete — checkpoint:human-verify (user annotates 150 frames in Label Studio)
-Resume file: .planning/phases/02.1.1-object-detection-alternative-to-mog2/02.1.1-01-SUMMARY.md
+Stopped at: Phase 02.1.1 Plan 01 complete — data/yolo_fish/ dataset ready (120 train / 30 val)
+Resume file: .planning/phases/02.1.1-object-detection-alternative-to-mog2/02.1.1-02-PLAN.md

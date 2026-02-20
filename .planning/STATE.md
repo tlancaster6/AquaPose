@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-02-19)
 ## Current Position
 
 Phase: 2 of 6 (Segmentation Pipeline)
-Plan: 1 of 3 in current phase
+Plan: 3 of 3 in current phase
 Status: Executing
-Last activity: 2026-02-19 — Completed 02-01: MOG2 fish detector
+Last activity: 2026-02-19 — Completed 02-03: Mask R-CNN training pipeline
 
-Progress: [███░░░░░░░] 30%
+Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
-- Average duration: 19 min
-- Total execution time: 0.97 hours
+- Total plans completed: 5
+- Average duration: 18 min
+- Total execution time: 1.5 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-calibration-and-refractive-geometry | 2 | 50 min | 25 min |
-| 02-segmentation-pipeline | 1 | 8 min | 8 min |
+| 02-segmentation-pipeline | 3 | 35 min | 12 min |
 
 **Recent Trend:**
-- Last 5 plans: 45 min, 5 min, 8 min
+- Last 5 plans: 45 min, 5 min, 8 min, 12 min, 15 min
 - Trend: —
 
 *Updated after each plan completion*
@@ -53,6 +53,10 @@ Recent decisions affecting current work:
 - [01-02]: build_synthetic_rig uses water_z = height_above_water (0.75m) since AquaCal places cameras at world Z=0 with Z increasing downward into water
 - [02-01]: Shadow exclusion via threshold at 254 (MOG2 outputs 127 for shadows, 255 for foreground)
 - [02-01]: Detection.mask is full-frame sized (not cropped to bbox) to feed directly into SAM as mask prompt
+- [02-02]: SAM2 predictor lazily loaded on first predict() call to avoid GPU allocation on import
+- [02-02]: Label Studio uses its own RLE variant (mask2rle) not pycocotools RLE
+- [02-03]: torchvision maskrcnn_resnet50_fpn_v2 instead of Detectron2 (unmaintained, Windows-incompatible)
+- [02-03]: Custom collate_fn with tuple(zip(*batch)) for Mask R-CNN's list-of-dicts format
 
 ### Pending Todos
 
@@ -67,5 +71,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Executing phase 2, plan 02-01 complete, starting 02-02
-Resume file: .planning/phases/02-segmentation-pipeline/02-01-SUMMARY.md
+Stopped at: Phase 2 execution complete, pending verification
+Resume file: .planning/phases/02-segmentation-pipeline/02-03-SUMMARY.md

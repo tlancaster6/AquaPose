@@ -264,7 +264,10 @@ def cmd_generate(args: argparse.Namespace) -> None:
     detector = make_detector(
         "yolo", model_path=yolo_weights, conf_threshold=args.conf_threshold
     )
-    labeler = SAMPseudoLabeler(model_variant=args.sam_model)
+    labeler = SAMPseudoLabeler(
+        model_variant=args.sam_model,
+        draw_pseudolabels=args.draw_pseudolabels,
+    )
 
     annotated_crops: list[AnnotatedFrame] = []
     total_detections = 0
@@ -401,21 +404,36 @@ def cmd_train(args: argparse.Namespace) -> None:
     image_root = Path(args.image_root)
     output_dir = Path(args.output_dir)
 
+    train_json: Path | None = Path(args.train_json) if args.train_json else None
+    val_json: Path | None = Path(args.val_json) if args.val_json else None
+
     if not coco_json.exists():
         print(f"Error: COCO JSON not found at '{coco_json}'.", file=sys.stderr)
         sys.exit(1)
 
     print(f"Training Mask R-CNN for {args.epochs} epochs...")
     print(f"  COCO JSON  : {coco_json}")
+    if train_json:
+        print(f"  Train JSON : {train_json}")
+    if val_json:
+        print(f"  Val JSON   : {val_json}")
     print(f"  Image root : {image_root}")
     print(f"  Output dir : {output_dir}")
 
-    best_model = train(coco_json, image_root, output_dir, epochs=args.epochs)
+    best_model = train(
+        coco_json,
+        image_root,
+        output_dir,
+        train_json=train_json,
+        val_json=val_json,
+        epochs=args.epochs,
+    )
     print(f"\nBest model saved to: {best_model}")
 
-    # Evaluate
-    print("\nEvaluating on full dataset...")
-    results = evaluate(best_model, coco_json, image_root)
+    # Evaluate on val split if provided, otherwise full dataset
+    eval_json = val_json if val_json is not None else coco_json
+    print(f"\nEvaluating on {'val split' if val_json else 'full dataset'}...")
+    results = evaluate(best_model, eval_json, image_root)
 
     mean_iou = results["mean_iou"]
     num_images = results["num_images"]
@@ -425,6 +443,56 @@ def cmd_train(args: argparse.Namespace) -> None:
     print(f"Num instances : {num_images}")
     print(f"Mean IoU      : {mean_iou:.4f}")
     print(f"Result        : {'PASS' if passed else 'FAIL'} (threshold: 0.70)")
+
+
+# ---------------------------------------------------------------------------
+# evaluate subcommand
+# ---------------------------------------------------------------------------
+
+
+def cmd_evaluate(args: argparse.Namespace) -> None:
+    """Evaluate a trained Mask R-CNN on a COCO val split.
+
+    Loads the trained model, runs inference on all images in the val JSON,
+    computes per-image mask IoU against ground-truth annotations, and prints
+    mean mask IoU. The quantitative gate for phase completion is >= 0.90.
+
+    Args:
+        args: Parsed CLI arguments for the evaluate subcommand.
+    """
+    from aquapose.segmentation import evaluate
+
+    model_path = Path(args.model_path)
+    val_json = Path(args.val_json)
+    image_root = Path(args.image_root)
+
+    if not model_path.exists():
+        print(f"Error: model not found at '{model_path}'.", file=sys.stderr)
+        sys.exit(1)
+    if not val_json.exists():
+        print(f"Error: val JSON not found at '{val_json}'.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Evaluating model: {model_path}")
+    print(f"Val JSON        : {val_json}")
+    print(f"Image root      : {image_root}")
+
+    results = evaluate(model_path, val_json, image_root)
+
+    mean_iou = results["mean_iou"]
+    num_images = results["num_images"]
+    per_image_iou: list[float] = results["per_image_iou"]  # type: ignore[assignment]
+    passed = mean_iou >= 0.90
+
+    print("\n=== Evaluation Results ===")
+    print(f"Num images  : {num_images}")
+    print(f"Mean IoU    : {mean_iou:.4f}")
+    print(f"Min IoU     : {min(per_image_iou, default=0.0):.4f}")
+    print(f"Max IoU     : {max(per_image_iou, default=0.0):.4f}")
+    print(f"Result      : {'PASS' if passed else 'FAIL'} (threshold: 0.90)")
+
+    if not passed:
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -532,6 +600,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=42,
         help="Random seed for split and negative sampling (default: 42).",
     )
+    gen.add_argument(
+        "--draw-pseudolabels",
+        action="store_true",
+        default=False,
+        help="Save annotated debug crops to <output-dir>/debug/ for visual inspection.",
+    )
 
     # --- train ---
     tr = subparsers.add_parser(
@@ -562,6 +636,44 @@ def build_parser() -> argparse.ArgumentParser:
         default=40,
         help="Number of training epochs (default: 40).",
     )
+    tr.add_argument(
+        "--train-json",
+        default=None,
+        type=Path,
+        help="Optional path to pre-split train COCO JSON (e.g. train.json from generate). "
+        "When provided with --val-json, --coco-json is used only for fallback.",
+    )
+    tr.add_argument(
+        "--val-json",
+        default=None,
+        type=Path,
+        help="Optional path to pre-split val COCO JSON (e.g. val.json from generate). "
+        "When provided with --train-json, --coco-json is used only for fallback.",
+    )
+
+    # --- evaluate ---
+    ev = subparsers.add_parser(
+        "evaluate",
+        help="Evaluate a trained Mask R-CNN on a COCO val split.",
+    )
+    ev.add_argument(
+        "--model-path",
+        required=True,
+        type=Path,
+        help="Path to saved Mask R-CNN model checkpoint (best_model.pth).",
+    )
+    ev.add_argument(
+        "--val-json",
+        required=True,
+        type=Path,
+        help="Path to COCO-format val annotation JSON.",
+    )
+    ev.add_argument(
+        "--image-root",
+        required=True,
+        type=Path,
+        help="Root directory containing crop images.",
+    )
 
     return parser
 
@@ -575,6 +687,8 @@ def main() -> None:
         cmd_generate(args)
     elif args.command == "train":
         cmd_train(args)
+    elif args.command == "evaluate":
+        cmd_evaluate(args)
 
 
 if __name__ == "__main__":

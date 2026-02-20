@@ -5,13 +5,13 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 02.1.1 (Object-detection alternative to MOG2) — Plan 03 (pipeline integration wiring)
+**Current focus:** Phase 02.1.1 (Object-detection alternative to MOG2) — Plan 03 needs PLANNING then execution
 
 ## Current Position
 
 Phase: 02.1.1 of 6 (Object-detection alternative to MOG2) — IN PROGRESS
-Plan: 3 of 3 in current phase — 02.1.1-02 complete (YOLO trained and verified), 02.1.1-03 is next
-Status: YOLODetector wired into segmentation package; user approved YOLO val metrics (recall=0.780, mAP50=0.799); ready for pipeline integration
+Plan: 2 of 3 complete — 02.1.1-03 (pipeline integration) exists in ROADMAP.md but has NO plan file yet; needs `/gsd:plan-phase 02.1.1` to create it
+Status: YOLODetector class and make_detector factory exist in detector.py; YOLO trained (recall=0.780, mAP50=0.799); Plan 03 must wire YOLODetector into SAM2 pseudo-labeler and full segmentation workflow
 Last activity: 2026-02-20 — 02.1.1-02 Task 3 checkpoint approved by user
 
 Progress: [████░░░░░░] 53% (9 plans complete)
@@ -95,5 +95,6 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Phase 02.1.1 Plan 02 — COMPLETE (Task 3 human-verify approved)
-Resume file: .planning/phases/02.1.1-object-detection-alternative-to-mog2/02.1.1-03-PLAN.md (Task 1)
+Stopped at: Phase 02.1.1 — Plans 01+02 complete, Plan 03 (pipeline integration) NOT YET PLANNED
+Next action: `/gsd:plan-phase 02.1.1` to create 02.1.1-03-PLAN.md, then `/gsd:execute-phase 02.1.1`
+What Plan 03 needs to do: Wire YOLODetector into SAM2 pseudo-labeler as a drop-in replacement for MOG2Detector box prompts. Key: SAMPseudoLabeler.predict() already accepts list[Detection] — YOLODetector.detect() returns the same type. May just need config/CLI plumbing to select detector at runtime.

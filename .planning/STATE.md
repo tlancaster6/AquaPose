@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 02.1 (Segmentation Troubleshooting) — Plan 02 in progress, awaiting user GT annotation
+**Current focus:** Phase 02.1.1 (Object-detection alternative to MOG2) — Plan 01 at checkpoint, awaiting user frame annotation in Label Studio
 
 ## Current Position
 
-Phase: 02.1 of 6 (Segmentation Troubleshooting) — IN PROGRESS
-Plan: 2 of 3 in current phase — 02.1-02 Task 1 complete, awaiting checkpoint:human-verify
-Status: scripts/test_sam2.py built and committed; user must annotate GT masks and run evaluation
-Last activity: 2026-02-20 — Task 1 of 02.1-02: SAM2 evaluation script created (commit 949d03f)
+Phase: 02.1.1 of 6 (Object-detection alternative to MOG2) — IN PROGRESS
+Plan: 1 of 3 in current phase — 02.1.1-01 Task 1 complete, awaiting checkpoint:human-verify
+Status: scripts/sample_yolo_frames.py built and committed; user must run sampling, annotate 150 frames in Label Studio, and organize YOLO dataset
+Last activity: 2026-02-20 — Task 1 of 02.1.1-01: MOG2-guided frame sampling script created (commit 3627a48)
 
 Progress: [████░░░░░░] 50%
 
@@ -69,6 +69,7 @@ Recent decisions affecting current work:
 - [03-02]: Synthetic test cameras: t = (-cam_x, -cam_y, 0.0) with R=I, cameras at Z=0, water at Z=1.0 in world
 - [02.1-01]: No automated PASS/FAIL in test_mog2.py — detection quality assessed visually from annotated stills
 - [02.1-01]: 2-stage shadow fix in detector.py: Stage 1 merges shadow+foreground (fg_mask>=127); Stage 2 watershed-splits merged blobs using foreground-only (255) cores as seeds
+- [02.1.1-01]: Frame diversity via MOG2 count bins (0, 1, 2, 3+); at least 1 frame per non-empty bin, surplus distributed proportional to bin size; ring cameras get 10 frames, center camera gets 30 (150 total)
 
 ### Roadmap Evolution
 
@@ -88,5 +89,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Phase 02.1.1 context gathered
-Resume file: .planning/phases/02.1.1-object-detection-alternative-to-mog2/02.1.1-CONTEXT.md
+Stopped at: Phase 02.1.1 Plan 01 Task 1 complete — checkpoint:human-verify (user annotates 150 frames in Label Studio)
+Resume file: .planning/phases/02.1.1-object-detection-alternative-to-mog2/02.1.1-01-SUMMARY.md

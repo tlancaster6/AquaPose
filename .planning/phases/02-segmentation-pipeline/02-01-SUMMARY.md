@@ -2,101 +2,133 @@
 phase: 02-segmentation-pipeline
 plan: 01
 subsystem: segmentation
-tags: [opencv, mog2, background-subtraction, connected-components]
+tags: [cleanup, label-studio, coco, pseudo-labels, pycocotools]
 
-requires:
-  - phase: 01-calibration-and-refractive-geometry
-    provides: calibration loader and projection model
+# Dependency graph
+requires: []
 provides:
-  - MOG2Detector class for fish detection via background subtraction
-  - Detection dataclass with bbox, full-frame mask, area, confidence
-  - Morphological cleanup pipeline (close+open with elliptical kernel)
-  - Connected-component filtering by min_area
-affects: [02-02, 02-03, segmentation]
+  - Clean segmentation module with no Label Studio references
+  - to_coco_dataset() function in pseudo_labeler.py for COCO JSON output
+  - Lean scripts/ directory with only production-relevant scripts
+affects: [02-segmentation-pipeline, 03-fish-mesh-model-and-3d-initialization]
 
+# Tech tracking
 tech-stack:
-  added: [opencv MOG2, connected-components]
-  patterns: [dataclass Detection, warm_up/detect API pattern]
+  added: []
+  patterns:
+    - "to_coco_dataset moved to pseudo_labeler.py — COCO conversion co-located with pseudo-label generation"
+    - "Integration test updated to test YOLO->SAM2->COCO pipeline instead of YOLO->SAM2->LabelStudio"
 
 key-files:
-  created:
-    - src/aquapose/segmentation/detector.py
-    - tests/unit/segmentation/test_detector.py
+  created: []
   modified:
     - src/aquapose/segmentation/__init__.py
+    - src/aquapose/segmentation/pseudo_labeler.py
+    - pyproject.toml
+    - tests/unit/segmentation/test_pseudo_labeler.py
+    - tests/integration/segmentation/test_yolo_sam_integration.py
 
 key-decisions:
-  - "Shadow exclusion via threshold at 254 (MOG2 outputs 127 for shadows, 255 for foreground)"
-  - "Full-frame masks per component (feeds directly into SAM as mask prompt)"
-  - "Padding clipped to frame bounds for edge-case fish"
+  - "to_coco_dataset lives in pseudo_labeler.py — COCO conversion is a natural output of the pseudo-labeling stage, not a Label Studio concern"
+  - "Integration test now tests YOLO->SAM2->COCO export pipeline end-to-end"
+  - "test_bbox_conversion_to_sam2_format updated to use crop-relative coordinates (pre-existing test was written for non-crop predict() version)"
 
 patterns-established:
-  - "Detection dataclass: bbox (x,y,w,h), full-frame mask, area, confidence=1.0"
-  - "warm_up() then detect() API pattern for background model stabilization"
+  - "No Label Studio dependencies anywhere in the segmentation module"
+  - "Scripts directory contains only production-relevant scripts (no debug/test/exploration scripts)"
 
-duration: 8min
-completed: 2026-02-19
+requirements-completed: [SEG-03]
+
+# Metrics
+duration: 20min
+completed: 2026-02-20
 ---
 
-# Plan 02-01: MOG2 Fish Detector Summary
+# Phase 02 Plan 01: Codebase Cleanup Summary
 
-**MOG2 background-subtraction detector with morphological cleanup, connected-component filtering, and padded bounding boxes**
+**Removed Label Studio module and 10 debug scripts; preserved to_coco_dataset in pseudo_labeler.py with 182 tests passing**
 
 ## Performance
 
-- **Duration:** 8 min
-- **Completed:** 2026-02-19
-- **Tasks:** 1 (TDD: tests + implementation)
-- **Files modified:** 4
+- **Duration:** ~20 min
+- **Started:** 2026-02-20T23:05:00Z
+- **Completed:** 2026-02-20T23:25:57Z
+- **Tasks:** 2
+- **Files modified:** 7 (5 modified, 3 deleted, 10 filesystem-only deletions)
 
 ## Accomplishments
-- MOG2Detector wraps cv2.BackgroundSubtractorMOG2 with shadow exclusion (threshold at 254)
-- Morphological close+open with 5x5 elliptical kernel cleans noise
-- Connected-component analysis filters by min_area and extracts per-component full-frame masks
-- Bounding boxes padded by configurable fraction, clipped to frame bounds
-- 12 unit tests covering: empty frames, single/multiple fish, noise filtering, edge padding, warm-up, shadow exclusion
+
+- Deleted `label_studio.py` and `test_label_studio.py` — Label Studio is fully removed from the segmentation module
+- Moved `to_coco_dataset()` into `pseudo_labeler.py` so COCO output is co-located with pseudo-label generation
+- Removed `label-studio-converter` from `pyproject.toml` dependencies
+- Deleted 10 debug/exploration scripts from `scripts/` — only production scripts remain
+- All 182 unit and integration tests pass
 
 ## Task Commits
 
-1. **Task 1: MOG2Detector with tests (TDD)** - `177b9bc` (feat)
+Each task was committed atomically:
+
+1. **Task 1: Delete Label Studio module and clean dependencies** - `86529f5` (feat)
+2. **Task 2: Delete debug and exploration scripts** - `d366610` (chore)
+
+**Plan metadata:** (docs commit follows)
 
 ## Files Created/Modified
-- `src/aquapose/segmentation/detector.py` - MOG2Detector class and Detection dataclass
-- `tests/unit/segmentation/test_detector.py` - 12 unit tests for detector behavior
-- `tests/unit/segmentation/__init__.py` - Test package init
-- `src/aquapose/segmentation/__init__.py` - Public API exports (MOG2Detector, Detection)
+
+- `src/aquapose/segmentation/__init__.py` - Updated to import `to_coco_dataset` from `.pseudo_labeler` (removed all Label Studio imports)
+- `src/aquapose/segmentation/pseudo_labeler.py` - Added `to_coco_dataset()` function (moved from label_studio.py), added `json` import
+- `pyproject.toml` - Removed `label-studio-converter` from dependencies
+- `tests/unit/segmentation/test_pseudo_labeler.py` - Added `TestToCOCODataset` class (5 tests), `sample_mask` fixture, fixed `test_bbox_conversion_to_sam2_format` to use crop-relative coordinates
+- `tests/integration/segmentation/test_yolo_sam_integration.py` - Updated to test YOLO->SAM2->COCO pipeline (replaced Label Studio export test)
+- **Deleted:** `src/aquapose/segmentation/label_studio.py`
+- **Deleted:** `tests/unit/segmentation/test_label_studio.py`
+- **Deleted (filesystem):** `scripts/_debug_mask.py`, `scripts/_test_single.py`, `scripts/diagnose_mog2.py`, `scripts/verify_mog2_recall.py`, `scripts/verify_pseudo_labels.py`, `scripts/visualize_pseudo_labels.py`, `scripts/rerun_sam2_on_images.py`, `scripts/run_pseudo_labels.py`, `scripts/test_mog2.py`, `scripts/test_sam2.py`
 
 ## Decisions Made
-- Shadow exclusion via threshold at 254 rather than trying to configure MOG2 to not detect shadows
-- Detection.mask is full-frame sized (not cropped to bbox) to feed directly into SAM as mask prompt
-- confidence=1.0 placeholder for MOG2 detections (downstream compatibility with Mask R-CNN)
+
+- `to_coco_dataset` belongs in `pseudo_labeler.py` — it converts AnnotatedFrame lists to COCO JSON, which is the direct output format of the pseudo-labeling stage
+- Integration test now validates the end-to-end YOLO->SAM2->COCO export pipeline rather than the Label Studio export pipeline
 
 ## Deviations from Plan
 
 ### Auto-fixed Issues
 
-**1. [Test adjustment] Shadow exclusion test approach changed**
-- **Found during:** TDD green phase
-- **Issue:** Original test tried to create shadow-like regions by adjusting pixel values, but MOG2 classified them as foreground
-- **Fix:** Changed to verify mask binary values (0/255 only) after detection, confirming no shadow intermediate values leak through
-- **Verification:** Test passes, confirms contract
+**1. [Rule 1 - Bug] Fixed broken integration test importing removed export_to_label_studio**
+- **Found during:** Task 1 (Delete Label Studio module)
+- **Issue:** `tests/integration/segmentation/test_yolo_sam_integration.py` imported `export_to_label_studio` and tested the Label Studio export pipeline, which is now gone
+- **Fix:** Rewrote the third test class (`TestFullPipelineDetectorToExport`) to test the COCO export pipeline instead, updated imports to use `to_coco_dataset` and `AnnotatedFrame`
+- **Files modified:** `tests/integration/segmentation/test_yolo_sam_integration.py`
+- **Verification:** `hatch run test` — 182 passed
+- **Committed in:** `86529f5` (Task 1 commit)
+
+**2. [Rule 1 - Bug] Fixed test_bbox_conversion_to_sam2_format asserting stale full-frame coordinates**
+- **Found during:** Task 1 (running tests after Label Studio deletion)
+- **Issue:** Test expected `box=[100, 200, 150, 260]` (full-frame absolute coords) but current `pseudo_labeler.py` subtracts the crop origin before passing to SAM2, yielding `[12., 15., 62., 75.]` (crop-relative). The test was written for an older non-crop implementation.
+- **Fix:** Updated test to compute the expected crop-relative box using `compute_crop_region()` and assert against that
+- **Files modified:** `tests/unit/segmentation/test_pseudo_labeler.py`
+- **Verification:** `hatch run test` — 182 passed
+- **Committed in:** `86529f5` (Task 1 commit)
 
 ---
 
-**Total deviations:** 1 auto-fixed (test approach)
-**Impact on plan:** Minimal - test still validates shadow exclusion contract
+**Total deviations:** 2 auto-fixed (both Rule 1 - bug fixes in tests)
+**Impact on plan:** Both fixes necessary to restore test correctness after removing Label Studio. No scope creep.
 
 ## Issues Encountered
-None
+
+- Pre-existing typecheck errors in `detector.py` (4 errors: cv2 normalize signature, YOLO import, optional iterable) — confirmed pre-existing, out of scope per deviation rules
 
 ## User Setup Required
+
 None - no external service configuration required.
 
 ## Next Phase Readiness
-- MOG2Detector and Detection dataclass ready for SAM pseudo-labeling (02-02)
-- Detection.mask format compatible with SAM mask prompt input
-- __init__.py exports complete for downstream imports
+
+- Codebase is clean: no Label Studio references, no debug scripts
+- `to_coco_dataset` importable from `aquapose.segmentation`
+- Ready for Plan 02: build_training_data.py consolidation and dataset assembly pipeline
+- 182 tests passing, lint clean
 
 ---
 *Phase: 02-segmentation-pipeline*
-*Completed: 2026-02-19*
+*Completed: 2026-02-20*

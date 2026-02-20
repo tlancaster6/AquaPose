@@ -54,7 +54,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Goal:** Systematically test each Phase 2 segmentation component (MOG2, SAM2, Mask R-CNN) on real data, diagnose failures, and fix until quality is sufficient to unblock Phase 4
 **Depends on:** Phase 2
 **Requirements:** SEG-1, SEG-2, SEG-3, SEG-4
-**Plans:** 1/3 plans executed
+**Plans:** 1/4 plans executed
 
 Plans:
 - [ ] 02.1-01-PLAN.md — Consolidate MOG2 diagnostic scripts, validate recall on all 13 cameras

@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 02.1 Plan 02 — SAM2 evaluation script built; awaiting human-verify checkpoint (user must generate YOLO pseudo-labels and annotate GT)
+**Current focus:** Phase 02-segmentation-pipeline Plan 01 complete — codebase cleanup done (Label Studio removed, debug scripts deleted, 182 tests passing); ready for Plan 02
 
 ## Current Position
 
-Phase: 02.1-segmentation-troubleshooting
-Plan: 02 of 3 — Task 1 complete, paused at Task 2 (checkpoint:human-verify)
-Status: scripts/test_sam2.py ready; user must run run_pseudo_labels.py --detector yolo, annotate GT, then run test_sam2.py
-Last activity: 2026-02-20 — 02.1-02 Task 1 complete (commit 62252e6)
+Phase: 02-segmentation-pipeline
+Plan: 01 of N complete
+Status: Clean baseline established; Label Studio fully removed; to_coco_dataset preserved in pseudo_labeler.py
+Last activity: 2026-02-20 — 02-01 complete (commits 86529f5, d366610)
 
-Progress: [█████░░░░░] 57% (10 plans complete)
+Progress: [█████░░░░░] 57% (11 plans complete)
 
 ## Performance Metrics
 
@@ -32,6 +32,7 @@ Progress: [█████░░░░░] 57% (10 plans complete)
 | 03-fish-mesh-model-and-3d-initialization | 2 | 19 min | 10 min |
 | 02.1-segmentation-troubleshooting | 1 (of 3) | 8 min | 8 min |
 | 02.1.1-object-detection-alternative-to-mog2 | 3 (of 3) | ~3 sessions | - |
+| 02-segmentation-pipeline (new) | 1 (of N) | 20 min | 20 min |
 
 **Recent Trend:**
 - Last 5 plans: 8 min, 8 min, 12 min, 15 min, 10 min
@@ -80,6 +81,8 @@ Recent decisions affecting current work:
 - [02.1.1-02]: Formal YOLO vs MOG2 comparison deferred — MOG2 requires video warmup context unavailable for isolated val frames; YOLO val metrics accepted as sufficient validation evidence (user-approved)
 - [02.1.1-03]: run_pseudo_labels.py validates YOLO weights path at startup before loading any models — fail-fast pattern for misconfigured CLI usage
 - [02.1.1-03]: Integration tests mock SAMPseudoLabeler.predict() via monkeypatch rather than patching SAM2 internals — keeps tests GPU-free and fast while still exercising the full pipeline chain
+- [02-01 new]: to_coco_dataset lives in pseudo_labeler.py — COCO conversion co-located with pseudo-label generation, not in Label Studio module
+- [02-01 new]: Label Studio fully removed from segmentation module — label-studio-converter dependency deleted, no remaining references in src/
 
 ### Roadmap Evolution
 
@@ -88,7 +91,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- **Consolidate scripts into CLI workflow** (tooling) — 9 ad-hoc scripts in scripts/ need triage and documentation post-v1
+- **Consolidate scripts into CLI workflow** (tooling) — scripts/ now cleaned to 5 production scripts (build_training_data.py, eval_yolo_vs_mog2.py, organize_yolo_dataset.py, sample_yolo_frames.py, train_yolo.py)
 
 ### Blockers/Concerns
 
@@ -99,5 +102,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Phase 02.1 Plan 02 Task 2 — checkpoint:human-verify (user must generate YOLO pseudo-labels, annotate GT, run test_sam2.py)
-Next action: User runs Steps A/B/C from checkpoint; then continuation agent evaluates results and completes plan
+Stopped at: Completed 02-segmentation-pipeline 02-01-PLAN.md
+Next action: Execute 02-segmentation-pipeline Plan 02 (build_training_data.py consolidation)

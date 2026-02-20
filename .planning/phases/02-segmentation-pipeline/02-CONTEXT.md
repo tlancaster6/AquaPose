@@ -67,6 +67,7 @@ Produce binary fish masks for any input frame across all cameras. Covers YOLO/MO
 - Female fish are the hardest case due to low contrast — the 0.85 IoU female subset target is the binding constraint
 - Stationary fish will be missed by MOG2 but caught by the trained Mask R-CNN — acceptable gap in detection stage
 - Crop utilities already exist in src/aquapose/segmentation/crop.py (CropRegion, compute_crop_region, extract_crop, paste_mask)
+- The `scripts/` folder contains disorganized but relevant code from Phase 2 exploration — researchers and planners MUST scan scripts/*.py for reusable logic (pseudo-labeling, SAM2 invocation, dataset building, visualization) before writing new code
 
 </specifics>
 

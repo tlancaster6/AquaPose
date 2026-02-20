@@ -67,6 +67,10 @@ Recent decisions affecting current work:
 - [03-02]: kappa=0 at cold-start initialization; head/tail disambiguation deferred to Phase 4 optimizer
 - [03-02]: Synthetic test cameras: t = (-cam_x, -cam_y, 0.0) with R=I, cameras at Z=0, water at Z=1.0 in world
 
+### Roadmap Evolution
+
+- Phase 02.1 inserted after Phase 02: Segmentation Troubleshooting (URGENT)
+
 ### Pending Todos
 
 None.
@@ -80,5 +84,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 03-02: Cold-start 3D initialization pipeline
-Resume file: .planning/phases/03-fish-mesh-model-and-3d-initialization/03-02-SUMMARY.md
+Stopped at: Phase 02.1 context gathered
+Resume file: .planning/phases/02.1-segmentation-troubleshooting/02.1-CONTEXT.md

@@ -79,7 +79,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None.
+- **Consolidate scripts into CLI workflow** (tooling) — 9 ad-hoc scripts in scripts/ need triage and documentation post-v1
 
 ### Blockers/Concerns
 

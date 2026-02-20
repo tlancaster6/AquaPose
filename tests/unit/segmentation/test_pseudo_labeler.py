@@ -2,16 +2,29 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 
 from aquapose.segmentation.detector import Detection
 from aquapose.segmentation.pseudo_labeler import (
+    AnnotatedFrame,
     FrameAnnotation,
     SAMPseudoLabeler,
     _mask_to_logits,
+    to_coco_dataset,
 )
+
+
+@pytest.fixture
+def sample_mask() -> np.ndarray:
+    """A simple binary mask for testing."""
+    mask = np.zeros((100, 100), dtype=np.uint8)
+    mask[20:80, 30:70] = 255
+    return mask
 
 
 class TestMaskToLogits:
@@ -108,7 +121,13 @@ class TestSAMPseudoLabelerPredict:
         assert all(m.dtype == np.uint8 for m in results)
 
     def test_bbox_conversion_to_sam2_format(self) -> None:
-        """Verify bbox (x,y,w,h) is converted to [x1,y1,x2,y2] for SAM2."""
+        """Verify bbox (x,y,w,h) is converted to crop-relative [x1,y1,x2,y2] for SAM2.
+
+        SAMPseudoLabeler crops the image around the bbox before calling SAM2,
+        so the box coordinates passed to predict() are relative to the crop origin.
+        """
+        from aquapose.segmentation.crop import compute_crop_region
+
         labeler = SAMPseudoLabeler()
         mock_predictor = MagicMock()
         mock_mask = np.ones((1, 480, 640), dtype=np.float32)
@@ -120,8 +139,9 @@ class TestSAMPseudoLabelerPredict:
         labeler._predictor = mock_predictor
 
         image = np.zeros((480, 640, 3), dtype=np.uint8)
+        bbox = (100, 200, 50, 60)
         det = Detection(
-            bbox=(100, 200, 50, 60),
+            bbox=bbox,
             mask=np.zeros((480, 640), dtype=np.uint8),
             area=3000,
             confidence=1.0,
@@ -129,18 +149,24 @@ class TestSAMPseudoLabelerPredict:
 
         labeler.predict(image, [det])
 
-        # Check the box arg passed to predict
+        # Compute the expected crop-relative box
+        region = compute_crop_region(bbox, 480, 640, padding=0.25)
+        bx, by, bw, bh = bbox
+        expected_box = np.array(
+            [bx - region.x1, by - region.y1, bx + bw - region.x1, by + bh - region.y1],
+            dtype=np.float32,
+        )
+
+        # Check the box arg passed to predict is crop-relative
         call_kwargs = mock_predictor.predict.call_args[1]
         box = call_kwargs["box"]
-        np.testing.assert_array_equal(box, [100, 200, 150, 260])
+        np.testing.assert_array_equal(box, expected_box)
 
 
 class TestFrameAnnotation:
     """Tests for the FrameAnnotation dataclass."""
 
     def test_fields(self) -> None:
-        from pathlib import Path
-
         fa = FrameAnnotation(
             frame_id="cam01_f001",
             image_path=Path("/tmp/frame.jpg"),
@@ -150,3 +176,130 @@ class TestFrameAnnotation:
         assert fa.frame_id == "cam01_f001"
         assert fa.camera_id == "cam01"
         assert len(fa.masks) == 1
+
+
+class TestToCOCODataset:
+    """Tests for COCO JSON conversion."""
+
+    def test_creates_valid_coco_json(
+        self, tmp_path: Path, sample_mask: np.ndarray
+    ) -> None:
+        frames = [
+            AnnotatedFrame(
+                frame_id="cam01_f001",
+                image_path=Path("frame001.jpg"),
+                masks=[sample_mask],
+                camera_id="cam01",
+            )
+        ]
+
+        output_path = tmp_path / "coco.json"
+        result_path = to_coco_dataset(frames, output_path)
+        assert result_path.exists()
+
+        with open(result_path) as f:
+            coco = json.load(f)
+
+        assert "images" in coco
+        assert "annotations" in coco
+        assert "categories" in coco
+        assert len(coco["images"]) == 1
+        assert len(coco["annotations"]) == 1
+        assert coco["categories"] == [{"id": 1, "name": "fish"}]
+
+    def test_annotation_has_required_fields(
+        self, tmp_path: Path, sample_mask: np.ndarray
+    ) -> None:
+        frames = [
+            AnnotatedFrame(
+                frame_id="cam01_f001",
+                image_path=Path("frame001.jpg"),
+                masks=[sample_mask],
+                camera_id="cam01",
+            )
+        ]
+
+        output_path = tmp_path / "coco.json"
+        to_coco_dataset(frames, output_path)
+
+        with open(output_path) as f:
+            coco = json.load(f)
+
+        ann = coco["annotations"][0]
+        assert "id" in ann
+        assert "image_id" in ann
+        assert "category_id" in ann
+        assert ann["category_id"] == 1
+        assert "segmentation" in ann
+        assert "bbox" in ann
+        assert "area" in ann
+        assert ann["iscrowd"] == 0
+
+    def test_rle_is_valid_pycocotools_format(
+        self, tmp_path: Path, sample_mask: np.ndarray
+    ) -> None:
+        """Verify the RLE can be decoded back to a mask."""
+        import pycocotools.mask as mask_util
+
+        frames = [
+            AnnotatedFrame(
+                frame_id="cam01_f001",
+                image_path=Path("frame001.jpg"),
+                masks=[sample_mask],
+                camera_id="cam01",
+            )
+        ]
+
+        output_path = tmp_path / "coco.json"
+        to_coco_dataset(frames, output_path)
+
+        with open(output_path) as f:
+            coco = json.load(f)
+
+        rle = coco["annotations"][0]["segmentation"]
+        # Convert counts back to bytes for pycocotools
+        rle_bytes = {"size": rle["size"], "counts": rle["counts"].encode("utf-8")}
+        decoded = mask_util.decode(rle_bytes)
+        assert decoded.shape == (100, 100)
+        assert np.any(decoded > 0)
+
+    def test_multiple_masks_per_frame(
+        self, tmp_path: Path, sample_mask: np.ndarray
+    ) -> None:
+        frames = [
+            AnnotatedFrame(
+                frame_id="cam01_f001",
+                image_path=Path("frame001.jpg"),
+                masks=[sample_mask, sample_mask],
+                camera_id="cam01",
+            )
+        ]
+
+        output_path = tmp_path / "coco.json"
+        to_coco_dataset(frames, output_path)
+
+        with open(output_path) as f:
+            coco = json.load(f)
+
+        assert len(coco["annotations"]) == 2
+        assert coco["annotations"][0]["id"] == 1
+        assert coco["annotations"][1]["id"] == 2
+
+    def test_negative_frame_has_no_annotations(self, tmp_path: Path) -> None:
+        frames = [
+            AnnotatedFrame(
+                frame_id="cam01_f003",
+                image_path=Path("frame003.jpg"),
+                masks=[],
+                camera_id="cam01",
+            )
+        ]
+
+        output_path = tmp_path / "coco.json"
+        to_coco_dataset(frames, output_path)
+
+        with open(output_path) as f:
+            coco = json.load(f)
+
+        assert len(coco["images"]) == 1
+        assert len(coco["annotations"]) == 0

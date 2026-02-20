@@ -1,19 +1,21 @@
 """Multi-view fish segmentation pipeline."""
 
+from .crop import CropRegion, compute_crop_region, extract_crop, paste_mask
 from .dataset import CropDataset
 from .detector import Detection, MOG2Detector, YOLODetector, make_detector
-from .label_studio import (
-    export_to_label_studio,
-    import_from_label_studio,
+from .model import MaskRCNNSegmentor, SegmentationResult
+from .pseudo_labeler import (
+    AnnotatedFrame,
+    FrameAnnotation,
+    SAMPseudoLabeler,
     to_coco_dataset,
 )
-from .model import MaskRCNNSegmentor, SegmentationResult
-from .pseudo_labeler import AnnotatedFrame, FrameAnnotation, SAMPseudoLabeler
 from .training import evaluate, train
 
 __all__ = [
     "AnnotatedFrame",
     "CropDataset",
+    "CropRegion",
     "Detection",
     "FrameAnnotation",
     "MOG2Detector",
@@ -21,10 +23,11 @@ __all__ = [
     "SAMPseudoLabeler",
     "SegmentationResult",
     "YOLODetector",
+    "compute_crop_region",
     "evaluate",
-    "export_to_label_studio",
-    "import_from_label_studio",
+    "extract_crop",
     "make_detector",
+    "paste_mask",
     "to_coco_dataset",
     "train",
 ]

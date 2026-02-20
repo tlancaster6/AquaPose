@@ -1,4 +1,4 @@
-"""Integration tests for the YOLO -> SAM2 -> Label Studio export pipeline."""
+"""Integration tests for the YOLO -> SAM2 -> COCO export pipeline."""
 
 from __future__ import annotations
 
@@ -15,11 +15,11 @@ import pytest
 
 from aquapose.segmentation import (
     SAMPseudoLabeler,
-    export_to_label_studio,
     make_detector,
+    to_coco_dataset,
 )
 from aquapose.segmentation.detector import Detection
-from aquapose.segmentation.pseudo_labeler import FrameAnnotation
+from aquapose.segmentation.pseudo_labeler import AnnotatedFrame
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -159,22 +159,22 @@ class TestMakeDetectorYOLOProducesCompatibleDetections:
 
 
 # ---------------------------------------------------------------------------
-# Test 3: Full pipeline from detector to export
+# Test 3: Full pipeline from detector to COCO export
 # ---------------------------------------------------------------------------
 
 
-class TestFullPipelineDetectorToExport:
-    """End-to-end chain: make_detector -> detect -> predict -> FrameAnnotation -> export."""
+class TestFullPipelineDetectorToCOCOExport:
+    """End-to-end chain: make_detector -> detect -> predict -> AnnotatedFrame -> COCO export."""
 
-    def test_full_pipeline_detector_to_export(
+    def test_full_pipeline_detector_to_coco_export(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Mock detector and SAM2 and run the full pipeline to Label Studio JSON.
+        """Mock detector and SAM2 and run the full pipeline to COCO JSON.
 
-        Verifies that the tasks JSON is written, contains the expected number of
-        tasks, and each task has the required data fields and predictions structure.
+        Verifies that the COCO JSON is written, contains the expected number of
+        images and annotations, and each annotation has the required fields.
         """
         # --- Mock YOLO detector ---
         mock_yolo_cls = _make_yolo_mock_cls(
@@ -211,35 +211,35 @@ class TestFullPipelineDetectorToExport:
         labeler = SAMPseudoLabeler()
         masks = labeler.predict(fake_image, detections)
 
-        annotation = FrameAnnotation(
+        annotation = AnnotatedFrame(
             frame_id="cam1_frame_000100",
             image_path=image_path,
             masks=masks,
             camera_id="cam1",
         )
 
-        output_dir = tmp_path / "output"
-        tasks_path = export_to_label_studio([annotation], output_dir)
+        output_path = tmp_path / "output" / "coco.json"
+        result_path = to_coco_dataset([annotation], output_path)
 
         # --- Assertions on output ---
-        assert tasks_path.exists(), "Tasks JSON was not written"
+        assert result_path.exists(), "COCO JSON was not written"
 
-        with open(tasks_path) as f:
-            tasks = json.load(f)
+        with open(result_path) as f:
+            coco = json.load(f)
 
-        assert len(tasks) == 1, f"Expected 1 task, got {len(tasks)}"
+        assert len(coco["images"]) == 1, f"Expected 1 image, got {len(coco['images'])}"
 
-        task = tasks[0]
-        assert "data" in task
-        data = task["data"]
-        assert "image" in data
-        assert "frame_id" in data
-        assert "camera_id" in data
-        assert data["frame_id"] == "cam1_frame_000100"
-        assert data["camera_id"] == "cam1"
+        image_entry = coco["images"][0]
+        assert "id" in image_entry
+        assert image_entry["frame_id"] == "cam1_frame_000100"
+        assert image_entry["camera_id"] == "cam1"
 
-        # Task has masks -> should have predictions with results
-        assert "predictions" in task
-        assert len(task["predictions"]) == 1
-        results = task["predictions"][0]["result"]
-        assert len(results) >= 1, "Expected at least one brush result"
+        # Task has masks -> should have annotations
+        assert len(coco["annotations"]) >= 1, "Expected at least one annotation"
+        ann = coco["annotations"][0]
+        assert "id" in ann
+        assert "image_id" in ann
+        assert "category_id" in ann
+        assert "segmentation" in ann
+        assert "bbox" in ann
+        assert "area" in ann

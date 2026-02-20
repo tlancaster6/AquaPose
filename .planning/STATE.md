@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 02.1.1 (Object-detection alternative to MOG2) — COMPLETE (all 3 plans done)
+**Current focus:** Phase 02.1 Plan 02 — SAM2 evaluation script built; awaiting human-verify checkpoint (user must generate YOLO pseudo-labels and annotate GT)
 
 ## Current Position
 
-Phase: 02.1.1 of 6 (Object-detection alternative to MOG2) — COMPLETE
-Plan: 3 of 3 complete — all plans done
-Status: YOLO trained, YOLODetector wired into SAM2 pipeline, end-to-end script and integration tests in place
-Last activity: 2026-02-20 — 02.1.1-03 complete
+Phase: 02.1-segmentation-troubleshooting
+Plan: 02 of 3 — Task 1 complete, paused at Task 2 (checkpoint:human-verify)
+Status: scripts/test_sam2.py ready; user must run run_pseudo_labels.py --detector yolo, annotate GT, then run test_sam2.py
+Last activity: 2026-02-20 — 02.1-02 Task 1 complete (commit 62252e6)
 
 Progress: [█████░░░░░] 57% (10 plans complete)
 
@@ -70,6 +70,8 @@ Recent decisions affecting current work:
 - [03-02]: Synthetic test cameras: t = (-cam_x, -cam_y, 0.0) with R=I, cameras at Z=0, water at Z=1.0 in world
 - [02.1-01]: No automated PASS/FAIL in test_mog2.py — detection quality assessed visually from annotated stills
 - [02.1-01]: 2-stage shadow fix in detector.py: Stage 1 merges shadow+foreground (fg_mask>=127); Stage 2 watershed-splits merged blobs using foreground-only (255) cores as seeds
+- [02.1-02]: Default --pseudo-labels-dir is output/pseudo_labels (matches run_pseudo_labels.py YOLO output, not verify_pseudo_labels path)
+- [02.1-02]: YOLO traceability note printed in test_sam2.py summary output for audit trail
 - [02.1.1-01]: Frame diversity via MOG2 count bins (0, 1, 2, 3+); at least 1 frame per non-empty bin, surplus distributed proportional to bin size; ring cameras get 10 frames, center camera gets 30 (150 total)
 - [02.1.1-02]: YOLODetector.detect() returns full-frame rectangular mask (padded bbox region = 255) for SAM2 compatibility — same format as MOG2Detector
 - [02.1.1-02]: make_detector factory uses **kwargs forwarding; model_path is a required kwarg for 'yolo'
@@ -97,5 +99,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Phase 02.1.1 — All 3 plans complete. Phase 02.1.1 DONE.
-Next action: Continue with Phase 02.1 remaining plans or next phase in ROADMAP.md
+Stopped at: Phase 02.1 Plan 02 Task 2 — checkpoint:human-verify (user must generate YOLO pseudo-labels, annotate GT, run test_sam2.py)
+Next action: User runs Steps A/B/C from checkpoint; then continuation agent evaluates results and completes plan

@@ -73,6 +73,7 @@ Recent decisions affecting current work:
 ### Roadmap Evolution
 
 - Phase 02.1 inserted after Phase 02: Segmentation Troubleshooting (URGENT)
+- Phase 02.1.1 inserted after Phase 02.1: Object-detection alternative to MOG2 (URGENT)
 
 ### Pending Todos
 
@@ -87,5 +88,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: 02.1-02-PLAN.md Task 2 (checkpoint:human-verify — user GT annotation needed)
-Resume file: .planning/phases/02.1-segmentation-troubleshooting/02.1-02-PLAN.md
+Stopped at: Phase 02.1.1 context gathered
+Resume file: .planning/phases/02.1.1-object-detection-alternative-to-mog2/02.1.1-CONTEXT.md

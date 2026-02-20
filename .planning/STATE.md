@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 02.1.1 (Object-detection alternative to MOG2) — Plan 01 complete, proceeding to Plan 02 (YOLO training)
+**Current focus:** Phase 02.1.1 (Object-detection alternative to MOG2) — Plan 02 at Task 3 checkpoint (human-verify YOLO recall vs MOG2)
 
 ## Current Position
 
 Phase: 02.1.1 of 6 (Object-detection alternative to MOG2) — IN PROGRESS
-Plan: 2 of 3 in current phase — 02.1.1-01 complete, next: 02.1.1-02 (YOLO training)
-Status: YOLO dataset ready at data/yolo_fish/ (120 train / 30 val, stratified by camera); dataset.yaml configured for model.train()
-Last activity: 2026-02-20 — Task 2 of 02.1.1-01: 150 annotated frames organized into YOLO dataset (commit 3fb9f45)
+Plan: 2 of 3 in current phase — 02.1.1-02 Tasks 1-2 complete, paused at Task 3 checkpoint (human-verify)
+Status: YOLODetector wired into segmentation package; eval script ready; awaiting user review of YOLO recall vs MOG2
+Last activity: 2026-02-20 — Task 2 of 02.1.1-02: training + eval scripts committed (e4596bf)
 
 Progress: [████░░░░░░] 50%
 
@@ -71,6 +71,10 @@ Recent decisions affecting current work:
 - [02.1-01]: No automated PASS/FAIL in test_mog2.py — detection quality assessed visually from annotated stills
 - [02.1-01]: 2-stage shadow fix in detector.py: Stage 1 merges shadow+foreground (fg_mask>=127); Stage 2 watershed-splits merged blobs using foreground-only (255) cores as seeds
 - [02.1.1-01]: Frame diversity via MOG2 count bins (0, 1, 2, 3+); at least 1 frame per non-empty bin, surplus distributed proportional to bin size; ring cameras get 10 frames, center camera gets 30 (150 total)
+- [02.1.1-02]: YOLODetector.detect() returns full-frame rectangular mask (padded bbox region = 255) for SAM2 compatibility — same format as MOG2Detector
+- [02.1.1-02]: make_detector factory uses **kwargs forwarding; model_path is a required kwarg for 'yolo'
+- [02.1.1-02]: eval script creates fresh MOG2Detector() per val image; optional video warmup via --video-dir for fair temporal comparison
+- [02.1.1-02]: Trained YOLOv8n early-stopped at epoch 10: recall=0.780, mAP50=0.799, precision=0.760
 
 ### Roadmap Evolution
 
@@ -90,5 +94,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Phase 02.1.1 Plan 01 complete — data/yolo_fish/ dataset ready (120 train / 30 val)
-Resume file: .planning/phases/02.1.1-object-detection-alternative-to-mog2/02.1.1-02-PLAN.md
+Stopped at: Phase 02.1.1 Plan 02 Task 3 — human-verify checkpoint (YOLO recall vs MOG2 on val set)
+Resume file: .planning/phases/02.1.1-object-detection-alternative-to-mog2/02.1.1-02-PLAN.md (Task 3)

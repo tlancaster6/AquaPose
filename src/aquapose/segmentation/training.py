@@ -36,13 +36,13 @@ def train(
     batch_size: int = 4,
     lr: float = 0.005,
     val_split: float = 0.2,
-    crop_size: int = 256,
     device: str | None = None,
 ) -> Path:
     """Train Mask R-CNN on COCO-format fish annotations.
 
     Fine-tunes from ImageNet-pretrained ResNet-50 backbone. Saves best
-    model (by validation IoU) and final model to output_dir.
+    model (by validation IoU) and final model to output_dir. Crops are
+    loaded at their native resolution (Mask R-CNN handles variable sizes).
 
     Args:
         coco_json: Path to COCO-format annotation JSON.
@@ -52,7 +52,6 @@ def train(
         batch_size: Images per training batch.
         lr: Initial learning rate for SGD.
         val_split: Fraction of data to use for validation.
-        crop_size: Target spatial dimension for training crops.
         device: Torch device string. Auto-detects if None.
 
     Returns:
@@ -65,7 +64,7 @@ def train(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load dataset
-    full_dataset = CropDataset(coco_json, image_root, crop_size, augment=True)
+    full_dataset = CropDataset(coco_json, image_root, augment=True)
     n_val = max(1, int(len(full_dataset) * val_split))
     n_train = len(full_dataset) - n_val
 
@@ -75,7 +74,7 @@ def train(
     )
 
     # Validation subset should not augment -- wrap with augment=False dataset
-    val_dataset = CropDataset(coco_json, image_root, crop_size, augment=False)
+    val_dataset = CropDataset(coco_json, image_root, augment=False)
     val_indices = val_subset.indices
     val_subset_no_aug = Subset(val_dataset, val_indices)
 
@@ -218,16 +217,17 @@ def evaluate(
     coco_json: Path,
     image_root: Path,
     *,
-    crop_size: int = 256,
     device: str | None = None,
 ) -> dict[str, float | list[float] | int]:
     """Evaluate a trained model on a dataset.
+
+    Crops are loaded at their native resolution (Mask R-CNN handles variable
+    input sizes via FPN + RoI pooling).
 
     Args:
         model_path: Path to saved model state_dict.
         coco_json: Path to COCO-format annotation JSON.
         image_root: Root directory containing source images.
-        crop_size: Target spatial dimension for evaluation crops.
         device: Torch device string. Auto-detects if None.
 
     Returns:
@@ -244,7 +244,7 @@ def evaluate(
     model.to(device)
     model.eval()
 
-    dataset = CropDataset(coco_json, image_root, crop_size, augment=False)
+    dataset = CropDataset(coco_json, image_root, augment=False)
     loader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=_collate_fn)
 
     per_image_iou: list[float] = []

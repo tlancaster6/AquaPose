@@ -1,7 +1,7 @@
 """Multi-view fish segmentation pipeline."""
 
 from .crop import CropRegion, compute_crop_region, extract_crop, paste_mask
-from .dataset import CropDataset
+from .dataset import CropDataset, stratified_split
 from .detector import Detection, MOG2Detector, YOLODetector, make_detector
 from .model import MaskRCNNSegmentor, SegmentationResult
 from .pseudo_labeler import (
@@ -30,6 +30,7 @@ __all__ = [
     "filter_mask",
     "make_detector",
     "paste_mask",
+    "stratified_split",
     "to_coco_dataset",
     "train",
 ]

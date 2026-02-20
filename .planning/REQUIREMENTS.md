@@ -105,7 +105,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SEG-01 | Phase 2 | Complete |
 | SEG-02 | Phase 2 | Pending |
 | SEG-03 | Phase 2 | Pending |
-| SEG-04 | Phase 2 | Complete |
+| SEG-04 | Phase 2 | Pending |
 | SEG-05 | Phase 2 | Pending |
 | MESH-01 | Phase 3 | Pending |
 | MESH-02 | Phase 3 | Pending |

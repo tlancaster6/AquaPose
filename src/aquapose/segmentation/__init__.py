@@ -1,7 +1,7 @@
 """Multi-view fish segmentation pipeline."""
 
 from .dataset import CropDataset
-from .detector import Detection, MOG2Detector
+from .detector import Detection, MOG2Detector, YOLODetector, make_detector
 from .label_studio import (
     export_to_label_studio,
     import_from_label_studio,
@@ -20,9 +20,11 @@ __all__ = [
     "MaskRCNNSegmentor",
     "SAMPseudoLabeler",
     "SegmentationResult",
+    "YOLODetector",
     "evaluate",
     "export_to_label_studio",
     "import_from_label_studio",
+    "make_detector",
     "to_coco_dataset",
     "train",
 ]

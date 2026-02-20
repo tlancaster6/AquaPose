@@ -43,10 +43,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. SAM pseudo-labels can be generated for any set of bounding boxes and imported into Label Studio as starting annotations for human correction
   3. A trained Mask R-CNN model produces binary mask predictions on 256×256 crops achieving ≥0.90 mean mask IoU overall and ≥0.85 for female-only subsets
   4. The segmentation pipeline accepts N fish as input (returning a list of masks) even in the single-fish v1 operating mode
-**Plans**: 3 plans
-- [ ] 02-01-PLAN.md — MOG2 fish detector with morphological cleanup and bbox extraction (TDD)
-- [ ] 02-02-PLAN.md — SAM2 pseudo-labeler and Label Studio annotation workflow
-- [ ] 02-03-PLAN.md — Mask R-CNN dataset, model, training script, and pipeline API
+**Plans**: 4 plans
+- [ ] 02-01-PLAN.md — Delete Label Studio code, remove debug scripts, clean dependencies
+- [ ] 02-02-PLAN.md — Update pseudo-labeler (box-only SAM2, quality filtering) and dataset (variable crops, stratified split)
+- [ ] 02-03-PLAN.md — Update Mask R-CNN (separate detect/crop/segment stages, crop-space output, variable crops)
+- [ ] 02-04-PLAN.md — Integration wiring and human verification of full pipeline
 
 ### Phase 02.1: Segmentation Troubleshooting (INSERTED)
 
@@ -130,7 +131,7 @@ Note: Phase 3 depends only on Phase 1 (not Phase 2), so Phases 2 and 3 can devel
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Calibration and Refractive Geometry | 2/2 | Complete | 2026-02-19 |
-| 2. Segmentation Pipeline | 0/3 | Planning complete | - |
+| 2. Segmentation Pipeline | 0/4 | Planning complete | - |
 | 02.1 Segmentation Troubleshooting | 1/3 | In progress | - |
 | 02.1.1 Object-detection alternative to MOG2 | 2/3 | Complete    | 2026-02-20 |
 | 3. Fish Mesh Model and 3D Initialization | 0/2 | Planning complete | - |

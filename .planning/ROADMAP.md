@@ -60,6 +60,17 @@ Plans:
 - [ ] 02.1-02-PLAN.md — SAM2 pseudo-label evaluation against manual ground truth
 - [ ] 02.1-03-PLAN.md — Mask R-CNN training on Label Studio corrections and evaluation
 
+### Phase 02.1.1: Object-detection alternative to MOG2 (INSERTED)
+
+**Goal:** Replace MOG2 background subtraction with a YOLOv8 object detector as a runtime-configurable alternative first-stage fish localizer, trained on 150 manually annotated frames, achieving higher recall than MOG2 on a stratified validation set
+**Depends on:** Phase 02.1
+**Requirements:** SEG-01, SEG-04
+**Plans:** 2 plans
+
+Plans:
+- [ ] 02.1.1-01-PLAN.md — MOG2-guided frame sampling and Label Studio bounding box annotation
+- [ ] 02.1.1-02-PLAN.md — YOLOv8 training, YOLODetector implementation, and comparative evaluation vs MOG2
+
 ### Phase 3: Fish Mesh Model and 3D Initialization
 **Goal**: A fully differentiable parametric fish mesh model exists and can produce a plausible first-frame 3D state estimate from coarse keypoint detections, ready to be handed to the optimizer
 **Depends on**: Phase 1

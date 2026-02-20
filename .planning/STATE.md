@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 02.1 (Segmentation Troubleshooting) — Plan 01 complete
+**Current focus:** Phase 02.1 (Segmentation Troubleshooting) — Plan 02 in progress, awaiting user GT annotation
 
 ## Current Position
 
 Phase: 02.1 of 6 (Segmentation Troubleshooting) — IN PROGRESS
-Plan: 1 of 3 in current phase — completed 02.1-01
-Status: Plan 02.1-01 complete; ready for 02.1-02 (SAM2 evaluation)
-Last activity: 2026-02-20 — Completed 02.1-01: MOG2 diagnostic script consolidation and validation
+Plan: 2 of 3 in current phase — 02.1-02 Task 1 complete, awaiting checkpoint:human-verify
+Status: scripts/test_sam2.py built and committed; user must annotate GT masks and run evaluation
+Last activity: 2026-02-20 — Task 1 of 02.1-02: SAM2 evaluation script created (commit 949d03f)
 
 Progress: [████░░░░░░] 50%
 
@@ -87,5 +87,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 02.1-01-PLAN.md
+Stopped at: 02.1-02-PLAN.md Task 2 (checkpoint:human-verify — user GT annotation needed)
 Resume file: .planning/phases/02.1-segmentation-troubleshooting/02.1-02-PLAN.md

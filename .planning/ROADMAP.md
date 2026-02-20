@@ -48,6 +48,18 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] 02-02-PLAN.md — SAM2 pseudo-labeler and Label Studio annotation workflow
 - [ ] 02-03-PLAN.md — Mask R-CNN dataset, model, training script, and pipeline API
 
+### Phase 02.1: Segmentation Troubleshooting (INSERTED)
+
+**Goal:** Systematically test each Phase 2 segmentation component (MOG2, SAM2, Mask R-CNN) on real data, diagnose failures, and fix until quality is sufficient to unblock Phase 4
+**Depends on:** Phase 2
+**Requirements:** SEG-1, SEG-2, SEG-3, SEG-4
+**Plans:** 3 plans
+
+Plans:
+- [ ] 02.1-01-PLAN.md — Consolidate MOG2 diagnostic scripts, validate recall on all 13 cameras
+- [ ] 02.1-02-PLAN.md — SAM2 pseudo-label evaluation against manual ground truth
+- [ ] 02.1-03-PLAN.md — Mask R-CNN training on Label Studio corrections and evaluation
+
 ### Phase 3: Fish Mesh Model and 3D Initialization
 **Goal**: A fully differentiable parametric fish mesh model exists and can produce a plausible first-frame 3D state estimate from coarse keypoint detections, ready to be handed to the optimizer
 **Depends on**: Phase 1

@@ -17,10 +17,10 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Segmentation
 
 - [x] **SEG-01**: System detects fish via MOG2 background subtraction with shadow suppression, producing padded bounding boxes with ≥95% per-camera recall (including females). Without tracker safety net, this recall target is load-bearing.
-- [ ] **SEG-02**: System generates pseudo-label masks by feeding bounding boxes as prompts to SAM single-frame
+- [x] **SEG-02**: System generates pseudo-label masks by feeding bounding boxes as prompts to SAM single-frame
 - [x] **SEG-03**: System generates quality-filtered pseudo-label masks directly from SAM2 (box-only prompt), bypassing manual annotation — quality filtering replaces human correction
 - [x] **SEG-04**: System segments fish on cropped patches from detection bounding boxes (variable crop dimensions matching bbox), not full 1600×1200 frames
-- [ ] **SEG-05**: System trains Mask R-CNN on pseudo-label crop annotations, achieving ≥0.90 mean mask IoU on validation split
+- [x] **SEG-05**: System trains Mask R-CNN on pseudo-label crop annotations, achieving ≥0.90 mean mask IoU on validation split
 
 ### Fish Model
 
@@ -103,10 +103,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CALIB-03 | Phase 1 | Pending |
 | CALIB-04 | Phase 1 | Pending |
 | SEG-01 | Phase 2 | Complete |
-| SEG-02 | Phase 2 | Pending |
+| SEG-02 | Phase 2 | Complete |
 | SEG-03 | Phase 2 | Complete |
-| SEG-04 | Phase 2 | Pending |
-| SEG-05 | Phase 2 | Pending |
+| SEG-04 | Phase 2 | Complete |
+| SEG-05 | Phase 2 | Complete |
 | MESH-01 | Phase 3 | Pending |
 | MESH-02 | Phase 3 | Pending |
 | MESH-03 | Phase 3 | Pending |

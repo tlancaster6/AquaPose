@@ -2,102 +2,122 @@
 phase: 02-segmentation-pipeline
 plan: 03
 subsystem: segmentation
-tags: [mask-rcnn, torchvision, training, coco, dataset, augmentation]
+tags: [mask-rcnn, inference-pipeline, stratified-split, variable-crops, crop-space]
 
+# Dependency graph
 requires:
-  - phase: 02-segmentation-pipeline
-    plan: 02
-    provides: COCO JSON annotations from Label Studio workflow
+  - phase: 02-02
+    provides: "CropDataset native-resolution, stratified_split, CropRegion/paste_mask utilities"
 provides:
-  - CropDataset for COCO-format training data with augmentation
-  - MaskRCNNSegmentor wrapping torchvision maskrcnn_resnet50_fpn_v2
-  - Training script with SGD, StepLR, validation IoU tracking
-  - Evaluate function computing per-image mask IoU
-  - Complete segmentation module public API
-affects: [phase-4, reconstruction, segmentation]
+  - MaskRCNNSegmentor.segment() returning crop-space masks with CropRegion metadata
+  - Backward-compatible predict() wrapping segment() with trivial CropRegion
+  - training.py using stratified_split instead of random_split
+  - training.py accepting train_json/val_json for pre-split COCO files
+affects: [02-segmentation-pipeline, optimization-pipeline]
 
+# Tech tracking
 tech-stack:
-  added: [torchvision maskrcnn_resnet50_fpn_v2, FastRCNNPredictor, MaskRCNNPredictor]
-  patterns: [custom collate_fn for detection, augmentation with mask consistency]
+  added: []
+  patterns:
+    - "segment(crops, crop_regions) is the primary inference entry point — detect -> crop -> segment pipeline"
+    - "SegmentationResult.mask is crop-space ndarray (uint8, 0/255) — callers paste_mask() for full-frame"
+    - "predict() is a backward-compat wrapper that creates trivial CropRegion covering full image"
+    - "training.py uses stratified_split when coco_json given; uses train_json/val_json when both provided"
 
 key-files:
-  created:
-    - src/aquapose/segmentation/dataset.py
+  created: []
+  modified:
     - src/aquapose/segmentation/model.py
     - src/aquapose/segmentation/training.py
-    - tests/unit/segmentation/test_dataset.py
     - tests/unit/segmentation/test_model.py
     - tests/unit/segmentation/test_training.py
-  modified:
-    - src/aquapose/segmentation/__init__.py
 
 key-decisions:
-  - "torchvision maskrcnn_resnet50_fpn_v2 instead of Detectron2 (unmaintained, Windows-incompatible)"
-  - "Custom collate_fn returning tuple(zip(*batch)) for Mask R-CNN list-of-dicts format"
-  - "Augmentation applied consistently to image, masks, and boxes (flip, rotate, jitter)"
-  - "SGD with momentum=0.9, weight_decay=0.0005, StepLR decay at 80% of epochs"
+  - "segment() accepts crops+crop_regions, returns crop-space masks — callers reconstruct full-frame via paste_mask(result.mask, result.crop_region)"
+  - "predict() kept for backward compatibility; internally calls segment() with trivial CropRegion — no behavior change for existing callers"
+  - "SegmentationResult.mask_rle removed — callers who need RLE encode it themselves; raw ndarray is more useful"
+  - "train() uses stratified_split by default; accepts train_json/val_json to consume build_training_data.py output directly"
 
 patterns-established:
-  - "CropDataset __getitem__ returns (image_tensor, target_dict) for torchvision"
-  - "MaskRCNNSegmentor.predict accepts list[np.ndarray] batch"
-  - "SegmentationResult with RLE-encoded masks"
+  - "Crop-space mask output: all segment() results are in crop coordinates, not frame coordinates"
+  - "Full-frame reconstruction: paste_mask(result.mask, result.crop_region) is the canonical pattern"
 
-duration: 15min
-completed: 2026-02-19
+requirements-completed: [SEG-04, SEG-05]
+
+# Metrics
+duration: 5min
+completed: 2026-02-20
 ---
 
-# Plan 02-03: Mask R-CNN Dataset, Model, Training Summary
+# Phase 02 Plan 03: Mask R-CNN Model and Training Update Summary
 
-**Mask R-CNN training pipeline with torchvision using CropDataset, SGD optimizer, StepLR scheduler, and per-image IoU evaluation**
+**Separate detect/crop/segment pipeline with crop-space mask output + CropRegion metadata; stratified per-camera train/val split**
 
 ## Performance
 
-- **Duration:** 15 min
-- **Completed:** 2026-02-19
+- **Duration:** ~5 min
+- **Started:** 2026-02-20T23:44:11Z
+- **Completed:** 2026-02-20T23:48:59Z
 - **Tasks:** 2
-- **Files modified:** 7
+- **Files modified:** 4
 
 ## Accomplishments
-- CropDataset loads COCO JSON annotations and produces 256x256 crops with consistent augmentation
-- MaskRCNNSegmentor wraps torchvision maskrcnn_resnet50_fpn_v2 with proper head replacement
-- Training script handles SGD optimization, LR scheduling, model checkpointing
-- Evaluate function computes mean mask IoU per image
-- Complete segmentation module API: 12 public symbols exported
+
+- Added `segment(crops, crop_regions)` as the primary inference entry point on `MaskRCNNSegmentor`
+- `SegmentationResult` now carries `mask` (crop-space ndarray, 0/255) and `crop_region` instead of `mask_rle`
+- `predict()` retained as backward-compatible wrapper (calls `segment()` with trivial `CropRegion`)
+- Batch inference processes all crops in a single forward pass (FPN handles variable sizes natively)
+- Replaced `random_split` with `stratified_split` in `training.py` for per-camera val representation
+- Added `train_json`/`val_json` parameters to `train()` for consuming pre-split COCO files from `build_training_data.py`
+- All 204 unit tests pass
 
 ## Task Commits
 
-1. **Task 1: CropDataset and MaskRCNNSegmentor** - `69cef1f` (feat)
-2. **Task 2: Training script, evaluate, pipeline API** - `b87fc08` (feat)
+Each task was committed atomically:
+
+1. **Task 1: Refactor MaskRCNNSegmentor for separate stages and crop-space output** - `5c4cbde` (feat)
+2. **Task 2: Update training pipeline for stratified split and variable crops** - `25ce169` (feat)
+
+**Plan metadata:** (docs commit follows)
 
 ## Files Created/Modified
-- `src/aquapose/segmentation/dataset.py` - CropDataset with COCO loading and augmentation
-- `src/aquapose/segmentation/model.py` - MaskRCNNSegmentor and SegmentationResult
-- `src/aquapose/segmentation/training.py` - train() and evaluate() entry points
-- `tests/unit/segmentation/test_dataset.py` - 9 dataset tests
-- `tests/unit/segmentation/test_model.py` - 5 model tests (4 @slow)
-- `tests/unit/segmentation/test_training.py` - 2 training tests (@slow)
-- `src/aquapose/segmentation/__init__.py` - Complete public API exports
+
+- `src/aquapose/segmentation/model.py` - Added `segment()` method; `SegmentationResult` now has `mask` (ndarray) and `crop_region` (CropRegion); `predict()` wraps `segment()` with trivial CropRegion; removed `mask_rle`; added `CropRegion` import
+- `src/aquapose/segmentation/training.py` - Replaced `random_split` with `stratified_split`; added `train_json`/`val_json` parameters; removed unused `random_split` import; updated docstrings
+- `tests/unit/segmentation/test_model.py` - Rewrote tests: `segment()` with single/batch/variable-size crops, crop_region attachment verification, mismatch error, backward-compat `predict()` tests; removed stale `mask_rle` assertions
+- `tests/unit/segmentation/test_training.py` - Added tests: stratified split (6 images, 2 cameras), pre-split JSON file loading, variable-size crop training and evaluation; added `_split_coco_json` helper and `_create_training_fixture` parameters
 
 ## Decisions Made
-- Used torchvision maskrcnn_resnet50_fpn_v2 (not Detectron2) per research recommendation
-- Custom collate_fn with tuple(zip(*batch)) for Mask R-CNN's list-of-dicts format
-- Augmentation includes flips, 90-degree rotations, brightness/contrast jitter
-- Validation every 5 epochs; best model saved by IoU
+
+- `SegmentationResult.mask_rle` removed in favor of `mask: np.ndarray` (crop-space, uint8, 0/255) — callers who need RLE can encode with `pycocotools.mask.encode()` themselves; raw ndarray is universally more useful downstream
+- `predict()` kept for backward compatibility using trivial CropRegion (x1=0, y1=0, x2=W, y2=H, frame_h=H, frame_w=W) — no API break for existing callers
+- `train()` uses `stratified_split` by default when `train_json`/`val_json` are absent; accepts both to load datasets directly from `build_training_data.py` output
 
 ## Deviations from Plan
-None - plan executed as specified.
+
+None - plan executed exactly as written.
 
 ## Issues Encountered
-None
+
+- Pre-existing typecheck errors in `detector.py` (4 errors: cv2 normalize signature, YOLO import, optional iterable) — confirmed pre-existing, out of scope per deviation rules
 
 ## User Setup Required
-None - all dependencies already added in 02-02.
+
+None - no external service configuration required.
 
 ## Next Phase Readiness
-- Complete segmentation pipeline available for Phase 4 reconstruction
-- MOG2Detector -> SAMPseudoLabeler -> Label Studio -> CropDataset -> MaskRCNNSegmentor chain complete
-- Real data training requires annotated COCO JSON from the Label Studio workflow
+
+- Full detect -> crop -> segment pipeline is callable as separate stages
+- `MaskRCNNSegmentor.segment()` accepts pre-cropped images with CropRegion metadata
+- Callers reconstruct full-frame masks via `paste_mask(result.mask, result.crop_region)`
+- Training uses per-camera stratified split and accepts pre-split COCO JSON
+- 204 tests passing, lint clean
+- Ready for actual training run on generated pseudo-label dataset
+
+## Self-Check: PASSED
+
+All created/modified files found. All task commits (5c4cbde, 25ce169) verified in git log.
 
 ---
 *Phase: 02-segmentation-pipeline*
-*Completed: 2026-02-19*
+*Completed: 2026-02-20*

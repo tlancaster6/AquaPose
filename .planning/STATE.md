@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 02-segmentation-pipeline Plan 02 complete — box-only SAM2, quality filtering, variable-size CropDataset, stratified split, negative examples; 203 tests passing
+**Current focus:** Phase 02-segmentation-pipeline Plan 03 complete — MaskRCNNSegmentor.segment() crop-space output, stratified split training, pre-split JSON support; 204 tests passing
 
 ## Current Position
 
 Phase: 02-segmentation-pipeline
-Plan: 02 of N complete
-Status: Pseudo-labeling pipeline fully updated; CropDataset native-resolution; build_training_data.py generates train.json/val.json with negatives
-Last activity: 2026-02-20 — 02-02 complete (commits 003e8de, 2766e7d)
+Plan: 03 of N complete
+Status: Model refactored with separate detect/crop/segment pipeline; training uses stratified split; ready for actual training run
+Last activity: 2026-02-20 — 02-03 complete (commits 5c4cbde, 25ce169)
 
 Progress: [██████░░░░] 60% (12 plans complete)
 
@@ -32,10 +32,10 @@ Progress: [██████░░░░] 60% (12 plans complete)
 | 03-fish-mesh-model-and-3d-initialization | 2 | 19 min | 10 min |
 | 02.1-segmentation-troubleshooting | 1 (of 3) | 8 min | 8 min |
 | 02.1.1-object-detection-alternative-to-mog2 | 3 (of 3) | ~3 sessions | - |
-| 02-segmentation-pipeline (new) | 2 (of N) | 31 min | 15 min |
+| 02-segmentation-pipeline (new) | 3 (of N) | 36 min | 12 min |
 
 **Recent Trend:**
-- Last 5 plans: 8 min, 8 min, 12 min, 15 min, 10 min
+- Last 5 plans: 8 min, 8 min, 12 min, 15 min, 5 min
 - Trend: stable/fast
 
 *Updated after each plan completion*
@@ -87,6 +87,10 @@ Recent decisions affecting current work:
 - [02-02]: CropDataset drops crop_size parameter entirely — Mask R-CNN FPN+RoI handles variable inputs natively
 - [02-02]: stratified_split groups by camera_id COCO field — each camera gets proportional val representation
 - [02-02]: build_training_data.py writes train.json + val.json + coco_annotations.json — three files, one source of truth
+- [Phase 02-03]: segment() accepts crops+crop_regions, returns crop-space masks — callers reconstruct full-frame via paste_mask(result.mask, result.crop_region)
+- [Phase 02-03]: SegmentationResult.mask_rle removed — raw ndarray mask is more useful downstream; callers encode RLE if needed
+- [Phase 02-03]: predict() kept as backward-compat wrapper calling segment() with trivial CropRegion covering full image
+- [Phase 02-03]: train() uses stratified_split by default; accepts train_json/val_json to consume build_training_data.py output directly
 
 ### Roadmap Evolution
 
@@ -106,5 +110,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 02-segmentation-pipeline 02-02-PLAN.md
-Next action: Execute 02-segmentation-pipeline Plan 03 (Mask R-CNN training on generated dataset)
+Stopped at: Completed 02-segmentation-pipeline 02-03-PLAN.md
+Next action: Execute 02-segmentation-pipeline Plan 04 (actual Mask R-CNN training run)

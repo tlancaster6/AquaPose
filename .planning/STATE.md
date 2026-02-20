@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 3 — Fish Mesh Model and 3D Initialization
+**Current focus:** Phase 3 complete — moving to Phase 4 (Differentiable Rendering)
 
 ## Current Position
 
-Phase: 3 of 6 (Fish Mesh Model and 3D Initialization)
-Plan: 1 of 2 in current phase
-Status: Executing
-Last activity: 2026-02-20 — Completed 03-01: Parametric fish mesh with pytorch3d Meshes
+Phase: 3 of 6 (Fish Mesh Model and 3D Initialization) — COMPLETE
+Plan: 2 of 2 in current phase — COMPLETE
+Status: Ready for Phase 4
+Last activity: 2026-02-20 — Completed 03-02: Cold-start 3D initialization pipeline
 
-Progress: [████░░░░░░] 45%
+Progress: [████░░░░░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 6
-- Average duration: 17 min
-- Total execution time: 1.7 hours
+- Total plans completed: 7
+- Average duration: 15 min
+- Total execution time: 1.85 hours
 
 **By Phase:**
 
@@ -29,11 +29,11 @@ Progress: [████░░░░░░] 45%
 |-------|-------|-------|----------|
 | 01-calibration-and-refractive-geometry | 2 | 50 min | 25 min |
 | 02-segmentation-pipeline | 3 | 35 min | 12 min |
-| 03-fish-mesh-model-and-3d-initialization | 1 | 10 min | 10 min |
+| 03-fish-mesh-model-and-3d-initialization | 2 | 19 min | 10 min |
 
 **Recent Trend:**
-- Last 5 plans: 5 min, 8 min, 12 min, 15 min, 10 min
-- Trend: stable
+- Last 5 plans: 8 min, 12 min, 15 min, 10 min, 9 min
+- Trend: stable/fast
 
 *Updated after each plan completion*
 
@@ -62,6 +62,10 @@ Recent decisions affecting current work:
 - [03-01]: miropsota pytorch3d-0.7.9+pt2.9.1cu128 works with torch 2.10+cu130 on Windows (CUDA mesh ops not needed in Phase 3)
 - [03-01]: Watertight winding: tube (v0,v2,v1)+(v1,v2,v3), head cap (apex,j_next,j), tail cap (apex,j,j_next) — all edges shared exactly 2x
 - [03-01]: Spine centered at t=0.5 midpoint; builder translates by state.p — keeps spine generation position-independent
+- [03-02]: Canonical sign (endpoint_a = max projection) ensures deterministic PCA keypoint output across calls
+- [03-02]: >=3 cameras enforced at triangulate_keypoint level (triangulate_rays technically needs only 2)
+- [03-02]: kappa=0 at cold-start initialization; head/tail disambiguation deferred to Phase 4 optimizer
+- [03-02]: Synthetic test cameras: t = (-cam_x, -cam_y, 0.0) with R=I, cameras at Z=0, water at Z=1.0 in world
 
 ### Pending Todos
 
@@ -76,5 +80,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 03-01: Parametric fish mesh model
-Resume file: .planning/phases/03-fish-mesh-model-and-3d-initialization/03-01-SUMMARY.md
+Stopped at: Completed 03-02: Cold-start 3D initialization pipeline
+Resume file: .planning/phases/03-fish-mesh-model-and-3d-initialization/03-02-SUMMARY.md

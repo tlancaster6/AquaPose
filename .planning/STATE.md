@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 2 — Segmentation Pipeline
+**Current focus:** Phase 3 — Fish Mesh Model and 3D Initialization
 
 ## Current Position
 
-Phase: 2 of 6 (Segmentation Pipeline)
-Plan: 3 of 3 in current phase
+Phase: 3 of 6 (Fish Mesh Model and 3D Initialization)
+Plan: 1 of 2 in current phase
 Status: Executing
-Last activity: 2026-02-19 — Completed 02-03: Mask R-CNN training pipeline
+Last activity: 2026-02-20 — Completed 03-01: Parametric fish mesh with pytorch3d Meshes
 
-Progress: [████░░░░░░] 40%
+Progress: [████░░░░░░] 45%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
-- Average duration: 18 min
-- Total execution time: 1.5 hours
+- Total plans completed: 6
+- Average duration: 17 min
+- Total execution time: 1.7 hours
 
 **By Phase:**
 
@@ -29,10 +29,11 @@ Progress: [████░░░░░░] 40%
 |-------|-------|-------|----------|
 | 01-calibration-and-refractive-geometry | 2 | 50 min | 25 min |
 | 02-segmentation-pipeline | 3 | 35 min | 12 min |
+| 03-fish-mesh-model-and-3d-initialization | 1 | 10 min | 10 min |
 
 **Recent Trend:**
-- Last 5 plans: 45 min, 5 min, 8 min, 12 min, 15 min
-- Trend: —
+- Last 5 plans: 5 min, 8 min, 12 min, 15 min, 10 min
+- Trend: stable
 
 *Updated after each plan completion*
 
@@ -57,6 +58,10 @@ Recent decisions affecting current work:
 - [02-02]: Label Studio uses its own RLE variant (mask2rle) not pycocotools RLE
 - [02-03]: torchvision maskrcnn_resnet50_fpn_v2 instead of Detectron2 (unmaintained, Windows-incompatible)
 - [02-03]: Custom collate_fn with tuple(zip(*batch)) for Mask R-CNN's list-of-dicts format
+- [03-01]: torch.sinc used for sin(kappa*t*s)/kappa stability at kappa=0 — sinc(x/pi)=sin(x)/x, smooth everywhere
+- [03-01]: miropsota pytorch3d-0.7.9+pt2.9.1cu128 works with torch 2.10+cu130 on Windows (CUDA mesh ops not needed in Phase 3)
+- [03-01]: Watertight winding: tube (v0,v2,v1)+(v1,v2,v3), head cap (apex,j_next,j), tail cap (apex,j,j_next) — all edges shared exactly 2x
+- [03-01]: Spine centered at t=0.5 midpoint; builder translates by state.p — keeps spine generation position-independent
 
 ### Pending Todos
 
@@ -70,6 +75,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-19
-Stopped at: Phase 2 execution complete, pending verification
-Resume file: .planning/phases/02-segmentation-pipeline/02-03-SUMMARY.md
+Last session: 2026-02-20
+Stopped at: Completed 03-01: Parametric fish mesh model
+Resume file: .planning/phases/03-fish-mesh-model-and-3d-initialization/03-01-SUMMARY.md

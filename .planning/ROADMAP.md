@@ -118,9 +118,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — RANSAC centroid ray clustering for cross-view association (TRACK-01, TRACK-02)
-- [ ] 05-02-PLAN.md — FishTracker with Hungarian assignment and track lifecycle (TRACK-03, TRACK-04)
-- [ ] 05-03-PLAN.md — HDF5 serialization and tracking module public API
+- [x] 05-01-PLAN.md — RANSAC centroid ray clustering for cross-view association (TRACK-01, TRACK-02)
+- [x] 05-02-PLAN.md — FishTracker with Hungarian assignment and track lifecycle (TRACK-03, TRACK-04)
+- [x] 05-03-PLAN.md — HDF5 serialization and tracking module public API
 
 ### Phase 6: 2D Medial Axis and Arc-Length Sampling
 **Goal**: Extract stable 2D midlines from segmentation masks and produce fixed-size, arc-length-normalized point correspondences across cameras — the 2D input that multi-view triangulation consumes
@@ -131,7 +131,10 @@ Plans:
   2. Arc-length resampling produces N fixed-size 2D midline points (plus half-widths) per fish per camera, with consistent head-to-tail ordering across cameras verified by reprojecting Stage 0's 3D centroid
   3. Coordinate transforms correctly map crop-space midline points back to full-frame pixel coordinates using detection bounding boxes
   4. The module handles edge cases gracefully: masks too small to skeletonize, degenerate skeletons (no clear longest path), and single-camera fish (passes through without crashing, flagged for downstream)
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 06-01-PLAN.md — Core midline extraction pipeline (smooth, skeletonize, BFS prune, resample, orient) with unit tests
 
 ## Progress
 
@@ -149,4 +152,4 @@ Note: Phase 5 depends on Phase 2 (segmentation) and Phase 1 (refractive ray mode
 | 3. Fish Mesh Model and 3D Initialization | 0/2 | Planning complete | - |
 | 4. Per-Fish Reconstruction | 0/3 | Shelved    | 2026-02-21 |
 | 5. Cross-View Identity and 3D Tracking | 3/3 | Complete   | 2026-02-21 |
-| 6. 2D Medial Axis and Arc-Length Sampling | 0/TBD | Not started | - |
+| 6. 2D Medial Axis and Arc-Length Sampling | 0/1 | Planning complete | - |

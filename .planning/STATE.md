@@ -5,17 +5,17 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 8 Plan 01 complete — pipeline orchestrator, stage functions, and HDF5 midline writer implemented
+**Current focus:** Phase 8 Plan 02 complete — visualization package (2D overlay, 3D animation) and diagnostic Markdown report implemented
 
 ## Current Position
 
 Phase: 08-end-to-end-integration-testing-and-benchmarking
-Plan: 01 complete (08-01-SUMMARY.md written)
-Status: Phase 8 Plan 01 complete. reconstruct() API, 5 stage functions, Midline3DWriter HDF5 output (OUT-01), 9 unit tests all passing.
-Last activity: 2026-02-21 — Phase 08 Plan 01: pipeline orchestrator and HDF5 midline writer implemented
-Stopped at: Completed 08-01-PLAN.md
+Plan: 02 complete (08-02-SUMMARY.md written)
+Status: Phase 8 Plan 02 complete. Visualization package (draw_midline_overlay, render_overlay_video, plot_3d_frame, render_3d_animation), diagnostic report generator (write_diagnostic_report), orchestrator diagnostic mode, 3 unit tests all passing.
+Last activity: 2026-02-21 — Phase 08 Plan 02: visualization overlays, 3D animation, and diagnostic report
+Stopped at: Completed 08-02-PLAN.md
 
-Progress: [█████████░] 90% (phases 1-3 complete, phase 4 shelved, phases 5-8 plan 01 complete)
+Progress: [█████████░] 92% (phases 1-3 complete, phase 4 shelved, phases 5-8 plan 02 complete)
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Progress: [█████████░] 90% (phases 1-3 complete, phase 4 she
 | Phase 05-cross-view-identity-and-3d-tracking P03 | 5 | 2 tasks | 3 files |
 | Phase 07-multi-view-triangulation P01 | 9 | 2 tasks | 3 files |
 | Phase 08 P01 | 10 | 2 tasks | 9 files |
+| Phase 08 P02 | 9 | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -120,6 +121,9 @@ Recent decisions affecting current work:
 - [Phase 08]: FishTracker and MidlineExtractor instantiated once in reconstruct() and passed to stages
 - [Phase 08]: SPLINE_KNOTS and SPLINE_K stored as HDF5 group attributes per OUT-01 spec
 - [Phase 08]: run_segmentation re-reads video from disk to avoid OOM on long videos
+- [Phase 08]: FISH_COLORS defined as BGR tuples in overlay.py; plot3d.py converts BGR->RGB floats on import for matplotlib compatibility
+- [Phase 08]: render_3d_animation checks FFMpegWriter.isAvailable() at runtime and falls back to PillowWriter (GIF) with UserWarning -- no hard FFMpeg dependency
+- [Phase 08]: Diagnostic mode catches all visualization exceptions individually to avoid crashing the main pipeline on render failures
 
 ### Phase 4 Shelved Decisions (Analysis-by-Synthesis)
 

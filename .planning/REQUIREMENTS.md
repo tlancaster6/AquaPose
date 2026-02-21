@@ -56,8 +56,8 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Output
 
 - [x] **OUT-01**: System stores per-frame results in HDF5 including: fish_id, 3D spline control points, width profile, centroid position, heading, curvature, n_cameras, triangulation residual — readable by standard h5py without custom schemas
-- [ ] **OUT-02**: System overlays reprojected 3D midline + width profile onto original camera views for 2D visual QA
-- [ ] **OUT-03**: System renders 3D midline tube models in the tank volume via rerun-sdk with trajectory trails and identity coloring
+- [x] **OUT-02**: System overlays reprojected 3D midline + width profile onto original camera views for 2D visual QA
+- [x] **OUT-03**: System renders 3D midline tube models in the tank volume via rerun-sdk with trajectory trails and identity coloring
 
 ## v2 Requirements
 
@@ -131,8 +131,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TRACK-03 | Phase 5 | Complete |
 | TRACK-04 | Phase 5 | Complete |
 | OUT-01 | Phase 8 (TBD) | Complete |
-| OUT-02 | Phase 8 (TBD) | Pending |
-| OUT-03 | Phase 8 (TBD) | Pending |
+| OUT-02 | Phase 8 (TBD) | Complete |
+| OUT-03 | Phase 8 (TBD) | Complete |
 
 **Coverage:**
 - v1 requirements: 25 (excluding shelved RECON-ABS)

@@ -169,7 +169,7 @@ Plans:
 **Goal:** Wire the complete direct triangulation pipeline into a single callable `reconstruct()` API, implement HDF5 3D midline output and visualization overlays, and validate end-to-end on real 13-camera video data with diagnostic reporting
 **Depends on:** Phase 7
 **Requirements:** OUT-01, OUT-02, OUT-03
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 - [ ] 08-01-PLAN.md — Pipeline orchestrator, stage functions, and HDF5 midline writer (OUT-01)

@@ -5,16 +5,17 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 7 Plan 01 complete — multi-view triangulation and 3D B-spline fitting implemented
+**Current focus:** Phase 8 Plan 01 complete — pipeline orchestrator, stage functions, and HDF5 midline writer implemented
 
 ## Current Position
 
-Phase: 07-multi-view-triangulation
-Plan: 01 complete (07-01-SUMMARY.md written)
-Status: Phase 7 Plan 01 complete. Midline3D dataclass, exhaustive pairwise triangulation, make_lsq_spline fitting, refine_midline_lm stub, 15 unit tests all passing.
-Last activity: 2026-02-21 — Phase 07 Plan 01: triangulate_midlines and unit tests implemented
+Phase: 08-end-to-end-integration-testing-and-benchmarking
+Plan: 01 complete (08-01-SUMMARY.md written)
+Status: Phase 8 Plan 01 complete. reconstruct() API, 5 stage functions, Midline3DWriter HDF5 output (OUT-01), 9 unit tests all passing.
+Last activity: 2026-02-21 — Phase 08 Plan 01: pipeline orchestrator and HDF5 midline writer implemented
+Stopped at: Completed 08-01-PLAN.md
 
-Progress: [█████████░] 85% (phases 1-3 complete, phase 4 shelved, phases 5-7 plan 01 complete)
+Progress: [█████████░] 90% (phases 1-3 complete, phase 4 shelved, phases 5-8 plan 01 complete)
 
 ## Performance Metrics
 
@@ -46,6 +47,7 @@ Progress: [█████████░] 85% (phases 1-3 complete, phase 4 she
 | Phase 05 P02 | 4 | 2 tasks | 3 files |
 | Phase 05-cross-view-identity-and-3d-tracking P03 | 5 | 2 tasks | 3 files |
 | Phase 07-multi-view-triangulation P01 | 9 | 2 tasks | 3 files |
+| Phase 08 P01 | 10 | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -115,6 +117,9 @@ Recent decisions affecting current work:
 - [Phase 07-01]: Exhaustive pairwise triangulation for <=7 cams: score by max held-out reprojection error; best pair seeds inlier re-triangulation at DEFAULT_INLIER_THRESHOLD=15px
 - [Phase 07-01]: is_low_confidence=True when any body point has only 2-camera observation; fixed 7-control-point B-spline with SPLINE_KNOTS=[0,0,0,0,0.25,0.5,0.75,1,1,1,1]
 - [Phase 07-01]: refine_midline_lm is no-op stub (RECON-05 deferred); half-widths converted via pinhole approx hw_px*depth_m/focal_px
+- [Phase 08]: FishTracker and MidlineExtractor instantiated once in reconstruct() and passed to stages
+- [Phase 08]: SPLINE_KNOTS and SPLINE_K stored as HDF5 group attributes per OUT-01 spec
+- [Phase 08]: run_segmentation re-reads video from disk to avoid OOM on long videos
 
 ### Phase 4 Shelved Decisions (Analysis-by-Synthesis)
 

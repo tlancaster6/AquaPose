@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 04 Plan 01 complete — differentiable refractive silhouette renderer and multi-objective loss implemented; ready for Phase 04 Plan 02 (optimizer loop)
+**Current focus:** Phase 04 Plan 02 complete — FishOptimizer with 2-start, warm-start, and convergence logic implemented; 282 tests passing; ready for Phase 04 Plan 03 (sequence pipeline)
 
 ## Current Position
 
 Phase: 04-per-fish-reconstruction
-Plan: 01 of N complete
-Status: Differentiable renderer and multi-objective loss implemented; 270 tests passing; ready for Plan 02 optimizer loop
-Last activity: 2026-02-21 — RefractiveCamera + RefractiveSilhouetteRenderer + soft_iou_loss + multi_objective_loss
+Plan: 02 of N complete
+Status: FishOptimizer implemented; 2-start heading disambiguation, warm-start velocity, convergence early-stop, grad clipping; 282 tests passing
+Last activity: 2026-02-21 — FishOptimizer + make_optimizable_state + warm_start_from_velocity + 12 unit tests
 
-Progress: [███████░░░] 70% (13 plans complete)
+Progress: [████████░░] 75% (14 plans complete)
 
 ## Performance Metrics
 
@@ -39,6 +39,7 @@ Progress: [███████░░░] 70% (13 plans complete)
 - Trend: stable/fast
 
 *Updated after each plan completion*
+| Phase 04-per-fish-reconstruction P02 | 6 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -96,6 +97,8 @@ Recent decisions affecting current work:
 - [04-01]: torch downgraded 2.10+cu130 -> 2.9.1+cu128, torchvision 0.24.1+cu128 (to fix pytorch3d DLL ABI mismatch)
 - [04-01]: Gravity prior uses theta^2 (pitch proxy); explicit roll parameter deferred — would require FishState extension
 - [04-01]: Angular diversity temperature: higher T = MORE spread (small base^T drops faster); temperature=0.5 default is moderate differentiation
+- [Phase 04-02]: Per-parameter Adam LR groups: p uses lr*5 per RESEARCH.md Z-anisotropy note
+- [Phase 04-02]: MockRenderer Gaussian blob from vertex mean: GPU-free differentiable test harness for optimizer unit tests
 
 ### Roadmap Evolution
 
@@ -115,5 +118,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: Phase 04-01 complete — Renderer and loss functions implemented (270 tests passing)
-Next action: Proceed to Phase 04 Plan 02 (optimizer loop: 2-start, warm-start, convergence)
+Stopped at: Phase 04-02 complete — FishOptimizer with 2-start, warm-start, convergence implemented (282 tests passing)
+Next action: Proceed to Phase 04 Plan 03 (sequence pipeline / integration)

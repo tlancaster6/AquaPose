@@ -1,6 +1,6 @@
 # AquaPose
 
-3D fish pose estimation via analysis-by-synthesis. Fits a parametric fish mesh to multi-view silhouettes from a 13-camera aquarium rig using differentiable refractive rendering.
+3D fish pose estimation via refractive multi-view triangulation. Reconstructs fish 3D midlines from multi-view silhouettes using a 13-camera aquarium rig with refractive calibration.
 
 ## Quick Start
 
@@ -32,9 +32,9 @@ hatch run pre-commit run --all-files  # all pre-commit hooks
 src/aquapose/
 ├── calibration/    # AquaCal loading, refractive projection, ray casting
 ├── core/           # Core domain logic (pose state, loss functions)
-├── segmentation/   # MOG2 detection, SAM pseudo-labels, Mask R-CNN inference
+├── segmentation/   # MOG2/YOLO detection, SAM pseudo-labels, U-Net inference
 ├── mesh/           # Parametric fish mesh, cross-section profiles
-├── optimization/   # Analysis-by-synthesis pose optimizer
+├── initialization/ # PCA keypoints, multi-view triangulation, fish state init
 ├── io/             # HDF5 output, data loaders
 └── utils/          # General-purpose helpers
 tests/
@@ -47,6 +47,6 @@ tests/
 
 - **Refractive projection**: 3D-to-pixel through Snell's law at air-water interface (flat surface, no glass)
 - **Fish state vector**: `{p, ψ, κ, s}` — position, heading, curvature, scale
-- **Analysis-by-synthesis**: Render silhouette from mesh, compare to observed mask, optimize via gradient descent
-- **Cross-view holdout**: Validate by fitting on N-1 cameras, measuring IoU on held-out camera
+- **Direct triangulation**: Medial axis extraction → arc-length sampling → RANSAC triangulation → spline fitting
+- **Cross-view identity**: RANSAC centroid clustering to associate fish across cameras before reconstruction
 - AquaCal is the calibration dependency; AquaMVS is reference code only (not imported)

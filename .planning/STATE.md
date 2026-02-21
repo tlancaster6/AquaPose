@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 6 Plan 01 complete — 2D medial axis extraction and arc-length sampling pipeline implemented
+**Current focus:** Phase 7 Plan 01 complete — multi-view triangulation and 3D B-spline fitting implemented
 
 ## Current Position
 
-Phase: 06-2d-medial-axis-and-arc-length-sampling
-Plan: 01 complete (06-01-SUMMARY.md written)
-Status: Phase 6 Plan 01 complete. MidlineExtractor with full pipeline: adaptive smooth, skeleton, longest-path BFS, arc-length resample, crop-to-frame, orientation inheritance, back-correction buffering.
-Last activity: 2026-02-21 — Phase 06 Plan 01: MidlineExtractor and unit tests implemented
+Phase: 07-multi-view-triangulation
+Plan: 01 complete (07-01-SUMMARY.md written)
+Status: Phase 7 Plan 01 complete. Midline3D dataclass, exhaustive pairwise triangulation, make_lsq_spline fitting, refine_midline_lm stub, 15 unit tests all passing.
+Last activity: 2026-02-21 — Phase 07 Plan 01: triangulate_midlines and unit tests implemented
 
-Progress: [████████░░] 75% (phases 1-3 complete, phase 4 shelved, phase 5 complete, phase 6 plan 01 complete)
+Progress: [█████████░] 85% (phases 1-3 complete, phase 4 shelved, phases 5-7 plan 01 complete)
 
 ## Performance Metrics
 
@@ -45,6 +45,7 @@ Progress: [████████░░] 75% (phases 1-3 complete, phase 4 she
 | Phase 05-cross-view-identity-and-3d-tracking P01 | 5 | 2 tasks | 4 files |
 | Phase 05 P02 | 4 | 2 tasks | 3 files |
 | Phase 05-cross-view-identity-and-3d-tracking P03 | 5 | 2 tasks | 3 files |
+| Phase 07-multi-view-triangulation P01 | 9 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -111,6 +112,9 @@ Recent decisions affecting current work:
 - [Phase 06-01]: axis_minor_length used (not deprecated minor_axis_length) for skimage regionprops minor axis
 - [Phase 06-01]: skeletonize return wrapped in np.asarray(dtype=bool) for basedpyright type narrowing
 - [Phase 06-01]: _orient_midline uses lazy torch import to call RefractiveProjectionModel.project for head position projection
+- [Phase 07-01]: Exhaustive pairwise triangulation for <=7 cams: score by max held-out reprojection error; best pair seeds inlier re-triangulation at DEFAULT_INLIER_THRESHOLD=15px
+- [Phase 07-01]: is_low_confidence=True when any body point has only 2-camera observation; fixed 7-control-point B-spline with SPLINE_KNOTS=[0,0,0,0,0.25,0.5,0.75,1,1,1,1]
+- [Phase 07-01]: refine_midline_lm is no-op stub (RECON-05 deferred); half-widths converted via pinhole approx hw_px*depth_m/focal_px
 
 ### Phase 4 Shelved Decisions (Analysis-by-Synthesis)
 
@@ -153,5 +157,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: Phase 07 context gathered (07-CONTEXT.md)
-Next action: Plan Phase 07 (Multi-View Triangulation) via /gsd:plan-phase 7
+Stopped at: Completed 07-01-PLAN.md
+Next action: Phase 07 Plan 01 complete — triangulation module and tests done. Add Phase 08 (Output & Visualization) via /gsd:add-phase or continue to next phase.

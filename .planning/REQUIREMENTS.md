@@ -32,9 +32,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **RECON-01**: System extracts 2D medial axis from binary masks via morphological smoothing + skeletonization + longest-path BFS pruning, producing an ordered head-to-tail midline with local half-widths from the distance transform
 - [x] **RECON-02**: System resamples 2D midlines at N fixed normalized arc-length positions (head=0, tail=1), producing consistent cross-view correspondences with coordinate transform from crop space to full-frame pixels
-- [ ] **RECON-03**: System triangulates each of the N body positions across cameras via refractive ray intersection with per-point RANSAC and view-angle weighting to reject arc-length correspondence outliers
-- [ ] **RECON-04**: System fits a cubic B-spline (5–8 control points) through the N triangulated 3D points, plus a 1D width-profile spline, producing a continuous 3D midline + tube model per fish per frame
-- [ ] **RECON-05**: *(Optional, add only if baseline insufficient)* System refines 3D spline control points via Levenberg-Marquardt minimization of reprojection error against 2D medial axis observations across all cameras
+- [x] **RECON-03**: System triangulates each of the N body positions across cameras via refractive ray intersection with per-point RANSAC and view-angle weighting to reject arc-length correspondence outliers
+- [x] **RECON-04**: System fits a cubic B-spline (5–8 control points) through the N triangulated 3D points, plus a 1D width-profile spline, producing a continuous 3D midline + tube model per fish per frame
+- [x] **RECON-05**: *(Optional, add only if baseline insufficient)* System refines 3D spline control points via Levenberg-Marquardt minimization of reprojection error against 2D medial axis observations across all cameras
 
 ### Reconstruction — Shelved (Analysis-by-Synthesis)
 
@@ -123,9 +123,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RECON-ABS-01..05 | Phase 4 (shelved) | Complete |
 | RECON-01 | Phase 6 | Complete (06-01) |
 | RECON-02 | Phase 6 | Complete (06-01) |
-| RECON-03 | Phase 7 (TBD) | Pending |
-| RECON-04 | Phase 7 (TBD) | Pending |
-| RECON-05 | Phase 7 (TBD) | Pending |
+| RECON-03 | Phase 7 (TBD) | Complete |
+| RECON-04 | Phase 7 (TBD) | Complete |
+| RECON-05 | Phase 7 (TBD) | Complete |
 | TRACK-01 | Phase 5 | Complete |
 | TRACK-02 | Phase 5 | Complete |
 | TRACK-03 | Phase 5 | Complete |

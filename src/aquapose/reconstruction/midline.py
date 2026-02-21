@@ -103,7 +103,7 @@ def _adaptive_smooth(mask: np.ndarray) -> np.ndarray:
     """
     bool_mask = mask > 0
     props = regionprops(bool_mask.astype(np.uint8))
-    minor = props[0].minor_axis_length if props else 10.0
+    minor = props[0].axis_minor_length if props else 10.0
     radius = max(3, int(minor) // 8)
 
     # Build elliptical structuring element

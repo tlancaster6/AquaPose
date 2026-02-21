@@ -139,6 +139,6 @@ Note: Phase 3 depends only on Phase 1 (not Phase 2), so Phases 2 and 3 can devel
 | 02.1 Segmentation Troubleshooting | 3/3 | Complete | 2026-02-20 |
 | 02.1.1 Object-detection alternative to MOG2 | 3/3 | Complete | 2026-02-20 |
 | 3. Fish Mesh Model and 3D Initialization | 0/2 | Planning complete | - |
-| 4. Per-Fish Reconstruction | 0/3 | Planning complete | - |
+| 4. Per-Fish Reconstruction | 1/3 | In Progress|  |
 | 5. Tracking and Sex Classification | 0/TBD | Not started | - |
 | 6. Output and Visualization | 0/TBD | Not started | - |

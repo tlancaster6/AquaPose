@@ -30,8 +30,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Reconstruction
 
-- [ ] **RECON-01**: System renders differentiable silhouettes of the fish mesh into each camera view via refractive projection + PyTorch3D rasterizer, with per-camera weighting by angular diversity to prevent clustered ring cameras from dominating
-- [ ] **RECON-02**: System computes multi-objective loss: silhouette IoU + gravity prior + morphological constraint first, then temporal smoothness once tracking provides frame-to-frame associations
+- [x] **RECON-01**: System renders differentiable silhouettes of the fish mesh into each camera view via refractive projection + PyTorch3D rasterizer, with per-camera weighting by angular diversity to prevent clustered ring cameras from dominating
+- [x] **RECON-02**: System computes multi-objective loss: silhouette IoU + gravity prior + morphological constraint first, then temporal smoothness once tracking provides frame-to-frame associations
 - [ ] **RECON-03**: System runs 2-initialization multi-start (forward + 180° flip) on first frame of each track to resolve head-tail ambiguity
 - [ ] **RECON-04**: System optimizes per-frame fish pose via Adam with warm-start from previous frame's solution
 - [ ] **RECON-05**: System validates reconstruction via cross-view holdout (fit on N-k cameras, evaluate IoU on k held-out cameras), achieving ≥0.80 mean holdout IoU
@@ -110,8 +110,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MESH-01 | Phase 3 | Pending |
 | MESH-02 | Phase 3 | Pending |
 | MESH-03 | Phase 3 | Pending |
-| RECON-01 | Phase 4 | Pending |
-| RECON-02 | Phase 4 | Pending |
+| RECON-01 | Phase 4 | Complete |
+| RECON-02 | Phase 4 | Complete |
 | RECON-03 | Phase 4 | Pending |
 | RECON-04 | Phase 4 | Pending |
 | RECON-05 | Phase 4 | Pending |

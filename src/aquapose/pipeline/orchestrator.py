@@ -230,6 +230,71 @@ def reconstruct(
     stage_timing["hdf5_write"] = time.perf_counter() - t0
     logger.info("HDF5 written to %s (%.2fs)", h5_path, stage_timing["hdf5_write"])
 
+    # --- Diagnostic mode: visualizations and report ---
+    if mode == "diagnostic":
+        import matplotlib.pyplot as plt
+
+        from aquapose.pipeline.report import write_diagnostic_report
+        from aquapose.visualization import (
+            plot_3d_frame,
+            render_3d_animation,
+            render_overlay_video,
+        )
+
+        figures_dir = output_dir / "figures"
+        figures_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save a 3D sample plot for the first non-empty frame
+        sample_frame_midlines: dict[int, Midline3D] = {}
+        for frame_midlines in midlines_3d:
+            if frame_midlines:
+                sample_frame_midlines = frame_midlines
+                break
+
+        if sample_frame_midlines:
+            try:
+                fig = plot_3d_frame(sample_frame_midlines)
+                sample_fig_path = figures_dir / "midline_3d_sample.png"
+                fig.savefig(str(sample_fig_path), dpi=100, bbox_inches="tight")
+                plt.close(fig)
+                logger.info("3D sample figure saved to %s", sample_fig_path)
+            except Exception as exc:
+                logger.warning("Failed to save 3D sample figure: %s", exc)
+
+        # Render 3D animation
+        try:
+            render_3d_animation(midlines_3d, output_dir / "midlines_3d.mp4")
+        except Exception as exc:
+            logger.warning("Failed to render 3D animation: %s", exc)
+
+        # Render per-camera overlay videos
+        overlays_dir = output_dir / "overlays"
+        overlays_dir.mkdir(parents=True, exist_ok=True)
+        for cam_id, vid_path in video_paths.items():
+            if cam_id not in models:
+                continue
+            try:
+                render_overlay_video(
+                    video_path=vid_path,
+                    output_path=overlays_dir / f"{cam_id}.mp4",
+                    midlines_per_frame=midlines_3d,
+                    model=models[cam_id],
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to render overlay for camera %s: %s", cam_id, exc
+                )
+
+        # Write Markdown report
+        n_frames_actual = len(midlines_3d)
+        write_diagnostic_report(
+            output_dir=output_dir,
+            stage_timing=stage_timing,
+            midlines_per_frame=midlines_3d,
+            n_frames=n_frames_actual,
+            n_cameras=len(models),
+        )
+
     return ReconstructResult(
         output_dir=output_dir,
         midlines_3d=midlines_3d,

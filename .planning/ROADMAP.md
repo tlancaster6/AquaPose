@@ -163,3 +163,15 @@ Note: Phase 5 depends on Phase 2 (segmentation) and Phase 1 (refractive ray mode
 
 Plans:
 - [ ] 07-01-PLAN.md — Triangulation module with Midline3D, exhaustive pairwise search, B-spline fitting, and LM stub
+
+### Phase 8: End-to-End Integration Testing and Benchmarking
+
+**Goal:** Wire the complete direct triangulation pipeline into a single callable `reconstruct()` API, implement HDF5 3D midline output and visualization overlays, and validate end-to-end on real 13-camera video data with diagnostic reporting
+**Depends on:** Phase 7
+**Requirements:** OUT-01, OUT-02, OUT-03
+**Plans:** 3 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — Pipeline orchestrator, stage functions, and HDF5 midline writer (OUT-01)
+- [ ] 08-02-PLAN.md — 2D reprojection overlays, 3D animation, and diagnostic report (OUT-02, OUT-03)
+- [ ] 08-03-PLAN.md — End-to-end integration test on real data with visual inspection checkpoint

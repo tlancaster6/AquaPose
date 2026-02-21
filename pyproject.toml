@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "aquapose"
 version = "1.0.0"
-description = "3D fish pose estimation via differentiable refractive rendering"
+description = "3D fish pose estimation via refractive multi-view triangulation"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}

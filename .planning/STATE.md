@@ -41,6 +41,7 @@ Progress: [██████░░░░] 55% (phases 1-3 complete, phase 4 she
 *Updated after each plan completion*
 | Phase 04-per-fish-reconstruction P02 | 6 | 2 tasks | 3 files |
 | Phase 04-per-fish-reconstruction P03 | 8 | 2 tasks | 4 files |
+| Phase 04.1-isolate-phase-4-specific-code-post-archive P01 | 2 | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -96,6 +97,9 @@ Recent decisions affecting current work:
 - [Pivot 2026-02-21]: Sex classification (SEX-01..03) deferred to v2 — not part of direct triangulation pipeline
 - [Pivot 2026-02-21]: Cross-view identity (Stage 0) promoted to Phase 5 — prerequisite for all reconstruction stages
 - [Pivot 2026-02-21]: Old RECON-01..05 renamed to RECON-ABS-01..05 (shelved); new RECON-01..05 defined for direct triangulation
+- [Phase 04.1-01]: archive/phase4-abs branch created before stripping — preserves full ABS codebase (renderer, optimizer, loss, validation)
+- [Phase 04.1-01]: diagnose_real_frame.py and diagnose_synthetic.py deleted (imported from aquapose.optimization); visualize_val_predictions.py retained (segmentation-only imports)
+- [Phase 04.1-01]: pytorch3d.structures retained in mesh/builder.py — shared infrastructure, not ABS-specific
 
 ### Phase 4 Shelved Decisions (Analysis-by-Synthesis)
 

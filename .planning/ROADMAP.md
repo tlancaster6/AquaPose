@@ -101,7 +101,7 @@ Plans:
 **Goal:** Archive the analysis-by-synthesis codebase to a dedicated branch, then strip all Phase 4-specific code from the working branch so only shared infrastructure remains for Phase 5+
 **Depends on:** Phase 4
 **Requirements:** RECON-ABS-01, RECON-ABS-02, RECON-ABS-03, RECON-ABS-04, RECON-ABS-05
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] 04.1-01-PLAN.md — Archive ABS code to branch, delete optimization module/tests/scripts, verify clean build

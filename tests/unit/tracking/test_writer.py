@@ -11,11 +11,10 @@ import pytest
 from aquapose.tracking import (
     AssociationResult,
     FishTrack,
-    FishTracker,
-    FrameAssociations,
     TrackingWriter,
     read_tracking_results,
 )
+from aquapose.tracking.tracker import TrackState
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -54,7 +53,7 @@ def _make_track(
     """Create a synthetic FishTrack for testing."""
     track = FishTrack(fish_id=fish_id)
     track.positions = deque([np.array(centroid, dtype=np.float32)], maxlen=2)
-    track.is_confirmed = is_confirmed
+    track.state = TrackState.CONFIRMED if is_confirmed else TrackState.PROBATIONARY
     track.camera_detections = camera_detections or {}
     track.bboxes = bboxes or {}
     track.n_cameras = n_cameras
@@ -290,30 +289,29 @@ def test_empty_file(tmp_path: Path) -> None:
 
 
 def test_integration_tracker_to_writer(tmp_path: Path) -> None:
-    """Feed FishTracker output into TrackingWriter; verify HDF5 fish IDs match."""
+    """Feed synthetic confirmed tracks into TrackingWriter; verify HDF5 round-trip."""
     out_path = tmp_path / "tracking.h5"
 
     cameras = ["cam_a", "cam_b"]
-    tracker = FishTracker(min_hits=1, max_age=3, expected_count=3)
 
-    # Build 3 frames of FrameAssociations with 3 fish
-    frame_assocs = []
+    # Build 3 frames of synthetic confirmed tracks
+    all_confirmed: list[list[FishTrack]] = []
     for frame_i in range(3):
-        assocs = [
-            _make_assoc(
-                fish_id=j,
-                centroid=(float(j), float(frame_i) * 0.1, 0.5),
-                n_cameras=2,
-                camera_detections={"cam_a": j, "cam_b": j},
+        tracks = []
+        for j in range(3):
+            tracks.append(
+                _make_track(
+                    fish_id=j,
+                    centroid=(float(j), float(frame_i) * 0.1, 0.5),
+                    is_confirmed=True,
+                    n_cameras=2,
+                    camera_detections={"cam_a": j, "cam_b": j},
+                )
             )
-            for j in range(3)
-        ]
-        fa = FrameAssociations(associations=assocs, frame_index=frame_i)
-        frame_assocs.append(fa)
+        all_confirmed.append(tracks)
 
     with TrackingWriter(out_path, cameras, max_fish=5) as w:
-        for frame_i, fa in enumerate(frame_assocs):
-            confirmed = tracker.update(fa)
+        for frame_i, confirmed in enumerate(all_confirmed):
             w.write_frame(frame_i, confirmed)
 
     result = read_tracking_results(out_path)
@@ -321,8 +319,7 @@ def test_integration_tracker_to_writer(tmp_path: Path) -> None:
     # 3 frames written
     assert result["frame_index"].shape[0] == 3
 
-    # After frame 0 with min_hits=1, confirmed tracks exist — check fish IDs
-    # are non-negative for populated slots
+    # Check fish IDs are non-negative for populated slots
     for frame_i in range(3):
         populated = result["fish_id"][frame_i][result["fish_id"][frame_i] >= 0]
         assert len(populated) > 0, f"No confirmed fish in frame {frame_i}"

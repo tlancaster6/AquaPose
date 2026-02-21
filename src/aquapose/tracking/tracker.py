@@ -1,14 +1,21 @@
-"""Temporal fish tracker with Hungarian assignment and track lifecycle management."""
+"""Temporal fish tracker with track-driven association and lifecycle management."""
 
 from __future__ import annotations
 
+import enum
 from collections import deque
 from dataclasses import dataclass, field
 
 import numpy as np
-from scipy.optimize import linear_sum_assignment
 
-from .associate import AssociationResult, FrameAssociations
+from aquapose.calibration.projection import RefractiveProjectionModel
+from aquapose.segmentation.detector import Detection
+
+from .associate import (
+    AssociationResult,
+    claim_detections_for_tracks,
+    discover_births,
+)
 
 # --- Module-level defaults ---
 
@@ -18,8 +25,60 @@ DEFAULT_MIN_HITS: int = 2
 DEFAULT_MAX_AGE: int = 7
 """Grace period frames before a track is declared dead."""
 
-DEFAULT_MAX_DISTANCE: float = 0.1
-"""Maximum XY distance (metres) for a Hungarian assignment to be accepted."""
+DEFAULT_REPROJECTION_THRESHOLD: float = 15.0
+"""Maximum pixel distance for a track to claim a detection."""
+
+DEFAULT_MIN_CAMERAS_BIRTH: int = 2
+"""Minimum cameras in an association to birth a new track."""
+
+DEFAULT_BIRTH_INTERVAL: int = 5
+"""Frames between birth RANSAC attempts (when not triggered by deficit)."""
+
+DEFAULT_RESIDUAL_REJECT_FACTOR: float = 3.0
+"""Reject a claim if residual exceeds mean_residual * this factor."""
+
+DEFAULT_VELOCITY_DAMPING: float = 0.8
+"""Per-frame velocity damping factor during coasting."""
+
+
+class TrackState(enum.Enum):
+    """Lifecycle state of a fish track."""
+
+    PROBATIONARY = "probationary"
+    CONFIRMED = "confirmed"
+    COASTING = "coasting"
+    DEAD = "dead"
+
+
+@dataclass
+class TrackHealth:
+    """Running health statistics for a fish track.
+
+    Attributes:
+        residual_history: Ring buffer of recent reprojection residuals.
+        cameras_per_frame: Ring buffer of recent camera counts.
+        degraded_frames: Consecutive single-view updates.
+        consecutive_hits: Consecutive successful matches.
+    """
+
+    residual_history: deque[float] = field(default_factory=lambda: deque(maxlen=20))
+    cameras_per_frame: deque[int] = field(default_factory=lambda: deque(maxlen=20))
+    degraded_frames: int = 0
+    consecutive_hits: int = 0
+
+    @property
+    def mean_residual(self) -> float:
+        """Mean of recent reprojection residuals, or 0.0 if empty."""
+        if not self.residual_history:
+            return 0.0
+        return float(np.mean(list(self.residual_history)))
+
+    @property
+    def mean_cameras(self) -> float:
+        """Mean of recent camera counts, or 0.0 if empty."""
+        if not self.cameras_per_frame:
+            return 0.0
+        return float(np.mean(list(self.cameras_per_frame)))
 
 
 @dataclass
@@ -30,15 +89,16 @@ class FishTrack:
         fish_id: Globally unique identifier for this fish track.
         positions: Ring buffer of the 2 most recent 3D centroids (shape (3,)
             each). Used for constant-velocity prediction.
+        velocity: Explicit velocity vector, shape (3,).
         age: Total number of frames since this track was created.
-        hit_streak: Consecutive frames in which this track was matched.
         frames_since_update: Frames elapsed since the last successful match.
-        is_confirmed: True once ``hit_streak >= min_hits``.
+        state: Current lifecycle state.
+        health: Running health statistics.
         min_hits: Confirmation threshold (copied from FishTracker at creation).
         max_age: Death threshold (copied from FishTracker at creation).
+        velocity_damping: Per-frame velocity damping during coasting.
         camera_detections: Latest frame's ``camera_id → detection_index`` map.
-        bboxes: Latest frame's per-camera bounding boxes
-            ``camera_id → (x1, y1, x2, y2)``.
+        bboxes: Latest frame's per-camera bounding boxes.
         reprojection_residual: Mean reprojection residual from the latest
             association (pixels).
         confidence: Confidence from the latest association.
@@ -47,87 +107,171 @@ class FishTrack:
 
     fish_id: int
     positions: deque[np.ndarray] = field(default_factory=lambda: deque(maxlen=2))
+    velocity: np.ndarray = field(default_factory=lambda: np.zeros(3, dtype=np.float32))
     age: int = 0
-    hit_streak: int = 0
     frames_since_update: int = 0
-    is_confirmed: bool = False
+    state: TrackState = TrackState.PROBATIONARY
+    health: TrackHealth = field(default_factory=TrackHealth)
     min_hits: int = DEFAULT_MIN_HITS
     max_age: int = DEFAULT_MAX_AGE
+    velocity_damping: float = DEFAULT_VELOCITY_DAMPING
     camera_detections: dict[str, int] = field(default_factory=dict)
     bboxes: dict[str, tuple[int, int, int, int]] = field(default_factory=dict)
     reprojection_residual: float = 0.0
     confidence: float = 1.0
     n_cameras: int = 0
 
-    def predict(self) -> np.ndarray:
-        """Predict the next 3D position using constant-velocity motion.
+    @property
+    def is_confirmed(self) -> bool:
+        """True when the track is confirmed or coasting (writer compat).
 
-        Uses the last two stored positions to extrapolate one step forward.
-        If only one position is available, returns a copy of that position
-        (zero velocity assumption).
+        Returns:
+            True if state is CONFIRMED or COASTING.
+        """
+        return self.state in (TrackState.CONFIRMED, TrackState.COASTING)
+
+    def predict(self) -> np.ndarray:
+        """Predict the next 3D position using velocity with coasting damping.
+
+        During COASTING, velocity is damped by ``velocity_damping^frames_since_update``
+        to decay prediction confidence over time.
 
         Returns:
             Predicted 3D centroid, shape (3,).
         """
-        if len(self.positions) >= 2:
-            pos_list = list(self.positions)
-            velocity = pos_list[-1] - pos_list[-2]
-            return pos_list[-1] + velocity
-        elif len(self.positions) == 1:
-            return self.positions[0].copy()
-        else:
+        if len(self.positions) == 0:
             return np.zeros(3, dtype=np.float32)
 
-    def update(self, association: AssociationResult) -> None:
-        """Update the track with a new matched association.
+        last_pos = list(self.positions)[-1]
+        vel = self.velocity.copy()
 
-        Appends the 3D centroid to the position deque, resets
-        ``frames_since_update``, increments ``hit_streak`` and ``age``, and
-        sets ``is_confirmed`` once the streak reaches ``min_hits``.
+        if self.state == TrackState.COASTING and self.frames_since_update > 0:
+            vel *= self.velocity_damping**self.frames_since_update
+
+        return last_pos + vel
+
+    def update_from_claim(
+        self,
+        centroid_3d: np.ndarray,
+        camera_detections: dict[str, int],
+        reprojection_residual: float,
+        n_cameras: int,
+    ) -> None:
+        """Update the track with a claimed detection result.
+
+        Computes velocity from previous position delta, updates health,
+        and handles state transitions.
 
         Args:
-            association: The matched AssociationResult for this frame.
+            centroid_3d: New 3D centroid, shape (3,).
+            camera_detections: Camera-to-detection-index mapping.
+            reprojection_residual: Mean reprojection residual (pixels).
+            n_cameras: Number of cameras contributing.
         """
-        self.positions.append(association.centroid_3d.copy())
+        # Compute velocity from position delta
+        if len(self.positions) > 0:
+            prev = list(self.positions)[-1]
+            self.velocity = centroid_3d - prev
+        else:
+            self.velocity = np.zeros(3, dtype=np.float32)
+
+        self.positions.append(centroid_3d.copy())
         self.frames_since_update = 0
-        self.hit_streak += 1
         self.age += 1
-        self.camera_detections = dict(association.camera_detections)
-        self.bboxes = {}  # bboxes not carried in AssociationResult; cleared
-        self.reprojection_residual = association.reprojection_residual
-        self.confidence = association.confidence
-        self.n_cameras = association.n_cameras
-        if self.hit_streak >= self.min_hits:
-            self.is_confirmed = True
+        self.camera_detections = dict(camera_detections)
+        self.bboxes = {}
+        self.reprojection_residual = reprojection_residual
+        self.confidence = 1.0
+        self.n_cameras = n_cameras
+
+        # Update health
+        self.health.residual_history.append(reprojection_residual)
+        self.health.cameras_per_frame.append(n_cameras)
+        self.health.consecutive_hits += 1
+        if n_cameras > 1:
+            self.health.degraded_frames = 0
+
+        # State transitions
+        if self.state == TrackState.PROBATIONARY:
+            if self.health.consecutive_hits >= self.min_hits:
+                self.state = TrackState.CONFIRMED
+        elif self.state == TrackState.COASTING:
+            self.state = TrackState.CONFIRMED
+
+    def update_position_only(
+        self,
+        centroid_3d: np.ndarray,
+        camera_detections: dict[str, int],
+        reprojection_residual: float,
+        n_cameras: int,
+    ) -> None:
+        """Update position but freeze velocity (single-view penalty).
+
+        Args:
+            centroid_3d: New 3D centroid, shape (3,).
+            camera_detections: Camera-to-detection-index mapping.
+            reprojection_residual: Mean reprojection residual (pixels).
+            n_cameras: Number of cameras contributing.
+        """
+        self.positions.append(centroid_3d.copy())
+        self.frames_since_update = 0
+        self.age += 1
+        self.camera_detections = dict(camera_detections)
+        self.bboxes = {}
+        self.reprojection_residual = reprojection_residual
+        self.confidence = 1.0
+        self.n_cameras = n_cameras
+
+        # Health: push stats but increment degraded_frames
+        self.health.residual_history.append(reprojection_residual)
+        self.health.cameras_per_frame.append(n_cameras)
+        self.health.consecutive_hits += 1
+        self.health.degraded_frames += 1
+        # Velocity frozen — no change
+
+        # State transitions (same as full update)
+        if self.state == TrackState.PROBATIONARY:
+            if self.health.consecutive_hits >= self.min_hits:
+                self.state = TrackState.CONFIRMED
+        elif self.state == TrackState.COASTING:
+            self.state = TrackState.CONFIRMED
 
     def mark_missed(self) -> None:
         """Record that this track had no match in the current frame.
 
-        Increments ``frames_since_update`` and ``age``, resets ``hit_streak``
-        to zero (confirmation requires consecutive hits).
+        CONFIRMED → COASTING, reset consecutive_hits.
+        PROBATIONARY stays PROBATIONARY.
         """
         self.frames_since_update += 1
-        self.hit_streak = 0
+        self.health.consecutive_hits = 0
         self.age += 1
+
+        if self.state == TrackState.CONFIRMED:
+            self.state = TrackState.COASTING
 
     @property
     def is_dead(self) -> bool:
-        """True when the track has exceeded the grace period.
+        """True when the track should be pruned.
+
+        Confirmed/coasting tracks die after max_age missed frames.
+        Probationary tracks have a short leash: die after 2 missed frames.
 
         Returns:
-            True if ``frames_since_update > max_age``.
+            True if the track has exceeded its grace period.
         """
+        if self.state == TrackState.PROBATIONARY:
+            return self.frames_since_update > 2
         return self.frames_since_update > self.max_age
 
 
 class FishTracker:
-    """Temporal tracker that maintains persistent fish IDs across frames.
+    """Temporal tracker with track-driven association.
 
-    Uses a SORT-derived lifecycle:
-    - Birth: tentative for ``min_hits`` frames, then confirmed.
-    - Active: matched and updated every frame.
-    - Grace period: unmatched for up to ``max_age`` frames.
-    - Death: pruned after exceeding the grace period.
+    Architecture:
+    1. Track claiming: existing tracks project into cameras, claim nearest
+       detections via greedy assignment.
+    2. Birth discovery: unclaimed detections go through RANSAC to find new fish.
+    3. Lifecycle: probationary → confirmed → coasting → dead.
 
     Population constraint (TRACK-04): if a track dies in the same frame as a
     new unmatched observation appears, the new observation inherits the dead
@@ -135,24 +279,34 @@ class FishTracker:
 
     Args:
         min_hits: Consecutive frames required to confirm a new track.
-        max_age: Grace period (frames) before a track is deleted.
-        max_distance: Maximum XY Euclidean distance (metres) for a valid
-            Hungarian assignment.
-        expected_count: Expected number of fish (default 9). Used for
-            first-frame batch initialisation ordering.
+        max_age: Grace period (frames) before a confirmed track is deleted.
+        expected_count: Expected number of fish (default 9).
+        min_cameras_birth: Minimum cameras to birth a new track.
+        reprojection_threshold: Max pixel distance for track claiming.
+        birth_interval: Frames between periodic birth RANSAC.
+        residual_reject_factor: Reject claim if residual > mean * this.
+        velocity_damping: Per-frame velocity damping during coasting.
     """
 
     def __init__(
         self,
         min_hits: int = DEFAULT_MIN_HITS,
         max_age: int = DEFAULT_MAX_AGE,
-        max_distance: float = DEFAULT_MAX_DISTANCE,
         expected_count: int = 9,
+        min_cameras_birth: int = DEFAULT_MIN_CAMERAS_BIRTH,
+        reprojection_threshold: float = DEFAULT_REPROJECTION_THRESHOLD,
+        birth_interval: int = DEFAULT_BIRTH_INTERVAL,
+        residual_reject_factor: float = DEFAULT_RESIDUAL_REJECT_FACTOR,
+        velocity_damping: float = DEFAULT_VELOCITY_DAMPING,
     ) -> None:
         self.min_hits = min_hits
         self.max_age = max_age
-        self.max_distance = max_distance
         self.expected_count = expected_count
+        self.min_cameras_birth = min_cameras_birth
+        self.reprojection_threshold = reprojection_threshold
+        self.birth_interval = birth_interval
+        self.residual_reject_factor = residual_reject_factor
+        self.velocity_damping = velocity_damping
 
         self.tracks: list[FishTrack] = []
         self._next_id: int = 0
@@ -162,93 +316,144 @@ class FishTracker:
     # Public API
     # ------------------------------------------------------------------
 
-    def update(self, frame_associations: FrameAssociations) -> list[FishTrack]:
-        """Process one frame of associations and return confirmed tracks.
+    def update(
+        self,
+        detections_per_camera: dict[str, list[Detection]],
+        models: dict[str, RefractiveProjectionModel],
+        frame_index: int = 0,
+    ) -> list[FishTrack]:
+        """Process one frame of detections and return confirmed tracks.
+
+        Three phases:
+        1. Track claiming — existing tracks claim detections via reprojection.
+        2. Birth discovery — unclaimed detections go through RANSAC.
+        3. Lifecycle — prune dead tracks, recycle IDs.
 
         Args:
-            frame_associations: Per-frame association results from
-                ``ransac_centroid_cluster``.
+            detections_per_camera: Per-camera detection lists.
+            models: Per-camera refractive projection models.
+            frame_index: Frame index for bookkeeping.
 
         Returns:
-            List of confirmed tracks (``is_confirmed=True``) after processing
-            this frame.
+            List of confirmed tracks after processing this frame.
         """
-        observations = frame_associations.associations
+        # ----------------------------------------------------------
+        # Phase 1: Track Claiming
+        # ----------------------------------------------------------
+        non_dead = [t for t in self.tracks if not t.is_dead]
+        claimed_track_ids: set[int] = set()
+        unclaimed_indices: dict[str, list[int]] = {}
 
-        # --- Frame 0: batch-initialise, sorted by X for deterministic IDs ---
-        if self.frame_count == 0:
-            sorted_obs = sorted(observations, key=lambda a: float(a.centroid_3d[0]))
-            for assoc in sorted_obs:
-                self._create_track(assoc)
-            self.frame_count += 1
-            return [t for t in self.tracks if t.is_confirmed]
+        if non_dead and any(len(dets) > 0 for dets in detections_per_camera.values()):
+            predicted_positions: dict[int, np.ndarray] = {}
+            track_priorities: dict[int, int] = {}
+            for t in non_dead:
+                predicted_positions[t.fish_id] = t.predict()
+                # Confirmed/coasting get priority 0, probationary gets 1
+                track_priorities[t.fish_id] = (
+                    0 if t.state in (TrackState.CONFIRMED, TrackState.COASTING) else 1
+                )
 
-        # --- Predict positions for existing tracks ---
-        predicted: list[np.ndarray] = [t.predict() for t in self.tracks]
-
-        # --- Build XY-only cost matrix ---
-        n_tracks = len(self.tracks)
-        n_obs = len(observations)
-
-        if n_tracks > 0 and n_obs > 0:
-            cost_matrix = np.full(
-                (n_tracks, n_obs),
-                self.max_distance + 1.0,
-                dtype=np.float64,
+            claims, unclaimed_indices = claim_detections_for_tracks(
+                predicted_positions=predicted_positions,
+                track_priorities=track_priorities,
+                detections_per_camera=detections_per_camera,
+                models=models,
+                reprojection_threshold=self.reprojection_threshold,
             )
-            for r, pred in enumerate(predicted):
-                for c, assoc in enumerate(observations):
-                    cost_matrix[r, c] = float(
-                        np.linalg.norm(pred[:2] - assoc.centroid_3d[:2])
+
+            # Apply claims to tracks
+            track_map = {t.fish_id: t for t in non_dead}
+            for claim in claims:
+                track = track_map[claim.track_id]
+                claimed_track_ids.add(claim.track_id)
+
+                # Residual validation: reject if residual is anomalously high.
+                # Require at least 3 history entries for a statistically
+                # meaningful baseline; use absolute floor to avoid false
+                # rejection when baseline residual is near zero.
+                mean_res = track.health.mean_residual
+                residual_floor = self.reprojection_threshold * 0.5
+                if len(
+                    track.health.residual_history
+                ) >= 3 and claim.reprojection_residual > max(
+                    mean_res * self.residual_reject_factor,
+                    residual_floor,
+                ):
+                    # Reject — coast on prediction
+                    track.mark_missed()
+                    continue
+
+                # Single-view penalty: update position but freeze velocity
+                if claim.n_cameras == 1:
+                    track.update_position_only(
+                        centroid_3d=claim.centroid_3d,
+                        camera_detections=claim.camera_detections,
+                        reprojection_residual=claim.reprojection_residual,
+                        n_cameras=claim.n_cameras,
+                    )
+                else:
+                    track.update_from_claim(
+                        centroid_3d=claim.centroid_3d,
+                        camera_detections=claim.camera_detections,
+                        reprojection_residual=claim.reprojection_residual,
+                        n_cameras=claim.n_cameras,
                     )
 
-            row_ind, col_ind = linear_sum_assignment(cost_matrix)
-
-            matched_tracks: set[int] = set()
-            matched_obs: set[int] = set()
-
-            for r, c in zip(row_ind, col_ind, strict=True):
-                if cost_matrix[r, c] <= self.max_distance:
-                    self.tracks[r].update(observations[c])
-                    matched_tracks.add(r)
-                    matched_obs.add(c)
-
-            unmatched_track_indices = [
-                i for i in range(n_tracks) if i not in matched_tracks
-            ]
-            unmatched_obs_indices = [i for i in range(n_obs) if i not in matched_obs]
+            # Mark unclaimed tracks as missed
+            for t in non_dead:
+                if t.fish_id not in claimed_track_ids:
+                    t.mark_missed()
         else:
-            # No tracks or no observations — all unmatched
-            unmatched_track_indices = list(range(n_tracks))
-            unmatched_obs_indices = list(range(n_obs))
+            # No tracks or no detections — all tracks missed
+            for t in non_dead:
+                t.mark_missed()
+            # All detections are unclaimed
+            unclaimed_indices = {
+                cam: list(range(len(dets)))
+                for cam, dets in detections_per_camera.items()
+                if len(dets) > 0
+            }
 
-        # --- Mark unmatched tracks as missed ---
-        for i in unmatched_track_indices:
-            self.tracks[i].mark_missed()
+        # ----------------------------------------------------------
+        # Phase 2: Birth Discovery
+        # ----------------------------------------------------------
+        confirmed_count = sum(1 for t in self.tracks if t.state == TrackState.CONFIRMED)
+        total_unclaimed = sum(len(v) for v in unclaimed_indices.values())
 
-        # --- TRACK-04 population constraint ---
-        # Dead tracks this frame get their fish_id recycled to new observations.
-        dead_ids: list[int] = []
-        for i in unmatched_track_indices:
-            if self.tracks[i].is_dead:
-                dead_ids.append(self.tracks[i].fish_id)
+        should_birth = (
+            self.frame_count == 0
+            or confirmed_count < self.expected_count
+            or total_unclaimed > self.expected_count - confirmed_count
+            or self.frame_count % self.birth_interval == 0
+        )
 
-        recycled_obs: set[int] = set()
-        for obs_i, dead_id in zip(unmatched_obs_indices, dead_ids, strict=False):
-            new_track = self._create_track(
-                observations[obs_i], fish_id_override=dead_id
+        if should_birth and total_unclaimed > 0:
+            births = discover_births(
+                unclaimed_indices=unclaimed_indices,
+                detections_per_camera=detections_per_camera,
+                models=models,
+                expected_count=self.expected_count,
+                reprojection_threshold=self.reprojection_threshold,
+                min_cameras=self.min_cameras_birth,
             )
-            _ = new_track  # track added via _create_track
-            recycled_obs.add(obs_i)
 
-        # --- Create new tracks for remaining unmatched observations ---
-        for obs_i in unmatched_obs_indices:
-            if obs_i not in recycled_obs:
-                self._create_track(observations[obs_i])
+            # TRACK-04: collect dead IDs for recycling
+            dead_ids: list[int] = [t.fish_id for t in self.tracks if t.is_dead]
+            dead_id_iter = iter(dead_ids)
 
-        # --- Prune dead tracks ---
+            # Sort births by X for deterministic ID assignment on first frame
+            if self.frame_count == 0:
+                births = sorted(births, key=lambda a: float(a.centroid_3d[0]))
+
+            for birth in births:
+                dead_id = next(dead_id_iter, None)
+                self._create_track(birth, fish_id_override=dead_id)
+
+        # ----------------------------------------------------------
+        # Phase 3: Lifecycle
+        # ----------------------------------------------------------
         self.tracks = [t for t in self.tracks if not t.is_dead]
-
         self.frame_count += 1
         return [t for t in self.tracks if t.is_confirmed]
 
@@ -261,19 +466,18 @@ class FishTracker:
         return list(self.tracks)
 
     def get_seed_points(self) -> list[np.ndarray] | None:
-        """Return 3D centroids of confirmed tracks for prior-guided RANSAC.
+        """Return predicted 3D positions of confirmed tracks.
 
         Returns:
-            List of shape-(3,) arrays, one per confirmed track, or None if
-            no confirmed tracks exist (e.g. during the first few frames).
+            List of shape-(3,) arrays (predicted positions), or None if
+            no confirmed tracks exist.
         """
         confirmed = [t for t in self.tracks if t.is_confirmed]
         if not confirmed:
             return None
         seeds: list[np.ndarray] = []
         for t in confirmed:
-            if len(t.positions) > 0:
-                seeds.append(list(t.positions)[-1].copy())
+            seeds.append(t.predict())
         return seeds if seeds else None
 
     # ------------------------------------------------------------------
@@ -305,9 +509,13 @@ class FishTracker:
             fish_id=fish_id,
             min_hits=self.min_hits,
             max_age=self.max_age,
+            velocity_damping=self.velocity_damping,
         )
-        track.update(association)
-        # A brand-new track has streak=1 after one update; confirm immediately
-        # if min_hits==1.
+        track.update_from_claim(
+            centroid_3d=association.centroid_3d,
+            camera_detections=dict(association.camera_detections),
+            reprojection_residual=association.reprojection_residual,
+            n_cameras=association.n_cameras,
+        )
         self.tracks.append(track)
         return track

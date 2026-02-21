@@ -11,6 +11,7 @@ from aquapose.segmentation.detector import Detection
 from aquapose.tracking.associate import (
     FrameAssociations,
     _compute_mask_centroid,
+    claim_detections_for_tracks,
     ransac_centroid_cluster,
 )
 
@@ -565,3 +566,143 @@ class TestEmptyInput:
             models=three_camera_models,
         )
         assert isinstance(result, FrameAssociations)
+
+
+# ---------------------------------------------------------------------------
+# Test 7: Track-driven claiming
+# ---------------------------------------------------------------------------
+
+
+class TestClaimDetectionsForTracks:
+    """Test claim_detections_for_tracks greedy assignment."""
+
+    def test_single_track_claims_detections(
+        self,
+        three_camera_models: dict[str, RefractiveProjectionModel],
+    ) -> None:
+        """A single track at a known position should claim nearby detections."""
+        models = three_camera_models
+        fish_pos = torch.tensor([0.0, 0.1, 1.5], dtype=torch.float32)
+
+        dets = _project_fish_to_detections(fish_pos, models)
+
+        predicted = {0: fish_pos.numpy()}
+        priorities = {0: 0}
+
+        claims, _unclaimed = claim_detections_for_tracks(
+            predicted_positions=predicted,
+            track_priorities=priorities,
+            detections_per_camera=dets,
+            models=models,
+            reprojection_threshold=20.0,
+        )
+
+        assert len(claims) == 1
+        assert claims[0].track_id == 0
+        assert claims[0].n_cameras >= 2
+
+    def test_no_double_claims(
+        self,
+        three_camera_models: dict[str, RefractiveProjectionModel],
+        two_fish_positions: list[torch.Tensor],
+    ) -> None:
+        """Each detection should be claimed by at most one track."""
+        models = three_camera_models
+
+        dets: dict[str, list[Detection]] = {cam: [] for cam in models}
+        for fish_3d in two_fish_positions:
+            per_cam = _project_fish_to_detections(fish_3d, models)
+            for cam_id, d in per_cam.items():
+                dets[cam_id].extend(d)
+
+        predicted = {i: pos.numpy() for i, pos in enumerate(two_fish_positions)}
+        priorities = {i: 0 for i in range(len(two_fish_positions))}
+
+        claims, _ = claim_detections_for_tracks(
+            predicted_positions=predicted,
+            track_priorities=priorities,
+            detections_per_camera=dets,
+            models=models,
+            reprojection_threshold=20.0,
+        )
+
+        # Check no detection is claimed twice
+        seen: set[tuple[str, int]] = set()
+        for claim in claims:
+            for cam_id, det_idx in claim.camera_detections.items():
+                key = (cam_id, det_idx)
+                assert key not in seen, f"Detection {key} claimed by multiple tracks"
+                seen.add(key)
+
+    def test_unclaimed_returned(
+        self,
+        three_camera_models: dict[str, RefractiveProjectionModel],
+        two_fish_positions: list[torch.Tensor],
+    ) -> None:
+        """Detections not claimed by any track appear in unclaimed."""
+        models = three_camera_models
+
+        dets: dict[str, list[Detection]] = {cam: [] for cam in models}
+        for fish_3d in two_fish_positions:
+            per_cam = _project_fish_to_detections(fish_3d, models)
+            for cam_id, d in per_cam.items():
+                dets[cam_id].extend(d)
+
+        # Only track for fish 0 — fish 1's detections should be unclaimed
+        predicted = {0: two_fish_positions[0].numpy()}
+        priorities = {0: 0}
+
+        claims, unclaimed = claim_detections_for_tracks(
+            predicted_positions=predicted,
+            track_priorities=priorities,
+            detections_per_camera=dets,
+            models=models,
+            reprojection_threshold=20.0,
+        )
+
+        assert len(claims) == 1
+        total_unclaimed = sum(len(v) for v in unclaimed.values())
+        assert total_unclaimed > 0, "Fish 1's detections should be unclaimed"
+
+    def test_priority_ordering(
+        self,
+        three_camera_models: dict[str, RefractiveProjectionModel],
+    ) -> None:
+        """Confirmed tracks (priority 0) should claim over probationary (priority 1)."""
+        models = three_camera_models
+        fish_pos = torch.tensor([0.0, 0.1, 1.5], dtype=torch.float32)
+        dets = _project_fish_to_detections(fish_pos, models)
+
+        # Two tracks at same position, different priorities
+        predicted = {
+            0: fish_pos.numpy(),  # probationary
+            1: fish_pos.numpy(),  # confirmed
+        }
+        priorities = {0: 1, 1: 0}  # 1 is higher priority (confirmed)
+
+        claims, _ = claim_detections_for_tracks(
+            predicted_positions=predicted,
+            track_priorities=priorities,
+            detections_per_camera=dets,
+            models=models,
+            reprojection_threshold=20.0,
+        )
+
+        # The confirmed track (ID=1) should win the claims
+        claimed_ids = {c.track_id for c in claims if c.n_cameras >= 2}
+        assert 1 in claimed_ids, "Confirmed track should win the detections"
+
+    def test_empty_inputs(
+        self,
+        three_camera_models: dict[str, RefractiveProjectionModel],
+    ) -> None:
+        """Empty inputs should return no claims."""
+        models = three_camera_models
+
+        claims, _unclaimed = claim_detections_for_tracks(
+            predicted_positions={},
+            track_priorities={},
+            detections_per_camera={cam: [] for cam in models},
+            models=models,
+        )
+        assert claims == []

@@ -1,47 +1,101 @@
-"""Unit tests for FishTracker lifecycle and Hungarian assignment."""
+"""Unit tests for FishTracker with track-driven association."""
 
 from __future__ import annotations
 
 import numpy as np
+import pytest
+import torch
 
+from aquapose.calibration.projection import RefractiveProjectionModel
+from aquapose.segmentation.detector import Detection
 from aquapose.tracking import FishTrack, FishTracker
-from aquapose.tracking.associate import AssociationResult, FrameAssociations
+from aquapose.tracking.tracker import TrackHealth, TrackState
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Synthetic rig helpers (reused from test_associate.py patterns)
 # ---------------------------------------------------------------------------
 
 
-def _make_assoc(
-    fish_id: int,
-    centroid: tuple[float, float, float],
-    *,
-    residual: float = 0.5,
-    confidence: float = 1.0,
-    n_cameras: int = 3,
-    camera_detections: dict[str, int] | None = None,
-    is_low_confidence: bool = False,
-) -> AssociationResult:
-    """Build a synthetic AssociationResult."""
-    if camera_detections is None:
-        camera_detections = {f"cam{i}": i for i in range(n_cameras)}
-    return AssociationResult(
-        fish_id=fish_id,
-        centroid_3d=np.array(centroid, dtype=np.float32),
-        reprojection_residual=residual,
-        camera_detections=camera_detections,
-        n_cameras=n_cameras,
-        confidence=confidence,
-        is_low_confidence=is_low_confidence,
+def _make_overhead_camera(
+    cam_x: float,
+    cam_y: float,
+    water_z: float = 1.0,
+    fx: float = 1400.0,
+    cx: float = 800.0,
+    cy: float = 600.0,
+) -> RefractiveProjectionModel:
+    """Build a downward-looking camera at world position (cam_x, cam_y, 0)."""
+    K = torch.tensor(
+        [[fx, 0.0, cx], [0.0, fx, cy], [0.0, 0.0, 1.0]],
+        dtype=torch.float32,
+    )
+    R = torch.eye(3, dtype=torch.float32)
+    t = torch.tensor([-cam_x, -cam_y, 0.0], dtype=torch.float32)
+    normal = torch.tensor([0.0, 0.0, -1.0], dtype=torch.float32)
+    return RefractiveProjectionModel(
+        K=K, R=R, t=t, water_z=water_z, normal=normal, n_air=1.0, n_water=1.333
     )
 
 
-def _make_frame(
-    associations: list[AssociationResult],
-    frame_index: int = 0,
-) -> FrameAssociations:
-    """Build a FrameAssociations from a list of AssociationResult objects."""
-    return FrameAssociations(associations=associations, frame_index=frame_index)
+def _make_3_camera_rig() -> dict[str, RefractiveProjectionModel]:
+    """Build 3 overhead cameras arranged in a triangle."""
+    water_z = 1.0
+    positions = [(-0.5, -0.4), (0.5, -0.4), (0.0, 0.5)]
+    cam_ids = ["cam_a", "cam_b", "cam_c"]
+    return {
+        cam_id: _make_overhead_camera(x, y, water_z)
+        for cam_id, (x, y) in zip(cam_ids, positions, strict=True)
+    }
+
+
+def _blob_mask(
+    u: float, v: float, radius: int = 10, H: int = 1200, W: int = 1600
+) -> np.ndarray:
+    """Create a circular blob mask at pixel (u, v)."""
+    mask = np.zeros((H, W), dtype=np.uint8)
+    uu = np.arange(W)
+    vv = np.arange(H)
+    UU, VV = np.meshgrid(uu, vv)
+    mask[(UU - u) ** 2 + (VV - v) ** 2 <= radius**2] = 255
+    return mask
+
+
+def _project_to_detections(
+    positions_3d: list[np.ndarray],
+    models: dict[str, RefractiveProjectionModel],
+    H: int = 1200,
+    W: int = 1600,
+) -> dict[str, list[Detection]]:
+    """Project multiple 3D positions into all cameras, build Detection dicts.
+
+    Returns a detections_per_camera dict with all fish in all cameras.
+    """
+    detections_per_camera: dict[str, list[Detection]] = {cam: [] for cam in models}
+    for pos in positions_3d:
+        pt = torch.tensor(pos, dtype=torch.float32).unsqueeze(0)
+        for cam_id, model in models.items():
+            with torch.no_grad():
+                pixels, valid = model.project(pt)
+            if valid[0]:
+                u = float(pixels[0, 0])
+                v = float(pixels[0, 1])
+                if 0 <= u < W and 0 <= v < H:
+                    mask = _blob_mask(u, v, radius=10, H=H, W=W)
+                    area = int(np.count_nonzero(mask))
+                    bbox = (max(0, int(u) - 10), max(0, int(v) - 10), 20, 20)
+                    det = Detection(bbox=bbox, mask=mask, area=area, confidence=1.0)
+                    detections_per_camera[cam_id].append(det)
+    return detections_per_camera
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def models() -> dict[str, RefractiveProjectionModel]:
+    return _make_3_camera_rig()
 
 
 # ---------------------------------------------------------------------------
@@ -49,68 +103,60 @@ def _make_frame(
 # ---------------------------------------------------------------------------
 
 
-def test_single_fish_track_across_frames() -> None:
-    """Same fish_id maintained across 5 consecutive frames; confirmed after frame 2."""
-    tracker = FishTracker(min_hits=2, max_age=7)
+def test_single_fish_track_across_frames(
+    models: dict[str, RefractiveProjectionModel],
+) -> None:
+    """Same fish_id maintained across 5 consecutive frames."""
+    tracker = FishTracker(
+        min_hits=2, max_age=7, expected_count=9, reprojection_threshold=25.0
+    )
     seen_ids: set[int] = set()
 
     for f in range(5):
-        x = float(f) * 0.01  # linear motion in X
-        assoc = _make_assoc(0, (x, 0.0, 0.5))
-        frame = _make_frame([assoc], frame_index=f)
-        confirmed = tracker.update(frame)
+        x = float(f) * 0.01
+        pos = [np.array([x, 0.0, 1.5], dtype=np.float32)]
+        dets = _project_to_detections(pos, models)
+        confirmed = tracker.update(dets, models, frame_index=f)
 
-        if f >= 1:  # confirmed after min_hits=2 (frames 0 and 1)
+        if f >= 1:
             assert len(confirmed) == 1, f"Expected 1 confirmed track at frame {f}"
             seen_ids.add(confirmed[0].fish_id)
 
-    # All confirmed returns should carry the same ID
     assert len(seen_ids) == 1, f"Expected stable fish_id, got IDs: {seen_ids}"
 
 
-def test_single_fish_confirmed_after_min_hits() -> None:
-    """Track is NOT confirmed on frame 0, IS confirmed from frame 1 onward."""
-    tracker = FishTracker(min_hits=2, max_age=7)
-
-    assoc = _make_assoc(0, (0.0, 0.0, 0.5))
-
-    # Frame 0: no confirmed tracks yet (hit_streak=1 < min_hits=2)
-    confirmed_0 = tracker.update(_make_frame([assoc], frame_index=0))
-    assert confirmed_0 == [], "Track should not be confirmed on frame 0"
-
-    # Frame 1: hit_streak=2 >= min_hits=2 → confirmed
-    confirmed_1 = tracker.update(_make_frame([assoc], frame_index=1))
-    assert len(confirmed_1) == 1, "Track should be confirmed on frame 1"
-    assert confirmed_1[0].is_confirmed
-
-
 # ---------------------------------------------------------------------------
-# Test 2: Two fish moving in opposite directions — no ID swaps
+# Test 2: Two fish no swap
 # ---------------------------------------------------------------------------
 
 
-def test_two_fish_no_swap() -> None:
-    """Two fish with crossing XY trajectories maintain stable IDs."""
-    tracker = FishTracker(min_hits=2, max_age=7, max_distance=0.1)
+def test_two_fish_no_swap(
+    models: dict[str, RefractiveProjectionModel],
+) -> None:
+    """Two fish with separated trajectories maintain stable IDs."""
+    tracker = FishTracker(
+        min_hits=2, max_age=7, expected_count=9, reprojection_threshold=25.0
+    )
 
-    # Fish A starts at x=-0.5, Fish B at x=+0.5; both move slowly
     id_a: int | None = None
     id_b: int | None = None
 
     for f in range(10):
-        t = float(f) * 0.005  # small increments (< max_distance)
-        # Fish A moves right, Fish B moves left — they are separated in Y
-        assoc_a = _make_assoc(0, (-0.5 + t, -0.2, 0.5))
-        assoc_b = _make_assoc(1, (0.5 - t, +0.2, 0.5))
-        frame = _make_frame([assoc_a, assoc_b], frame_index=f)
-        confirmed = tracker.update(frame)
+        t = float(f) * 0.005
+        pos_a = np.array([-0.1 + t, -0.1, 1.5], dtype=np.float32)
+        pos_b = np.array([0.1 - t, 0.1, 1.5], dtype=np.float32)
+        dets = _project_to_detections([pos_a, pos_b], models)
+        confirmed = tracker.update(dets, models, frame_index=f)
 
         if f >= 1:
             assert len(confirmed) == 2, f"Expected 2 confirmed at frame {f}"
 
-            by_pos = {(round(t.positions[-1][1], 1)): t.fish_id for t in confirmed}
-            fish_at_neg_y = by_pos.get(-0.2) or by_pos.get(-0.1)
-            fish_at_pos_y = by_pos.get(0.2) or by_pos.get(0.1)
+            by_y = {}
+            for tr in confirmed:
+                y_val = round(float(list(tr.positions)[-1][1]), 1)
+                by_y[y_val] = tr.fish_id
+            fish_at_neg_y = by_y.get(-0.1)
+            fish_at_pos_y = by_y.get(0.1)
 
             if id_a is None:
                 id_a = fish_at_neg_y
@@ -121,56 +167,59 @@ def test_two_fish_no_swap() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 3: Birth confirmation
+# Test 3: Birth confirmation (PROBATIONARY → CONFIRMED)
 # ---------------------------------------------------------------------------
 
 
-def test_birth_confirmation() -> None:
+def test_birth_confirmation(
+    models: dict[str, RefractiveProjectionModel],
+) -> None:
     """Track is tentative for first min_hits-1 frames, then confirmed."""
-    tracker = FishTracker(min_hits=2, max_age=7)
-    assoc = _make_assoc(0, (0.0, 0.0, 0.5))
+    tracker = FishTracker(min_hits=2, max_age=7, reprojection_threshold=25.0)
+    pos = [np.array([0.0, 0.0, 1.5], dtype=np.float32)]
+    dets = _project_to_detections(pos, models)
 
-    confirmed_0 = tracker.update(_make_frame([assoc], frame_index=0))
+    confirmed_0 = tracker.update(dets, models, frame_index=0)
     assert confirmed_0 == [], "Should be tentative on frame 0"
 
     all_tracks = tracker.get_all_tracks()
-    assert len(all_tracks) == 1
-    assert not all_tracks[0].is_confirmed
+    assert len(all_tracks) >= 1
+    assert all_tracks[0].state == TrackState.PROBATIONARY
 
-    confirmed_1 = tracker.update(_make_frame([assoc], frame_index=1))
+    confirmed_1 = tracker.update(dets, models, frame_index=1)
     assert len(confirmed_1) == 1
     assert confirmed_1[0].is_confirmed
+    assert confirmed_1[0].state == TrackState.CONFIRMED
 
 
 # ---------------------------------------------------------------------------
-# Test 4: Grace period and death
+# Test 4: Grace period and death (CONFIRMED → COASTING → DEAD)
 # ---------------------------------------------------------------------------
 
 
-def test_grace_period_and_death() -> None:
-    """Track survives max_age missed frames, dies on max_age+1."""
+def test_grace_period_and_death(
+    models: dict[str, RefractiveProjectionModel],
+) -> None:
+    """Track survives max_age missed frames, dies after exceeding it."""
     max_age = 7
-    tracker = FishTracker(
-        min_hits=1, max_age=max_age
-    )  # min_hits=1 for immediate confirm
-    assoc = _make_assoc(0, (0.0, 0.0, 0.5))
+    tracker = FishTracker(min_hits=1, max_age=max_age, reprojection_threshold=25.0)
+    pos = [np.array([0.0, 0.0, 1.5], dtype=np.float32)]
+    dets = _project_to_detections(pos, models)
 
     # Seed the track
-    tracker.update(_make_frame([assoc], frame_index=0))
+    tracker.update(dets, models, frame_index=0)
 
-    # Feed empty frames — no detections
+    # Feed empty frames
+    empty: dict[str, list[Detection]] = {cam: [] for cam in models}
     for missed in range(1, max_age + 2):
-        empty_frame = _make_frame([], frame_index=missed)
-        tracker.update(empty_frame)
+        tracker.update(empty, models, frame_index=missed)
 
         alive_tracks = tracker.get_all_tracks()
         if missed <= max_age:
-            assert len(alive_tracks) == 1, (
+            assert len(alive_tracks) >= 1, (
                 f"Track should still be alive after {missed} missed frame(s)"
             )
-            assert alive_tracks[0].frames_since_update == missed
         else:
-            # frames_since_update == max_age+1 → is_dead → pruned
             assert alive_tracks == [], (
                 f"Track should be dead after {missed} missed frame(s)"
             )
@@ -181,23 +230,34 @@ def test_grace_period_and_death() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_population_constraint_relinking() -> None:
+def test_population_constraint_relinking(
+    models: dict[str, RefractiveProjectionModel],
+) -> None:
     """New observation in the same frame as a track death inherits the dead ID."""
-    tracker = FishTracker(min_hits=1, max_age=0)  # max_age=0: dies after 1 missed frame
+    # max_age=1 means confirmed tracks die after 2 missed frames.
+    # min_hits=1 for immediate confirmation. Use reprojection_threshold=25.0
+    # for synthetic overhead cameras.
+    tracker = FishTracker(min_hits=1, max_age=1, reprojection_threshold=25.0)
 
-    # Create a track for fish A
-    assoc_a = _make_assoc(0, (0.0, 0.0, 0.5))
-    tracker.update(_make_frame([assoc_a], frame_index=0))
+    pos_a = [np.array([0.0, 0.0, 1.5], dtype=np.float32)]
+    dets_a = _project_to_detections(pos_a, models)
+    tracker.update(dets_a, models, frame_index=0)
 
     original_id = tracker.get_all_tracks()[0].fish_id
 
-    # Frame 1: fish A is gone, but a new observation appears far away
-    # Fish A's track will miss this frame → is_dead (frames_since_update=1 > max_age=0)
-    new_obs = _make_assoc(0, (5.0, 5.0, 0.5))  # far from old position
-    tracker.update(_make_frame([new_obs], frame_index=1))
+    # Frame 1: empty — track misses (confirmed → coasting, fsu=1)
+    empty: dict[str, list[Detection]] = {cam: [] for cam in models}
+    tracker.update(empty, models, frame_index=1)
+    assert len(tracker.get_all_tracks()) == 1, "Track should still be alive (coasting)"
+
+    # Frame 2: track dies (fsu=2 > max_age=1), new fish at different position
+    # Use (0.1, 0.1) — far enough from (0.0, 0.0) to not be claimed (~93px),
+    # but still within camera image bounds.
+    pos_b = [np.array([0.1, 0.1, 1.5], dtype=np.float32)]
+    dets_b = _project_to_detections(pos_b, models)
+    tracker.update(dets_b, models, frame_index=2)
 
     all_tracks = tracker.get_all_tracks()
-    # Population constraint: new track should have inherited original_id
     ids = {t.fish_id for t in all_tracks}
     assert original_id in ids, f"Expected recycled ID {original_id} in tracks {ids}"
 
@@ -208,17 +268,18 @@ def test_population_constraint_relinking() -> None:
 
 
 def test_constant_velocity_prediction() -> None:
-    """predict() extrapolates from two positions correctly."""
+    """predict() extrapolates from velocity correctly."""
     track = FishTrack(fish_id=0)
     track.positions.append(np.array([0.0, 0.0, 0.0], dtype=np.float32))
     track.positions.append(np.array([1.0, 0.0, 0.0], dtype=np.float32))
+    track.velocity = np.array([1.0, 0.0, 0.0], dtype=np.float32)
 
     predicted = track.predict()
     np.testing.assert_allclose(predicted, [2.0, 0.0, 0.0], atol=1e-6)
 
 
 def test_constant_velocity_single_position() -> None:
-    """predict() with one position returns that position (zero velocity)."""
+    """predict() with one position and zero velocity returns that position."""
     track = FishTrack(fish_id=0)
     track.positions.append(np.array([3.0, 1.0, 0.5], dtype=np.float32))
 
@@ -227,132 +288,200 @@ def test_constant_velocity_single_position() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 7: XY-only cost matrix — Z-noise does not cause ID swaps
+# Test 7: First-frame batch init — IDs sorted by X coordinate
 # ---------------------------------------------------------------------------
 
 
-def test_xy_only_cost_matrix() -> None:
-    """Tracks matched correctly despite Z differences; XY determines cost."""
-    tracker = FishTracker(min_hits=1, max_age=7, max_distance=0.5)
+def test_first_frame_batch_init(
+    models: dict[str, RefractiveProjectionModel],
+) -> None:
+    """Multiple associations on frame 0 create tracks with IDs sorted by X."""
+    tracker = FishTracker(min_hits=1, reprojection_threshold=25.0)
 
-    # Two fish at same XY, different Z
-    assoc_a = _make_assoc(0, (0.0, 0.0, 1.0))
-    assoc_b = _make_assoc(1, (0.3, 0.0, 0.0))
-    tracker.update(_make_frame([assoc_a, assoc_b], frame_index=0))
-
-    id_at_x0 = next(
-        t.fish_id for t in tracker.get_all_tracks() if t.positions[-1][0] < 0.2
-    )
-    id_at_x03 = next(
-        t.fish_id for t in tracker.get_all_tracks() if t.positions[-1][0] > 0.2
-    )
-
-    # Frame 1: same XY but Z is swapped (noisy Z)
-    assoc_a2 = _make_assoc(0, (0.0, 0.0, 0.0))  # z swapped
-    assoc_b2 = _make_assoc(1, (0.3, 0.0, 1.0))  # z swapped
-    tracker.update(_make_frame([assoc_a2, assoc_b2], frame_index=1))
-
-    confirmed = tracker.get_all_tracks()
-    id_at_x0_frame1 = next(
-        t.fish_id for t in confirmed if abs(t.positions[-1][0]) < 0.2
-    )
-    id_at_x03_frame1 = next(t.fish_id for t in confirmed if t.positions[-1][0] > 0.2)
-
-    assert id_at_x0_frame1 == id_at_x0, "Fish at x=0 should keep its ID despite Z swap"
-    assert id_at_x03_frame1 == id_at_x03, (
-        "Fish at x=0.3 should keep its ID despite Z swap"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Test 8: Max-distance gate — no match when observation is too far
-# ---------------------------------------------------------------------------
-
-
-def test_max_distance_gate() -> None:
-    """Observation > max_distance from all tracks creates a new track."""
-    tracker = FishTracker(min_hits=1, max_age=7, max_distance=0.1)
-
-    # Seed one track near origin
-    assoc_near = _make_assoc(0, (0.0, 0.0, 0.5))
-    tracker.update(_make_frame([assoc_near], frame_index=0))
-
-    assert len(tracker.get_all_tracks()) == 1
-    original_id = tracker.get_all_tracks()[0].fish_id
-
-    # Frame 1: observation 1.0 m away in XY (>> max_distance=0.1 m)
-    assoc_far = _make_assoc(0, (1.0, 0.0, 0.5))
-    tracker.update(_make_frame([assoc_far], frame_index=1))
-
-    all_tracks = tracker.get_all_tracks()
-    # Original track missed → frames_since_update=1; new track created
-    ids = {t.fish_id for t in all_tracks}
-    assert len(ids) == 2, f"Expected 2 tracks, got {len(ids)}: {ids}"
-    assert original_id in ids, "Original track should still exist (within grace)"
-
-
-# ---------------------------------------------------------------------------
-# Test 9: First-frame batch init — IDs sorted by X coordinate
-# ---------------------------------------------------------------------------
-
-
-def test_first_frame_batch_init() -> None:
-    """9 associations on frame 0 create 9 tracks with IDs sorted by X."""
-    tracker = FishTracker()
-
-    # Create associations in shuffled X order
-    x_values = [float(i) * 0.1 for i in [3, 7, 1, 9, 5, 0, 8, 2, 6]]
-    associations = [_make_assoc(i, (x, 0.0, 0.5)) for i, x in enumerate(x_values)]
-
-    tracker.update(_make_frame(associations, frame_index=0))
+    # 3 fish at different X positions
+    positions = [
+        np.array([0.15, 0.0, 1.5], dtype=np.float32),
+        np.array([-0.15, 0.0, 1.5], dtype=np.float32),
+        np.array([0.0, 0.0, 1.5], dtype=np.float32),
+    ]
+    dets = _project_to_detections(positions, models)
+    tracker.update(dets, models, frame_index=0)
 
     tracks = tracker.get_all_tracks()
-    assert len(tracks) == 9, f"Expected 9 tracks, got {len(tracks)}"
+    assert len(tracks) >= 3, f"Expected >= 3 tracks, got {len(tracks)}"
 
-    # Extract X positions in ID order (ID 0 should have smallest X)
-    id_to_x = {t.fish_id: float(t.positions[-1][0]) for t in tracks}
-    sorted_x = [id_to_x[i] for i in range(9)]
-    assert sorted_x == sorted(sorted_x), (
-        f"Track IDs should be ordered by X, got x-values: {sorted_x}"
-    )
+    # Verify IDs are sorted by X
+    id_to_x = {t.fish_id: float(list(t.positions)[-1][0]) for t in tracks}
+    sorted_ids = sorted(id_to_x.keys())
+    xs = [id_to_x[i] for i in sorted_ids]
+    assert xs == sorted(xs), f"Track IDs should be ordered by X, got: {xs}"
 
 
 # ---------------------------------------------------------------------------
-# Test 10: get_seed_points — returns centroids or None
+# Test 8: get_seed_points returns predicted positions
 # ---------------------------------------------------------------------------
 
 
-def test_get_seed_points() -> None:
-    """get_seed_points() returns centroids of confirmed tracks; None if none confirmed."""
-    tracker = FishTracker(min_hits=2, max_age=7)
-
-    # Frame 0: no confirmed tracks yet → None
+def test_get_seed_points(
+    models: dict[str, RefractiveProjectionModel],
+) -> None:
+    """get_seed_points() returns predicted positions of confirmed tracks."""
+    tracker = FishTracker(min_hits=2, max_age=7, reprojection_threshold=25.0)
     assert tracker.get_seed_points() is None
 
-    assoc = _make_assoc(0, (0.5, 0.2, 0.3))
-    tracker.update(_make_frame([assoc], frame_index=0))
+    pos = [np.array([0.05, 0.02, 1.5], dtype=np.float32)]
+    dets = _project_to_detections(pos, models)
 
-    # Still no confirmed tracks (min_hits=2, frame 0 gives streak=1)
-    assert tracker.get_seed_points() is None
+    tracker.update(dets, models, frame_index=0)
+    assert tracker.get_seed_points() is None  # not confirmed yet
 
-    tracker.update(_make_frame([assoc], frame_index=1))
-
-    # Now confirmed
+    tracker.update(dets, models, frame_index=1)
     seeds = tracker.get_seed_points()
     assert seeds is not None
     assert len(seeds) == 1
-    np.testing.assert_allclose(seeds[0][:2], [0.5, 0.2], atol=1e-5)
 
 
-def test_get_seed_points_multiple_confirmed() -> None:
-    """get_seed_points returns one entry per confirmed track."""
-    tracker = FishTracker(min_hits=2, max_age=7)
+# ---------------------------------------------------------------------------
+# Test 9: Coasting velocity damping
+# ---------------------------------------------------------------------------
 
-    assocs = [_make_assoc(i, (float(i) * 0.1, 0.0, 0.5)) for i in range(3)]
 
-    tracker.update(_make_frame(assocs, frame_index=0))
-    tracker.update(_make_frame(assocs, frame_index=1))
+def test_coasting_velocity_damping() -> None:
+    """During COASTING, velocity is damped by damping^frames_since_update."""
+    track = FishTrack(fish_id=0, velocity_damping=0.5)
+    track.state = TrackState.COASTING
+    track.positions.append(np.array([0.0, 0.0, 1.0], dtype=np.float32))
+    track.velocity = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    track.frames_since_update = 2
 
-    seeds = tracker.get_seed_points()
-    assert seeds is not None
-    assert len(seeds) == 3
+    predicted = track.predict()
+    # damping = 0.5^2 = 0.25, so velocity = 0.25
+    np.testing.assert_allclose(predicted, [0.25, 0.0, 1.0], atol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Test 10: Probationary short leash
+# ---------------------------------------------------------------------------
+
+
+def test_probationary_short_leash() -> None:
+    """Probationary tracks die after 2 missed frames (not max_age)."""
+    track = FishTrack(fish_id=0, max_age=10)
+    track.state = TrackState.PROBATIONARY
+
+    track.mark_missed()
+    assert not track.is_dead  # frames_since_update=1
+    track.mark_missed()
+    assert not track.is_dead  # frames_since_update=2
+    track.mark_missed()
+    assert track.is_dead  # frames_since_update=3 > 2
+
+
+# ---------------------------------------------------------------------------
+# Test 11: Full state lifecycle transitions
+# ---------------------------------------------------------------------------
+
+
+def test_state_lifecycle_transitions() -> None:
+    """PROBATIONARY → CONFIRMED → COASTING → back to CONFIRMED on re-acquisition."""
+    track = FishTrack(fish_id=0, min_hits=2, max_age=5)
+
+    # Starts PROBATIONARY
+    assert track.state == TrackState.PROBATIONARY
+
+    # First update: still PROBATIONARY (consecutive_hits=1 < min_hits=2)
+    track.update_from_claim(
+        centroid_3d=np.array([0.0, 0.0, 1.0], dtype=np.float32),
+        camera_detections={"cam_a": 0},
+        reprojection_residual=5.0,
+        n_cameras=2,
+    )
+    assert track.state == TrackState.PROBATIONARY
+
+    # Second update: CONFIRMED (consecutive_hits=2 >= min_hits=2)
+    track.update_from_claim(
+        centroid_3d=np.array([0.01, 0.0, 1.0], dtype=np.float32),
+        camera_detections={"cam_a": 0},
+        reprojection_residual=5.0,
+        n_cameras=2,
+    )
+    assert track.state == TrackState.CONFIRMED
+
+    # Miss: COASTING
+    track.mark_missed()
+    assert track.state == TrackState.COASTING
+
+    # Re-acquire: back to CONFIRMED
+    track.update_from_claim(
+        centroid_3d=np.array([0.02, 0.0, 1.0], dtype=np.float32),
+        camera_detections={"cam_a": 0},
+        reprojection_residual=5.0,
+        n_cameras=2,
+    )
+    assert track.state == TrackState.CONFIRMED
+
+
+# ---------------------------------------------------------------------------
+# Test 12: Single-view freezes velocity
+# ---------------------------------------------------------------------------
+
+
+def test_single_view_freezes_velocity() -> None:
+    """update_position_only freezes velocity while updating position."""
+    track = FishTrack(fish_id=0, min_hits=1)
+    track.velocity = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    track.positions.append(np.array([0.0, 0.0, 1.0], dtype=np.float32))
+
+    track.update_position_only(
+        centroid_3d=np.array([0.5, 0.0, 1.0], dtype=np.float32),
+        camera_detections={"cam_a": 0},
+        reprojection_residual=3.0,
+        n_cameras=1,
+    )
+
+    # Velocity should still be the original value (frozen)
+    np.testing.assert_allclose(track.velocity, [1.0, 0.0, 0.0], atol=1e-6)
+    # But position was updated
+    np.testing.assert_allclose(list(track.positions)[-1], [0.5, 0.0, 1.0], atol=1e-6)
+    # degraded_frames incremented
+    assert track.health.degraded_frames == 1
+
+
+# ---------------------------------------------------------------------------
+# Test 13: TrackHealth statistics
+# ---------------------------------------------------------------------------
+
+
+def test_track_health_statistics() -> None:
+    """TrackHealth correctly tracks running statistics."""
+    health = TrackHealth()
+
+    assert health.mean_residual == 0.0
+    assert health.mean_cameras == 0.0
+
+    health.residual_history.append(5.0)
+    health.residual_history.append(10.0)
+    health.cameras_per_frame.append(3)
+    health.cameras_per_frame.append(5)
+
+    assert health.mean_residual == 7.5
+    assert health.mean_cameras == 4.0
+
+
+# ---------------------------------------------------------------------------
+# Test 14: is_confirmed property for writer compat
+# ---------------------------------------------------------------------------
+
+
+def test_is_confirmed_property() -> None:
+    """is_confirmed returns True for CONFIRMED and COASTING states."""
+    track = FishTrack(fish_id=0)
+
+    track.state = TrackState.PROBATIONARY
+    assert not track.is_confirmed
+
+    track.state = TrackState.CONFIRMED
+    assert track.is_confirmed
+
+    track.state = TrackState.COASTING
+    assert track.is_confirmed

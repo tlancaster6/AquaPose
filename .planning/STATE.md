@@ -2,19 +2,19 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-19)
+See: .planning/PROJECT.md (updated 2026-02-21)
 
-**Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 04 Plan 03 at checkpoint:human-verify — holdout validation, visual overlay, and run_reconstruction.py CLI built; awaiting real-data IoU results (target: global mean >= 0.80, no camera below 0.60)
+**Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
+**Current focus:** Reconstruction pivot complete — roadmap restructured; ready to begin Phase 5 (Cross-View Identity and 3D Tracking)
 
 ## Current Position
 
-Phase: 04-per-fish-reconstruction
-Plan: 03 of N (at checkpoint:human-verify)
-Status: Holdout validation + run_reconstruction.py CLI built; 294 tests passing; awaiting real-data verification of holdout IoU
-Last activity: 2026-02-21 — evaluate_holdout_iou + run_holdout_validation + render_overlay + run_reconstruction.py CLI + 12 unit tests
+Phase: 05-cross-view-identity-and-3d-tracking
+Plan: Not yet planned
+Status: Roadmap, requirements, and planning docs updated for reconstruction pivot. Ready for /gsd:plan-phase or /gsd:add-phase for Phase 7+.
+Last activity: 2026-02-21 — Reconstruction pivot: archived Phase 4 (analysis-by-synthesis), rewrote Phases 5-6 for direct triangulation pipeline, updated REQUIREMENTS.md
 
-Progress: [████████░░] 75% (14 plans complete)
+Progress: [██████░░░░] 55% (phases 1-3 complete, phase 4 shelved, phases 5-8 pending)
 
 ## Performance Metrics
 
@@ -51,11 +51,10 @@ Recent decisions affecting current work:
 
 - [Init]: AquaCal is numpy-based — refractive projection must be reimplemented in PyTorch (AquaCal used only for loading calibration JSON, not for forward projection)
 - [Init]: Phase 3 (Fish Mesh) depends only on Phase 1, not Phase 2 — can develop in parallel with segmentation if calendar time matters
-- [Init]: Temporal smoothness loss (RECON-02) built in Phase 4 but only activates in Phase 5 when tracking provides associations — build the hook, wire it in Phase 5
 - [Init]: All APIs are batch-first (list of fish states) from day one — even Phase 4 single-fish code uses single-element lists
 - [01-01]: Cross-validation compares against AquaCal NumPy (not AquaMVS PyTorch) — AquaMVS not importable in hatch env due to missing open3d/lightglue; AquaCal NumPy is the actual ground truth
 - [01-01]: K_inv float32 inversion tolerance set to atol=1e-4 — float32 with fx=1400 produces ~6e-5 error, expected float32 precision not a bug
-- [01-02]: Z/XY anisotropy is 132x mean (30x-577x range) at 0.5px noise — Phase 4 optimizer should weight Z loss approximately 100x smaller than XY
+- [01-02]: Z/XY anisotropy is 132x mean (30x-577x range) at 0.5px noise — downstream optimizer should weight Z loss approximately 100x smaller than XY
 - [01-02]: build_synthetic_rig uses water_z = height_above_water (0.75m) since AquaCal places cameras at world Z=0 with Z increasing downward into water
 - [02-01]: Shadow exclusion via threshold at 254 (MOG2 outputs 127 for shadows, 255 for foreground)
 - [02-01]: Detection.mask is full-frame sized (not cropped to bbox) to feed directly into SAM as mask prompt
@@ -93,35 +92,49 @@ Recent decisions affecting current work:
 - [Phase 02-03]: SegmentationResult.mask_rle removed — raw ndarray mask is more useful downstream; callers encode RLE if needed
 - [Phase 02-03]: predict() kept as backward-compat wrapper calling segment() with trivial CropRegion covering full image
 - [Phase 02-03]: train() uses stratified_split by default; accepts train_json/val_json to consume build_training_data.py output directly
-- [04-01]: Vertex pre-projection approach for RefractiveSilhouetteRenderer: pre-project world->NDC via RefractiveCamera, then render with FoVOrthographicCameras (identity); avoids implementing full PyTorch3D camera interface
-- [04-01]: Camera image size derived from K matrix: H=round(2*cy), W=round(2*cx); callers can override via camera_image_sizes parameter
+- [Pivot 2026-02-21]: Analysis-by-synthesis pipeline shelved — 30+ min/sec runtime impractical. Replaced by direct triangulation pipeline: medial axis → arc-length → RANSAC triangulation → spline fitting. See .planning/inbox/fish-reconstruction-pivot.md
+- [Pivot 2026-02-21]: Sex classification (SEX-01..03) deferred to v2 — not part of direct triangulation pipeline
+- [Pivot 2026-02-21]: Cross-view identity (Stage 0) promoted to Phase 5 — prerequisite for all reconstruction stages
+- [Pivot 2026-02-21]: Old RECON-01..05 renamed to RECON-ABS-01..05 (shelved); new RECON-01..05 defined for direct triangulation
+
+### Phase 4 Shelved Decisions (Analysis-by-Synthesis)
+
+*These decisions apply only to the shelved analysis-by-synthesis pipeline. Retained for reference.*
+
+- [04-01]: Vertex pre-projection approach for RefractiveSilhouetteRenderer: pre-project world->NDC via RefractiveCamera, then render with FoVOrthographicCameras (identity)
+- [04-01]: Camera image size derived from K matrix: H=round(2*cy), W=round(2*cx)
 - [04-01]: torch downgraded 2.10+cu130 -> 2.9.1+cu128, torchvision 0.24.1+cu128 (to fix pytorch3d DLL ABI mismatch)
-- [04-01]: Gravity prior uses theta^2 (pitch proxy); explicit roll parameter deferred — would require FishState extension
-- [04-01]: Angular diversity temperature: higher T = MORE spread (small base^T drops faster); temperature=0.5 default is moderate differentiation
+- [04-01]: Gravity prior uses theta^2 (pitch proxy); explicit roll parameter deferred
+- [04-01]: Angular diversity temperature: higher T = MORE spread; temperature=0.5 default
 - [Phase 04-02]: Per-parameter Adam LR groups: p uses lr*5 per RESEARCH.md Z-anisotropy note
-- [Phase 04-02]: MockRenderer Gaussian blob from vertex mean: GPU-free differentiable test harness for optimizer unit tests
-- [Phase 04-03]: run_holdout_validation uses round-robin (frame_idx % n_cameras) rather than full holdout per camera: avoids N*T optimizer runs, distributes held-out cameras evenly across frames
-- [Phase 04-03]: evaluate_holdout_iou uses existing optimized states when provided: holdout evaluation is inference-only; measures generalization of full-camera optimization to unseen views
-- [Phase 04-03]: render_overlay uses BGR convention: (0,255,0) = green, (0,0,255) = red; pure-NumPy blend: frame*(1-alpha*opacity) + color*alpha*opacity
+- [Phase 04-02]: MockRenderer Gaussian blob from vertex mean: GPU-free differentiable test harness
+- [Phase 04-03]: run_holdout_validation uses round-robin (frame_idx % n_cameras)
+- [Phase 04-03]: evaluate_holdout_iou uses existing optimized states when provided
+- [Phase 04-03]: render_overlay uses BGR convention: (0,255,0) = green, (0,0,255) = red
 
 ### Roadmap Evolution
 
 - Phase 02.1 inserted after Phase 02: Segmentation Troubleshooting (URGENT)
 - Phase 02.1.1 inserted after Phase 02.1: Object-detection alternative to MOG2 (URGENT)
+- Phase 04 shelved (2026-02-21): Analysis-by-synthesis too slow (30+ min/sec). Replaced by direct triangulation pipeline.
+- Phases 05-06 rewritten (2026-02-21): Phase 5 = Cross-View Identity & 3D Tracking; Phase 6 = 2D Medial Axis & Arc-Length Sampling
+- Phases 07-08 pending addition via /gsd:add-phase: Phase 7 = Triangulation & Spline Fitting; Phase 8 = Output & Visualization
 
 ### Pending Todos
 
 - **Consolidate scripts into CLI workflow** (tooling) — scripts/ now cleaned to 5 production scripts (build_training_data.py, eval_yolo_vs_mog2.py, organize_yolo_dataset.py, sample_yolo_frames.py, train_yolo.py)
+- **Integrate full-frame exclusion masks from AquaMVS** (calibration) — load optional per-camera masks to filter out invalid regions before detection/segmentation/triangulation
+- **Add Phase 7 and Phase 8 to roadmap** via /gsd:add-phase
 
 ### Blockers/Concerns
 
 - [Phase 1 - RESOLVED]: Z-uncertainty budget quantified: Z error is 132x larger than XY for top-down 13-camera rig (see docs/reports/z_uncertainty_report.md)
-- [Phase 02.1 - IN PROGRESS]: MOG2 validated on 2 cameras — e3v83eb frame 006765 shows 0 detections (possible stationary-fish failure); counts up to 18 suggest over-splitting; visual review of output/test_mog2/ stills needed before proceeding to SAM2 plan
-- [Phase 4]: PyTorch3D sigma/gamma hyperparameters for this rig's fish pixel sizes unknown — empirical sweep needed during Phase 4 development
+- [Phase 02.1 - RESOLVED]: MOG2 validated; YOLO added as alternative detector
+- [Phase 4 - RESOLVED via pivot]: PyTorch3D sigma/gamma hyperparameters moot — no longer using differentiable rendering in primary pipeline
+- [Phase 5 - NEW]: Cross-view identity has no existing implementation to build on — RANSAC centroid clustering is new code
 
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: Phase 04-03 checkpoint:human-verify — run_reconstruction.py built, awaiting holdout IoU results on real data
-Next action: Run script on real video clip, report holdout IoU. Type "approved" if >= 0.80 global mean with no camera below 0.60, or describe issues for gap closure.
-Next action: Proceed to Phase 04 Plan 03 (sequence pipeline / integration)
+Stopped at: Reconstruction pivot planning — ROADMAP.md, REQUIREMENTS.md, STATE.md, PROJECT.md, research docs updated
+Next action: Run /gsd:add-phase to add Phase 7 (Triangulation & Spline Fitting) and Phase 8 (Output & Visualization), then /gsd:plan-phase for Phase 5

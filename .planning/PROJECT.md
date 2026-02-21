@@ -2,11 +2,11 @@
 
 ## What This Is
 
-AquaPose is a 3D fish pose estimation system that uses analysis-by-synthesis to reconstruct the position, orientation, and body shape of cichlids in a multi-camera aquarium rig. It fits a parametric fish mesh to multi-view silhouettes through differentiable refractive rendering, producing dense 3D trajectories and midline kinematics for behavioral research.
+AquaPose is a 3D fish pose estimation system that reconstructs the position, orientation, and body shape of cichlids from a multi-camera aquarium rig. The primary pipeline extracts 2D medial axes from segmentation masks, establishes cross-view correspondences via arc-length normalization, triangulates 3D midline points through a refractive camera model, and fits continuous 3D splines — producing dense 3D trajectories and midline kinematics for behavioral research. An alternative analysis-by-synthesis pipeline (differentiable mesh rendering + optimization) is shelved but retained for advanced use.
 
 ## Core Value
 
-Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering — if this doesn't work, nothing downstream matters.
+Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation — if this doesn't work, nothing downstream matters.
 
 ## Requirements
 
@@ -16,26 +16,38 @@ Accurate single-fish 3D reconstruction from multi-view silhouettes via different
 
 (None yet — ship to validate)
 
-### Active
+### Completed
 
-- [ ] Load calibration data from AquaCal (intrinsics, extrinsics, refractive model)
-- [ ] Refractive projection (3D→pixel) and ray casting (pixel→ray) in PyTorch, with depth output
-- [ ] Background subtraction detection (MOG2) with bounding box output
-- [ ] SAM-based pseudo-label generation from bounding box prompts
-- [ ] Label Studio annotation pipeline integration
-- [ ] Instance segmentation model (Mask R-CNN on crops) trained on corrected annotations
-- [ ] Parametric fish mesh: midline spline + swept cross-sections, differentiable in PyTorch
-- [ ] Free cross-section mode for self-calibrating body shape profiles from data
-- [ ] Epipolar consensus 3D initialization from coarse keypoints
-- [ ] Differentiable silhouette rendering via PyTorch3D with refractive projection
-- [ ] Multi-objective loss function (silhouette, gravity prior, morphological constraint, temporal smoothness)
-- [ ] Cross-view holdout validation framework
-- [ ] Single-fish pose optimization on real data with validated accuracy
+- [x] Load calibration data from AquaCal (intrinsics, extrinsics, refractive model)
+- [x] Refractive projection (3D→pixel) and ray casting (pixel→ray) in PyTorch
+- [x] Background subtraction detection (MOG2) + YOLOv8 alternative detector
+- [x] SAM2-based pseudo-label generation from bounding box prompts (box-only, no mask prompt)
+- [x] U-Net segmentation on cropped detections (replaced Mask R-CNN; best val IoU: 0.623)
+- [x] Parametric fish mesh: midline spline + swept cross-sections, differentiable in PyTorch
+
+### Active (Direct Triangulation Pipeline)
+
+- [ ] Cross-view identity association via RANSAC centroid ray clustering
+- [ ] Persistent 3D fish tracking via Hungarian assignment on 3D centroids
+- [ ] 2D medial axis extraction from masks (skeletonize + longest-path BFS)
+- [ ] Arc-length normalized resampling for cross-view correspondence
+- [ ] Multi-view triangulation with RANSAC and view-angle weighting
+- [ ] 3D spline fitting from triangulated midline points
+- [ ] Per-frame trajectory output (spline control points, width profile, centroid) in HDF5
+- [ ] 2D overlay visualization (reprojected midline on camera views)
+
+### Shelved (Analysis-by-Synthesis Pipeline)
+
+- [x] Differentiable silhouette rendering via PyTorch3D with refractive projection
+- [x] Multi-objective loss function (silhouette, gravity prior, morphological constraint)
+- [x] Single-fish pose optimization via Adam with warm-start
+- [x] Cross-view holdout validation framework
+- Shelved 2026-02-21: functionally complete but 30+ min/sec runtime is impractical
 
 ### Out of Scope
 
-- Multi-fish tracking and identity assignment — future milestone
 - Merge-and-split interaction handling — future milestone
+- Sex classification — deferred to v2
 - Full-day recording processing — future milestone (v1 targets 5–30 min clips)
 - Real-time processing — batch only
 - Fin segmentation — body-only masks
@@ -74,11 +86,10 @@ Accurate single-fish 3D reconstruction from multi-view silhouettes via different
 
 ### Annotation Workflow
 
-1. MOG2 background subtraction → bounding boxes across all frames
-2. Sample ~100 frames per camera (~1300 total annotated frames across 13 cameras)
-3. Feed bounding boxes as prompts to SAM (single-frame) → pseudo-label masks
-4. Import images + pseudo-labels into Label Studio for human correction
-5. Most frames are confirm-and-skip; effort on bad boundaries and merged fish
+1. YOLO detection (or MOG2 fallback) → bounding boxes across all frames
+2. Feed bounding boxes as box-only prompts to SAM2 → pseudo-label masks with quality filtering
+3. Train U-Net on pseudo-labels directly (no manual annotation step — Label Studio removed)
+4. U-Net inference on detection crops → binary masks for downstream reconstruction
 
 ### Cross-Section Profile Self-Calibration
 
@@ -107,13 +118,14 @@ Species-specific cross-section profiles are self-calibrated from data rather tha
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Analysis-by-synthesis over keypoint triangulation | Dense silhouette constraints are more robust under refraction than sparse point correspondences | — Pending |
-| AquaCal as dependency, AquaMVS as reference | Avoid fragile cross-repo imports; reimplement refractive projection in AquaPose | — Pending |
-| MOG2 detection before learned detector | Simpler, faster, may be sufficient; YOLO fallback if recall < 95% | — Pending |
-| Epipolar consensus only (no voxel carving) | Simpler initialization; voxel carving is expensive and rarely needed with warm-start | — Pending |
-| Self-calibrated cross-section profiles | Data-driven is more accurate than literature values; needs free-parameter mesh mode | — Pending |
-| Cross-view holdout for validation | Avoids need for manual 3D ground truth; uses camera geometry as its own validation | — Pending |
-| Pre-project vertices then PyTorch3D rasterize | Compose refractive projection with standard rasterizer; need to add depth output | — Pending |
+| Direct triangulation over analysis-by-synthesis | Analysis-by-synthesis (30+ min/sec) impractical; medial axis + triangulation is orders of magnitude faster with acceptable quality | Decided 2026-02-21 |
+| AquaCal as dependency, AquaMVS as reference | Avoid fragile cross-repo imports; reimplement refractive projection in AquaPose | Decided |
+| YOLO as primary detector, MOG2 as fallback | YOLOv8n trained on 150 frames; recall 0.78, sufficient for pipeline | Decided |
+| RANSAC centroid clustering for cross-view identity | Cast refractive rays from 2D centroids, triangulate minimal subsets, score consensus | Decided 2026-02-21 |
+| Arc-length normalized correspondence | Slender-body assumption: normalized arc-length along 2D midline projection approximately preserves cross-view correspondence | Decided 2026-02-21 |
+| U-Net over Mask R-CNN for segmentation | Lightweight (~2.5M params), trains on SAM2 pseudo-labels, best val IoU 0.623 | Decided |
+| Cross-view holdout for validation | Avoids need for manual 3D ground truth; uses camera geometry as its own validation | Decided |
+| Analysis-by-synthesis retained as optional route | Shelved, not deleted — available for advanced work requiring mesh-level reconstruction | Decided 2026-02-21 |
 
 ---
-*Last updated: 2026-02-19 after initialization*
+*Last updated: 2026-02-21 — Reconstruction pivot: direct triangulation replaces analysis-by-synthesis as primary pipeline*

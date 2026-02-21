@@ -1,7 +1,7 @@
 # Requirements: AquaPose
 
 **Defined:** 2026-02-19
-**Core Value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
+**Core Value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
 
 ## v1 Requirements
 
@@ -28,36 +28,46 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **MESH-02**: System supports free cross-section mode where per-section height/width are optimizable parameters for shape profile self-calibration
 - [ ] **MESH-03**: System initializes 3D fish state via epipolar consensus from coarse keypoints (head, center, tail) using refractive ray intersection
 
-### Reconstruction
+### Reconstruction (Direct Triangulation Pipeline)
 
-- [x] **RECON-01**: System renders differentiable silhouettes of the fish mesh into each camera view via refractive projection + PyTorch3D rasterizer, with per-camera weighting by angular diversity to prevent clustered ring cameras from dominating
-- [x] **RECON-02**: System computes multi-objective loss: silhouette IoU + gravity prior + morphological constraint first, then temporal smoothness once tracking provides frame-to-frame associations
-- [x] **RECON-03**: System runs 2-initialization multi-start (forward + 180° flip) on first frame of each track to resolve head-tail ambiguity
-- [x] **RECON-04**: System optimizes per-frame fish pose via Adam with warm-start from previous frame's solution
-- [x] **RECON-05**: System validates reconstruction via cross-view holdout (fit on N-k cameras, evaluate IoU on k held-out cameras), achieving ≥0.80 mean holdout IoU
+- [ ] **RECON-01**: System extracts 2D medial axis from binary masks via morphological smoothing + skeletonization + longest-path BFS pruning, producing an ordered head-to-tail midline with local half-widths from the distance transform
+- [ ] **RECON-02**: System resamples 2D midlines at N fixed normalized arc-length positions (head=0, tail=1), producing consistent cross-view correspondences with coordinate transform from crop space to full-frame pixels
+- [ ] **RECON-03**: System triangulates each of the N body positions across cameras via refractive ray intersection with per-point RANSAC and view-angle weighting to reject arc-length correspondence outliers
+- [ ] **RECON-04**: System fits a cubic B-spline (5–8 control points) through the N triangulated 3D points, plus a 1D width-profile spline, producing a continuous 3D midline + tube model per fish per frame
+- [ ] **RECON-05**: *(Optional, add only if baseline insufficient)* System refines 3D spline control points via Levenberg-Marquardt minimization of reprojection error against 2D medial axis observations across all cameras
 
-### Tracking
+### Reconstruction — Shelved (Analysis-by-Synthesis)
 
-- [ ] **TRACK-01**: System maintains per-fish 3D Extended Kalman Filter (position + velocity) with anisotropic process noise (higher Z uncertainty)
-- [ ] **TRACK-02**: System associates detections to tracks per frame via Hungarian algorithm with Mahalanobis distance cost and gating threshold
-- [ ] **TRACK-03**: System injects predicted bounding boxes from 3D tracker into detection stage for fish not detected by background subtraction (tracker safety net). Frame 1 runs without safety net; frame 2+ uses previous frame's track predictions.
-- [ ] **TRACK-04**: System enforces population constraint (exactly 9 fish at all times). If a track is lost and a new detection appears in the same frame window, they are linked.
+*Shelved with Phase 4. Code retained as optional advanced route.*
 
-### Sex Classification
+- [x] **RECON-ABS-01**: System renders differentiable silhouettes of the fish mesh into each camera view via refractive projection + PyTorch3D rasterizer, with per-camera weighting by angular diversity
+- [x] **RECON-ABS-02**: System computes multi-objective loss: silhouette IoU + gravity prior + morphological constraint + temporal smoothness
+- [x] **RECON-ABS-03**: System runs 2-initialization multi-start (forward + 180° flip) on first frame to resolve head-tail ambiguity
+- [x] **RECON-ABS-04**: System optimizes per-frame fish pose via Adam with warm-start from previous frame
+- [x] **RECON-ABS-05**: System validates reconstruction via cross-view holdout, achieving ≥0.80 mean holdout IoU
 
-- [ ] **SEX-01**: System classifies each detected fish as male or female from color histogram features extracted from masked crops, using a simple classifier trained on labeled examples
-- [ ] **SEX-02**: System aggregates per-frame sex classifications across cameras and over time to assign a stable sex label per track
-- [ ] **SEX-03**: System adds a sex-mismatch penalty to the Hungarian association cost matrix to prevent male-female track swaps
+### Cross-View Identity and Tracking
+
+- [ ] **TRACK-01**: System associates detections across cameras to physical fish via RANSAC-based centroid ray clustering — casting refractive rays from 2D centroids, triangulating minimal camera subsets, and scoring consensus against remaining cameras
+- [ ] **TRACK-02**: System produces a 3D centroid per fish per frame with reprojection residual; high-residual associations are flagged for downstream quality checks
+- [ ] **TRACK-03**: System assigns persistent fish IDs across frames via Hungarian algorithm on 3D centroid distances, leveraging the fact that fish rarely swap positions in 3D even when they overlap in individual 2D views
+- [ ] **TRACK-04**: System enforces population constraint (exactly 9 fish at all times). If a track is lost and a new detection appears in the same frame window, they are linked
 
 ### Output
 
-- [ ] **OUT-01**: System stores per-frame pose trajectories in HDF5 including: fish_id, position, heading, midline, curvature, scale, sex, confidence, n_cameras, silhouette_loss
-- [ ] **OUT-02**: System overlays projected 3D mesh onto original camera views for 2D visual QA
-- [ ] **OUT-03**: System renders fish meshes in the tank volume in 3D via rerun-sdk with trajectory trails and identity coloring
+- [ ] **OUT-01**: System stores per-frame results in HDF5 including: fish_id, 3D spline control points, width profile, centroid position, heading, curvature, n_cameras, triangulation residual — readable by standard h5py without custom schemas
+- [ ] **OUT-02**: System overlays reprojected 3D midline + width profile onto original camera views for 2D visual QA
+- [ ] **OUT-03**: System renders 3D midline tube models in the tank volume via rerun-sdk with trajectory trails and identity coloring
 
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
+
+### Sex Classification
+
+- **SEX-01**: System classifies each detected fish as male or female from color histogram features extracted from masked crops, using a simple classifier trained on labeled examples
+- **SEX-02**: System aggregates per-frame sex classifications across cameras and over time to assign a stable sex label per track
+- **SEX-03**: System adds a sex-mismatch penalty to the Hungarian association cost matrix to prevent male-female track swaps
 
 ### Identity & Shape
 
@@ -85,7 +95,7 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Feature | Reason |
 |---------|--------|
-| Real-time processing | Analysis-by-synthesis is iterative gradient descent; batch offline only |
+| Real-time processing | Batch offline only; real-time not a research requirement |
 | GUI annotation tool | Use Label Studio + supervision; building a GUI is orthogonal to reconstruction |
 | Monocular reconstruction | Geometrically ill-posed; biases architecture away from multi-view |
 | Appearance-based Re-ID | Commit to shape-signature identity; appearance Re-ID fails under view changes for visually similar cichlids |
@@ -98,39 +108,38 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CALIB-01 | Phase 1 | Pending |
-| CALIB-02 | Phase 1 | Pending |
-| CALIB-03 | Phase 1 | Pending |
-| CALIB-04 | Phase 1 | Pending |
+| CALIB-01 | Phase 1 | Complete |
+| CALIB-02 | Phase 1 | Complete |
+| CALIB-03 | Phase 1 | Complete |
+| CALIB-04 | Phase 1 | Complete |
 | SEG-01 | Phase 2 | Complete |
 | SEG-02 | Phase 2 | Complete |
 | SEG-03 | Phase 2 | Complete |
 | SEG-04 | Phase 2 | Complete |
 | SEG-05 | Phase 2 | Complete |
-| MESH-01 | Phase 3 | Pending |
-| MESH-02 | Phase 3 | Pending |
-| MESH-03 | Phase 3 | Pending |
-| RECON-01 | Phase 4 | Complete |
-| RECON-02 | Phase 4 | Complete |
-| RECON-03 | Phase 4 | Complete |
-| RECON-04 | Phase 4 | Complete |
-| RECON-05 | Phase 4 | Complete |
+| MESH-01 | Phase 3 | Complete |
+| MESH-02 | Phase 3 | Complete |
+| MESH-03 | Phase 3 | Complete |
+| RECON-ABS-01..05 | Phase 4 (shelved) | Complete |
+| RECON-01 | Phase 6 | Pending |
+| RECON-02 | Phase 6 | Pending |
+| RECON-03 | Phase 7 (TBD) | Pending |
+| RECON-04 | Phase 7 (TBD) | Pending |
+| RECON-05 | Phase 7 (TBD) | Pending |
 | TRACK-01 | Phase 5 | Pending |
 | TRACK-02 | Phase 5 | Pending |
 | TRACK-03 | Phase 5 | Pending |
 | TRACK-04 | Phase 5 | Pending |
-| SEX-01 | Phase 5 | Pending |
-| SEX-02 | Phase 5 | Pending |
-| SEX-03 | Phase 5 | Pending |
-| OUT-01 | Phase 6 | Pending |
-| OUT-02 | Phase 6 | Pending |
-| OUT-03 | Phase 6 | Pending |
+| OUT-01 | Phase 8 (TBD) | Pending |
+| OUT-02 | Phase 8 (TBD) | Pending |
+| OUT-03 | Phase 8 (TBD) | Pending |
 
 **Coverage:**
-- v1 requirements: 27 total
-- Mapped to phases: 27
+- v1 requirements: 25 (excluding shelved RECON-ABS)
+- Mapped to phases: 25 (Phase 7–8 TBD, will be added via /gsd:add-phase)
 - Unmapped: 0
+- Deferred to v2: SEX-01, SEX-02, SEX-03
 
 ---
 *Requirements defined: 2026-02-19*
-*Last updated: 2026-02-19 — Traceability completed during roadmap creation*
+*Last updated: 2026-02-21 — Reconstruction pivot: shelved RECON-ABS (Phase 4), new RECON-01..05 for direct triangulation, rewritten TRACK-01..04 for 3D identity/tracking, SEX-* deferred to v2, OUT-* updated for spline output*

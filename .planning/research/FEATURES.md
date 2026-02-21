@@ -1,8 +1,8 @@
 # Feature Research
 
-**Domain:** Multi-view 3D fish pose estimation — analysis-by-synthesis research system
-**Researched:** 2026-02-19
-**Confidence:** MEDIUM (ecosystem well-surveyed; AquaPose's specific combination of refractive rendering + parametric fish mesh is novel and has no direct comparators)
+**Domain:** Multi-view 3D fish pose estimation — direct triangulation research system (with shelved analysis-by-synthesis alternative)
+**Researched:** 2026-02-21
+**Confidence:** MEDIUM (ecosystem well-surveyed; AquaPose's specific combination of refractive ray model + 3D midline triangulation is novel and has no direct comparators)
 
 ---
 
@@ -26,14 +26,14 @@ Features that must work or the system is incomplete as a research tool.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Multi-view silhouette extraction | Core input to analysis-by-synthesis; all multi-view systems require segmentation masks as primary signal | MEDIUM | MOG2 + Mask R-CNN pipeline already planned; must produce clean binary masks per camera per frame |
-| Camera calibration (intrinsics + extrinsics) | Without calibrated geometry, 3D reconstruction is geometrically meaningless | MEDIUM | Already achieved sub-mm; refractive calibration (air-water interface, no glass) is non-standard and must be encoded in the renderer |
-| Differentiable silhouette renderer | The core analysis-by-synthesis mechanism — cannot fit mesh to silhouettes without differentiable gradients | HIGH | Must correctly model refraction; standard renderers (PyTorch3D, nvdiffrast) assume air; this is a custom requirement |
-| Parametric fish mesh model | Defines the shape space being optimized; without a plausible mesh prior, optimization is unconstrained | HIGH | Midline spline + cross-sections; needs to encode biological shape constraints (fineness ratio, cross-section tapering) |
-| Single-fish 3D pose/shape optimization | The v1 deliverable — fitting one fish per clip | HIGH | Includes position, orientation, body pose (bend), shape (size/morphology) |
+| Multi-view silhouette extraction | Core input to reconstruction; all multi-view systems require segmentation masks as primary signal | MEDIUM | YOLO detection + U-Net segmentation pipeline; must produce clean binary masks per camera per frame |
+| Camera calibration (intrinsics + extrinsics) | Without calibrated geometry, 3D reconstruction is geometrically meaningless | MEDIUM | Already achieved sub-mm; refractive calibration (air-water interface, no glass) is non-standard and must be encoded in the ray model |
+| 3D midline triangulation from multi-view medial axes | The core reconstruction mechanism — extract 2D medial axes from silhouettes, establish arc-length correspondence, triangulate matched points across views using refractive rays | HIGH | Must correctly model refraction; standard triangulation assumes pinhole cameras in air; refractive ray casting is a custom requirement |
+| Parametric fish mesh model (shelved pipeline) / 3D midline spline (primary pipeline) | Primary: 3D midline spline with width profile defines the reconstructed body shape. Shelved: differentiable mesh for analysis-by-synthesis if triangulation proves insufficient | HIGH | Primary pipeline uses midline spline + cross-section width profile; encodes biological shape constraints (fineness ratio, cross-section tapering) |
+| Per-fish 3D midline reconstruction via triangulation | The v1 deliverable — reconstructing one fish's 3D midline per frame | HIGH | Includes 3D position, orientation, body curvature, and width profile |
 | Cross-view holdout validation | Scientifically required to demonstrate reconstruction is genuine, not overfit to available views | MEDIUM | Withhold N cameras during fitting; evaluate reprojection on held-out views |
 | Per-frame pose parameters | Output must be time-series, not just per-clip aggregate | MEDIUM | Position (3D centroid), orientation (3 DOF), body curvature per frame at 30fps |
-| Reprojection error metric | Standard quantitative measure for any analysis-by-synthesis system | LOW | IoU of projected mesh silhouette vs. observed silhouette, per camera per frame |
+| Reprojection error metric | Standard quantitative measure for reconstruction quality | LOW | IoU of reprojected 3D midline silhouette vs. observed silhouette, per camera per frame |
 | Video I/O and frame synchronization | 13 cameras at 30fps must be read in sync; frame-dropping or desync corrupts reconstruction | MEDIUM | Confirmed synchronized capture; need reliable multi-stream reader |
 | Configurable pipeline (per-clip runs) | Researchers need to run different clips, adjust parameters, restart without manual intervention | LOW | Config file or CLI; not a GUI requirement |
 | Output trajectory storage | 3D pose time-series must be storable and loadable for downstream analysis | LOW | HDF5 or CSV; standard for this domain (NWB, SLEAP, DLC all use HDF5) |
@@ -44,13 +44,11 @@ Features that no existing tool provides and that constitute AquaPose's research 
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Refractive differentiable rendering | Correctly models air-water refraction without a glass port — existing tools (Anipose, DLC, DANNCE) assume pinhole cameras in air; this is physically accurate for the rig | HIGH | Core novelty. Requires ray-bending at water surface integrated into the render/gradient path. No off-the-shelf solution exists for this exact geometry |
-| Parametric fish body mesh (not keypoints) | Recovers full 3D body shape including lateral bend, dorsal/ventral profile, and volume — keypoint-only systems (DLC, SLEAP, Anipose) cannot recover body shape | HIGH | Enables morphometric measurements (body length, girth, curvature) that are scientifically valuable for cichlid behavior and sexual dimorphism studies |
-| Shape-pose decomposition for fish | Separates identity-linked shape (body plan, size) from instantaneous pose (position, orientation, bend) — critical for multi-fish identity: each fish has a characteristic shape | HIGH | Enables downstream: "this is fish #3 because it has these shape parameters" |
-| Multi-fish identity via shape signatures | Using shape parameters as a biometric identity cue across full-day recordings — no existing fish tracking system does this | HIGH | Depends on shape-pose decomposition; enables re-identification after occlusion without appearance-based Re-ID |
+| Refractive multi-view triangulation | Correctly models air-water refraction without a glass port — existing tools (Anipose, DLC, DANNCE) assume pinhole cameras in air; this is physically accurate for the rig | HIGH | Core novelty. Requires ray-bending at water surface integrated into the triangulation path. No off-the-shelf solution exists for this exact geometry |
+| 3D midline spline + width profile (continuous body shape, not keypoints) | Recovers full 3D body shape including lateral bend, dorsal/ventral profile, and volume — keypoint-only systems (DLC, SLEAP, Anipose) cannot recover body shape | HIGH | Enables morphometric measurements (body length, girth, curvature) that are scientifically valuable for cichlid behavior and sexual dimorphism studies |
+| Cross-view identity via RANSAC centroid clustering + Hungarian 3D tracking | Clusters 2D detections across views into per-fish identities using RANSAC on refractive-projected centroids, then tracks across frames via Hungarian assignment on 3D positions | HIGH | Enables multi-fish reconstruction without appearance-based Re-ID; leverages the calibrated refractive geometry directly |
 | Full-day continuous tracking | Processing 5-30 min clips is standard; continuous tracking over hours with identity persistence is not | HIGH | Requires: efficient per-frame warm-starting from previous frame's solution, occlusion handling, identity recovery |
-| Behavioral feature extraction from 3D body state | Computing ethologically meaningful features (tail-beat frequency, body curvature, approach angle, distance between fish) from the 3D mesh — existing tools provide only keypoints | MEDIUM | Downstream of 3D reconstruction; enables: dominance behavior detection, spawning behavior, aggression bouts in cichlids |
-| Sex-differentiated shape model | Rig has 3 males + 6 females; fitting sex-specific shape priors improves reconstruction accuracy and enables sexing-by-shape | HIGH | Research novelty; requires labeled training data or manual annotation of sex-specific shape parameters |
+| Behavioral feature extraction from 3D body state | Computing ethologically meaningful features (tail-beat frequency, body curvature, approach angle, distance between fish) from the 3D midline — existing tools provide only keypoints | MEDIUM | Downstream of 3D reconstruction; enables: dominance behavior detection, spawning behavior, aggression bouts in cichlids |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
@@ -59,8 +57,8 @@ Features that seem useful but should be deliberately excluded from AquaPose's sc
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
 | General-purpose animal pose estimation (SMAL-based) | SMAL works for quadrupeds; seems extensible | Fish are not quadrupeds — they have no limbs, bilateral symmetry, and the relevant DOF is lateral body curvature, not joint angles. SMAL fitting is the wrong model. Using SMAL would inherit quadruped topology and require extensive surgery with no benefit. | Keep the custom midline spline + cross-section mesh; it is better matched to fish biomechanics |
-| Real-time processing | Useful for live behavioral monitoring | Analysis-by-synthesis optimization is iterative gradient descent — even with GPU, fitting one frame takes seconds to minutes. Building real-time constraints into v1 creates architectural pressure that conflicts with the optimization approach. | Batch-process offline; if real-time is eventually needed, train a regression network on the fitted results as a separate project |
-| GUI annotation tool | Researchers may want to manually fix bad frames | Building a GUI is a major engineering investment orthogonal to the reconstruction problem. Annotation is better done in existing tools (CVAT, Labelbox, Label Studio). | Export frames with overlaid reconstruction; use external tools for any manual correction |
+| Real-time processing | Useful for live behavioral monitoring | Batch offline only; real-time is not a research requirement. The new triangulation pipeline is much faster than analysis-by-synthesis, but real-time is still not a goal — correctness and validation come first. | Batch-process offline; if real-time is eventually needed, optimize the pipeline or train a regression network as a separate project |
+| GUI annotation tool | Researchers may want to manually fix bad frames | Building a GUI is a major engineering investment orthogonal to the reconstruction problem. Annotation is better done in existing tools (CVAT, Labelbox). | Export frames with overlaid reconstruction; use external tools for any manual correction |
 | Monocular (single-camera) reconstruction | Seems like a simpler starting point | Monocular fish reconstruction is fundamentally ill-posed: scale, depth, and lateral bend are ambiguous from one view. The 13-camera rig exists precisely to avoid this. Building monocular support first would bias the architecture away from multi-view. | Start multi-view; the geometry is better constrained and scientifically more defensible |
 | Appearance-based Re-ID (texture features) | Standard approach in fish tracking literature | Cichlids are visually similar within sex; texture-based Re-ID fails under view changes, occlusion, and color variation. The research bet is that shape-based Re-ID (from the parametric mesh) is more robust. Building appearance Re-ID as a fallback would create two competing identity systems. | Commit to shape-signature identity; validate cross-view holdout before adding any appearance component |
 | 2D behavioral analysis (DLC-style keypoints) | Simpler to implement; huge ecosystem of downstream tools | This would replicate what DLC+Anipose already does well. AquaPose's value is 3D body shape, not 2D keypoints. | Output 3D trajectories that can feed into SimBA/DeepOF if 2D-equivalent behavioral analysis is needed |
@@ -72,24 +70,25 @@ Features that seem useful but should be deliberately excluded from AquaPose's sc
 
 ```
 [Camera Calibration (refractive)]
-    └──required by──> [Differentiable Refractive Renderer]
-                          └──required by──> [Single-Fish Optimization]
+    └──required by──> [Refractive Ray Casting]
+                          └──required by──> [Cross-View Identity (RANSAC centroid clustering)]
+                          └──required by──> [3D Midline Triangulation]
+
+[Multi-View Silhouette Extraction]
+    └──required by──> [Medial Axis + Arc-Length Correspondence]
+    └──required by──> [Cross-View Holdout Validation]
+                          └──required by──> [Cross-View Identity]
+
+[Medial Axis + Arc-Length Correspondence]
+    └──required by──> [3D Midline Triangulation (RANSAC)]
+                          └──required by──> [3D Spline Fitting + Width Profile]
                                                 └──required by──> [Per-Frame 3D Trajectories]
                                                                       └──required by──> [Behavioral Feature Extraction]
 
-[Parametric Fish Mesh Model]
-    └──required by──> [Single-Fish Optimization]
-    └──required by──> [Shape-Pose Decomposition]
-                          └──required by──> [Multi-Fish Identity via Shape]
-                                                └──required by──> [Full-Day Continuous Tracking]
-
-[Multi-View Silhouette Extraction]
-    └──required by──> [Single-Fish Optimization]
-    └──required by──> [Cross-View Holdout Validation]
-
-[Single-Fish Optimization]
-    └──required by──> [Cross-View Holdout Validation]
-    └──required by──> [Multi-Fish Tracking]
+[Cross-View Identity (RANSAC centroid clustering)]
+    └──required by──> [3D Midline Triangulation] (assigns 2D detections to fish before triangulating)
+    └──required by──> [Hungarian 3D Tracking]
+                          └──required by──> [Full-Day Continuous Tracking]
 
 [Cross-View Holdout Validation]
     └──gates──> [Multi-Fish Tracking] (must demonstrate v1 works before scaling)
@@ -97,43 +96,46 @@ Features that seem useful but should be deliberately excluded from AquaPose's sc
 
 ### Dependency Notes
 
-- **Refractive renderer requires calibration:** The refraction model must encode the exact air-water interface geometry from calibration; calibration is not separable from rendering.
-- **Shape-pose decomposition requires mesh model:** You cannot decompose shape from pose without a parameterized mesh that factorizes these two things explicitly. Keypoint-only systems cannot support identity-by-shape.
+- **Refractive ray casting requires calibration:** The refraction model must encode the exact air-water interface geometry from calibration; calibration is not separable from ray casting.
+- **Medial axis extraction requires silhouettes:** Clean binary masks are the input to skeletonization and arc-length parameterization.
+- **Cross-view identity requires refractive rays:** Clustering 2D centroids into 3D fish identities uses refractive back-projection; without the ray model, centroid clustering is geometrically meaningless.
+- **Triangulation requires both arc-length correspondence and cross-view identity:** You need to know which 2D medial axis belongs to which fish (identity) and which points along those axes correspond (arc-length) before triangulating.
 - **Full-day tracking requires single-fish validation:** Attempting multi-fish tracking before single-fish reconstruction is reliable will compound errors. Holdout validation gates this transition.
 - **Behavioral features require 3D trajectories:** No shortcut here — you need the 3D pose time-series before you can compute tail-beat frequency, curvature time-series, or inter-fish distances.
-- **Sex-differentiated shape model enhances but does not block:** This is an enhancement to the mesh model; single-sex fitting works first, then sex-specific priors layer on top.
 
 ---
 
 ## MVP Definition
 
-### Launch With (v1) — Single-Fish 3D Reconstruction Validated
+### Launch With (v1) — Single-Fish 3D Midline Reconstruction Validated
 
-Minimum to demonstrate the analysis-by-synthesis approach works and is scientifically defensible.
+Minimum to demonstrate the direct triangulation approach works and is scientifically defensible.
 
-- [ ] Refractive differentiable renderer — without this, the core novelty does not exist
-- [ ] Parametric fish mesh (midline spline + cross-sections) with differentiable parameters — required by optimizer
-- [ ] Single-fish per-frame pose/shape optimization on 5-30 min clips — the v1 claim
-- [ ] Multi-view silhouette extraction pipeline (MOG2 + Mask R-CNN) — produces inputs
+- [ ] Refractive ray model (ray casting through air-water interface) — without this, the core novelty does not exist
+- [ ] Medial axis extraction from binary silhouettes — required input to arc-length correspondence
+- [ ] Arc-length parameterization of 2D medial axes — establishes cross-view point correspondence without keypoints
+- [ ] RANSAC triangulation of matched medial axis points across views — the core 3D reconstruction step
+- [ ] 3D midline spline fitting with width profile — produces the final per-frame body shape
+- [ ] Multi-view silhouette extraction pipeline (YOLO detection + U-Net segmentation) — produces inputs
 - [ ] Cross-view holdout validation with reprojection IoU metric — makes v1 scientifically publishable
-- [ ] Per-frame 3D trajectory output (position, orientation, curvature) in HDF5/CSV — enables downstream use
+- [ ] Per-frame 3D trajectory output (position, orientation, curvature) in HDF5 — enables downstream use
 
-### Add After Validation (v1.x) — Multi-Fish and Identity
+### Add After Validation (v1.x) — Multi-Fish, Identity, and Refinement
 
 Add once v1 reconstruction quality is confirmed.
 
-- [ ] Shape-pose decomposition and shape signature per fish — trigger: v1 holdout IoU meets threshold
-- [ ] Multi-fish detection and separate optimization per fish — trigger: single-fish pipeline is stable
-- [ ] Identity assignment via shape signature — trigger: shape decomposition demonstrated to be consistent across clips
-- [ ] Occlusion handling (warm-starting, identity recovery after fish cross) — trigger: multi-fish baseline works
+- [ ] Levenberg-Marquardt refinement of triangulated midline (if needed) — trigger: v1 holdout IoU below threshold
+- [ ] Temporal smoothing across frames — trigger: per-frame reconstructions are noisy but correct on average
+- [ ] Shape-signature identity (body length, width profile as biometric) — trigger: v1 reconstruction produces consistent shape measurements
 
 ### Future Consideration (v2+) — Full-Day and Behavioral Analysis
 
 Defer until multi-fish identity is demonstrated to be reliable.
 
+- [ ] Sex classification from reconstructed shape parameters — research enhancement; requires labeled morphometric data per sex
+- [ ] Shape-pose decomposition (separate identity-linked shape from instantaneous pose) — enables richer identity modeling
 - [ ] Full-day continuous tracking (hours-long recordings) — requires efficient warm-starting and robust identity; only worth building after identity is proven on short clips
 - [ ] Behavioral feature extraction library (tail-beat, curvature, approach angle, inter-fish distance) — depends on reliable 3D trajectories; high scientific value but not required to validate the core method
-- [ ] Sex-differentiated shape model — research enhancement; requires labeled morphometric data per sex
 - [ ] Batch processing infrastructure for full experimental dataset — engineering investment justified only when the method is stable
 
 ---
@@ -142,24 +144,28 @@ Defer until multi-fish identity is demonstrated to be reliable.
 
 | Feature | Research Value | Implementation Cost | Priority |
 |---------|---------------|---------------------|----------|
-| Refractive differentiable renderer | HIGH (core novelty) | HIGH | P1 |
-| Parametric fish mesh model | HIGH (enables all shape features) | HIGH | P1 |
+| Refractive ray model | HIGH (core novelty) | HIGH | P1 |
+| Medial axis extraction + arc-length correspondence | HIGH (enables triangulation) | MEDIUM | P1 |
 | Multi-view silhouette extraction | HIGH (required input) | MEDIUM | P1 |
-| Single-fish optimization | HIGH (v1 deliverable) | HIGH | P1 |
+| RANSAC triangulation of matched points | HIGH (v1 deliverable) | HIGH | P1 |
+| 3D midline spline fitting + width profile | HIGH (body shape output) | MEDIUM | P1 |
 | Cross-view holdout validation | HIGH (scientific credibility) | LOW | P1 |
-| Per-frame trajectory output | HIGH (enables downstream) | LOW | P1 |
-| Shape-pose decomposition | HIGH (enables identity) | HIGH | P2 |
-| Multi-fish tracking | HIGH (v2 deliverable) | HIGH | P2 |
-| Identity via shape signatures | HIGH (research novelty) | HIGH | P2 |
+| Per-frame trajectory output (HDF5) | HIGH (enables downstream) | LOW | P1 |
+| Cross-view identity (RANSAC centroid clustering) | HIGH (enables multi-fish) | MEDIUM | P1 |
+| Hungarian 3D tracking across frames | HIGH (multi-fish deliverable) | MEDIUM | P2 |
+| LM refinement of triangulated midline | MEDIUM (accuracy boost) | MEDIUM | P2 |
+| Temporal smoothing | MEDIUM (trajectory quality) | LOW | P2 |
+| Shape-signature identity | HIGH (research novelty) | HIGH | P2 |
 | Behavioral feature extraction | MEDIUM (biology value) | MEDIUM | P2 |
 | Full-day continuous tracking | MEDIUM (practical value) | HIGH | P3 |
-| Sex-differentiated shape model | MEDIUM (biological insight) | HIGH | P3 |
+| Shape-pose decomposition | MEDIUM (richer identity) | HIGH | P3 |
+| Sex classification from shape | MEDIUM (biological insight) | HIGH | P3 |
 | Batch processing infrastructure | LOW (operational) | MEDIUM | P3 |
 
 **Priority key:**
 - P1: Must have for v1 launch (single-fish reconstruction paper)
-- P2: Should have for v2 (multi-fish identity paper)
-- P3: Future work / v3+
+- P2: Should have for v1.x (multi-fish tracking, refinement)
+- P3: Future work / v2+
 
 ---
 
@@ -167,19 +173,19 @@ Defer until multi-fish identity is demonstrated to be reliable.
 
 | Feature | DLC + Anipose | DANNCE | SLEAP + 3D | AquaPose (planned) |
 |---------|--------------|--------|-----------|-------------------|
-| Multi-view 3D reconstruction | Yes (triangulation) | Yes (3D CNN) | Partial | Yes (analysis-by-synthesis) |
+| Multi-view 3D reconstruction | Yes (triangulation) | Yes (3D CNN) | Partial | Yes (direct triangulation) |
 | Refractive optics modeling | No | No | No | Yes (core novelty) |
-| Full 3D body shape (not just keypoints) | No | No | No | Yes |
-| Shape-based identity | No | No | No | Yes (planned) |
-| Fish-specific parametric model | No | No | No | Yes |
+| Full 3D body shape (not just keypoints) | No | No | No | Yes (midline spline + width profile) |
+| Cross-view identity (geometry-based) | No | No | No | Yes (RANSAC centroid clustering) |
+| Fish-specific body model | No | No | No | Yes (midline + cross-sections) |
 | Underwater environment support | Not natively | Not natively | Not natively | Yes |
-| Multi-animal tracking | Yes | Yes | Yes | v2 |
-| Behavioral analysis downstream | Via SimBA/DeepOF | Manual | Via SimBA | Direct from 3D mesh |
+| Multi-animal tracking | Yes | Yes | Yes | v1.x (Hungarian 3D tracking) |
+| Behavioral analysis downstream | Via SimBA/DeepOF | Manual | Via SimBA | Direct from 3D midline |
 | Open-source | Yes | Yes | Yes | Yes (planned) |
 | Camera calibration | Standard pinhole | Standard pinhole | Standard pinhole | Refractive |
 | Real-time | No (DLC can be) | No | Partial | No (by design) |
 
-**Key insight from competitor analysis:** No existing tool handles refractive optics, full fish body shape, or shape-based identity. AquaPose is genuinely novel on these three axes. The table stakes (calibration, segmentation, 3D output, validation) are well-understood from competitors; the differentiators are in the rendering and shape model.
+**Key insight from competitor analysis:** No existing tool handles refractive optics, full fish body shape, or geometry-based cross-view identity. AquaPose is genuinely novel on these three axes. The table stakes (calibration, segmentation, 3D output, validation) are well-understood from competitors; the differentiators are in the refractive ray model and continuous body reconstruction.
 
 ---
 
@@ -199,5 +205,5 @@ Defer until multi-fish identity is demonstrated to be reliable.
 - [Fish Tracking, Counting, and Behaviour Analysis in Digital Aquaculture — Reviews in Aquaculture 2025](https://onlinelibrary.wiley.com/doi/10.1111/raq.13001) — MEDIUM confidence (comprehensive survey of the domain)
 
 ---
-*Feature research for: AquaPose — 3D fish pose estimation via analysis-by-synthesis*
-*Researched: 2026-02-19*
+*Feature research for: AquaPose — 3D fish pose estimation via direct triangulation (analysis-by-synthesis shelved)*
+*Researched: 2026-02-21*

@@ -1,187 +1,200 @@
 # Project Research Summary
 
 **Project:** AquaPose
-**Domain:** Multi-view 3D fish pose estimation via analysis-by-synthesis with differentiable refractive rendering
-**Researched:** 2026-02-19
-**Confidence:** MEDIUM (novel domain with no direct comparators; core primitives well-documented; refractive rendering + fish mesh combination is genuinely new)
+**Domain:** Multi-view 3D fish pose estimation via refractive multi-view triangulation (with shelved analysis-by-synthesis alternative)
+**Researched:** 2026-02-21
+**Confidence:** MEDIUM-HIGH (primary pipeline uses well-understood geometry; refractive camera model validated; shelved analysis-by-synthesis path retained as fallback)
 
 ## Executive Summary
 
-AquaPose is a research-grade analysis-by-synthesis system for reconstructing the full 3D body shape and pose of cichlid fish from 13 synchronized overhead cameras. The domain has no direct comparators — existing tools (DLC+Anipose, DANNCE, SLEAP) handle multi-view reconstruction but assume standard pinhole cameras in air and output keypoints, not body shape. AquaPose's three distinguishing innovations are: (1) physically correct refractive projection through the air-water interface integrated into a differentiable renderer, (2) a parametric fish mesh model encoding midline curvature and cross-section geometry rather than discrete keypoints, and (3) shape-signature-based identity assignment enabling persistent tracking without appearance features. The recommended build order is strict: calibration and refractive projection validation must precede any optimization work, and single-fish validation must precede multi-fish extension.
+AquaPose is a research-grade multi-view system for reconstructing the full 3D midline and body shape of cichlid fish from 12 synchronized overhead cameras (13th top-down camera excluded for poor mask quality). The domain has no direct comparators — existing tools (DLC+Anipose, DANNCE, SLEAP) handle multi-view reconstruction but assume standard pinhole cameras in air and output keypoints, not body shape. AquaPose's three distinguishing innovations are: (1) physically correct refractive projection through the air-water interface integrated into both ray casting and forward projection, (2) a 3D midline spline reconstructed from triangulated medial axes across views rather than discrete keypoints, and (3) centroid-based RANSAC cross-view identity assignment with Hungarian tracking in 3D space. The recommended build order is strict: calibration and refractive projection validation must precede any reconstruction work, and single-fish validation must precede multi-fish extension.
 
-The recommended stack centers on PyTorch 2.4.1 + PyTorch3D 0.7.9 (installed from source) with CUDA 12.1. This specific version combination is the only configuration confirmed to work by PyTorch3D's official installation guide. The rest of the stack (Detectron2, SAM2, OpenCV MOG2, kornia, filterpy, h5py) is well-established for this domain and presents low integration risk. The single largest installation risk is the 5-version gap between current PyTorch (2.10.0) and what PyTorch3D officially supports (2.4.x); the mitigation is to pin PyTorch at 2.4.1 for all development and not upgrade until PyTorch3D publishes a compatible release.
+The primary reconstruction pipeline is direct triangulation: 2D medial axis extraction from segmentation masks, arc-length correspondence across views, RANSAC multi-view triangulation per body point, and 3D cubic B-spline fitting. An optional Levenberg-Marquardt refinement stage jointly optimizes the 3D spline against all 2D observations using the refractive forward projection model. This replaces the original analysis-by-synthesis approach (differentiable mesh rendering via PyTorch3D + Adam optimization), which took 30+ minutes per second of video and is now shelved but retained as a fallback.
 
-The most critical risk for scientific validity is the camera geometry: 13 top-down cameras with nearly parallel optical axes create a degenerate Z-reconstruction problem. Reprojection error in 2D can look excellent (< 2px) while Z estimates are wrong by centimeters. This must be quantified before any optimization code is written, by measuring 3D reconstruction accuracy on a physical reference object at multiple depths. A secondary risk is the refractive projection itself — implementing it as a depth-independent distortion correction (as standard OpenCV calibration does) will introduce systematic errors that invalidate the entire pipeline. The AquaCal library handles this correctly, but its differentiability must be verified before it is assumed to work with PyTorch autograd.
+The recommended stack centers on PyTorch 2.4.1 with CUDA 12.1 for calibration, refractive projection, and segmentation (U-Net). The reconstruction path itself is scipy/numpy/scikit-image — no differentiable rendering framework is required for the primary pipeline. PyTorch3D is retained only for the shelved analysis-by-synthesis path.
+
+The most critical risk for scientific validity remains the camera geometry: 12 top-down cameras with nearly parallel optical axes create a degenerate Z-reconstruction problem. This has been quantified (see Z-uncertainty report) and must be tracked as a per-point quality metric. A secondary risk is medial axis instability on noisy masks — the current U-Net produces masks at IoU ~0.62, which requires morphological smoothing before skeletonization to avoid skeleton wobble.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The stack is organized around PyTorch as the sole deep learning framework throughout; mixing frameworks is not feasible because Detectron2, PyTorch3D, SAM2, and kornia are all PyTorch-native and gradient flow cannot cross framework boundaries. The differentiable rendering primitive is PyTorch3D's `SoftSilhouetteShader` + `MeshRasterizer`, which provides the soft probabilistic blending necessary for silhouette-fitting from scratch (hard rasterizers like nvdiffrast cannot be used here). Detection uses OpenCV MOG2 as the primary foreground detector with Detectron2 Mask R-CNN as the segmentation backbone; SAM2 is used offline for pseudo-label generation only and is not in the inference path.
+The stack is organized around PyTorch for calibration, refractive projection, and segmentation inference. The reconstruction pipeline itself uses standard scientific Python (scipy, numpy, scikit-image) and does not require differentiable rendering. Detection uses YOLOv8 with U-Net binary segmentation on cropped detections; SAM2 is used offline for pseudo-label generation only and is not in the inference path.
 
 **Core technologies:**
-- Python 3.11 + PyTorch 2.4.1 + CUDA 12.1: The only confirmed-compatible baseline for PyTorch3D 0.7.9
-- PyTorch3D 0.7.9 (source install): The only production-grade differentiable silhouette renderer with PyTorch-native mesh structures
-- Detectron2 (source install): Mask R-CNN for instance segmentation; PointRend head available if boundary quality is insufficient
-- SAM2 (source install, offline only): Zero-shot pseudo-label generation with video propagation for annotation bootstrapping
-- OpenCV 4.13 (headless): MOG2 background subtraction, video I/O, 2D overlays
-- kornia >= 0.7: Differentiable Lovász-hinge IoU loss; avoids custom implementation of differentiable binary IoU
-- scipy >= 1.13: Epipolar ray intersection (Phase II), Hungarian assignment (Phase IV)
-- filterpy 1.4.4: Extended Kalman Filter for per-fish 3D tracking
+- Python 3.11 + PyTorch 2.4.1 + CUDA 12.1: For calibration, refractive projection, U-Net segmentation inference
+- scikit-image >= 0.22: `skeletonize` for medial axis extraction, morphological operations for mask smoothing
+- scipy >= 1.13: `splprep` / B-spline fitting for 3D midline, `least_squares` for optional LM refinement, `linear_sum_assignment` for Hungarian assignment, `distance_transform_edt` for half-width estimation
+- OpenCV 4.13 (headless): MOG2 background subtraction, video I/O, 2D overlays, morphological preprocessing
 - h5py >= 3.11: Primary output format for per-frame pose trajectories
 - rerun-sdk >= 0.22: Primary debugging and QA visualization; synchronized multi-camera 2D + 3D
+- YOLOv8 (ultralytics): Object detection for fish bounding boxes
+- U-Net (custom, MobileNetV3-Small encoder): Binary mask segmentation on cropped detections
 
-**Critical version constraint:** Do not use PyTorch > 2.4.x until PyTorch3D publishes a new release with confirmed compatibility. PyTorch3D source builds against 2.5–2.10 are possible but require manual patches and have caused community reports of instability.
+**Shelved-pipeline-only dependencies (not required for primary reconstruction):**
+- PyTorch3D 0.7.9 (source install): Differentiable silhouette renderer for analysis-by-synthesis path
+- kornia >= 0.7: Differentiable Lovasz-hinge IoU loss for analysis-by-synthesis path
+
+**Critical version constraint:** PyTorch is pinned at 2.4.1 for compatibility with the shelved PyTorch3D path. If the shelved path is formally abandoned, this constraint can be relaxed.
 
 ### Expected Features
 
 AquaPose is a research tool, not a product. "Users" are the research team itself and the downstream behavioral biology pipeline. Table stakes are features whose absence makes the system scientifically invalid; differentiators constitute the novel research contribution.
 
 **Must have (table stakes):**
-- Refractive differentiable renderer with physically correct Snell's law projection — the core mechanism; without this the novelty claim does not exist
-- Parametric fish mesh model (midline spline + swept ellipse cross-sections) — required by the optimizer; defines the shape space
-- Single-fish per-frame pose/shape optimization — the v1 deliverable
-- Multi-view silhouette extraction pipeline (MOG2 + Mask R-CNN) — produces the inputs to the optimizer
+- Refractive camera model with physically correct Snell's law projection — the foundation; without this the multi-view geometry is invalid
+- Direct 3D midline triangulation from multi-view medial axes — the primary reconstruction mechanism
+- Per-fish per-frame 3D midline reconstruction — the v1 deliverable
+- Multi-view silhouette extraction pipeline (YOLOv8 + U-Net) — produces the inputs to the reconstruction pipeline
 - Cross-view holdout validation with reprojection IoU metric — required for scientific credibility
 - Per-frame 3D trajectory output (position, orientation, curvature) in HDF5/CSV — enables downstream biological analysis
+- Video I/O for multi-camera synchronized frame extraction
 
 **Should have (competitive / v1.x):**
-- Shape-pose decomposition separating identity-linked body plan from instantaneous pose — enables identity-by-shape
-- Multi-fish detection and parallel per-fish optimization — v2 deliverable
-- Identity assignment via shape signatures — the novel Re-ID mechanism; replaces appearance-based Re-ID
-- Occlusion handling with warm-start identity recovery — required for robust multi-fish tracking
+- Width-profile reconstruction (half-width spline from distance transforms) — enables body shape analysis
+- Multi-fish detection and parallel per-fish reconstruction — v2 deliverable
+- Centroid-based RANSAC identity with Hungarian 3D tracking — the cross-view identity mechanism
+- Occlusion handling with temporal continuity in 3D — required for robust multi-fish tracking
+- Optional LM refinement stage for joint reprojection optimization — adds robustness to arc-length correspondence errors
 
 **Defer (v2+):**
 - Full-day continuous tracking (hours-long recordings with identity persistence)
 - Behavioral feature extraction library (tail-beat frequency, curvature, inter-fish distance, approach angle)
 - Sex-differentiated shape model (requires labeled morphometric training data)
 - Batch processing infrastructure for full experimental dataset
+- Shape-signature identity via body plan decomposition (original v2 Re-ID mechanism)
 
 **Explicit anti-features (do not build):**
-- Real-time processing — incompatible with analysis-by-synthesis optimization; batch offline
+- Real-time processing — batch offline processing; real-time is not a goal
 - GUI annotation tool — use Label Studio + supervision for format conversion
 - Monocular (single-camera) reconstruction — geometrically ill-posed; biases architecture away from multi-view
-- Appearance-based Re-ID — commit to shape-signature identity first; adding appearance Re-ID creates two competing identity systems
+- Appearance-based Re-ID — centroid-based 3D identity is the primary mechanism; appearance Re-ID adds complexity without clear benefit
 
 ### Architecture Approach
 
-The system is organized as a strict linear pipeline of five phases: Segmentation (Phase I) → 3D Initialization (Phase II) → Differentiable Refinement (Phase III) → Tracking and Identity (Phase IV) → Output and Visualization (Phase V). The critical architectural decision is how the refractive projection integrates with PyTorch3D: mesh vertices are pre-projected through the differentiable RefractiveProjector (Π_ref) before being handed to PyTorch3D's rasterizer, which then operates in distorted camera space. Gradients flow back from the silhouette loss through the rasterizer, through the pre-projected vertex positions, through Π_ref, and into the FishState parameters {p, ψ, κ, s}. This entire chain must be differentiable; breaking it at any point (e.g., using numpy inside Π_ref) silently breaks the optimizer without raising an error.
+The system is organized as a strict linear pipeline: Detection & Segmentation --> Cross-View Identity --> Midline Extraction --> 3D Triangulation & Spline Fitting --> (Optional LM Refinement) --> Output. The critical architectural decision is how arc-length correspondence enables cross-view triangulation without explicit feature matching: fish are slender bodies with a single dominant axis, so the normalized arc-length parameterization of the 2D medial axis projection is approximately preserved across views. This assumption breaks down for significantly curved fish viewed from very different angles, which is handled by RANSAC per body point and view-angle weighting.
 
 **Major components:**
-1. CalibrationLoader + RefractiveProjector — parses AquaCal JSON; exposes differentiable per-camera Π_ref; must be built and validated first
-2. InstanceSegmenter + KeypointExtractor — Detectron2 Mask R-CNN producing binary masks M_i^(j) per camera per fish per frame
-3. EpipolarInitializer — refractive ray intersection via scipy.optimize.least_squares to estimate FishState {p, ψ, κ=0, s} on first frame only
-4. FishMeshBuilder — pure PyTorch parametric mesh from FishState; midline spline + swept ellipses → watertight triangle mesh
-5. RefractiveRenderer + LossComputer — PyTorch3D MeshRasterizer + SoftSilhouetteShader; multi-objective loss (silhouette IoU + gravity prior + shape prior + temporal smoothness)
-6. PoseOptimizer — Adam with ~50–100 iterations per frame; warm-starts from previous frame's solution at 30fps
-7. MotionPredictor + AssignmentSolver — filterpy EKF + scipy Hungarian algorithm for frame-to-frame identity assignment
-8. TrajectoryWriter + Visualizer — h5py HDF5 output; rerun-sdk for live QA; pyvista for publication renders
+1. CalibrationLoader + RefractiveProjector — parses AquaCal JSON; exposes per-camera refractive ray casting (2D -> 3D ray) and forward projection (3D -> 2D pixel); PyTorch-based for differentiability where needed
+2. YOLODetector + UNetSegmentor — YOLOv8 producing bounding boxes, U-Net producing binary masks per crop; shared crop utilities for coordinate transforms
+3. CrossViewIdentifier — per-frame RANSAC over centroid rays across cameras; clusters rays into fish identities; produces (camera_id, detection_id) -> fish_id mapping plus 3D centroid per fish
+4. HungarianTracker — frame-to-frame 3D centroid assignment via scipy `linear_sum_assignment`; persistent fish IDs across frames
+5. MedialAxisExtractor — morphological smoothing, `skeletonize`, distance transform half-width, longest-path BFS pruning, head-tail disambiguation via 3D centroid projection
+6. ArcLengthSampler — cumulative arc-length normalization to [0,1]; resampling at N fixed positions (e.g., N=15); produces cross-view point correspondences
+7. RANSACTriangulator — per body point RANSAC over camera subsets; refractive ray intersection; view-angle weighting to downweight foreshortened views; outputs N 3D points + residuals per fish
+8. SplineFitter — `scipy.interpolate.splprep` for 3D midline B-spline (5-8 control points); separate 1D spline for width profile
+9. LMRefiner (optional) — `scipy.optimize.least_squares` with method='lm'; jointly optimizes spline control points against all 2D medial axis observations via refractive forward projection; warm-starts from SplineFitter output
+10. TrajectoryWriter + Visualizer — h5py HDF5 output; rerun-sdk for live QA; OpenCV for 2D overlays
 
 **Key patterns:**
-- Warm-start every frame from the previous frame's FishState (reduces iterations from ~500 to ~50–100)
-- Batch all N fish into a single GPU call (PyTorch3D batched Meshes + Cameras)
-- Design for N fish from day one — all function signatures accept lists; use `join_meshes_as_batch` not single-mesh APIs
-- Cross-view holdout: withhold 1–2 cameras from gradient computation; evaluate IoU on them as a generalization metric
+- Warm-start every frame from the previous frame's spline (reduces LM iterations from ~20 to ~5 when used)
+- Batch triangulations across body points into vectorized calls (~15 points x ~8 fish = 120 triangulations/frame)
+- Design for N fish from day one — all function signatures accept lists; parallelize across fish within a frame
+- Cross-view holdout: withhold 1-2 cameras from triangulation; evaluate reprojection error on them as a generalization metric
+- Gate optional LM refinement on triangulation residual — skip when RANSAC residuals are below threshold
 
 ### Critical Pitfalls
 
-1. **Non-differentiable refractive projection** — Implementing Π_ref using numpy or scipy breaks the gradient chain silently. The optimizer runs without error but physical gradients are lost. Implement Π_ref entirely in PyTorch (Newton-Raphson with fixed iterations using autograd-compatible operations). Verify AquaCal's differentiability before assuming it works with autograd.
+1. **Non-differentiable refractive projection** — Implementing the refractive model using numpy or scipy breaks gradient flow for any component that needs it (LM Jacobians via autograd, forward projection in the optional refiner). The refractive projection has been reimplemented in PyTorch. This is less critical than in the shelved pipeline since the primary reconstruction path does not require differentiable gradients through the full chain, but the forward projection model must still be correct for reprojection scoring in RANSAC and the optional LM refiner.
 
 2. **Depth-independent refraction model** — Using OpenCV's standard distortion model to approximate refraction produces systematic depth-dependent errors (fish near tank floor reproject worse than near-surface fish). The error is a consistent 3D bias, not noise, and invalidates reconstruction. Implement full per-ray Snell's law projection tracing through air-glass-water interface with correct refractive indices.
 
-3. **Silhouette-only fitting converges to wrong local minimum** — Silhouette IoU loss is highly non-convex. Top-down cameras cannot disambiguate head-tail orientation (180° flip produces nearly identical silhouette). Must implement multi-start optimization for first frame of each track (4–8 orientation initializations, select lowest loss). Add coarse keypoint loss (head tip, tail tip) if detectable. Temporal smoothness regularization resists single-frame escapes.
+3. **Arc-length correspondence errors on curved fish** — The arc-length parameterization assumes the 2D medial axis projection preserves body-position correspondence across views. This breaks down when a curved fish is viewed from angles where foreshortening compresses the arc-length mapping unevenly. Cameras viewing along the fish's body axis are the worst offenders. Mitigations: RANSAC per body point rejects cameras with bad correspondence; view-angle weighting downweights foreshortened views; optional LM refinement jointly optimizes across all views. If these mitigations are insufficient, epipolar-guided correspondence refinement is a future upgrade path.
 
-4. **Top-down camera Z-weakness not quantified** — 13 cameras with nearly parallel optical axes create degenerate Z reconstruction. 2D reprojection error can look excellent while Z is wrong by centimeters. Quantify theoretical Z uncertainty bound before writing any optimization code. Validate 3D reconstruction accuracy on a physical reference at 3+ known depths. Report X, Y, Z errors separately — never report only aggregate reprojection error.
+4. **Top-down camera Z-weakness not quantified** — 12 cameras with nearly parallel optical axes create degenerate Z reconstruction. 2D reprojection error can look excellent while Z is wrong by centimeters. This has been quantified analytically (see Z-uncertainty report). Report X, Y, Z errors separately — never report only aggregate reprojection error.
 
-5. **Single-fish architecture blocking v2 extension** — Building v1 with global state (one mask, one optimizer, one mesh object) requires a full rewrite at v2. Design for N fish from day one: parameterized Fish class with per-instance state, batch-first PyTorch3D mesh operations, detection returning a list of per-fish masks even when length is 1.
+5. **Medial axis instability on noisy masks** — The current U-Net produces masks at IoU ~0.62, well below the 0.90 target. Noisy mask boundaries cause skeleton wobble, spurious branches, and shifted midline positions. Mitigations: morphological closing + opening with adaptive kernel before skeletonization; longest-path BFS pruning to discard spurious branches; RANSAC triangulation rejects outlier body points. Monitor skeleton quality as segmentation improves.
+
+6. **Single-fish architecture blocking v2 extension** — Building v1 with global state (one mask, one optimizer, one mesh object) requires a full rewrite at v2. Design for N fish from day one: per-fish state, batch-first operations, detection returning a list of per-fish masks even when length is 1.
 
 ## Implications for Roadmap
 
-Based on combined research, a 5-phase build order is indicated by strict data dependencies and the need for validation gates before proceeding:
+Based on combined research, the build order is indicated by strict data dependencies and the need for validation gates before proceeding:
 
-### Phase 1: Calibration and Refractive Geometry Foundation
-**Rationale:** Everything downstream depends on a working, differentiable, validated RefractiveProjector. No optimization code is scientifically meaningful until the camera model is correct. Building this first prevents propagating a subtle calibration error through the entire system.
-**Delivers:** CalibrationLoader parsing AquaCal JSON; differentiable RefractiveProjector (Π_ref) implementing per-ray Snell's law in PyTorch; unit tests covering central rays and edge-field rays at 30–48° incidence; validation showing < 1px reprojection error on known 3D points; quantified Z-uncertainty bounds for the 13-camera top-down geometry.
-**Addresses features:** Camera calibration (refractive) [table stakes]
-**Avoids pitfalls:** Non-differentiable Π_ref (Pitfall 1), depth-independent refraction model (Pitfall 2), port tilt unmodeled (Pitfall 6), Newton-Raphson edge instability (Pitfall 4), deferred calibration validation (Architecture Anti-Pattern 4)
-**Research flag:** NEEDS RESEARCH — AquaCal's internal differentiability must be verified before assuming it integrates with autograd; the Newton-Raphson convergence behavior at near-critical angles needs empirical characterization on this rig's geometry.
+### Phase 1: Calibration and Refractive Geometry Foundation (Complete)
+**Rationale:** Everything downstream depends on a working, validated RefractiveProjector. No reconstruction code is scientifically meaningful until the camera model is correct.
+**Delivers:** CalibrationLoader parsing AquaCal JSON; RefractiveProjector implementing per-ray Snell's law in PyTorch; ray casting (2D -> 3D ray) and forward projection (3D -> 2D pixel); unit tests covering central rays and edge-field rays at 30-48 deg incidence; validation showing < 1px reprojection error on known 3D points; quantified Z-uncertainty bounds for the 12-camera top-down geometry.
+**Status:** Complete. Refractive projection reimplemented in PyTorch. Z-uncertainty quantified analytically.
 
-### Phase 2: Segmentation Pipeline
-**Rationale:** Segmentation is a prerequisite for both initialization and optimization; it produces the masks that drive every downstream phase. It can be built and validated independently of the rendering pipeline, which makes it an ideal early phase for parallelism with Phase 3 development.
-**Delivers:** MOG2-based foreground detection with shadow suppression; Detectron2 Mask R-CNN trained on annotated frames (bootstrapped with SAM2); per-frame binary masks M_i^(j) per camera per fish; per-sex, per-behavior recall validation (males, females, stationary, edge-of-frame).
-**Addresses features:** Multi-view silhouette extraction [table stakes]
-**Avoids pitfalls:** MOG2 female fish dropout (Pitfall 5); missed per-sex validation
-**Uses:** OpenCV 4.13 (MOG2), Detectron2, SAM2, supervision (format conversion), Label Studio (annotation QA)
-**Research flag:** STANDARD PATTERNS — Detectron2 Mask R-CNN training is well-documented; SAM2 pseudo-label generation workflow is documented in Meta's release. The main unknowns are rig-specific (female contrast, lighting conditions) which require empirical tuning, not research.
+### Phase 2: Segmentation Pipeline (Complete)
+**Rationale:** Segmentation produces the masks that drive every downstream phase. It was built and validated independently of the reconstruction pipeline.
+**Delivers:** YOLOv8-based fish detection with bounding boxes; U-Net binary segmentation on cropped detections (MobileNetV3-Small encoder, ~2.5M params, 128x128 input); SAM2-based pseudo-label generation for training data; per-frame binary masks per camera per fish.
+**Status:** Complete. Best val IoU 0.623 — below 0.90 target but accepted to unblock downstream phases. Morphological smoothing required before skeletonization.
+**Uses:** YOLOv8 (ultralytics), custom U-Net, SAM2 (offline), OpenCV
 
-### Phase 3: Single-Fish 3D Reconstruction (v1 Core)
-**Rationale:** This is the core novelty and the v1 scientific deliverable. It must be built as a complete single-fish pipeline before any multi-fish extension. The build order within this phase follows the architectural dependency graph: FishMeshBuilder → RefractiveRenderer → LossComputer → EpipolarInitializer → PoseOptimizer.
-**Delivers:** FishMeshBuilder producing watertight triangle meshes from FishState {p, ψ, κ, s}; RefractiveRenderer rendering per-camera silhouettes via Π_ref + PyTorch3D SoftSilhouetteShader; multi-objective LossComputer (L_sil + L_grav + L_shape + L_temp); EpipolarInitializer for first-frame cold start; PoseOptimizer (Adam, warm-start, multi-start for first frame); cross-view holdout validation showing IoU on held-out cameras.
-**Addresses features:** Differentiable silhouette renderer, parametric fish mesh, single-fish optimization, cross-view holdout validation [all table stakes]
-**Avoids pitfalls:** Silhouette local minima without multi-start (Pitfall 3), rotation gimbal lock (Pitfall 10), soft rasterizer hyperparameters (Pitfall 7), sequential camera rendering anti-pattern, Z-only reprojection validation
-**Uses:** PyTorch3D 0.7.9, kornia (differentiable IoU), scipy (epipolar initialization)
-**Research flag:** NEEDS RESEARCH — the specific sigma/gamma hyperparameters for PyTorch3D's soft rasterizer at this rig's fish pixel sizes are unknown and require empirical sweep. The interaction between the temporal loss term (L_temp) and warm-start stability at 30fps needs characterization. The head-tail disambiguation strategy (multi-start vs. keypoint loss) needs validation on actual footage.
+### Phase 3: Fish Mesh Model (Complete, Shelved)
+**Rationale:** The parametric fish mesh (midline spline + swept ellipse cross-sections) was built as part of the original analysis-by-synthesis pipeline. It is complete but shelved — the primary pipeline uses direct triangulation instead of differentiable mesh rendering.
+**Delivers:** FishMeshBuilder producing watertight triangle meshes from FishState {p, psi, kappa, s}; midline spline + swept ellipses.
+**Status:** Complete, shelved. Retained as fallback if direct triangulation proves insufficient.
 
-### Phase 4: Trajectory Output and Validation
-**Rationale:** Complete the v1 pipeline by adding output storage and establishing the evaluation framework with 3D (not just 2D) ground truth metrics. This phase makes the system scientifically publishable and validates the core claim before scaling to multi-fish.
-**Delivers:** TrajectoryWriter with HDF5 output (per-fish, per-frame position, orientation, curvature, scale); 3D reconstruction accuracy metric validated on a physical reference object at 3+ depths; separate X/Y/Z error reporting; 2D overlay visualization via OpenCV; 3D QA visualization via rerun-sdk.
-**Addresses features:** Per-frame trajectory output, reprojection error metric [table stakes]
-**Avoids pitfalls:** Reprojection-only validation masking 3D failures (Pitfall 11); no ground truth measurement protocol
-**Uses:** h5py, rerun-sdk, pyvista (publication renders), matplotlib
-**Research flag:** STANDARD PATTERNS — HDF5 output and matplotlib analysis are fully documented. The main decision is the ground truth measurement protocol (physical target design), which is experimental design rather than software research.
+### Phase 4: Per-Fish Reconstruction via Analysis-by-Synthesis (Shelved)
+**Rationale:** The original v1 core — differentiable mesh rendering + Adam optimization against silhouette IoU. Shelved due to 30+ min/sec runtime and replaced by the direct triangulation pipeline (Phases 5-7+).
+**Delivers:** (When shelved pipeline was active) RefractiveRenderer, SoftSilhouetteShader, multi-objective loss, PoseOptimizer.
+**Status:** Shelved. Code retained. See `.planning/inbox/fish-reconstruction-pivot.md` for pivot rationale.
 
-### Phase 5: Multi-Fish Tracking and Identity (v2)
-**Rationale:** Only after v1 single-fish reconstruction is validated (cross-view holdout IoU meets threshold) does multi-fish extension make sense. Scaling to 9 fish requires the tracking and identity layers that were deliberately deferred.
-**Delivers:** Multi-fish batched optimization (9 fish per GPU call using PyTorch3D batched Meshes); MotionPredictor (filterpy EKF, 3D position + velocity state per fish); AssignmentSolver (scipy Hungarian with Mahalanobis cost + sex-penalty augmentation); InteractionHandler for merge-split events with N-fish topology constraint; shape-pose decomposition for shape-signature identity; identity persistence validation across simulated occlusion events.
-**Addresses features:** Shape-pose decomposition, multi-fish tracking, identity via shape signatures [v1.x targets]
-**Avoids pitfalls:** Single-fish architecture blocking v2 (Pitfall 9), shape/pose coupling (Pitfall 8)
-**Uses:** filterpy, scipy (Hungarian), scikit-learn (sex classification), PyTorch3D batched rendering
-**Research flag:** NEEDS RESEARCH — the shape-signature Re-ID approach has no direct precedent in the fish tracking literature. The clustering stability of shape parameters across individuals within the same sex class needs empirical validation before committing to it as the identity mechanism. The interaction handler logic for merge-split events in a 9-fish tank is complex and should be researched during phase planning.
+### Phase 5: Cross-View Identity & 3D Tracking (New)
+**Rationale:** All downstream reconstruction stages require knowing which mask in camera A corresponds to which mask in camera B. This is a prerequisite for medial axis triangulation.
+**Delivers:** CrossViewIdentifier using RANSAC over centroid rays across cameras; (camera_id, detection_id) -> fish_id mapping; 3D centroid per fish; HungarianTracker for persistent fish IDs across frames via 3D centroid assignment.
+**Addresses features:** Cross-view identity, persistent 3D tracking [table stakes for multi-fish]
+**Uses:** Existing refractive ray casting code, scipy (Hungarian assignment)
+
+### Phase 6: 2D Medial Axis & Arc-Length Sampling (New)
+**Rationale:** Extracts the 2D midline representation from segmentation masks and establishes cross-view point correspondences via normalized arc-length. This is the input to multi-view triangulation.
+**Delivers:** MedialAxisExtractor (morphological smoothing, skeletonize, distance transform half-width, BFS pruning, head-tail disambiguation); ArcLengthSampler (cumulative arc-length normalization, fixed-N resampling).
+**Addresses features:** 2D midline extraction, cross-view correspondence [table stakes for reconstruction]
+**Uses:** scikit-image (skeletonize, morphology), scipy (distance_transform_edt)
+
+### Phase 7+: 3D Triangulation, Spline Fitting, Output (TBD)
+**Rationale:** The core reconstruction: triangulate corresponding body points across views, fit a 3D spline, optionally refine via LM. Detailed phase planning TBD.
+**Delivers:** RANSACTriangulator, SplineFitter, optional LMRefiner, TrajectoryWriter, visualization and validation.
+**Uses:** Existing refractive ray intersection code, scipy (splprep, least_squares), h5py, rerun-sdk
 
 ### Phase Ordering Rationale
 
-- **Calibration first:** The RefractiveProjector is a shared dependency for every subsequent phase; errors here compound downstream. Validating it first eliminates the largest source of systemic bias.
-- **Segmentation second:** Masks are required by initialization and optimization; building and validating the segmentation pipeline in parallel with Phase 3 mesh/rendering development saves calendar time without creating blocking dependencies.
-- **Single-fish before multi-fish:** The feature dependency graph is explicit — multi-fish tracking requires reliable single-fish reconstruction, and identity-by-shape requires shape-pose decomposition which requires a working single-fish mesh optimization.
-- **Output and validation before scaling:** Establishing the 3D evaluation framework during v1 prevents inheriting unvalidated reconstruction into the more complex multi-fish system.
-- **Multi-fish last:** The identity mechanism (shape signatures) is the highest-risk novel contribution. Deferring it until v1 is proven reduces the risk that identity failures are confused with reconstruction failures during debugging.
+- **Calibration first:** The RefractiveProjector is a shared dependency for every subsequent phase; errors here compound downstream.
+- **Segmentation second:** Masks are required by all reconstruction stages; building and validating segmentation early saves calendar time.
+- **Cross-view identity before midline extraction:** Medial axis extraction and arc-length correspondence require knowing which masks correspond to the same physical fish across cameras.
+- **Midline extraction before triangulation:** The triangulation stage consumes cross-view point correspondences produced by arc-length sampling.
+- **Single-fish before multi-fish:** The feature dependency graph is explicit — multi-fish tracking requires reliable single-fish reconstruction.
+- **Output and validation integrated with reconstruction:** The 3D evaluation framework (cross-view holdout, per-axis error reporting) is built alongside reconstruction, not as a separate phase.
 
 ### Research Flags
 
 Phases likely needing deeper research during planning:
-- **Phase 1 (Calibration):** AquaCal's internal PyTorch differentiability needs verification; Newton-Raphson convergence characterization at near-critical angles is rig-specific.
-- **Phase 3 (Reconstruction Core):** PyTorch3D soft rasterizer hyperparameter tuning; head-tail disambiguation strategy; temporal loss stability with warm-start.
-- **Phase 5 (Multi-Fish / Identity):** Shape-signature Re-ID stability across individuals has no direct literature precedent; merge-split interaction handling logic is complex.
+- **Phase 5 (Cross-View Identity):** RANSAC clustering of refractive rays for identity assignment; tuning inlier thresholds for this rig's geometry.
+- **Phase 6 (Medial Axis):** Skeleton stability at current mask quality (IoU ~0.62); adaptive morphological kernel sizing; head-tail disambiguation reliability.
+- **Phase 7+ (Triangulation):** Arc-length correspondence accuracy on curved fish; view-angle weighting calibration; LM refinement convergence behavior.
 
 Phases with standard patterns (skip research-phase):
-- **Phase 2 (Segmentation):** Detectron2 + SAM2 workflow is well-documented; unknowns are empirical (rig-specific), not conceptual.
-- **Phase 4 (Output and Validation):** HDF5 output and visualization are fully standard; the ground truth protocol is experimental design, not software research.
+- **Phase 1 (Calibration):** Complete. Refractive projection reimplemented in PyTorch.
+- **Phase 2 (Segmentation):** Complete. YOLOv8 + U-Net trained and validated.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | MEDIUM-HIGH | PyTorch/PyTorch3D version pinning is HIGH confidence (official docs confirmed). Detectron2, SAM2, kornia are HIGH confidence. The 5-version compatibility gap between PyTorch 2.4.1 and current (2.10.0) introduces real installation risk. |
-| Features | MEDIUM | Table stakes and anti-features are HIGH confidence (competitor analysis is clear). Differentiators (refractive rendering, shape Re-ID) have no direct comparators, so feature scope is validated by domain logic rather than industry patterns. |
-| Architecture | HIGH | System design is confirmed by the detailed project spec in `.planning/inbox/proposed_pipeline.md`. PyTorch3D rendering architecture verified via official docs. Build order derives from clear data dependencies. |
-| Pitfalls | MEDIUM | Core optics and math pitfalls (refractive distortion, Z-weakness, silhouette ambiguity) are HIGH confidence from peer-reviewed literature. Multi-fish extension pitfalls are MEDIUM from analogous animal tracking work. Some implementation specifics (shape Re-ID stability) are LOW — flagged. |
+| Stack | HIGH | Primary pipeline uses scipy/numpy/scikit-image — mature, well-documented, no version fragility. PyTorch3D version pinning only matters for shelved pipeline. U-Net + YOLOv8 are stable. |
+| Features | MEDIUM-HIGH | Table stakes and anti-features are HIGH confidence. The novel contribution (refractive triangulation with arc-length correspondence) is well-grounded in geometry but untested on this rig at current mask quality. |
+| Architecture | HIGH | Direct triangulation pipeline is well-understood geometry. Build order derives from clear data dependencies. The pivot proposal (`.planning/inbox/fish-reconstruction-pivot.md`) is the authoritative pipeline design document. |
+| Pitfalls | MEDIUM | Core optics pitfalls (refractive distortion, Z-weakness) are HIGH confidence from peer-reviewed literature. Arc-length correspondence errors on curved fish are MEDIUM — mitigations exist (RANSAC, view-angle weighting) but need empirical validation. Medial axis instability at IoU ~0.62 is a known risk with known mitigations. |
 
-**Overall confidence:** MEDIUM
+**Overall confidence:** MEDIUM-HIGH
 
 ### Gaps to Address
 
-- **AquaCal differentiability:** It is not confirmed whether AquaCal's RefractiveProjector exposes a PyTorch-differentiable `project()` method or requires reimplementation in PyTorch. This must be verified before Phase 1 is planned. If AquaCal is numpy-based, the refractive projection must be reimplemented from scratch in PyTorch — a significant scope addition.
-- **Z-uncertainty budget:** The theoretical Z reconstruction uncertainty for this specific rig (13 top-down cameras, baseline distances, operating depth) has not been quantified. This must be computed analytically in Phase 1 before committing to the analysis-by-synthesis approach for Z.
-- **Shape-signature discriminability:** It is unknown whether the shape parameters {κ, s} estimated for each fish in the tank are sufficiently distinct to serve as a biometric identifier across a full-day recording. This is the core scientific bet of v2. The gap should be flagged in the roadmap and a validation experiment designed early in Phase 5.
-- **PyTorch3D sigma/gamma for this rig:** Optimal soft rasterizer hyperparameters depend on fish apparent size in pixels, which depends on camera distance and focal length. These values must be swept empirically during Phase 3 development.
-- **Female detection under worst-case conditions:** MOG2 recall for stationary female fish has not been measured. This is the most likely operational failure mode for Phase 2.
+- **Z-uncertainty budget:** The theoretical Z reconstruction uncertainty for this specific rig has been quantified analytically. The practical impact on midline triangulation quality at operating depth needs validation against physical reference data.
+- **Arc-length correspondence accuracy on curved fish:** The normalized arc-length parameterization assumes projection preserves body-position correspondence. This assumption degrades for curved fish viewed from different angles. The degree of degradation at this rig's camera geometry needs empirical characterization.
+- **Medial axis stability at current mask quality (IoU ~0.62):** Noisy mask boundaries cause skeleton wobble and spurious branches. Morphological smoothing mitigates this, but the residual error propagated into triangulation needs quantification.
+- **Shape-signature discriminability:** It is unknown whether shape parameters estimated for each fish are sufficiently distinct to serve as a biometric identifier. This is deferred to v2 but remains the core scientific bet for persistent identity.
+- **Female detection under worst-case conditions:** YOLOv8/U-Net recall for stationary female fish has not been measured under all lighting conditions. This is the most likely operational failure mode for Phase 2.
 
 ## Sources
 
 ### Primary (HIGH confidence)
 - PyTorch3D INSTALL.md — version compatibility matrix (PyTorch 2.4.1 + PyTorch3D 0.7.9 confirmed): https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md
 - PyTorch3D renderer docs — SoftSilhouetteShader, MeshRasterizer, batched API: https://pytorch3d.readthedocs.io/en/latest/modules/renderer/mesh/rasterizer.html
-- AquaPose proposed_pipeline.md — authoritative project spec (see `.planning/inbox/proposed_pipeline.md`)
+- AquaPose proposed_pipeline.md — original project spec (see `.planning/inbox/proposed_pipeline.md`)
+- **AquaPose reconstruction pivot proposal — authoritative pipeline design document (see `.planning/inbox/fish-reconstruction-pivot.md`)**
 - Refractive Two-View Reconstruction for Underwater 3D Vision (IJCV 2019) — refractive model correctness requirements: https://link.springer.com/article/10.1007/s11263-019-01218-9
 - Multi-animal pose estimation and tracking with DeepLabCut (Nature Methods 2022) — competitor baseline: https://www.nature.com/articles/s41592-022-01443-0
 - WaterMask: Instance Segmentation for Underwater Imagery (ICCV 2023) — underwater segmentation precedent: https://openaccess.thecvf.com/content/ICCV2023/papers/Lian_WaterMask_Instance_Segmentation_for_Underwater_Imagery_ICCV_2023_paper.pdf
@@ -189,16 +202,16 @@ Phases with standard patterns (skip research-phase):
 
 ### Secondary (MEDIUM confidence)
 - A Calibration Tool for Refractive Underwater Vision (arXiv 2024) — port tilt estimation, refractive calibration: https://arxiv.org/abs/2405.18018
-- VoGE: Differentiable Volume Renderer for Analysis-by-Synthesis (OpenReview) — confirms analysis-by-synthesis pattern: https://openreview.net/forum?id=AdPJb9cud_Y
+- VoGE: Differentiable Volume Renderer for Analysis-by-Synthesis (OpenReview) — confirms analysis-by-synthesis pattern (shelved pipeline): https://openreview.net/forum?id=AdPJb9cud_Y
 - SOD-SORT: Multi-fish tracking with EKF + Hungarian — confirms tracking pattern: https://arxiv.org/html/2507.06400v3
 - vmTracking: multi-animal pose tracking (PLOS Biology 2025): https://pmc.ncbi.nlm.nih.gov/articles/PMC11845028/
-- PyTorch3D GitHub issues #1626, #905, #1855 — soft rasterizer hyperparameter behavior: https://github.com/facebookresearch/pytorch3d/issues/1626
-- Adventures with Differentiable Mesh Rendering (Andrew Chan blog) — practical implementation gotchas
+- PyTorch3D GitHub issues #1626, #905, #1855 — soft rasterizer hyperparameter behavior (shelved pipeline): https://github.com/facebookresearch/pytorch3d/issues/1626
+- Adventures with Differentiable Mesh Rendering (Andrew Chan blog) — practical implementation gotchas (shelved pipeline)
 
 ### Tertiary (LOW confidence)
-- Shape-signature identity for fish Re-ID — no direct precedent found; extrapolated from SMAL-based shape Re-ID for quadrupeds. Needs validation during Phase 5 planning.
-- PyTorch3D source build stability against PyTorch 2.5–2.10 — community reports in GitHub issues; no official confirmation. Treat as LOW until PyTorch3D publishes updated release.
+- Shape-signature identity for fish Re-ID — no direct precedent found; extrapolated from SMAL-based shape Re-ID for quadrupeds. Deferred to v2.
+- PyTorch3D source build stability against PyTorch 2.5-2.10 — community reports in GitHub issues; no official confirmation. Relevant only if shelved pipeline is reactivated.
 
 ---
-*Research completed: 2026-02-19*
+*Research completed: 2026-02-19; updated for reconstruction pivot: 2026-02-21*
 *Ready for roadmap: yes*

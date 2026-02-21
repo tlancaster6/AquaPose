@@ -1,14 +1,16 @@
 # Pitfalls Research
 
-**Domain:** 3D fish pose estimation via analysis-by-synthesis (multi-view, refractive, differentiable rendering)
-**Researched:** 2026-02-19
+**Domain:** 3D fish pose estimation via direct triangulation (medial axis → arc-length → RANSAC triangulation → spline fitting)
+**Researched:** 2026-02-19 (updated 2026-02-21 for pipeline pivot)
 **Confidence:** MEDIUM — core optics/math pitfalls are HIGH confidence from literature; multi-fish extension pitfalls are MEDIUM from analogous animal tracking work; some implementation specifics are LOW and flagged
+
+> **Pipeline pivot note:** AquaPose pivoted from analysis-by-synthesis (differentiable mesh rendering + Adam optimization) to a direct triangulation pipeline. Pitfalls marked **[SHELVED PIPELINE]** apply only to the original analysis-by-synthesis approach and are retained for reference. All other pitfalls apply to the primary (direct triangulation) pipeline or both pipelines.
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Treating Refractive Distortion as Depth-Independent
+### Pitfall 1: Treating Refractive Distortion as Depth-Independent *(both pipelines)*
 
 **What goes wrong:**
 The refractive projection through a flat air-water port is depth-dependent — the 2D image coordinates of a 3D point depend on its Z value, not just its XY position. Systems that model refraction as a fixed pixel-wise correction (e.g., a static distortion map or polynomial warp applied once at calibration time) will produce systematic 3D reconstruction errors that grow with distance from calibration depth. The error is not random noise — it introduces a consistent bias in triangulated 3D positions.
@@ -25,11 +27,11 @@ Implement a full per-ray refractive projection: trace each camera ray through th
 - Calibration error that is low but reconstruction accuracy that is poor when verified with a known-3D reference object at multiple depths
 
 **Phase to address:**
-Camera model and calibration phase (before any pose optimization is attempted). Validate with a 3D target at 3+ known depths before proceeding.
+Camera model and calibration phase (before any pose optimization is attempted). Validate with a 3D target at 3+ known depths before proceeding. Applies to both the primary triangulation pipeline (refractive ray casting) and the shelved analysis-by-synthesis pipeline (refractive projection).
 
 ---
 
-### Pitfall 2: All-Top-Down Camera Configuration Creates Pathologically Weak Z-Reconstruction
+### Pitfall 2: All-Top-Down Camera Configuration Creates Pathologically Weak Z-Reconstruction *(both pipelines)*
 
 **What goes wrong:**
 13 cameras all looking straight down share nearly parallel optical axes. This is a degenerate multi-view geometry for reconstructing depth (Z). Triangulation uncertainty scales with baseline/depth ratio and with the sine of the angle between rays. With all cameras looking down, the angle between any two rays to a point is small, making Z reconstruction extremely noisy compared to XY. A 1px reprojection error can translate to centimeters of Z error at tank depth.
@@ -49,11 +51,13 @@ The experimental setup was designed for overhead observation (biological constra
 - Z estimates correlate with fish buoyancy behavior only weakly
 
 **Phase to address:**
-Geometry validation phase (immediately after camera calibration, before building the pose optimizer). Establish a Z-accuracy budget before committing to the optimization approach.
+Geometry validation phase (Phase 1) — already resolved. Z/XY anisotropy quantified at 132x. Z-accuracy budget established before committing to the triangulation approach.
 
 ---
 
-### Pitfall 3: Silhouette-Only Fitting Converges to Wrong Local Minimum
+### Pitfall 3: Silhouette-Only Fitting Converges to Wrong Local Minimum — **[SHELVED PIPELINE]**
+
+> **Shelved pipeline only.** This pitfall applies to the original analysis-by-synthesis approach. In the primary triangulation pipeline, the equivalent risk is arc-length correspondence errors on curved fish (see Pitfall 12).
 
 **What goes wrong:**
 Analysis-by-synthesis with silhouette loss is highly non-convex. A rendered silhouette that matches the observed silhouette area and rough shape can correspond to many different 3D poses (front-back flips, yaw ambiguities, depth-scale confounds). The optimizer converges to whichever basin of attraction contains the initialization. For top-down cameras, a fish rotated 180° around its vertical axis produces nearly the same silhouette from above. Gradient-based optimization cannot escape once trapped.
@@ -77,7 +81,7 @@ Pose optimizer design phase. Multi-start must be built in from the start, not re
 
 ---
 
-### Pitfall 4: Newton-Raphson Fixed-Iteration Solver Fails Near Flat Port Edges (Grazing Angles)
+### Pitfall 4: Newton-Raphson Fixed-Iteration Solver Fails Near Flat Port Edges (Grazing Angles) *(both pipelines)*
 
 **What goes wrong:**
 The Newton-Raphson solver for the refractive projection equation is initialized assuming the ray hits the flat port at a moderate angle. Near the edges of a wide-angle camera's field of view, rays approach the flat port at steep angles (approaching the critical angle for total internal reflection, ~48.6° from normal for water-glass). At these grazing angles:
@@ -106,7 +110,7 @@ Custom refractive projection layer implementation (the very first technical comp
 
 ---
 
-### Pitfall 5: MOG2 Background Subtraction Fails on Female Fish (Low-Contrast, Similar Coloring to Background)
+### Pitfall 5: MOG2 Background Subtraction Fails on Female Fish (Low-Contrast, Similar Coloring to Background) *(partially resolved)*
 
 **What goes wrong:**
 Female zebrafish (or similarly colored species) have lower visual contrast against the tank substrate than males. MOG2 models each pixel as a mixture of Gaussians for the background. When foreground fish have pixel intensities within 2-3 standard deviations of the background model, MOG2 incorrectly absorbs them into the background. The fish becomes invisible to detection. Additionally:
@@ -117,12 +121,16 @@ Female zebrafish (or similarly colored species) have lower visual contrast again
 **Why it happens:**
 MOG2 was designed for pedestrian/vehicle detection in outdoor scenes with high contrast objects. Aquatic settings combine low contrast with dynamic backgrounds (water ripple, lighting flicker), which confuses the Gaussian mixture update.
 
+**Mitigation status:**
+YOLO has been added as an alternative detector (`make_detector("yolo", model_path=...)`), which is less susceptible to low-contrast and stationary-fish dropout than MOG2. MOG2 is retained as a fallback. The general concern about detection recall for low-contrast fish remains relevant regardless of detector choice.
+
 **How to avoid:**
 - Enable MOG2's shadow detection (`detectShadows=True`) and threshold at value>127 to exclude shadows before extracting contours.
 - Tune `history` (frames in background model) explicitly — default 500 frames may be too long or too short depending on frame rate. For stationary fish, reduce history.
 - Add frame-differencing as a fallback: when MOG2 foreground area drops below expected total fish area, cross-check against an inter-frame difference mask.
 - For female fish specifically, consider running detection in a color space where the fish-background contrast is higher (e.g., saturation channel if females have color variance the background does not).
 - Validate detection recall separately for male vs. female fish before deploying the full pipeline.
+- Prefer YOLO-based detection for production use; MOG2 is a useful preprocessing step but not a reliable primary detector.
 
 **Warning signs:**
 - Detection count drops below expected fish count during certain tank lighting conditions
@@ -130,11 +138,11 @@ MOG2 was designed for pedestrian/vehicle detection in outdoor scenes with high c
 - "Stationary" fish disappear from detection when they stop moving for > N seconds
 
 **Phase to address:**
-Detection module phase. Requires controlled experiments varying illumination and fish sex before integration testing.
+Detection module phase (Phase 2). YOLO added as mitigation; remaining risk is general detection recall validation.
 
 ---
 
-### Pitfall 6: Flat Refractive Port Normal Assumed Perfect — Tilt Creates Unmodeled Asymmetric Distortion
+### Pitfall 6: Flat Refractive Port Normal Assumed Perfect — Tilt Creates Unmodeled Asymmetric Distortion *(both pipelines)*
 
 **What goes wrong:**
 The refractive projection model assumes the flat port glass is perfectly perpendicular to the camera optical axis. In practice, the port may be tilted by even 1-2°. A tilted flat port breaks the radial symmetry of refractive distortion: the distortion becomes asymmetric, with more bending on one side of the image than the other. A model that assumes perfect alignment will have systematic reprojection errors that are directionally biased — harder to diagnose because they look like calibration noise rather than a model error.
@@ -159,7 +167,9 @@ Camera calibration phase. Port tilt must be estimated before pose optimization b
 
 ## Moderate Pitfalls
 
-### Pitfall 7: Soft Rasterizer Hyperparameters Require Per-Setup Tuning
+### Pitfall 7: Soft Rasterizer Hyperparameters Require Per-Setup Tuning — **[SHELVED PIPELINE]**
+
+> **Shelved pipeline only.** The primary triangulation pipeline does not use differentiable rendering. Retained for reference if analysis-by-synthesis is revisited.
 
 **What goes wrong:**
 PyTorch3D's soft rasterizer has three critical hyperparameters: `sigma` (blur radius, controls silhouette softness), `gamma` (aggregation weight temperature), and `faces_per_pixel`. The optimal values depend on fish size in pixels, camera distance, and mesh resolution. Values that work for a 100px fish silhouette will produce over-blurred gradients for a 400px fish or under-blurred gradients that behave like hard rasterization (no gradient at silhouette boundary). Most implementations copy values from PyTorch3D tutorials without validating them for their specific geometry.
@@ -179,7 +189,9 @@ Differentiable rendering integration phase.
 
 ---
 
-### Pitfall 8: Cross-Section Profile Self-Calibration Overfits to Individual Fish Variance
+### Pitfall 8: Cross-Section Profile Self-Calibration Overfits to Individual Fish Variance — **[SHELVED PIPELINE]**
+
+> **Shelved pipeline only.** In the primary triangulation pipeline, width profiles come from the distance transform on masks, not from optimization. Retained for reference if analysis-by-synthesis is revisited.
 
 **What goes wrong:**
 Self-calibrating the parametric fish cross-section profile from data means the shape model will reflect the specific fish in the calibration set. If calibration fish are all from the same sex, size class, or developmental stage, the model will not generalize to other fish. More critically, if the optimization jointly estimates fish pose AND cross-section profile, gradient will flow partly into shape updates that "explain away" pose error — the shape adapts to compensate for pose mistakes, creating a coupled failure mode where neither shape nor pose is correctly estimated.
@@ -200,30 +212,33 @@ Shape model calibration phase, before multi-fish scaling.
 
 ---
 
-### Pitfall 9: Single-Fish Architecture Does Not Isolate State Per Fish — Prevents Clean 9-Fish Extension
+### Pitfall 9: Single-Fish Architecture Does Not Isolate State Per Fish — Prevents Clean 9-Fish Extension *(both pipelines)*
 
 **What goes wrong:**
-V1 builds a single-fish pipeline with global state: one background model, one optimizer, one set of calibration results. When extending to 9 fish, this architecture forces a full rewrite rather than a scaled-out instantiation. Specific failure points:
-- Background subtraction that returns one mask cannot cleanly support 9 tracked instances
-- A single Newton-Raphson projection layer with fixed camera parameters cannot handle per-fish optimization in parallel
-- A single mesh object in the renderer cannot render 9 fish simultaneously with independent pose gradients
+V1 builds a single-fish pipeline with global state: one background model, one detector, one set of calibration results. When extending to 9 fish, this architecture forces a full rewrite rather than a scaled-out instantiation. Specific failure points in the primary pipeline:
+- Identity association that assumes a fixed fish count or fixed ordering across cameras
+- Triangulation functions that process one fish at a time instead of batching across N fish
+- Midline extraction that returns a single skeleton rather than a list of per-fish midlines
+- Detection/segmentation that returns one mask per camera rather than N per-fish masks per camera
 
 **How to avoid:**
-- Design the single-fish pipeline as a parameterized `Fish` class from day one: each instance has its own pose parameters, optimizer state, and render buffer.
-- Use PyTorch3D's batched mesh operations (`join_meshes_as_batch`) rather than single-mesh APIs — this supports N=1 and N=9 with the same code path.
-- Abstract the detection step to return a list of per-fish masks from the start, even if the list always has length 1 in v1.
+- Design the pipeline to pass lists of per-fish data structures from the start, even if the list always has length 1 in v1.
+- Abstract the detection step to return a list of per-fish masks, and carry fish identity through midline extraction and triangulation.
+- Vectorize triangulation across fish (batch dimension) rather than looping in Python.
 
 **Warning signs:**
-- Function signatures that take single mask/pose rather than lists
-- Global state (camera calibration, background model) mutated by pose optimization
+- Function signatures that take single mask/midline/pose rather than lists
+- Global state (camera calibration, background model) mutated during processing
 - "Quick" decisions to handle multi-fish "later" without specifying the extension interface
 
 **Phase to address:**
-Core architecture design (phase 1). Interface contracts must support N fish before any implementation begins.
+Core architecture design. Interface contracts must support N fish before any implementation begins.
 
 ---
 
-### Pitfall 10: Optimizer Applies Gradient Updates to Rotation Representation That Introduces Gimbal Lock or Discontinuities
+### Pitfall 10: Optimizer Applies Gradient Updates to Rotation Representation That Introduces Gimbal Lock or Discontinuities — **[SHELVED PIPELINE]**
+
+> **Shelved pipeline only.** The primary triangulation pipeline does not use an explicit rotation representation — fish orientation is derived from the reconstructed midline spline. Retained for reference if analysis-by-synthesis or optional LM refinement with rotation parameters is revisited.
 
 **What goes wrong:**
 Representing fish 3D orientation as Euler angles in PyTorch and applying Adam updates will hit gimbal lock singularities at certain orientations (e.g., fish oriented directly at a camera). More subtly, if the optimizer drives an angle through 180°, the parameter space wraps but gradient descent does not know this — the loss appears to increase (optimizer sees a discontinuity) even as the physically correct orientation passes through.
@@ -242,7 +257,7 @@ Pose optimizer design phase.
 
 ---
 
-### Pitfall 11: Reprojection Error Used as Only Validation Metric — Masks 3D Reconstruction Failures
+### Pitfall 11: Reprojection Error Used as Only Validation Metric — Masks 3D Reconstruction Failures *(both pipelines)*
 
 **What goes wrong:**
 Reprojection error (average 2D pixel distance between projected estimate and observed keypoint) is necessary but not sufficient. With 13 top-down cameras and weak Z reconstruction, a system can achieve < 2px reprojection error while having centimeter-scale errors in 3D. This is because the cameras collectively over-constrain XY (good average reprojection) while under-constraining Z — the Z errors are distributed across cameras and partially cancel in the reprojection average.
@@ -262,17 +277,91 @@ Evaluation framework design (must be defined before any results are reported). D
 
 ---
 
+### Pitfall 12: Arc-Length Correspondence Errors on Curved Fish *(primary pipeline)*
+
+**What goes wrong:**
+Arc-length normalization assumes the midline projection preserves parameterization across views. For a significantly curved fish viewed from very different angles, foreshortening compresses the arc-length mapping unevenly. Body point t=0.5 in one camera may not correspond to t=0.5 in another. This creates systematic triangulation errors at body points away from the head/tail endpoints, producing a reconstructed midline with kinks or bulges at high-curvature regions.
+
+**Why it happens:**
+A 2D projection of a 3D curve does not preserve arc-length proportions. Two cameras at different azimuthal angles see different foreshortening of the fish body. The further the fish curves out of a flat plane, the worse the mismatch.
+
+**How to avoid:**
+- Use RANSAC per body point during triangulation to reject outlier camera contributions where foreshortening is severe.
+- Implement view-angle weighting: downweight cameras whose optical axis is nearly parallel to the fish body axis (where foreshortening is worst).
+- Consider iterative refinement: triangulate an initial midline, then re-project to update the arc-length correspondence before a second triangulation pass.
+
+**Warning signs:**
+- Triangulation residual correlates with fish curvature (straight fish triangulate well, curved fish have high residuals)
+- Reconstructed midline has kinks or inflection points at high-curvature regions
+- Per-camera reprojection error is systematically higher for cameras looking along the fish body axis
+
+**Phase to address:**
+Triangulation (Phase 7).
+
+---
+
+### Pitfall 13: Medial Axis Instability on Noisy Masks *(primary pipeline)*
+
+**What goes wrong:**
+`skeletonize` / `medial_axis` on masks with IoU ~0.62 produces unstable, branchy skeletons that wobble frame-to-frame. Mask boundary noise (from imperfect segmentation) creates spurious skeleton branches that survive basic pruning. The resulting midline is too noisy for reliable arc-length parameterization, and temporal jitter in the skeleton translates directly into jittery 3D reconstruction.
+
+**Why it happens:**
+Medial axis computation is topologically sensitive to boundary perturbations. A single pixel bump on the mask boundary can create a new skeleton branch. At IoU ~0.62, mask boundaries have significant noise relative to the fish width.
+
+**How to avoid:**
+- Apply morphological smoothing (closing then opening) before skeletonization, with adaptive kernel radius proportional to the mask minor-axis width.
+- Prune skeleton branches by length threshold relative to the main axis length (discard branches shorter than ~15% of the longest path).
+- Validate skeleton stability: for the same fish in consecutive frames, skeleton length should not vary by more than ~10-15%.
+- Consider distance-transform-based midline extraction as an alternative to topological skeletonization.
+
+**Warning signs:**
+- Skeleton length varies >20% between frames for the same fish
+- Many spurious branches remain after pruning
+- Arc-length parameterization produces inconsistent body-point positions frame-to-frame
+
+**Phase to address:**
+Midline Extraction (Phase 6).
+
+---
+
+### Pitfall 14: Head-Tail Ambiguity in Arc-Length Parameterization *(primary pipeline)*
+
+**What goes wrong:**
+Arc-length normalization does not inherently know which end of the skeleton is the head. If head/tail assignment is inconsistent across cameras for the same fish, the correspondence mapping is reversed: body point t=0.2 (near head) in one camera corresponds to t=0.8 (near tail) in another. Triangulation of these mismatched points produces garbage 3D positions — the reconstructed midline collapses or crosses itself.
+
+**Why it happens:**
+A skeleton extracted from a 2D mask has two endpoints. Without additional information, either end could be the head. Different camera views may resolve this ambiguity differently (e.g., head is on the left in one camera, on the right in another).
+
+**How to avoid:**
+- Project the 3D centroid from the identity/tracking stage into each camera view and assign the skeleton endpoint closer to the centroid-adjacent region as a consistent anchor.
+- Use a width heuristic as fallback: the wider end of the fish is typically the head (measure distance-transform width at each skeleton endpoint).
+- Validate consistency: after head-tail assignment, verify that the head endpoint is on the same physical side of the fish across all cameras by checking reprojection of the assigned head point.
+
+**Warning signs:**
+- Triangulated midline crosses itself or has impossible geometry
+- Reconstructed fish length is much shorter than expected (head and tail are being averaged together)
+- Head-tail assignment flips between consecutive frames for the same camera
+
+**Phase to address:**
+Midline Extraction (Phase 6).
+
+---
+
 ## Technical Debt Patterns
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
 | Use standard OpenCV calibration without refractive model | Faster calibration implementation | Systematic depth-dependent 3D errors; requires full rework | Never for underwater setups |
 | Fixed-iteration Newton-Raphson without convergence check | Differentiable backward pass, simpler code | Silent failures at edge rays produce bad gradients | Only if field of view is verified to exclude near-critical-angle rays |
-| Euler angle rotation representation | Familiar, easy to debug | Gimbal lock at certain fish orientations; requires restart or workaround | Only for rapid prototyping if fish orientation is constrained |
-| Single global optimizer for all 9 fish | Simpler code initially | Can't tune per-fish learning rates; one fish destabilizes others | Never — parameterize from day 1 |
+| Skip mask morphological smoothing before skeletonization | Faster pipeline, fewer parameters | Unstable skeletons, spurious branches, jittery midlines | Only if mask IoU > 0.90 |
+| Naive DLT triangulation without RANSAC | Simpler implementation | Outlier cameras corrupt 3D points; no robustness to mask errors | Only for initial prototyping with known-good masks |
+| Skip head-tail consistency check across cameras | Fewer heuristics to tune | Reversed arc-length mapping produces garbage triangulation | Never — must validate head-tail consistency |
 | Skip female-specific detection validation | Faster integration testing | Silently drops detections for half the experimental fish | Never if females are in the experimental population |
 | Report reprojection error as primary metric | Easy to compute, familiar | Masks Z-axis failures completely | Only as a secondary metric alongside 3D reconstruction error |
-| Optimize shape and pose jointly from start | One optimization loop | Shape adapts to compensate for pose errors; both are wrong | Acceptable only for a fixed, known fish with no shape uncertainty |
+| Python loop over fish/body-points for triangulation | Easier to debug | O(N*K) Python overhead; unusable at 9 fish × 20 body points × 30fps | Only for single-fish prototyping |
+| ~~Euler angle rotation representation~~ | ~~Familiar, easy to debug~~ | ~~Gimbal lock~~ | *Shelved pipeline only* |
+| ~~Single global optimizer for all 9 fish~~ | ~~Simpler code initially~~ | ~~One fish destabilizes others~~ | *Shelved pipeline only* |
+| ~~Optimize shape and pose jointly from start~~ | ~~One optimization loop~~ | ~~Shape compensates for pose errors~~ | *Shelved pipeline only* |
 
 ---
 
@@ -280,12 +369,15 @@ Evaluation framework design (must be defined before any results are reported). D
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| PyTorch3D soft rasterizer | Copy default sigma/gamma from tutorials | Profile gradient magnitude for your specific fish pixel size and set sigma accordingly |
-| PyTorch3D batched meshes | Use single Meshes object, extend to N fish by rewriting | Use `join_meshes_as_batch` from day one; indexing into a batch is clean extension |
-| OpenCV MOG2 | Use default parameters in production | Tune `history`, `varThreshold`, `detectShadows` for tank-specific conditions; validate on worst-case fish (females, stationary) |
+| scikit-image `skeletonize` | Run on raw mask without smoothing | Apply morphological closing+opening before skeletonization; prune branches by length |
+| scipy `splprep` / `splev` | Fit spline to noisy skeleton points without filtering | Pre-filter skeleton points; use smoothing parameter `s > 0`; validate spline length is biologically plausible |
+| Crop-to-frame coordinate transforms | Forget to undo crop offset when projecting midline points back to full frame | Maintain crop origin (x0, y0) and apply inverse transform before any cross-camera correspondence |
+| OpenCV MOG2 / YOLO detection | Use default parameters in production | Tune for tank-specific conditions; validate on worst-case fish (females, stationary); prefer YOLO for production |
 | Snell's law solver (custom) | Test only with central-field rays | Include edge-field rays at 40-48° incidence in the unit test suite |
-| Multi-view triangulation | Use linear least squares on all cameras equally | Weight contributions by reprojection confidence; down-weight edge-of-frame observations where refractive solver is less reliable |
-| Rotation gradients in PyTorch | `torch.Tensor` with Euler angles, direct Adam update | Use `so3_exponential_map` or normalized quaternion representation with custom update step |
+| Multi-view triangulation | Use linear least squares on all cameras equally | Weight contributions by reprojection confidence; use RANSAC; down-weight edge-of-frame observations |
+| ~~PyTorch3D soft rasterizer~~ | ~~Copy default sigma/gamma from tutorials~~ | *Shelved pipeline only* |
+| ~~PyTorch3D batched meshes~~ | ~~Use single Meshes object~~ | *Shelved pipeline only* |
+| ~~Rotation gradients in PyTorch~~ | ~~Euler angles with direct Adam update~~ | *Shelved pipeline only* |
 
 ---
 
@@ -293,11 +385,13 @@ Evaluation framework design (must be defined before any results are reported). D
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Rendering 9 fish sequentially in Python loop | 9x slower than expected; frame rate drops | Use PyTorch3D batched rendering over all fish in one forward pass | At > 3 fish with any realtime requirement |
-| Re-computing refractive projection Jacobian numerically | Optimization is 100x slower than expected | Implement analytic Jacobian or use autograd from the start | At every iteration for any mesh with > 100 faces |
-| Storing all camera views in GPU memory simultaneously | OOM error at 13 cameras × 1080p | Downsample images before passing to renderer; use half-precision for render buffers | At 13 cameras × full resolution |
-| Background model update during optimization | Model absorbs fish into background during long optimization runs | Freeze MOG2 model during pose optimization; update only between inference steps | Any continuous optimization over > 10 seconds of video |
-| Using PyTorch autograd through 10 Newton-Raphson iterations without `torch.no_grad` on inner variables | Computation graph grows exponentially; memory explosion | Explicitly manage which variables in the solver carry gradients | At > 5 iterations and > 100 projected points |
+| Python loops over fish/body-points for triangulation | N*K times slower than vectorized; frame rate unusable | Vectorize triangulation: batch across body points and fish using numpy/scipy broadcasting | At > 3 fish × 20 body points per frame |
+| Recomputing camera visibility mask from scratch each frame | Redundant computation when camera set is static | Cache the valid-camera set per fish identity; only update when fish moves significantly | At 13 cameras × 9 fish × 30fps |
+| Running `skeletonize` on full-resolution masks | Skeletonization is O(pixels); unnecessarily slow on 1080p crops | Downsample mask to working resolution before skeletonization; scale midline points back up | At > 512px crop dimension |
+| Storing all camera views in memory simultaneously | OOM error at 13 cameras × 1080p | Downsample images before processing; process cameras in streaming fashion if memory-constrained | At 13 cameras × full resolution |
+| Re-extracting masks every frame without caching | Duplicate detection+segmentation work when masks haven't changed | Cache detection/segmentation results; only re-run when frame changes | Any batch processing over video sequences |
+| ~~Rendering 9 fish sequentially in Python loop~~ | ~~9x slower~~ | *Shelved pipeline only* |
+| ~~Re-computing refractive projection Jacobian numerically~~ | ~~100x slower~~ | *Shelved pipeline only* |
 
 ---
 
@@ -307,9 +401,11 @@ Evaluation framework design (must be defined before any results are reported). D
 - [ ] **Camera calibration:** Place a physical object at 3+ known depths and measure 3D reconstruction accuracy, not just reprojection error
 - [ ] **Detection recall:** Measure detection recall separately for (a) males, (b) females, (c) stationary fish, (d) fish near tank edges
 - [ ] **Newton-Raphson solver:** Log convergence residuals at iteration 10 for all rays; verify < 0.1px equivalent residual for rays within the valid field of view
-- [ ] **Rotation parameterization:** Test optimizer stability with fish at 90°, 180°, 270° orientation angles (gimbal lock test)
+- [ ] **Medial axis stability:** For the same fish in consecutive frames, skeleton length should not vary by more than ~10-15%; verify after morphological smoothing
+- [ ] **Arc-length correspondence accuracy:** Triangulate a known straight object and verify body-point correspondence is correct; then test on a curved fish and check for kinks
+- [ ] **Coordinate transform crop-to-frame:** Verify that midline points extracted from crops are correctly transformed back to full-frame coordinates before cross-camera triangulation
+- [ ] **Head-tail consistency:** Verify that head endpoint is assigned to the same physical end of the fish across all cameras for the same frame
 - [ ] **Multi-fish extension interface:** Verify that the v1 single-fish code accepts a list-of-length-1 and that no function signature assumes exactly-one fish
-- [ ] **Shape/pose coupling:** Hold out one fish from shape calibration and verify that the calibrated shape fits that fish without reoptimizing shape
 - [ ] **Z-axis accuracy:** Report X, Y, Z errors separately on a 3D ground truth target — do not report only aggregate reprojection error
 
 ---
@@ -319,13 +415,16 @@ Evaluation framework design (must be defined before any results are reported). D
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
 | Depth-independent refraction model | HIGH | Rewrite projection layer, recalibrate cameras, re-run all experiments |
-| Top-down Z-weakness not quantified early | MEDIUM | Add Z-regularization to optimizer; add held-out 3D accuracy metric; may not fully recover without adding oblique cameras |
-| Silhouette local minima without multi-start | MEDIUM | Add multi-start wrapper around optimizer; re-run affected sequences |
+| Top-down Z-weakness not quantified early | MEDIUM | Add Z-regularization; add held-out 3D accuracy metric; may not fully recover without adding oblique cameras |
 | Newton-Raphson failure at edge rays | LOW-MEDIUM | Add convergence check and invalid-ray mask; rerun affected frames |
-| MOG2 female fish dropout | MEDIUM | Tune detection parameters; may need to add secondary detector for females specifically |
+| MOG2 female fish dropout | LOW-MEDIUM | Switch to YOLO detector (already available); validate recall |
 | Port tilt unmodeled | MEDIUM | Re-estimate port tilt as calibration parameter; recalibrate; re-run |
 | Single-fish architecture can't extend to 9 | HIGH | Requires refactoring core pipeline with batch-first interfaces |
-| Euler angle gimbal lock | LOW | Switch to 6D/quaternion representation; reset optimizer state for affected sequences |
+| Arc-length correspondence errors on curved fish | MEDIUM | Add RANSAC per body point; implement view-angle weighting; may need iterative refinement |
+| Medial axis instability on noisy masks | LOW-MEDIUM | Add morphological smoothing before skeletonization; tune kernel size; validate stability |
+| Head-tail ambiguity | LOW | Add width heuristic + centroid projection for head-tail assignment; reprocess affected frames |
+| ~~Silhouette local minima~~ | ~~MEDIUM~~ | *Shelved pipeline only* |
+| ~~Euler angle gimbal lock~~ | ~~LOW~~ | *Shelved pipeline only* |
 
 ---
 
@@ -333,18 +432,21 @@ Evaluation framework design (must be defined before any results are reported). D
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| Depth-independent refraction model | Camera model & calibration phase | Reprojection error flat across Z-depth range; 3D accuracy at 3+ depths |
-| Top-down Z-weakness | Geometry validation phase (after calibration, before pose optimization) | Theoretical uncertainty bounds calculated; Z-regularization designed |
-| Silhouette local minima | Pose optimizer design phase | Multi-start implemented; frame-flip metric defined |
-| Newton-Raphson edge instability | Custom refractive projection layer (earliest phase) | Residual-at-iteration-10 unit tests pass for all ray angles in FOV |
-| MOG2 female fish dropout | Detection module phase | Per-sex, per-behavior detection recall > 95% before integration |
-| Port tilt unmodeled | Camera calibration phase | Directional residual map shows radial (not directional) symmetry |
-| Single-fish architecture blocks v2 | Core architecture design (phase 1) | All functions accept N-fish lists; batch-first reviewed before implementation |
-| Rotation gimbal lock | Pose optimizer design phase | Stress test at 4 cardinal orientations; no loss spikes |
-| Shape/pose coupling | Shape model calibration phase | Held-out fish shape fit validates generalization |
-| Reprojection-only validation | Evaluation framework phase | 3D accuracy metric defined with physical ground truth measurement protocol |
-| Soft rasterizer hyperparameters | Differentiable rendering integration phase | Gradient magnitude map shows nonzero signal at silhouette boundary |
-| Identity swap in multi-fish | Multi-fish extension phase (v2) | Track continuity > 95% across simulated occlusion events |
+| P1: Depth-independent refraction model | Phase 1 — Camera model & calibration | Reprojection error flat across Z-depth range; 3D accuracy at 3+ depths |
+| P2: Top-down Z-weakness | Phase 1 — Geometry validation (resolved) | Theoretical uncertainty bounds calculated (132x Z/XY anisotropy) |
+| P4: Newton-Raphson edge instability | Phase 1 — Refractive projection layer | Residual-at-iteration-10 unit tests pass for all ray angles in FOV |
+| P5: MOG2/detection dropout | Phase 2 — Detection module | Per-sex, per-behavior detection recall > 95%; YOLO as primary detector |
+| P6: Port tilt unmodeled | Phase 1 — Camera calibration | Directional residual map shows radial (not directional) symmetry |
+| P9: Single-fish architecture blocks N-fish | Core architecture design | All functions accept N-fish lists; batch-first reviewed before implementation |
+| P11: Reprojection-only validation | Evaluation framework | 3D accuracy metric defined with physical ground truth measurement protocol |
+| P12: Arc-length correspondence errors | Phase 7 — Triangulation | RANSAC per body point; residual does not correlate with fish curvature |
+| P13: Medial axis instability | Phase 6 — Midline extraction | Skeleton length stable (< 15% variation) across consecutive frames |
+| P14: Head-tail ambiguity | Phase 6 — Midline extraction | Head endpoint consistent across all cameras for same fish/frame |
+| Identity swap in multi-fish | Multi-fish extension phase | Track continuity > 95% across simulated occlusion events |
+| ~~P3: Silhouette local minima~~ | *Shelved pipeline* | — |
+| ~~P7: Soft rasterizer hyperparameters~~ | *Shelved pipeline* | — |
+| ~~P8: Shape/pose coupling~~ | *Shelved pipeline* | — |
+| ~~P10: Rotation gimbal lock~~ | *Shelved pipeline* | — |
 
 ---
 
@@ -364,5 +466,5 @@ Evaluation framework design (must be defined before any results are reported). D
 - [OpenCV MOG2 background subtraction documentation](https://docs.opencv.org/4.x/d1/dc5/tutorial_background_subtraction.html) — HIGH confidence; official docs
 
 ---
-*Pitfalls research for: AquaPose — 3D fish pose estimation via analysis-by-synthesis*
-*Researched: 2026-02-19*
+*Pitfalls research for: AquaPose — 3D fish pose estimation via direct triangulation (primary) / analysis-by-synthesis (shelved)*
+*Researched: 2026-02-19 | Updated: 2026-02-21 (pipeline pivot)*

@@ -1,8 +1,8 @@
 # Architecture Research
 
-**Domain:** Multi-view 3D animal pose estimation (analysis-by-synthesis, differentiable rendering)
-**Researched:** 2026-02-19
-**Confidence:** HIGH (system design confirmed by detailed project spec in `.planning/inbox/proposed_pipeline.md`; PyTorch3D rendering architecture verified via official docs)
+**Domain:** Multi-view 3D fish pose estimation (direct triangulation with optional analysis-by-synthesis refinement)
+**Researched:** 2026-02-21
+**Confidence:** HIGH (pipeline design confirmed by pivot proposal in `.planning/inbox/fish-reconstruction-pivot.md`; refractive geometry and calibration verified in Phase 01)
 
 ---
 
@@ -18,101 +18,119 @@
 │  │  • Per-camera intrinsics + extrinsics                           │   │
 │  │  • Flat-plane refraction parameters (air-glass-water)           │   │
 │  │  • Produces: RefractiveProjector Π_ref per camera               │   │
+│  │    (ray casting: 2D→3D ray; forward projection: 3D→2D pixel)   │   │
 │  └─────────────────────────────────────────────────────────────────┘   │
 └────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│                         PHASE I — SEGMENTATION                         │
-│  ┌──────────────┐   ┌──────────────────────┐   ┌───────────────────┐  │
-│  │ VideoReader  │──▶│  InstanceSegmenter   │──▶│  MaskStore        │  │
-│  │ (13 cameras) │   │  (Detectron2 /       │   │  M_i^(j) per      │  │
-│  │ 30 fps, sync │   │   SAM2 fine-tuned)   │   │  camera per fish  │  │
-│  └──────────────┘   └──────────────────────┘   └─────────┬─────────┘  │
-│                                                           │            │
-│                                                           ▼            │
-│                                              ┌────────────────────┐    │
-│                                              │ KeypointExtractor  │    │
-│                                              │ (head / body /     │    │
-│                                              │  tail from mask    │    │
-│                                              │  PCA / geometry)   │    │
-│                                              └────────┬───────────┘    │
-└───────────────────────────────────────────────────────┼────────────────┘
-                                                        │
-                                                        ▼
+│               PHASE I — DETECTION & SEGMENTATION                      │
+│  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐              │
+│  │ VideoReader  │──▶│  Detector    │──▶│ UNetSegmentor│              │
+│  │ (12 cameras) │   │ (YOLO /      │   │ (binary mask │              │
+│  │ 30 fps, sync │   │  MOG2)       │   │  per crop)   │              │
+│  └──────────────┘   └──────────────┘   └──────┬───────┘              │
+│                                                │                      │
+│                                                ▼                      │
+│                                       ┌───────────────┐              │
+│                                       │   MaskStore   │              │
+│                                       │ M_i per cam   │              │
+│                                       │ per detection │              │
+│                                       └───────┬───────┘              │
+└───────────────────────────────────────────────┼──────────────────────┘
+                                                │
+                                                ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│                      PHASE II — 3D INITIALIZATION                      │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │  EpipolarInitializer                                             │  │
-│  │  • Cast refractive rays per keypoint per camera                  │  │
-│  │  • Least-squares centroid solve (scipy) → p*, ψ*, s*            │  │
-│  │  • κ = 0 (straight body) first frame; warm-start thereafter     │  │
-│  │  Fallback: VoxelCarver (open3d) when keypoints are ambiguous    │  │
-│  └──────────────────────────────────────────────────────────────────┘  │
-│  Output: initial FishState S = {p, ψ, κ, s} per fish                  │
+│               PHASE II — CROSS-VIEW IDENTITY                          │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
+│  │  CentroidExtractor                                               │ │
+│  │  • 2D centroid per detection per camera                          │ │
+│  │  • Cast refractive ray per centroid into 3D                      │ │
+│  └──────────────────────────────────┬───────────────────────────────┘ │
+│                                     ▼                                 │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
+│  │  RANSACIdentityAssociator                                        │ │
+│  │  • Sample camera subsets, triangulate centroids                   │ │
+│  │  • Score by reprojection error → consensus sets                  │ │
+│  │  • Each cluster = one physical fish                               │ │
+│  │  Output: (camera_id, det_id) → fish_id mapping                   │ │
+│  └──────────────────────────────────┬───────────────────────────────┘ │
+│                                     ▼                                 │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
+│  │  HungarianTracker (3D)                                           │ │
+│  │  • Match per-frame 3D centroids to persistent fish IDs           │ │
+│  │  • Nearest-neighbor in 3D with Hungarian assignment              │ │
+│  │  • Warm-start: previous frame's 3D positions seed association    │ │
+│  └──────────────────────────────────────────────────────────────────┘ │
+│  Output: identity_map + 3D centroid per fish                         │
 └────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│                    PHASE III — DIFFERENTIABLE REFINEMENT               │
-│                                                                        │
-│  ┌──────────────────┐   ┌────────────────────────────────────────┐     │
-│  │  FishMeshBuilder │──▶│  RefractiveRenderer                   │     │
-│  │  • Midline spline│   │  • Pre-project vertices through        │     │
-│  │    from ψ + κ    │   │    Π_ref (AquaKit, differentiable)    │     │
-│  │  • Swept ellipse │   │  • PyTorch3D MeshRasterizer            │     │
-│  │    cross-sections│   │    (zbuf + SoftSilhouetteShader)       │     │
-│  │  • Watertight    │   │  • One render per camera per fish      │     │
-│  │    triangle mesh │   └────────────────┬───────────────────────┘     │
-│  └──────────────────┘                   │                              │
-│                                         ▼                              │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │  LossComputer                                                    │  │
-│  │  • L_sil  : IoU(rendered silhouette, observed mask) per camera   │  │
-│  │  • L_grav : dorsal-up orientation prior                          │  │
-│  │  • L_shape: cross-section aspect ratio vs. species norm          │  │
-│  │  • L_temp : position/curvature acceleration penalty (frame ≥ 2) │  │
-│  │  • Camera weighting: angular diversity downweights clustered cams│  │
-│  └──────────────────────────────────────────────────────────────────┘  │
-│                                         │                              │
-│                                         ▼                              │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │  PoseOptimizer (Adam, ~50–100 iters/frame)                       │  │
-│  │  • Gradients flow: Loss → Renderer → Π_ref → FishState params   │  │
-│  │  • All fish batched in parallel on GPU                           │  │
-│  │  Output: refined FishState S* per fish per frame                 │  │
-│  └──────────────────────────────────────────────────────────────────┘  │
+│               PHASE III — MIDLINE EXTRACTION                          │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
+│  │  MaskSmoother                                                    │ │
+│  │  • Morphological closing + opening (adaptive kernel)             │ │
+│  │  • Required at current U-Net IoU ~0.62                           │ │
+│  └──────────────────────────────────┬───────────────────────────────┘ │
+│                                     ▼                                 │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
+│  │  Skeletonizer                                                    │ │
+│  │  • skimage.morphology.skeletonize → 1px skeleton                 │ │
+│  │  • Distance transform for local half-width                       │ │
+│  │  • LongestPathBFS: two-pass BFS → head-to-tail pruned midline   │ │
+│  └──────────────────────────────────┬───────────────────────────────┘ │
+│                                     ▼                                 │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
+│  │  ArcLengthSampler                                                │ │
+│  │  • Cumulative arc length → normalize to [0, 1]                   │ │
+│  │  • Resample at N fixed positions (e.g., N=15)                    │ │
+│  │  • Consistent cross-view correspondence via slender-body approx  │ │
+│  └──────────────────────────────────────────────────────────────────┘ │
+│  Output per fish per camera: N × (x, y, half_width) at fixed t vals │
 └────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│                    PHASE IV — TRACKING AND IDENTITY                    │
-│  ┌─────────────────────┐   ┌───────────────────────────────────────┐   │
-│  │  MotionPredictor    │   │  AssignmentSolver                    │   │
-│  │  (EKF per track)    │──▶│  • Mahalanobis cost matrix           │   │
-│  │  • State: p, dp     │   │  • Hungarian algorithm               │   │
-│  │  • Anisotropic Q    │   │  • Sex-classification cost boost     │   │
-│  │    (σ_z > σ_xy)     │   │  • Gating threshold                  │   │
-│  └─────────────────────┘   └───────────────────────────────────────┘   │
-│                                                                        │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │  InteractionHandler                                              │  │
-│  │  • Merge overlapping detections → "interaction event"            │  │
-│  │  • Split on re-separation; re-assign by trajectory + sex        │  │
-│  │  • Global constraint: enforce exactly N fish at all times        │  │
-│  └──────────────────────────────────────────────────────────────────┘  │
+│               PHASE IV — 3D RECONSTRUCTION                            │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
+│  │  MultiViewTriangulator                                           │ │
+│  │  • Per body point: RANSAC over camera subsets                    │ │
+│  │  • Refractive ray intersection (existing code)                   │ │
+│  │  • View-angle weighting: downweight cameras looking along body   │ │
+│  │  • Output: N 3D points + half-widths + residuals per fish        │ │
+│  └──────────────────────────────────┬───────────────────────────────┘ │
+│                                     ▼                                 │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
+│  │  SplineFitter                                                    │ │
+│  │  • Cubic B-spline through N triangulated points (5–8 controls)   │ │
+│  │  • Separate 1D spline for width profile                          │ │
+│  │  • Output: continuous 3D midline + width "tube model"            │ │
+│  └──────────────────────────────────────────────────────────────────┘ │
 └────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│                      PHASE V — OUTPUT AND VISUALIZATION                │
-│  ┌──────────────────────┐   ┌──────────────────────────────────────┐   │
-│  │  TrajectoryWriter    │   │  Visualizer                         │   │
-│  │  (HDF5 via h5py,     │   │  • 2D overlay: project mesh into    │   │
-│  │   parquet via        │   │    cameras via Π_ref + OpenCV       │   │
-│  │   pyarrow/pandas)    │   │  • 3D scene: rerun-sdk or PyVista   │   │
-│  └──────────────────────┘   │  • Analysis plots: matplotlib       │   │
-│                             └──────────────────────────────────────┘   │
+│       PHASE V — OPTIONAL REFINEMENT (add only if baseline fails)      │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
+│  │  LMRefiner                                                       │ │
+│  │  • Reprojection-based optimization of spline control points      │ │
+│  │  • scipy.optimize.least_squares (method='lm')                    │ │
+│  │  • Warm-start from SplineFitter output → 5–20 iterations         │ │
+│  │  • Optional: smoothness, temporal, width regularization           │ │
+│  └──────────────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│               PHASE VI — OUTPUT AND VISUALIZATION                     │
+│  ┌──────────────────────┐   ┌──────────────────────────────────────┐  │
+│  │  TrajectoryWriter    │   │  Visualizer                         │  │
+│  │  (HDF5 via h5py,     │   │  • 2D overlay: project 3D midline   │  │
+│  │   parquet via        │   │    into cameras via Π_ref + OpenCV  │  │
+│  │   pyarrow/pandas)    │   │  • 3D scene: rerun-sdk              │  │
+│  └──────────────────────┘   │  • Analysis plots: matplotlib       │  │
+│                             └──────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -121,21 +139,21 @@
 | Component | Responsibility | Typical Implementation |
 |-----------|----------------|------------------------|
 | CalibrationLoader | Parse AquaCal JSON; expose per-camera intrinsics, extrinsics, refraction params | `aquacal` library; read once at startup |
-| RefractiveProjector | Map 3D world point → 2D image point via Snell's law at flat water surface | Differentiable PyTorch; Newton-Raphson + bisection fallback (from AquaMVS reference) |
-| VideoReader | Load synchronized multi-camera frames; present as batched tensors | `cv2.VideoCapture` or `torchvision.io`; one reader per camera |
-| InstanceSegmenter | Produce binary body masks M_i^(j) per camera per fish per frame | Detectron2 Mask R-CNN (ResNet-50-FPN); SAM2 for pseudo-label bootstrapping |
-| KeypointExtractor | Derive coarse 2D head/body/tail points from mask geometry | PCA of mask pixels; endpoint detection |
-| EpipolarInitializer | Estimate initial FishState from multi-view refractive ray intersections | `scipy.optimize.least_squares`; ray-to-point distance minimization |
-| VoxelCarver | Fallback initializer via multi-view visual hull in a local bounding box | `open3d` voxel grid; intersection of back-projected masks |
-| FishMeshBuilder | Generate watertight triangle mesh from FishState {p, ψ, κ, s} | Pure PyTorch; spline evaluation + swept ellipse cross-sections |
-| RefractiveRenderer | Render per-camera silhouettes from mesh via Π_ref + PyTorch3D rasterizer | `pytorch3d.renderer.MeshRasterizer` → `SoftSilhouetteShader`; vertices pre-projected through Π_ref |
-| LossComputer | Compute weighted multi-objective loss from rendered vs. observed masks | PyTorch operations; `kornia` for differentiable IoU if needed |
-| PoseOptimizer | Run gradient descent to minimize loss over FishState parameters | `torch.optim.Adam`; ~50–100 iterations per frame; batched over all fish |
-| MotionPredictor | Maintain per-fish EKF; predict next-frame position and covariance | `filterpy.kalman.ExtendedKalmanFilter`; 3D position + velocity state |
-| AssignmentSolver | Match optimized detections to tracks via Mahalanobis distance + Hungarian | `scipy.optimize.linear_sum_assignment`; sex-penalty augmented cost matrix |
-| InteractionHandler | Detect, manage, and resolve fish grouping events | Custom logic; topology constraint (N fish always) |
-| TrajectoryWriter | Persist per-fish per-frame state vectors and metadata | `h5py` HDF5 + `pandas`/`pyarrow` for analysis |
-| Visualizer | 2D video overlay and 3D scene rendering for QA and publication | `rerun-sdk` (live debug), `pyvista` (publication), `opencv` (video overlay) |
+| RefractiveProjector | Ray casting (2D→3D ray) and forward projection (3D→2D) via Snell's law at flat water surface | PyTorch for forward projection; Newton-Raphson + bisection fallback (from AquaMVS reference) |
+| VideoReader | Load synchronized multi-camera frames; present as batched tensors | `cv2.VideoCapture`; one reader per camera |
+| Detector | Produce bounding-box detections per camera per frame | YOLOv8 (primary) or MOG2 (fallback); `make_detector("yolo", ...)` |
+| UNetSegmentor | Produce binary body masks per detection crop | MobileNetV3-Small encoder U-Net; 128×128 input |
+| CentroidExtractor | Compute 2D centroid per detection; cast refractive ray into 3D | Mask/bbox centroid + `RefractiveProjector.cast_ray()` |
+| RANSACIdentityAssociator | Cluster rays across cameras into per-fish identity groups | RANSAC over camera subsets; reprojection error scoring |
+| HungarianTracker | Assign persistent fish IDs across frames using 3D centroid matching | `scipy.optimize.linear_sum_assignment`; Euclidean cost in 3D |
+| MaskSmoother | Morphological preprocessing to stabilize skeletonization on noisy masks | `cv2.morphologyEx`; adaptive kernel radius |
+| Skeletonizer | Extract 1px skeleton + distance transform half-widths from smoothed mask | `skimage.morphology.skeletonize` + `scipy.ndimage.distance_transform_edt` |
+| ArcLengthSampler | Resample 2D midline at N fixed normalized arc-length positions | Cumulative arc length + linear interpolation; N=15 default |
+| MultiViewTriangulator | Triangulate each body point across cameras with RANSAC + view-angle weighting | Refractive ray intersection code; per-point RANSAC |
+| SplineFitter | Fit cubic B-spline to triangulated 3D points + 1D width profile | `scipy.interpolate.splprep`; 5–8 control points |
+| LMRefiner | Optional reprojection-based refinement of spline control points | `scipy.optimize.least_squares` (LM); 15–24 parameters |
+| TrajectoryWriter | Persist per-fish per-frame spline control points and metadata | `h5py` HDF5 + `pandas`/`pyarrow` for analysis |
+| Visualizer | 2D midline overlay and 3D scene rendering for QA and publication | `rerun-sdk` (live debug), `opencv` (video overlay), `matplotlib` (analysis) |
 
 ---
 
@@ -146,55 +164,62 @@ src/aquapose/
 ├── calibration/           # Calibration loading and refractive geometry
 │   ├── __init__.py
 │   ├── loader.py          # AquaCal JSON parsing → camera model objects
-│   └── refractive.py      # RefractiveProjector: 3D→2D via Snell's law (PyTorch, differentiable)
+│   └── refractive.py      # RefractiveProjector: ray casting (2D→3D) + forward projection (3D→2D)
 │
-├── segmentation/          # Phase I: instance segmentation and keypoint extraction
+├── segmentation/          # Phase I: detection and segmentation
 │   ├── __init__.py
-│   ├── segmenter.py       # Detectron2 / SAM2 inference wrapper
-│   └── keypoints.py       # Mask-geometry keypoint extraction (head/body/tail)
+│   ├── detection.py       # Detector factory: YOLO / MOG2
+│   ├── unet.py            # UNetSegmentor: binary mask from crop
+│   └── crop.py            # Shared crop utilities (bbox → crop → full-frame)
 │
-├── initialization/        # Phase II: 3D pose initialization
+├── identity/              # Phase II: cross-view identity + 3D tracking
 │   ├── __init__.py
-│   ├── epipolar.py        # Refractive ray-based centroid / heading solve
-│   └── voxel_carving.py   # Visual hull fallback via open3d
+│   ├── centroid_clustering.py   # CentroidExtractor + RANSACIdentityAssociator
+│   └── hungarian_tracker.py     # HungarianTracker: persistent 3D fish ID assignment
 │
-├── mesh/                  # Parametric fish body model
+├── reconstruction/        # Phases III–IV: midline extraction + 3D reconstruction
+│   ├── __init__.py
+│   ├── medial_axis.py     # MaskSmoother + Skeletonizer + LongestPathBFS
+│   ├── arc_length.py      # ArcLengthSampler: normalize + resample midline
+│   ├── triangulation.py   # MultiViewTriangulator: RANSAC + view-angle weighting
+│   └── spline.py          # SplineFitter: B-spline midline + width profile
+│
+├── refinement/            # Phase V: optional LM refinement (add only if needed)
+│   ├── __init__.py
+│   └── lm_refiner.py      # LMRefiner: reprojection-based spline optimization
+│
+├── mesh/                  # Parametric fish body model (shelved pipeline; retained for reference)
 │   ├── __init__.py
 │   ├── fish_model.py      # FishMeshBuilder: spline + swept ellipses → triangle mesh
-│   └── species.py         # Species-specific morphological parameters (aspect ratios, etc.)
+│   └── species.py         # Species-specific morphological parameters
 │
-├── rendering/             # Phase III: differentiable rendering
+├── rendering/             # Differentiable rendering (shelved pipeline; retained for reference)
 │   ├── __init__.py
 │   ├── renderer.py        # RefractiveRenderer: Π_ref pre-projection + PyTorch3D rasterizer
 │   └── loss.py            # LossComputer: silhouette IoU, gravity, shape, temporal
 │
-├── optimization/          # Phase III: pose refinement loop
+├── optimization/          # Adam pose refinement (shelved pipeline; retained for reference)
 │   ├── __init__.py
 │   └── optimizer.py       # PoseOptimizer: Adam loop, warm-start, per-fish batching
 │
-├── tracking/              # Phase IV: EKF + Hungarian assignment + interaction handling
-│   ├── __init__.py
-│   ├── kalman.py          # MotionPredictor: per-fish EKF (filterpy)
-│   ├── assignment.py      # AssignmentSolver: Mahalanobis cost matrix + Hungarian
-│   └── interactions.py    # InteractionHandler: merge/split + population constraint
-│
-├── output/                # Phase V: storage and visualization
+├── output/                # Phase VI: storage and visualization
 │   ├── __init__.py
 │   ├── writer.py          # TrajectoryWriter: HDF5 + parquet export
-│   └── visualizer.py      # 2D overlay, rerun-sdk 3D scene, matplotlib analysis
+│   └── visualizer.py      # 2D midline overlay, rerun-sdk 3D scene, matplotlib analysis
 │
 ├── pipeline.py            # Top-level orchestrator: wires phases together, frame loop
-├── state.py               # FishState dataclass: {p, ψ, κ, s} + metadata
+├── state.py               # Fish data structures: spline controls, identity map, etc.
 └── __init__.py
 ```
 
 ### Structure Rationale
 
-- **calibration/**: Isolated because it is loaded once and shared read-only by all phases. The `refractive.py` module is the single source of truth for Π_ref and must be differentiable — keeping it separate prevents accidental non-differentiable reimplementations elsewhere.
-- **mesh/**: Separate from `rendering/` because the mesh builder is pure geometry (no rendering concern). Species parameters belong here so they can be swapped without touching the rendering or optimization code.
-- **rendering/**: Contains both the renderer and the loss because the loss is tightly coupled to rendered outputs (IoU of rendered silhouette vs. observed mask). Keeping them co-located avoids awkward data passing.
-- **optimization/**: Thin layer — just the Adam loop and warm-start logic. All complexity lives in `rendering/loss.py` and `mesh/`.
-- **tracking/**: Completely decoupled from rendering. Takes optimized 3D states as input, outputs identity-labeled states.
+- **calibration/**: Isolated because it is loaded once and shared read-only by all phases. The `refractive.py` module is the single source of truth for both ray casting (2D→3D) and forward projection (3D→2D). Used by identity association (ray casting), triangulation (ray casting), and optional LM refinement (forward projection).
+- **segmentation/**: Detection (YOLO/MOG2) and U-Net segmentation. Produces binary masks that feed all downstream phases.
+- **identity/**: Cross-view association and temporal tracking. Decoupled from reconstruction because identity must be resolved before midline correspondence can be established.
+- **reconstruction/**: The core of the new pipeline. Four files corresponding to the four sub-steps: medial axis → arc-length → triangulation → spline. Each is independently testable.
+- **refinement/**: Optional. Only added if baseline triangulation is insufficient. Kept separate to avoid coupling the primary pipeline to an optimization dependency.
+- **mesh/, rendering/, optimization/**: Shelved pipeline code. Retained in the codebase for potential future use (e.g., analysis-by-synthesis refinement as an alternative to LM refinement). Not imported by the primary pipeline.
 - **output/**: Pure I/O. No domain logic. Can be extended without touching pipeline logic.
 - **pipeline.py**: The only file that imports across all sub-packages. Acts as the wiring point for integration tests.
 
@@ -202,58 +227,56 @@ src/aquapose/
 
 ## Architectural Patterns
 
-### Pattern 1: Pre-Project Vertices Through Refraction, Then Rasterize
+### Pattern 1: Pre-Project Vertices Through Refraction, Then Rasterize (Shelved Pipeline Only)
 
-**What:** Before passing a mesh to PyTorch3D's rasterizer, apply the refractive projection Π_ref to transform all vertices from 3D world coordinates into the distorted 2D camera space (as if the camera had standard pinhole intrinsics but in a refractive medium). The rasterizer then operates on these pre-projected vertices.
+**What:** Before passing a mesh to PyTorch3D's rasterizer, apply the refractive projection Π_ref to transform all vertices from 3D world coordinates into the distorted 2D camera space. The rasterizer then operates on these pre-projected vertices.
 
-**When to use:** Always. PyTorch3D's rasterizer expects camera-space coordinates; Π_ref cannot be expressed as a standard projection matrix because refraction is nonlinear. Pre-projecting vertices is the correct architectural boundary.
+**When to use:** Only in the shelved analysis-by-synthesis pipeline. Not used in the primary direct triangulation pipeline.
 
-**Trade-offs:** Vertices are pre-projected in world space, so the rasterizer depth buffer (zbuf) reflects camera-frame depths, not world depths. Gradients flow back through the rasterizer's zbuf/bary_coords tensors into the pre-projected vertex positions, and from there through Π_ref into FishState parameters. This chain is differentiable as long as Π_ref has valid gradients (Newton-Raphson with PyTorch autograd satisfies this).
+**Trade-offs:** Vertices are pre-projected in world space, so the rasterizer depth buffer (zbuf) reflects camera-frame depths, not world depths. Gradients flow back through the rasterizer's zbuf/bary_coords tensors into the pre-projected vertex positions, and from there through Π_ref into FishState parameters. This chain is differentiable as long as Π_ref has valid gradients.
 
-**Example:**
-```python
-def render_silhouette(mesh: Meshes, proj: RefractiveProjector, camera_idx: int) -> torch.Tensor:
-    # Pre-project all mesh vertices through refraction
-    verts_world = mesh.verts_padded()               # (B, V, 3)
-    verts_2d = proj.project(verts_world, camera_idx) # (B, V, 2) — differentiable
-    # Feed pre-projected vertices to PyTorch3D rasterizer
-    raster_out = rasterizer(build_camera_space_mesh(verts_2d, mesh.faces_padded()))
-    # SoftSilhouetteShader uses alpha channel from raster_out
-    return silhouette_shader(raster_out)             # (B, H, W, 1)
-```
+### Pattern 2: Temporal Warm-Start of Identity Association
 
-### Pattern 2: Warm-Start Initialization (Per-Frame and Per-Track)
+**What:** For all frames after the first, seed the Hungarian tracker's cost matrix with the previous frame's 3D centroid positions. Fish move ~1–3 mm/frame (<3% body length) at 30 fps, so the previous positions are near-optimal starting points for identity assignment.
 
-**What:** For all frames after the first, initialize the optimizer from the previous frame's optimized FishState rather than re-running Phase II. For first frame of each track only, run epipolar initialization.
+**When to use:** Always in the primary pipeline. The HungarianTracker maintains a persistent state of 3D positions per fish ID and uses these as predictions for the next frame.
 
-**When to use:** Always at 30 fps. Fish move ~1–3 mm/frame (<3% body length), so the previous solution is a near-optimal starting point. This reduces optimizer iterations from ~500 (cold start) to ~50–100.
-
-**Trade-offs:** Creates a temporal dependency that means Phase III cannot process frames in arbitrary order. For parallelism across time, frames must be processed sequentially per-fish, or a batch of recent frames must be available. This is not a concern for online streaming processing but complicates random-access reprocessing.
+**Trade-offs:** Creates a temporal dependency — frames must be processed sequentially. For random-access reprocessing, the tracker state must be serialized/restored. Identity association on the first frame (or after a long gap) requires a cold-start heuristic (e.g., spatial clustering only).
 
 **Example:**
 ```python
-state = initial_state_from_phase_ii(frame_0)
-for frame_t in video_frames[1:]:
+tracker = HungarianTracker(n_fish=9)
+for frame_t in video_frames:
     masks = segmenter.infer(frame_t)
-    state = optimizer.refine(state, masks, warm_start=True)  # previous state is init
-    writer.write(frame_t, state)
+    centroids_3d = identity_associator.cluster(masks, calibration)
+    fish_ids = tracker.assign(centroids_3d)  # warm-start from previous positions
+    midlines = reconstruct(masks, fish_ids, calibration)
+    writer.write(frame_t, midlines)
 ```
 
-### Pattern 3: Batched Per-Fish GPU Parallelism
+### Pattern 3: Parallelize Across Fish, Not Pipeline Stages
 
-**What:** Pack all N fish into a single GPU batch for the rendering and optimization step. Each fish occupies one batch element; all Adam steps are vectorized across the batch dimension.
+**What:** All pipeline stages (midline extraction, arc-length sampling, triangulation, spline fitting) are independent across fish within a single frame. Parallelize by processing multiple fish simultaneously rather than pipelining stages.
 
-**When to use:** Phase III refinement. Fish are independent given fixed masks, so this is embarrassingly parallel. PyTorch3D Meshes and cameras support batched operations natively.
+**When to use:** When processing 8–9 fish per frame. Each fish's reconstruction is embarrassingly parallel once cross-view identity is resolved.
 
-**Trade-offs:** Requires all fish meshes and masks to fit in GPU memory simultaneously. With 9 fish, ~500-vertex meshes, and 13 cameras at moderate resolution, this is tractable. Watch memory usage when scaling to 9 fish × 13 cameras × high-resolution masks — each rasterizer forward pass stores ~48 bytes per face per pixel (per PyTorch3D docs).
+**Trade-offs:** Thread pool or process pool over fish. With 9 fish and CPU-bound triangulation, expect near-linear speedup up to the number of physical cores. No GPU synchronization concerns since the primary pipeline is CPU-bound.
 
 ### Pattern 4: Cross-View Holdout Validation
 
-**What:** Reserve one or more cameras as held-out test views during optimization. Silhouette loss is computed only on training cameras; held-out camera IoU is logged but not used in the gradient.
+**What:** Reserve one or more cameras as held-out test views. Triangulate using only the remaining cameras; measure reprojection error on the held-out camera as a quality metric.
 
-**When to use:** During development and hyperparameter tuning. Measures generalization of the 3D reconstruction to unseen viewpoints — a direct proxy for whether the 3D shape is correct rather than merely fitting the training views.
+**When to use:** During development and hyperparameter tuning. Measures whether the 3D reconstruction generalizes to unseen viewpoints — a direct proxy for reconstruction accuracy.
 
-**Trade-offs:** Reduces the number of gradient-informing views. With 13 cameras and ~3–5 cameras covering each fish, holding out 1–2 cameras per fish is safe. The held-out camera should be selected to maximally stress-test the weakest geometric constraint (typically a camera orthogonal to the fish's primary viewing plane).
+**Trade-offs:** Reduces the number of cameras available for triangulation. With 12 cameras and typically 4–8 cameras seeing each fish, holding out 1–2 cameras per fish is safe. The held-out camera should be selected to maximally stress-test the weakest geometric constraint (typically a camera viewing along the fish's body axis).
+
+### Pattern 5: Arc-Length Correspondence (Slender-Body Assumption)
+
+**What:** Fish are slender bodies with a single dominant axis. The arc-length parameterization of the 2D midline projection is approximately preserved across views: point at normalized arc-length t=0.3 in camera A corresponds to the same physical body position as t=0.3 in camera B.
+
+**When to use:** Always. This is the fundamental assumption enabling cross-view correspondence without explicit keypoint detection. It replaces the mesh-based correspondence used in the shelved pipeline.
+
+**Trade-offs:** The approximation breaks down for significantly curved fish viewed from very different angles — foreshortening compresses the arc-length mapping unevenly. Cameras viewing along the fish's body axis are the worst offenders. RANSAC per body point (Pattern 4 in MultiViewTriangulator) and view-angle weighting mitigate this. If the assumption fails badly, epipolar-guided correspondence refinement can replace it (see pivot proposal, "Key Implementation Notes").
 
 ---
 
@@ -262,61 +285,48 @@ for frame_t in video_frames[1:]:
 ### Per-Frame Processing Flow
 
 ```
-Video frames (13 cameras, synchronized)
+Video frames (12 cameras, synchronized)
     │
     ▼
-[InstanceSegmenter]
-    │ M_i^(j): binary masks per camera per fish
-    │ kp_i^(j): 2D keypoints (head, body, tail) per camera per fish
+[Detector + UNetSegmentor]
+    │ Per camera: binary masks + bounding boxes per detection
     ▼
-[EpipolarInitializer]  ←── calibration (Π_ref per camera)
-    │ FishState S_0^(j) = {p, ψ, κ=0, s}  (frame 0 only)
-    │ OR: S_{t-1}^(j)  (warm start, frames 1+)
+[CentroidExtractor]  ←── calibration (Π_ref ray casting)
+    │ Per camera per detection: 2D centroid + 3D ray
     ▼
-[FishMeshBuilder]
-    │ Meshes M^(j): watertight triangle mesh per fish
+[RANSACIdentityAssociator]  ←── calibration (Π_ref reprojection scoring)
+    │ identity_map: (camera_id, det_id) → fish_id
+    │ 3D centroid per fish
     ▼
-[RefractiveRenderer]  ←── calibration (Π_ref per camera)
-    │ Silhouettes R_i^(j): rendered alpha mask per camera per fish
+[HungarianTracker]  ←── previous frame's 3D positions (warm-start)
+    │ Persistent fish_id assignment
     ▼
-[LossComputer]  ←── M_i^(j) (observed masks)
-    │ L_total^(j): scalar loss per fish
+[MaskSmoother → Skeletonizer → ArcLengthSampler]
+    │ Per fish per camera: N × (x, y, half_width) at fixed arc-length t
     ▼
-[PoseOptimizer] (Adam, ~50–100 iters, autograd through full chain)
-    │ S*^(j): refined FishState per fish
+[MultiViewTriangulator]  ←── calibration (Π_ref ray casting + reprojection)
+    │ Per fish: N 3D points + half-widths + residuals
     ▼
-[AssignmentSolver]  ←── EKF predictions {p̂^(j), P̂^(j)}
-    │ identity-labeled states: (fish_id, S*)
+[SplineFitter]
+    │ Per fish: 3D midline spline (5–8 control points) + width profile
+    ▼
+[LMRefiner]  ←── (OPTIONAL, only if baseline insufficient)
+    │ Per fish: refined spline control points
     ▼
 [TrajectoryWriter / Visualizer]
-    │ HDF5 rows, 2D overlay video, 3D scene
+    │ HDF5 rows, 2D midline overlay video, 3D scene
 ```
-
-### Gradient Flow (Phase III Critical Path)
-
-```
-L_total
-  └── L_sil (IoU loss on alpha channel)
-        └── SoftSilhouetteShader
-              └── MeshRasterizer (zbuf, bary_coords — gradients supported)
-                    └── pre-projected vertices (2D camera space)
-                          └── Π_ref (RefractiveProjector — PyTorch autograd)
-                                └── FishState parameters {p, ψ, κ, s}
-                                      ← gradients arrive here; Adam updates
-```
-
-L_grav, L_shape, L_temp feed directly into FishState parameters without passing through the renderer.
 
 ### Key Data Structures
 
 | Structure | Shape / Type | Produced By | Consumed By |
 |-----------|-------------|-------------|-------------|
-| `masks` | `dict[cam_id, (H, W) bool tensor]` per fish | InstanceSegmenter | EpipolarInitializer, LossComputer |
-| `keypoints_2d` | `dict[cam_id, (3, 2) float]` per fish | KeypointExtractor | EpipolarInitializer |
-| `FishState` | dataclass: `p(3), ψ(1), κ(K), s(1)` | Initializer / Optimizer | MeshBuilder, TrajectoryWriter, MotionPredictor |
-| `Meshes` | PyTorch3D `Meshes` object, batched (N_fish, V, 3) | FishMeshBuilder | RefractiveRenderer |
-| `rendered_silhouettes` | `(N_fish, N_cams, H, W, 1)` float | RefractiveRenderer | LossComputer |
-| `track_state` | EKF state `[p, dp]` + covariance per track | MotionPredictor | AssignmentSolver |
+| `masks` | `dict[cam_id, (H, W) bool tensor]` per detection | UNetSegmentor | CentroidExtractor, Skeletonizer |
+| `identity_map` | `dict[(cam_id, det_id), fish_id]` | RANSACIdentityAssociator | all downstream per-fish stages |
+| `midline_2d` | `(N, 3) float array` (x, y, half_width) per fish per camera | ArcLengthSampler | MultiViewTriangulator, LMRefiner |
+| `midline_3d` | `(N, 3) float array` per fish | MultiViewTriangulator | SplineFitter |
+| `spline_controls` | `(5–8, 3) float array` per fish | SplineFitter / LMRefiner | TrajectoryWriter, Visualizer |
+| `width_profile` | 1D spline (scipy tck tuple) per fish | SplineFitter | TrajectoryWriter, Visualizer |
 
 ---
 
@@ -328,34 +338,41 @@ The system has strict data dependencies that dictate build order:
 CalibrationLoader ──────────────────────────────────────┐
 (must exist first; everything depends on it)            │
                                                         ▼
-InstanceSegmenter ──────┐                      RefractiveProjector
-(provides masks)        │                      (must be differentiable;
-                        │                       built before renderer)
-KeypointExtractor ──────┤
-(provides coarse 2D     │
- keypoints from masks)  │
-                        ▼
-             EpipolarInitializer
-             (depends on keypoints + Π_ref)
-                        │
-                        ▼
-             FishMeshBuilder ──────────────────┐
-             (parametric mesh; pure geometry)   │
-                                               ▼
-             RefractiveRenderer ◄──── Π_ref + FishMeshBuilder
-                        │
-                        ▼
-             LossComputer ◄──── masks (from InstanceSegmenter)
-                        │
-                        ▼
-             PoseOptimizer
-             (wires autograd chain; depends on everything above)
-                        │
-                        ▼
-             MotionPredictor / AssignmentSolver
-             (depends on optimized FishState; independent of renderer)
-                        │
-                        ▼
+Detector + UNetSegmentor ──────┐               RefractiveProjector
+(provides masks + bboxes)      │               (ray casting + forward
+                               │                projection; built before
+                               │                identity or triangulation)
+CentroidExtractor ─────────────┤
+(provides 2D centroids +       │
+ 3D rays from masks)           │
+                               ▼
+             RANSACIdentityAssociator
+             (depends on centroids + Π_ref)
+                               │
+                               ▼
+             HungarianTracker
+             (depends on 3D centroids per frame)
+                               │
+                               ▼
+             MaskSmoother + Skeletonizer
+             (depends on masks + identity_map)
+                               │
+                               ▼
+             ArcLengthSampler
+             (depends on pruned 2D midlines)
+                               │
+                               ▼
+             MultiViewTriangulator ◄──── Π_ref + identity_map
+                               │
+                               ▼
+             SplineFitter
+             (depends on triangulated 3D points)
+                               │
+                               ▼
+             LMRefiner (optional)
+             (depends on spline + 2D midlines + Π_ref)
+                               │
+                               ▼
              TrajectoryWriter / Visualizer
              (pure I/O; built last)
 ```
@@ -365,14 +382,14 @@ KeypointExtractor ──────┤
 | Stage | Components to Build | Validation Gate |
 |-------|--------------------|--------------------|
 | 1 | CalibrationLoader + RefractiveProjector | Round-trip: project known 3D points, check reprojection error < 1px |
-| 2 | InstanceSegmenter + KeypointExtractor | Mask IoU ≥ 0.90 on held-out frames |
-| 3 | EpipolarInitializer | 3D centroid within 5mm of hand-measured ground truth on test frames |
-| 4 | FishMeshBuilder | Mesh is watertight; spline + ellipses produce visually correct shape |
-| 5 | RefractiveRenderer | Rendered silhouette visually aligns with observed mask for known pose |
-| 6 | LossComputer + PoseOptimizer (single fish) | L_sil converges; optimized pose matches GT better than initialization |
-| 7 | VoxelCarver (fallback) | Produces plausible initialization when epipolar fails |
-| 8 | MotionPredictor + AssignmentSolver | Zero identity swaps on non-interacting sequences |
-| 9 | InteractionHandler | Identity preserved through a simulated merge-split event |
+| 2 | Detector + UNetSegmentor | Mask IoU on held-out frames (current: ~0.62; sufficient to unblock) |
+| 3 | CentroidExtractor + RANSACIdentityAssociator | Identity assignment matches manual annotation on test frames |
+| 4 | HungarianTracker | Zero identity swaps on non-interacting sequences |
+| 5 | MaskSmoother + Skeletonizer | Skeleton is single-path, head-to-tail, stable across minor mask perturbations |
+| 6 | ArcLengthSampler | Sampled points at same t-value correspond visually across cameras |
+| 7 | MultiViewTriangulator | Per-point triangulation residual < 2mm on majority of points |
+| 8 | SplineFitter | Reprojection of 3D spline into held-out camera visually aligns with mask |
+| 9 | LMRefiner (optional) | Reprojection error decreases vs. baseline; no overfitting to noisy masks |
 | 10 | TrajectoryWriter + Visualizer | HDF5 loads cleanly; 2D overlay looks correct |
 
 ---
@@ -381,43 +398,43 @@ KeypointExtractor ──────┤
 
 ### Anti-Pattern 1: Non-Differentiable Refractive Projection
 
-**What people do:** Implement Π_ref using numpy, scipy, or non-PyTorch solvers for performance, then call `.detach()` when passing to the renderer.
+**What people do:** Implement Π_ref using numpy, scipy, or non-PyTorch solvers for performance, then lose differentiability.
 
-**Why it's wrong:** Breaks the gradient chain. The optimizer cannot backpropagate through the refractive projection into {p, ψ, κ, s}. The optimization will still converge to local minima of whatever is differentiable, but the physically meaningful gradients from the silhouette are lost. This is silent — the optimizer runs without error but produces wrong results.
+**Why it matters:** In the primary pipeline, differentiability through Π_ref is not required — triangulation and spline fitting use it as a black-box function. However, if the optional LM refiner (Phase V) is added, the forward projection must provide accurate Jacobians for the Levenberg-Marquardt solver. Additionally, if the shelved analysis-by-synthesis pipeline is ever revived, full PyTorch autograd differentiability is essential.
 
-**Do this instead:** Implement Π_ref entirely in PyTorch. The Newton-Raphson solver for Snell's law at a flat interface can be unrolled as a fixed-iteration loop with autograd-compatible operations. The AquaMVS reference implementation should be verified to use PyTorch operations throughout, not numpy fallbacks.
+**Do this instead:** Maintain a PyTorch implementation of Π_ref for potential future use. For the primary pipeline, a numpy implementation is acceptable and may be faster. If LM refinement is needed, `scipy.optimize.least_squares` can compute Jacobians via finite differences, but analytic Jacobians are more efficient.
 
-### Anti-Pattern 2: Per-Camera Sequential Rendering
+### Anti-Pattern 2: Per-Fish Sequential Processing
 
-**What people do:** Loop over cameras in Python, calling the renderer once per camera per fish per frame.
+**What people do:** Loop over fish in Python, processing each fish's midline extraction, triangulation, and spline fitting sequentially.
 
-**Why it's wrong:** Leaves GPU throughput on the table. With 13 cameras and 9 fish, a sequential loop invokes the renderer 117 times per frame. Python loop overhead and kernel launch latency dominate runtime.
+**Why it's wrong:** With 8–9 fish and CPU-bound computation, sequential processing leaves cores idle. All stages are independent across fish within a frame.
 
-**Do this instead:** Batch cameras and fish into a single rasterizer call by stacking into the batch dimension of PyTorch3D's `Meshes` and `Cameras` objects. One forward pass per frame, not 117.
+**Do this instead:** Use a thread pool or process pool across fish. With `concurrent.futures.ProcessPoolExecutor`, achieve near-linear speedup. Batch triangulations into vectorized calls where possible (~15 points × 8 fish = 120 triangulations per frame).
 
-### Anti-Pattern 3: Applying the Full Loss to All Cameras Equally
+### Anti-Pattern 3: Equal Camera Weighting in Triangulation
 
-**What people do:** Sum silhouette losses over all cameras with equal weight (w_i = 1 for all i).
+**What people do:** Triangulate each body point using all visible cameras with equal weight.
 
-**Why it's wrong:** With 12 ring cameras spaced ~30° apart, cameras on the same side of the tank see nearly identical projections of the fish. Equal weighting lets these clusters dominate the gradient, pulling the optimizer toward a pose that satisfies the local cluster rather than the full 3D reconstruction.
+**Why it's wrong:** Cameras whose viewing ray is nearly parallel to the fish's local body axis at that point suffer the worst arc-length correspondence errors. Equal weighting lets these cameras introduce systematic bias into the triangulation.
 
-**Do this instead:** Apply angular diversity weighting — downweight cameras whose viewing directions cluster together relative to the fish centroid. The proposed formula in `proposed_pipeline.md` (exponential repulsion in viewing direction space) achieves this.
+**Do this instead:** Apply view-angle weighting: for each body point in each camera, compute the angle between the camera's viewing ray and the local tangent direction of the 2D midline. Downweight or exclude cameras where this angle is small (i.e., looking along the body axis). RANSAC per body point provides a second line of defense.
 
 ### Anti-Pattern 4: Deferring Calibration Validation
 
-**What people do:** Assume the calibration library is correct and build Phase II and III before checking reprojection errors.
+**What people do:** Assume the calibration library is correct and build downstream components before checking reprojection errors.
 
 **Why it's wrong:** If the refractive camera model has a systematic error (wrong glass thickness, wrong refractive index, wrong air-glass interface position), every downstream component inherits the error. A 1mm calibration error can produce 5–10mm pose errors at the far side of the 2m tank.
 
-**Do this instead:** Build CalibrationLoader and RefractiveProjector first. Validate by projecting known 3D points (e.g., calibration target locations) into all cameras and measuring reprojection error. This must pass before building any optimization code.
+**Do this instead:** Build CalibrationLoader and RefractiveProjector first. Validate by projecting known 3D points (e.g., calibration target locations) into all cameras and measuring reprojection error. This must pass before building any reconstruction code.
 
-### Anti-Pattern 5: Optimizing All Loss Terms From Frame 1
+### Anti-Pattern 5: Skipping Mask Smoothing Before Skeletonization
 
-**What people do:** Enable all four loss terms (L_sil, L_grav, L_shape, L_temp) from the very first frame.
+**What people do:** Run `skimage.morphology.skeletonize` directly on noisy U-Net masks (IoU ~0.62) without morphological preprocessing.
 
-**Why it's wrong:** L_temp requires at least two previous frames. On frame 0, L_temp is undefined; activating it forces arbitrary initialization of the temporal buffer, which can destabilize the optimizer. More subtly, λ values tuned on frame 0 (cold start) behave differently on warm-started frames.
+**Why it's wrong:** Noisy mask boundaries produce spurious skeleton branches and unstable midline paths. The two-pass BFS longest-path pruning handles some of this, but severe boundary noise creates false endpoints that defeat the pruning. The result is frame-to-frame skeleton jitter that propagates through arc-length sampling into triangulation errors.
 
-**Do this instead:** Activate L_temp only from frame 2 onward. Tune λ_sil, λ_grav, λ_shape on frame 0 in isolation, then validate that L_temp does not dominate when introduced.
+**Do this instead:** Apply morphological closing then opening with an adaptive kernel radius proportional to the mask's minor axis width (e.g., `max(3, minor_axis_width // 8)` pixels). This removes boundary noise without eroding thin body regions like the caudal peduncle.
 
 ---
 
@@ -425,14 +442,16 @@ KeypointExtractor ──────┤
 
 | Scale | Architecture Adjustments |
 |-------|--------------------------|
-| v1: 1 fish, 5–30 min clips | Sequential frame processing; single-fish optimizer; everything fits in memory |
-| v2: 9 fish, 5–30 min clips | Batched optimizer (9 fish per GPU call); EKF + Hungarian tracking; streaming frame reading |
+| v1: 1 fish, 5–30 min clips | Sequential frame processing; single-fish reconstruction; everything fits in memory |
+| v2: 9 fish, 5–30 min clips | Process-pool across fish; Hungarian tracking; streaming frame reading |
 | v3: 9 fish, full-day recordings (hours) | Streaming with HDF5 checkpointing; cannot hold full video in RAM; must resume mid-clip after interruption |
-| v4: real-time or near-real-time | Profiling required; CUDA kernel optimization for Π_ref; potential TorchScript compilation of renderer |
+| v4: near-real-time | Profile triangulation bottleneck; potential Cython/numba for ray intersection; pre-compute camera visibility maps |
 
-**First bottleneck (9 fish × 13 cameras):** GPU memory for batched rendering. With ~500 vertices per fish and 480×480px masks, memory per rasterizer pass ≈ 48 bytes × faces_per_pixel × H × W × N_fish × N_cams. Profile before assuming it fits.
+**Primary scaling factors:** Number of fish × number of cameras × frame rate. With 9 fish × 12 cameras × 15 body points = 1,620 triangulations per frame at 30 fps = ~48,600 triangulations/second. The refractive ray intersection code must be fast — this is the CPU-bound bottleneck.
 
-**Second bottleneck (full-day recordings):** Disk I/O for mask loading. Pre-compute and store all masks to disk after segmentation; do not re-run the segmenter during optimization.
+**No GPU memory concern** for the primary pipeline. Detection and segmentation use GPU (YOLO + U-Net inference), but all reconstruction is CPU-bound (skeletonization, triangulation, spline fitting). GPU memory is only a concern if the shelved analysis-by-synthesis pipeline is revived.
+
+**Disk I/O bottleneck (full-day recordings):** Pre-compute and store all masks to disk after segmentation; do not re-run the segmenter during reconstruction.
 
 ---
 
@@ -442,36 +461,51 @@ KeypointExtractor ──────┤
 
 | Dependency | Integration Pattern | Notes |
 |------------|---------------------|-------|
-| AquaCal (calibration library) | Import at startup; load JSON config; expose `RefractiveProjector` objects | Must verify: is Π_ref exposed as a differentiable PyTorch function, or does it require re-implementation? See PITFALLS.md |
-| PyTorch3D | `MeshRasterizer` + `SoftSilhouetteShader`; batched Meshes + Cameras API | Version-sensitive: zbuf gradient support and batch API have changed across versions. Pin to a tested version. |
-| Detectron2 | Inference only at runtime; training is offline | Large dependency; consider containerizing separately from the optimization pipeline |
-| SAM2 | Offline pseudo-label generation only; not in the live inference path | |
-| filterpy | `ExtendedKalmanFilter` class | Lightweight; no GPU dependency |
+| AquaCal (calibration library) | Import at startup; load JSON config; expose `RefractiveProjector` objects | Provides both ray casting (2D→3D) and forward projection (3D→2D) |
+| scikit-image | `skimage.morphology.skeletonize` for medial axis extraction | Lightweight; CPU only |
+| scipy | `scipy.ndimage.distance_transform_edt` (widths), `scipy.interpolate.splprep` (B-spline), `scipy.optimize.least_squares` (LM refiner), `scipy.optimize.linear_sum_assignment` (Hungarian) | Core dependency for reconstruction and tracking |
+| ultralytics | YOLOv8 detection inference | GPU inference; model weights loaded at startup |
+| PyTorch | U-Net segmentation inference; RefractiveProjector (forward projection) | Required for segmentation; optional for reconstruction |
+| SAM2 | Offline pseudo-label generation only; not in the live inference path | Training-time dependency only |
+
+**No longer required for primary pipeline:** PyTorch3D (shelved rendering), Detectron2 (replaced by U-Net), filterpy (no EKF).
 
 ### Internal Boundaries
 
 | Boundary | Communication | Notes |
 |----------|---------------|-------|
-| Phase I → Phase II | `dict[fish_id, dict[cam_id, mask_tensor]]` + `dict[fish_id, dict[cam_id, keypoints]]` | Masks stay on CPU until needed for loss computation |
-| Phase II → Phase III | `FishState` dataclass with `.requires_grad_(True)` parameters | State must have autograd enabled before entering optimizer |
-| Phase III → Phase IV | `list[FishState]` (detached, CPU) — plain 3D positions and orientations | Phase IV uses numpy/scipy; do not pass autograd-enabled tensors |
-| Phase IV → Phase V | `list[FishTrajectoryRecord]` — fish_id, position, heading, curvature, scale, metadata | Pure data; no library-specific types |
-| CalibrationLoader → all phases | `CameraModel` objects with `project()` method | Shared read-only; no mutable state after initialization |
+| Phase I → Phase II | `dict[cam_id, list[DetectionResult]]` — masks + bboxes per camera | Masks stay on CPU |
+| Phase II → Phase III | `identity_map: dict[(cam_id, det_id), fish_id]` + `centroids_3d: dict[fish_id, (3,) array]` | Identity resolved before midline extraction |
+| Phase III → Phase IV | `dict[fish_id, dict[cam_id, (N, 3) array]]` — arc-length sampled 2D midlines | Fixed N ensures cross-view correspondence |
+| Phase IV → Phase V (optional) | `dict[fish_id, SplineResult]` — control points + width profile | Used as warm-start for LM refiner |
+| Phase IV/V → Phase VI | `dict[fish_id, FishTrajectoryRecord]` — spline controls, width, metadata | Pure data; no library-specific types |
+| CalibrationLoader → all phases | `CameraModel` objects with `project()` and `cast_ray()` methods | Shared read-only; no mutable state after initialization |
+
+---
+
+## Shelved Architecture: Analysis-by-Synthesis
+
+The original AquaPose architecture used differentiable mesh rendering with Adam optimization: a parametric fish mesh (midline spline + swept ellipse cross-sections) was rendered via PyTorch3D's rasterizer after pre-projecting vertices through the refractive model, and silhouette IoU loss drove gradient-based optimization of the fish state vector {p, ψ, κ, s}. This approach was architecturally sound but took 30+ minutes per second of video, making it impractical for the target dataset (hours of multi-fish recordings).
+
+The mesh building code (`mesh/`), differentiable renderer (`rendering/`), and Adam optimizer (`optimization/`) are retained in the codebase. They may be useful as:
+- A high-fidelity refinement alternative to the LM refiner
+- A validation tool (render reconstructed splines as meshes to visually verify)
+- A reference for the width profile model (swept ellipse cross-sections)
+
+See `.planning/inbox/proposed_pipeline.md` for the original analysis-by-synthesis design and `.planning/inbox/fish-reconstruction-pivot.md` for the pivot rationale.
 
 ---
 
 ## Sources
 
-- PyTorch3D renderer architecture: [https://pytorch3d.org/docs/renderer](https://pytorch3d.org/docs/renderer) — HIGH confidence (official docs)
-- PyTorch3D rasterizer output tensors (zbuf, bary_coords, gradients): [https://pytorch3d.readthedocs.io/en/latest/modules/renderer/mesh/rasterizer.html](https://pytorch3d.readthedocs.io/en/latest/modules/renderer/mesh/rasterizer.html) — HIGH confidence (official docs)
-- PyTorch3D SoftSilhouetteShader: verified via official renderer getting started guide — HIGH confidence
-- AquaPose proposed pipeline (authoritative project spec): `.planning/inbox/proposed_pipeline.md` — HIGH confidence (project owner document)
+- AquaPose pivot proposal (authoritative): `.planning/inbox/fish-reconstruction-pivot.md` — HIGH confidence (project owner document)
+- AquaPose original pipeline spec: `.planning/inbox/proposed_pipeline.md` — HIGH confidence (project owner document)
 - Refractive underwater camera calibration (2024): [https://arxiv.org/abs/2405.18018](https://arxiv.org/abs/2405.18018) — MEDIUM confidence
 - Multi-view 3D pose estimation with triangulation + iterative refinement patterns (CVPR 2024): [MVGFormer](https://openaccess.thecvf.com/content/CVPR2024/papers/Liao_Multiple_View_Geometry_Transformers_for_3D_Human_Pose_Estimation_CVPR_2024_paper.pdf) — MEDIUM confidence
-- Multi-fish tracking with EKF + Hungarian: [SOD-SORT](https://arxiv.org/html/2507.06400v3) — MEDIUM confidence (confirms EKF + Hungarian as standard for fish tracking)
-- Analysis-by-synthesis with differentiable rendering: [VoGE](https://arxiv.org/abs/2205.15401), [SkelSplat](https://skelsplat.github.io/) — MEDIUM confidence (confirms pattern is well-established)
+- Slender-body midline tracking: Butail & Paley 2012, Voesenek et al. 2016 — MEDIUM confidence (confirms arc-length correspondence assumption)
+- scikit-image skeletonize: [https://scikit-image.org/docs/stable/api/skimage.morphology.html#skimage.morphology.skeletonize](https://scikit-image.org/docs/stable/api/skimage.morphology.html#skimage.morphology.skeletonize) — HIGH confidence (official docs)
 
 ---
 
-*Architecture research for: AquaPose — 3D fish pose estimation via multi-view analysis-by-synthesis*
-*Researched: 2026-02-19*
+*Architecture research for: AquaPose — 3D fish pose estimation via direct multi-view triangulation*
+*Researched: 2026-02-21*

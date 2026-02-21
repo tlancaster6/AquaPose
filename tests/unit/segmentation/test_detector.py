@@ -310,26 +310,14 @@ class TestYOLODetectorDetect:
         assert x >= 0
         assert y >= 0
 
-    def test_mask_is_full_frame(self, mock_yolo_cls: MagicMock) -> None:
-        """detect() mask has the same shape as the input frame (H, W)."""
+    def test_mask_is_none(self, mock_yolo_cls: MagicMock) -> None:
+        """YOLO detections have no mask (bbox-only)."""
         with patch.dict("sys.modules", {"ultralytics": MagicMock(YOLO=mock_yolo_cls)}):
             det = YOLODetector(model_path="dummy.pt")
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
         results = det.detect(frame)
         assert len(results) == 1
-        mask = results[0].mask
-        assert mask.shape == (480, 640)
-        assert mask.dtype == np.uint8
-
-    def test_mask_values_binary(self, mock_yolo_cls: MagicMock) -> None:
-        """detect() mask contains only 0 and 255."""
-        with patch.dict("sys.modules", {"ultralytics": MagicMock(YOLO=mock_yolo_cls)}):
-            det = YOLODetector(model_path="dummy.pt")
-        frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        results = det.detect(frame)
-        assert len(results) == 1
-        unique_vals = set(np.unique(results[0].mask))
-        assert unique_vals <= {0, 255}
+        assert results[0].mask is None
 
     def test_confidence_in_range(self, mock_yolo_cls: MagicMock) -> None:
         """detect() confidence is in [0, 1]."""

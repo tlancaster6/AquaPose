@@ -145,9 +145,8 @@ class TestMakeDetectorYOLOProducesCompatibleDetections:
         assert len(det.bbox) == 4
         assert all(isinstance(v, int) for v in det.bbox)
 
-        # mask is full-frame shaped ndarray
-        assert isinstance(det.mask, np.ndarray)
-        assert det.mask.shape == (480, 640)
+        # YOLO detections have no mask (bbox-only)
+        assert det.mask is None
 
         # confidence is a float in [0, 1]
         assert isinstance(det.confidence, float)

@@ -13,18 +13,20 @@ import numpy as np
 
 @dataclass
 class Detection:
-    """A single fish detection from background subtraction.
+    """A single fish detection.
 
     Attributes:
         bbox: Bounding box as (x, y, w, h) in pixel coordinates.
         mask: Full-frame binary mask (uint8, 0/255) for this component only.
+            ``None`` when the mask is equivalent to the bbox (e.g. YOLO
+            detections without instance segmentation).
         area: Pixel area of the detected component.
         confidence: Detection confidence (always 1.0 for MOG2; placeholder
             for downstream compatibility).
     """
 
     bbox: tuple[int, int, int, int]
-    mask: np.ndarray
+    mask: np.ndarray | None
     area: int
     confidence: float
 
@@ -246,6 +248,8 @@ class YOLODetector:
     Args:
         model_path: Path to trained YOLOv8 ``.pt`` weights file.
         conf_threshold: Minimum confidence score to keep a detection.
+        iou_threshold: IoU threshold for non-max suppression. Lower values
+            suppress more overlapping boxes (ultralytics default is 0.7).
         padding_fraction: Fraction of bbox dimension to add as symmetric
             padding (clamped to frame bounds).
     """
@@ -253,22 +257,23 @@ class YOLODetector:
     def __init__(
         self,
         model_path: str | Path,
-        conf_threshold: float = 0.25,
+        conf_threshold: float = 0.5,
+        iou_threshold: float = 0.45,
         padding_fraction: float = 0.15,
     ) -> None:
         from ultralytics import YOLO  # lazy import — ultralytics may not be installed
 
         self._model = YOLO(str(model_path))
         self._conf = conf_threshold
+        self._iou = iou_threshold
         self._padding_fraction = padding_fraction
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
-        """Detect fish in a frame, returning bounding boxes and masks.
+        """Detect fish in a frame, returning bounding boxes.
 
         Runs YOLOv8 inference on *frame* and converts each predicted bounding
-        box to a :class:`Detection` with a full-frame rectangular mask (zeros
-        outside the padded bbox, 255 inside).  This mask format is compatible
-        with :class:`~aquapose.segmentation.SAMPseudoLabeler`.
+        box to a :class:`Detection`.  The ``mask`` field is ``None`` since
+        the detection is fully described by the bbox.
 
         Args:
             frame: BGR image as uint8 array of shape ``(H, W, 3)``.
@@ -277,7 +282,9 @@ class YOLODetector:
             List of :class:`Detection` objects, one per detected fish.
         """
         h_frame, w_frame = frame.shape[:2]
-        results = self._model.predict(frame, conf=self._conf, verbose=False)
+        results = self._model.predict(
+            frame, conf=self._conf, iou=self._iou, verbose=False
+        )
         detections: list[Detection] = []
         for r in results:
             for box in r.boxes:
@@ -292,12 +299,9 @@ class YOLODetector:
                 rx2 = min(w_frame, int(x2 + pad_x))
                 ry2 = min(h_frame, int(y2 + pad_y))
                 bbox = (rx1, ry1, rx2 - rx1, ry2 - ry1)
-                # Build full-frame mask from padded bbox (SAM2 compatibility)
-                mask = np.zeros((h_frame, w_frame), dtype=np.uint8)
-                mask[ry1:ry2, rx1:rx2] = 255
                 area = (rx2 - rx1) * (ry2 - ry1)
                 detections.append(
-                    Detection(bbox=bbox, mask=mask, area=area, confidence=conf)
+                    Detection(bbox=bbox, mask=None, area=area, confidence=conf)
                 )
         return detections
 

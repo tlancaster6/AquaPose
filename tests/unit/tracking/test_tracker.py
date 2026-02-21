@@ -485,3 +485,104 @@ def test_is_confirmed_property() -> None:
 
     track.state = TrackState.COASTING
     assert track.is_confirmed
+
+
+# ---------------------------------------------------------------------------
+# Deduplication tests
+# ---------------------------------------------------------------------------
+
+
+def _make_duplicate_tracks(
+    fish_id_a: int,
+    fish_id_b: int,
+    pos: np.ndarray,
+    *,
+    shared_cameras: bool = False,
+    window: int = 10,
+) -> tuple[FishTrack, FishTrack]:
+    """Create two confirmed tracks at (nearly) the same position.
+
+    If shared_cameras is False, track A claims {cam_a, cam_b} and track B
+    claims {cam_c} — simulating a detection split with low co-visibility.
+    If True, both claim {cam_a, cam_b} — simulating two real fish.
+    """
+    a = FishTrack(fish_id=fish_id_a, state=TrackState.CONFIRMED)
+    b = FishTrack(fish_id=fish_id_b, state=TrackState.CONFIRMED)
+
+    offset = np.array([0.005, 0.005, 0.0], dtype=np.float32)
+
+    for _ in range(window):
+        a.positions.append(pos.copy())
+        b.positions.append((pos + offset).copy())
+
+        if shared_cameras:
+            a.camera_history.append(frozenset(["cam_a", "cam_b"]))
+            b.camera_history.append(frozenset(["cam_a", "cam_b"]))
+        else:
+            a.camera_history.append(frozenset(["cam_a", "cam_b"]))
+            b.camera_history.append(frozenset(["cam_c"]))
+
+    return a, b
+
+
+def test_dedup_kills_younger_duplicate() -> None:
+    """Two confirmed tracks splitting one fish's detections are deduplicated."""
+    pos = np.array([0.1, 0.2, 1.5], dtype=np.float32)
+    a, b = _make_duplicate_tracks(0, 1, pos, shared_cameras=False, window=10)
+
+    tracker = FishTracker(dedup_distance=0.04, dedup_window=10)
+    tracker.tracks = [a, b]
+    tracker._dedup_confirmed_tracks()
+
+    # Younger track (ID 1) should be killed
+    assert a.state == TrackState.CONFIRMED
+    assert b.state == TrackState.DEAD
+
+
+def test_dedup_spares_covisible_tracks() -> None:
+    """Two confirmed tracks with high camera co-visibility are not deduplicated."""
+    pos = np.array([0.1, 0.2, 1.5], dtype=np.float32)
+    a, b = _make_duplicate_tracks(0, 1, pos, shared_cameras=True, window=10)
+
+    tracker = FishTracker(dedup_distance=0.04, dedup_window=10)
+    tracker.tracks = [a, b]
+    tracker._dedup_confirmed_tracks()
+
+    # Both should survive — they both claim the same cameras (real schooling fish)
+    assert a.state == TrackState.CONFIRMED
+    assert b.state == TrackState.CONFIRMED
+
+
+def test_dedup_spares_distant_tracks() -> None:
+    """Two confirmed tracks far apart are not deduplicated."""
+    pos_a = np.array([0.1, 0.2, 1.5], dtype=np.float32)
+    pos_b = np.array([0.3, 0.4, 1.5], dtype=np.float32)
+
+    a = FishTrack(fish_id=0, state=TrackState.CONFIRMED)
+    b = FishTrack(fish_id=1, state=TrackState.CONFIRMED)
+    for _ in range(10):
+        a.positions.append(pos_a.copy())
+        b.positions.append(pos_b.copy())
+        a.camera_history.append(frozenset(["cam_a", "cam_b"]))
+        b.camera_history.append(frozenset(["cam_c"]))
+
+    tracker = FishTracker(dedup_distance=0.04, dedup_window=10)
+    tracker.tracks = [a, b]
+    tracker._dedup_confirmed_tracks()
+
+    assert a.state == TrackState.CONFIRMED
+    assert b.state == TrackState.CONFIRMED
+
+
+def test_dedup_requires_full_window() -> None:
+    """Tracks with insufficient history are not deduplicated."""
+    pos = np.array([0.1, 0.2, 1.5], dtype=np.float32)
+    a, b = _make_duplicate_tracks(0, 1, pos, shared_cameras=False, window=5)
+
+    tracker = FishTracker(dedup_distance=0.04, dedup_window=10)
+    tracker.tracks = [a, b]
+    tracker._dedup_confirmed_tracks()
+
+    # Only 5 frames of history, need 10 — no dedup
+    assert a.state == TrackState.CONFIRMED
+    assert b.state == TrackState.CONFIRMED

@@ -79,6 +79,27 @@ class ClaimResult:
     n_cameras: int
 
 
+def _detection_centroid(det: Detection) -> tuple[float, float]:
+    """Compute the pixel centroid of a detection.
+
+    Uses the mask center-of-mass when a mask is available, otherwise falls
+    back to the bbox center.
+
+    Args:
+        det: Detection with bbox and optional mask.
+
+    Returns:
+        (u, v): Column (u) and row (v) of the centroid.
+
+    Raises:
+        ValueError: If the mask is present but contains no foreground pixels.
+    """
+    if det.mask is None:
+        x, y, w, h = det.bbox
+        return (x + w / 2.0, y + h / 2.0)
+    return _compute_mask_centroid(det.mask)
+
+
 def _compute_mask_centroid(mask: np.ndarray) -> tuple[float, float]:
     """Compute the foreground centroid of a binary mask.
 
@@ -118,7 +139,7 @@ def _cast_rays_for_detections(
         directions: Unit ray directions into water, shape (N, 3).
         centroids_uv: List of (u, v) pixel centroids, length N.
     """
-    centroids_uv = [_compute_mask_centroid(det.mask) for det in detections]
+    centroids_uv = [_detection_centroid(det) for det in detections]
     if not centroids_uv:
         return (
             torch.zeros(0, 3, dtype=torch.float32),
@@ -620,7 +641,7 @@ def claim_detections_for_tracks(
         centroids = []
         for det in dets:
             try:
-                centroids.append(_compute_mask_centroid(det.mask))
+                centroids.append(_detection_centroid(det))
             except ValueError:
                 centroids.append((0.0, 0.0))
         centroids_uv_per_camera[cam_id] = centroids

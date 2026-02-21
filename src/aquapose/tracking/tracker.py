@@ -40,6 +40,15 @@ DEFAULT_RESIDUAL_REJECT_FACTOR: float = 3.0
 DEFAULT_VELOCITY_DAMPING: float = 0.8
 """Per-frame velocity damping factor during coasting."""
 
+DEFAULT_DEDUP_DISTANCE: float = 0.04
+"""3D proximity threshold (metres) for duplicate detection."""
+
+DEFAULT_DEDUP_WINDOW: int = 10
+"""Consecutive frames two tracks must be close before dedup fires."""
+
+DEFAULT_DEDUP_COVISIBILITY_THRESHOLD: float = 0.2
+"""Maximum camera co-visibility ratio to consider tracks duplicates."""
+
 
 class TrackState(enum.Enum):
     """Lifecycle state of a fish track."""
@@ -116,6 +125,9 @@ class FishTrack:
     max_age: int = DEFAULT_MAX_AGE
     velocity_damping: float = DEFAULT_VELOCITY_DAMPING
     camera_detections: dict[str, int] = field(default_factory=dict)
+    camera_history: deque[frozenset[str]] = field(
+        default_factory=lambda: deque(maxlen=DEFAULT_DEDUP_WINDOW)
+    )
     bboxes: dict[str, tuple[int, int, int, int]] = field(default_factory=dict)
     reprojection_residual: float = 0.0
     confidence: float = 1.0
@@ -179,6 +191,7 @@ class FishTrack:
         self.frames_since_update = 0
         self.age += 1
         self.camera_detections = dict(camera_detections)
+        self.camera_history.append(frozenset(camera_detections.keys()))
         self.bboxes = {}
         self.reprojection_residual = reprojection_residual
         self.confidence = 1.0
@@ -217,6 +230,7 @@ class FishTrack:
         self.frames_since_update = 0
         self.age += 1
         self.camera_detections = dict(camera_detections)
+        self.camera_history.append(frozenset(camera_detections.keys()))
         self.bboxes = {}
         self.reprojection_residual = reprojection_residual
         self.confidence = 1.0
@@ -286,6 +300,11 @@ class FishTracker:
         birth_interval: Frames between periodic birth RANSAC.
         residual_reject_factor: Reject claim if residual > mean * this.
         velocity_damping: Per-frame velocity damping during coasting.
+        dedup_distance: 3D proximity threshold (metres) for duplicate detection.
+        dedup_window: Consecutive close frames required before dedup fires.
+        dedup_covisibility: Maximum camera co-visibility ratio to consider
+            two tracks duplicates (low = they're splitting one fish's
+            detections rather than tracking two distinct fish).
     """
 
     def __init__(
@@ -298,6 +317,9 @@ class FishTracker:
         birth_interval: int = DEFAULT_BIRTH_INTERVAL,
         residual_reject_factor: float = DEFAULT_RESIDUAL_REJECT_FACTOR,
         velocity_damping: float = DEFAULT_VELOCITY_DAMPING,
+        dedup_distance: float = DEFAULT_DEDUP_DISTANCE,
+        dedup_window: int = DEFAULT_DEDUP_WINDOW,
+        dedup_covisibility: float = DEFAULT_DEDUP_COVISIBILITY_THRESHOLD,
     ) -> None:
         self.min_hits = min_hits
         self.max_age = max_age
@@ -307,6 +329,9 @@ class FishTracker:
         self.birth_interval = birth_interval
         self.residual_reject_factor = residual_reject_factor
         self.velocity_damping = velocity_damping
+        self.dedup_distance = dedup_distance
+        self.dedup_window = dedup_window
+        self.dedup_covisibility = dedup_covisibility
 
         self.tracks: list[FishTrack] = []
         self._next_id: int = 0
@@ -416,6 +441,11 @@ class FishTracker:
             }
 
         # ----------------------------------------------------------
+        # Phase 1.5: Deduplicate confirmed tracks
+        # ----------------------------------------------------------
+        self._dedup_confirmed_tracks()
+
+        # ----------------------------------------------------------
         # Phase 2: Birth Discovery
         # ----------------------------------------------------------
         confirmed_count = sum(1 for t in self.tracks if t.state == TrackState.CONFIRMED)
@@ -483,6 +513,68 @@ class FishTracker:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    def _dedup_confirmed_tracks(self) -> None:
+        """Kill the younger of two confirmed tracks that appear to be duplicates.
+
+        Two confirmed tracks are considered duplicates when:
+        1. Their 3D centroids have been within ``dedup_distance`` for the last
+           ``dedup_window`` consecutive frames (both must have full history).
+        2. Their camera co-visibility ratio is below ``dedup_covisibility`` —
+           meaning they rarely both have a detection in the same camera,
+           indicating they're splitting one fish's detections rather than
+           tracking two distinct fish.
+
+        The younger track (higher fish_id) is killed.
+        """
+        confirmed = [t for t in self.tracks if t.is_confirmed]
+        if len(confirmed) < 2:
+            return
+
+        kill_ids: set[int] = set()
+
+        for i in range(len(confirmed)):
+            if confirmed[i].fish_id in kill_ids:
+                continue
+            for j in range(i + 1, len(confirmed)):
+                if confirmed[j].fish_id in kill_ids:
+                    continue
+
+                a, b = confirmed[i], confirmed[j]
+
+                # Both must have full dedup_window of camera history
+                if (
+                    len(a.camera_history) < self.dedup_window
+                    or len(b.camera_history) < self.dedup_window
+                ):
+                    continue
+
+                # Check proximity over the window: use current positions
+                # (camera_history length already guarantees they've been
+                # updated for dedup_window consecutive frames)
+                if len(a.positions) == 0 or len(b.positions) == 0:
+                    continue
+                pos_a = list(a.positions)[-1]
+                pos_b = list(b.positions)[-1]
+                dist = float(np.linalg.norm(pos_a - pos_b))
+                if dist > self.dedup_distance:
+                    continue
+
+                # Camera co-visibility: fraction of frames where both tracks
+                # had a detection in at least one common camera
+                n_covisible = 0
+                hist_a = list(a.camera_history)
+                hist_b = list(b.camera_history)
+                for cams_a, cams_b in zip(hist_a, hist_b, strict=True):
+                    if cams_a & cams_b:  # intersection
+                        n_covisible += 1
+                covis_ratio = n_covisible / self.dedup_window
+
+                if covis_ratio < self.dedup_covisibility:
+                    # Kill the younger track (higher fish_id)
+                    younger = a if a.fish_id > b.fish_id else b
+                    younger.state = TrackState.DEAD
+                    kill_ids.add(younger.fish_id)
 
     def _create_track(
         self,

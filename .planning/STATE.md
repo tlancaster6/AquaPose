@@ -140,6 +140,7 @@ Recent decisions affecting current work:
 - Phases 07-08 pending addition via /gsd:add-phase: Phase 7 = Triangulation & Spline Fitting; Phase 8 = Output & Visualization
 - Phase 04.1 inserted after Phase 04: Isolate phase-4 specific code post-archive (URGENT)
 - Phase 7 added: Multi-View Triangulation
+- Phase 8 added: End-to-end integration testing and benchmarking
 
 ### Pending Todos
 

@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Segmentation Pipeline** - Multi-view binary masks ready for every frame; annotation workflow established
 - [x] **Phase 3: Fish Mesh Model and 3D Initialization** - Parametric fish mesh differentiable in PyTorch; first-frame cold-start working from coarse keypoints
 - [x] **Phase 4: Per-Fish Reconstruction** - ~~Analysis-by-synthesis mesh optimization~~ *(shelved 2026-02-21 — primary workflow replaced by direct triangulation pipeline, Phases 5+)*
-- [ ] **Phase 5: Cross-View Identity and 3D Tracking** - RANSAC-based cross-view identity association and persistent 3D fish tracking via Hungarian assignment
+- [x] **Phase 5: Cross-View Identity and 3D Tracking** - RANSAC-based cross-view identity association and persistent 3D fish tracking via Hungarian assignment (completed 2026-02-21)
 - [ ] **Phase 6: 2D Medial Axis and Arc-Length Sampling** - Skeleton-based midline extraction from masks with normalized arc-length correspondence across views
 
 ## Phase Details
@@ -148,5 +148,5 @@ Note: Phase 5 depends on Phase 2 (segmentation) and Phase 1 (refractive ray mode
 | 02.1.1 Object-detection alternative to MOG2 | 3/3 | Complete | 2026-02-20 |
 | 3. Fish Mesh Model and 3D Initialization | 0/2 | Planning complete | - |
 | 4. Per-Fish Reconstruction | 0/3 | Shelved    | 2026-02-21 |
-| 5. Cross-View Identity and 3D Tracking | 2/3 | In Progress|  |
+| 5. Cross-View Identity and 3D Tracking | 3/3 | Complete   | 2026-02-21 |
 | 6. 2D Medial Axis and Arc-Length Sampling | 0/TBD | Not started | - |

@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 5 in progress — Plan 02 complete: Hungarian tracker with SORT lifecycle and TRACK-04 population constraint
+**Current focus:** Phase 5 complete — all 3 plans done: cross-view association, Hungarian tracker, and HDF5 serialization
 
 ## Current Position
 
 Phase: 05-cross-view-identity-and-3d-tracking
-Plan: 03 (Plans 01-02 complete — 05-01-SUMMARY.md, 05-02-SUMMARY.md)
-Status: Plan 02 complete. FishTracker with Hungarian assignment, XY-only cost, and track lifecycle implemented and tested. Plan 03 (HDF5 output) remains.
-Last activity: 2026-02-21 — Phase 05 Plan 02: FishTracker implemented (src/aquapose/tracking/tracker.py + unit tests)
+Plan: COMPLETE (all 3 plans complete — 05-01-SUMMARY.md, 05-02-SUMMARY.md, 05-03-SUMMARY.md)
+Status: Phase 5 complete. Full tracking module delivered: RANSAC centroid clustering, FishTracker with Hungarian assignment, TrackingWriter with chunked HDF5 output.
+Last activity: 2026-02-21 — Phase 05 Plan 03: TrackingWriter and unit tests implemented
 
-Progress: [███████░░░] 60% (phases 1-3 complete, phase 4 shelved, phase 5 in progress)
+Progress: [████████░░] 70% (phases 1-3 complete, phase 4 shelved, phase 5 complete, phase 6+ pending)
 
 ## Performance Metrics
 
@@ -44,6 +44,7 @@ Progress: [███████░░░] 60% (phases 1-3 complete, phase 4 she
 | Phase 04.1-isolate-phase-4-specific-code-post-archive P01 | 2 | 2 tasks | 15 files |
 | Phase 05-cross-view-identity-and-3d-tracking P01 | 5 | 2 tasks | 4 files |
 | Phase 05 P02 | 4 | 2 tasks | 3 files |
+| Phase 05-cross-view-identity-and-3d-tracking P03 | 5 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,7 @@ Recent decisions affecting current work:
 - [Phase 05-01]: Single-view detections use 0.5m default tank depth along refracted ray as centroid heuristic
 - [Phase 05-02]: XY-only cost matrix prevents Z-noise induced ID swaps (Z uncertainty 132x larger than XY)
 - [Phase 05-02]: TRACK-04 population constraint: dead track fish_id recycled to first unmatched observation in same frame
+- [Phase 05]: cast(h5py.Dataset, ...) used for basedpyright narrowing of h5py subscript return types in writer.py
 
 ### Phase 4 Shelved Decisions (Analysis-by-Synthesis)
 

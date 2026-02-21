@@ -153,3 +153,13 @@ Note: Phase 5 depends on Phase 2 (segmentation) and Phase 1 (refractive ray mode
 | 4. Per-Fish Reconstruction | 0/3 | Shelved    | 2026-02-21 |
 | 5. Cross-View Identity and 3D Tracking | 3/3 | Complete   | 2026-02-21 |
 | 6. 2D Medial Axis and Arc-Length Sampling | 1/1 | Complete | 2026-02-21 |
+
+### Phase 7: Multi-View Triangulation
+
+**Goal:** Triangulate corresponding 2D midline points across cameras into 3D positions, fit cubic B-splines to produce continuous 3D midlines per fish per frame, and stub the optional LM refinement interface
+**Depends on:** Phase 6
+**Requirements:** RECON-03, RECON-04, RECON-05
+**Plans:** 1 plan
+
+Plans:
+- [ ] 07-01-PLAN.md — Triangulation module with Midline3D, exhaustive pairwise search, B-spline fitting, and LM stub

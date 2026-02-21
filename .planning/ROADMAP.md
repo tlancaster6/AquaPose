@@ -134,7 +134,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 06-01-PLAN.md — Core midline extraction pipeline (smooth, skeletonize, BFS prune, resample, orient) with unit tests
+- [x] 06-01-PLAN.md — Core midline extraction pipeline (smooth, skeletonize, BFS prune, resample, orient) with unit tests
 
 ## Progress
 
@@ -152,4 +152,4 @@ Note: Phase 5 depends on Phase 2 (segmentation) and Phase 1 (refractive ray mode
 | 3. Fish Mesh Model and 3D Initialization | 0/2 | Planning complete | - |
 | 4. Per-Fish Reconstruction | 0/3 | Shelved    | 2026-02-21 |
 | 5. Cross-View Identity and 3D Tracking | 3/3 | Complete   | 2026-02-21 |
-| 6. 2D Medial Axis and Arc-Length Sampling | 0/1 | Planning complete | - |
+| 6. 2D Medial Axis and Arc-Length Sampling | 1/1 | Complete | 2026-02-21 |

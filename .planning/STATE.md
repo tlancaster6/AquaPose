@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 5 complete — all 3 plans done: cross-view association, Hungarian tracker, and HDF5 serialization
+**Current focus:** Phase 6 Plan 01 complete — 2D medial axis extraction and arc-length sampling pipeline implemented
 
 ## Current Position
 
-Phase: 05-cross-view-identity-and-3d-tracking
-Plan: COMPLETE (all 3 plans complete — 05-01-SUMMARY.md, 05-02-SUMMARY.md, 05-03-SUMMARY.md)
-Status: Phase 5 complete. Full tracking module delivered: RANSAC centroid clustering, FishTracker with Hungarian assignment, TrackingWriter with chunked HDF5 output.
-Last activity: 2026-02-21 — Phase 05 Plan 03: TrackingWriter and unit tests implemented
+Phase: 06-2d-medial-axis-and-arc-length-sampling
+Plan: 01 complete (06-01-SUMMARY.md written)
+Status: Phase 6 Plan 01 complete. MidlineExtractor with full pipeline: adaptive smooth, skeleton, longest-path BFS, arc-length resample, crop-to-frame, orientation inheritance, back-correction buffering.
+Last activity: 2026-02-21 — Phase 06 Plan 01: MidlineExtractor and unit tests implemented
 
-Progress: [████████░░] 70% (phases 1-3 complete, phase 4 shelved, phase 5 complete, phase 6+ pending)
+Progress: [████████░░] 75% (phases 1-3 complete, phase 4 shelved, phase 5 complete, phase 6 plan 01 complete)
 
 ## Performance Metrics
 
@@ -108,6 +108,9 @@ Recent decisions affecting current work:
 - [Phase 05-02]: XY-only cost matrix prevents Z-noise induced ID swaps (Z uncertainty 132x larger than XY)
 - [Phase 05-02]: TRACK-04 population constraint: dead track fish_id recycled to first unmatched observation in same frame
 - [Phase 05]: cast(h5py.Dataset, ...) used for basedpyright narrowing of h5py subscript return types in writer.py
+- [Phase 06-01]: axis_minor_length used (not deprecated minor_axis_length) for skimage regionprops minor axis
+- [Phase 06-01]: skeletonize return wrapped in np.asarray(dtype=bool) for basedpyright type narrowing
+- [Phase 06-01]: _orient_midline uses lazy torch import to call RefractiveProjectionModel.project for head position projection
 
 ### Phase 4 Shelved Decisions (Analysis-by-Synthesis)
 
@@ -149,5 +152,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: Reconstruction pivot planning — ROADMAP.md, REQUIREMENTS.md, STATE.md, PROJECT.md, research docs updated
-Next action: Run /gsd:add-phase to add Phase 7 (Triangulation & Spline Fitting) and Phase 8 (Output & Visualization), then /gsd:plan-phase for Phase 5
+Stopped at: Phase 06 Plan 01 — MidlineExtractor and unit tests implemented (06-01-SUMMARY.md)
+Next action: Execute Phase 06 Plan 02 (if it exists), or plan Phase 07 (Triangulation & Spline Fitting)

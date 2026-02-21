@@ -97,7 +97,11 @@ Plans:
   3. First-frame optimization runs 2-start (forward + 180° flip) and selects the lower-loss result, resolving head-tail ambiguity on real footage
   4. Frame-by-frame warm-start optimization converges within the iteration cap on frames after the first, producing visually plausible reconstructions for each fish independently
   5. Cross-view holdout validation achieves ≥0.80 mean IoU (global average, no camera below 0.60) on held-out cameras across a representative clip
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 04-01-PLAN.md — Differentiable silhouette renderer and multi-objective loss (RefractiveCamera, soft IoU, angular diversity weighting)
+- [ ] 04-02-PLAN.md — FishOptimizer with 2-start first-frame and warm-start frame-to-frame optimization
+- [ ] 04-03-PLAN.md — Cross-view holdout validation on real data with visual overlay QA
 
 ### Phase 5: Tracking and Sex Classification
 **Goal**: Fish identities persist frame-to-frame, the temporal smoothness loss becomes active (completing the multi-objective loss), and the population constraint prevents track count from deviating from 9
@@ -135,6 +139,6 @@ Note: Phase 3 depends only on Phase 1 (not Phase 2), so Phases 2 and 3 can devel
 | 02.1 Segmentation Troubleshooting | 3/3 | Complete | 2026-02-20 |
 | 02.1.1 Object-detection alternative to MOG2 | 3/3 | Complete | 2026-02-20 |
 | 3. Fish Mesh Model and 3D Initialization | 0/2 | Planning complete | - |
-| 4. Per-Fish Reconstruction | 0/TBD | Not started | - |
+| 4. Per-Fish Reconstruction | 0/3 | Planning complete | - |
 | 5. Tracking and Sex Classification | 0/TBD | Not started | - |
 | 6. Output and Visualization | 0/TBD | Not started | - |

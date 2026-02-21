@@ -148,5 +148,5 @@ Note: Phase 5 depends on Phase 2 (segmentation) and Phase 1 (refractive ray mode
 | 02.1.1 Object-detection alternative to MOG2 | 3/3 | Complete | 2026-02-20 |
 | 3. Fish Mesh Model and 3D Initialization | 0/2 | Planning complete | - |
 | 4. Per-Fish Reconstruction | 0/3 | Shelved    | 2026-02-21 |
-| 5. Cross-View Identity and 3D Tracking | 1/3 | In Progress|  |
+| 5. Cross-View Identity and 3D Tracking | 2/3 | In Progress|  |
 | 6. 2D Medial Axis and Arc-Length Sampling | 0/TBD | Not started | - |

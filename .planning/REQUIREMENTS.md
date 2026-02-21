@@ -50,8 +50,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **TRACK-01**: System associates detections across cameras to physical fish via RANSAC-based centroid ray clustering — casting refractive rays from 2D centroids, triangulating minimal camera subsets, and scoring consensus against remaining cameras
 - [x] **TRACK-02**: System produces a 3D centroid per fish per frame with reprojection residual; high-residual associations are flagged for downstream quality checks
-- [ ] **TRACK-03**: System assigns persistent fish IDs across frames via Hungarian algorithm on 3D centroid distances, leveraging the fact that fish rarely swap positions in 3D even when they overlap in individual 2D views
-- [ ] **TRACK-04**: System enforces population constraint (exactly 9 fish at all times). If a track is lost and a new detection appears in the same frame window, they are linked
+- [x] **TRACK-03**: System assigns persistent fish IDs across frames via Hungarian algorithm on 3D centroid distances, leveraging the fact that fish rarely swap positions in 3D even when they overlap in individual 2D views
+- [x] **TRACK-04**: System enforces population constraint (exactly 9 fish at all times). If a track is lost and a new detection appears in the same frame window, they are linked
 
 ### Output
 
@@ -128,8 +128,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RECON-05 | Phase 7 (TBD) | Pending |
 | TRACK-01 | Phase 5 | Complete |
 | TRACK-02 | Phase 5 | Complete |
-| TRACK-03 | Phase 5 | Pending |
-| TRACK-04 | Phase 5 | Pending |
+| TRACK-03 | Phase 5 | Complete |
+| TRACK-04 | Phase 5 | Complete |
 | OUT-01 | Phase 8 (TBD) | Pending |
 | OUT-02 | Phase 8 (TBD) | Pending |
 | OUT-03 | Phase 8 (TBD) | Pending |

@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 5 in progress — Plan 01 complete: RANSAC centroid ray clustering for cross-view fish identity association
+**Current focus:** Phase 5 in progress — Plan 02 complete: Hungarian tracker with SORT lifecycle and TRACK-04 population constraint
 
 ## Current Position
 
 Phase: 05-cross-view-identity-and-3d-tracking
-Plan: 02 (Plan 01 complete — 05-01-SUMMARY.md)
-Status: Plan 01 complete. RANSAC centroid clustering implemented and tested. Plans 02 (tracker) and 03 (HDF5 output) remain.
-Last activity: 2026-02-21 — Phase 05 Plan 01: RANSAC centroid ray clustering implemented (src/aquapose/tracking/associate.py + unit tests)
+Plan: 03 (Plans 01-02 complete — 05-01-SUMMARY.md, 05-02-SUMMARY.md)
+Status: Plan 02 complete. FishTracker with Hungarian assignment, XY-only cost, and track lifecycle implemented and tested. Plan 03 (HDF5 output) remains.
+Last activity: 2026-02-21 — Phase 05 Plan 02: FishTracker implemented (src/aquapose/tracking/tracker.py + unit tests)
 
 Progress: [███████░░░] 60% (phases 1-3 complete, phase 4 shelved, phase 5 in progress)
 
@@ -43,6 +43,7 @@ Progress: [███████░░░] 60% (phases 1-3 complete, phase 4 she
 | Phase 04-per-fish-reconstruction P03 | 8 | 2 tasks | 4 files |
 | Phase 04.1-isolate-phase-4-specific-code-post-archive P01 | 2 | 2 tasks | 15 files |
 | Phase 05-cross-view-identity-and-3d-tracking P01 | 5 | 2 tasks | 4 files |
+| Phase 05 P02 | 4 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -103,6 +104,8 @@ Recent decisions affecting current work:
 - [Phase 04.1-01]: pytorch3d.structures retained in mesh/builder.py — shared infrastructure, not ABS-specific
 - [Phase 05-01]: assigned_mask dict prevents double-assignment across both prior-guided and RANSAC passes
 - [Phase 05-01]: Single-view detections use 0.5m default tank depth along refracted ray as centroid heuristic
+- [Phase 05-02]: XY-only cost matrix prevents Z-noise induced ID swaps (Z uncertainty 132x larger than XY)
+- [Phase 05-02]: TRACK-04 population constraint: dead track fish_id recycled to first unmatched observation in same frame
 
 ### Phase 4 Shelved Decisions (Analysis-by-Synthesis)
 

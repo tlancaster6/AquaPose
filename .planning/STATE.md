@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 04 Plan 02 complete — FishOptimizer with 2-start, warm-start, and convergence logic implemented; 282 tests passing; ready for Phase 04 Plan 03 (sequence pipeline)
+**Current focus:** Phase 04 Plan 03 at checkpoint:human-verify — holdout validation, visual overlay, and run_reconstruction.py CLI built; awaiting real-data IoU results (target: global mean >= 0.80, no camera below 0.60)
 
 ## Current Position
 
 Phase: 04-per-fish-reconstruction
-Plan: 02 of N complete
-Status: FishOptimizer implemented; 2-start heading disambiguation, warm-start velocity, convergence early-stop, grad clipping; 282 tests passing
-Last activity: 2026-02-21 — FishOptimizer + make_optimizable_state + warm_start_from_velocity + 12 unit tests
+Plan: 03 of N (at checkpoint:human-verify)
+Status: Holdout validation + run_reconstruction.py CLI built; 294 tests passing; awaiting real-data verification of holdout IoU
+Last activity: 2026-02-21 — evaluate_holdout_iou + run_holdout_validation + render_overlay + run_reconstruction.py CLI + 12 unit tests
 
 Progress: [████████░░] 75% (14 plans complete)
 
@@ -40,6 +40,7 @@ Progress: [████████░░] 75% (14 plans complete)
 
 *Updated after each plan completion*
 | Phase 04-per-fish-reconstruction P02 | 6 | 2 tasks | 3 files |
+| Phase 04-per-fish-reconstruction P03 | 8 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,9 @@ Recent decisions affecting current work:
 - [04-01]: Angular diversity temperature: higher T = MORE spread (small base^T drops faster); temperature=0.5 default is moderate differentiation
 - [Phase 04-02]: Per-parameter Adam LR groups: p uses lr*5 per RESEARCH.md Z-anisotropy note
 - [Phase 04-02]: MockRenderer Gaussian blob from vertex mean: GPU-free differentiable test harness for optimizer unit tests
+- [Phase 04-03]: run_holdout_validation uses round-robin (frame_idx % n_cameras) rather than full holdout per camera: avoids N*T optimizer runs, distributes held-out cameras evenly across frames
+- [Phase 04-03]: evaluate_holdout_iou uses existing optimized states when provided: holdout evaluation is inference-only; measures generalization of full-camera optimization to unseen views
+- [Phase 04-03]: render_overlay uses BGR convention: (0,255,0) = green, (0,0,255) = red; pure-NumPy blend: frame*(1-alpha*opacity) + color*alpha*opacity
 
 ### Roadmap Evolution
 
@@ -118,5 +122,6 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: Phase 04-02 complete — FishOptimizer with 2-start, warm-start, convergence implemented (282 tests passing)
+Stopped at: Phase 04-03 checkpoint:human-verify — run_reconstruction.py built, awaiting holdout IoU results on real data
+Next action: Run script on real video clip, report holdout IoU. Type "approved" if >= 0.80 global mean with no camera below 0.60, or describe issues for gap closure.
 Next action: Proceed to Phase 04 Plan 03 (sequence pipeline / integration)

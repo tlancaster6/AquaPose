@@ -34,7 +34,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **RECON-02**: System computes multi-objective loss: silhouette IoU + gravity prior + morphological constraint first, then temporal smoothness once tracking provides frame-to-frame associations
 - [x] **RECON-03**: System runs 2-initialization multi-start (forward + 180° flip) on first frame of each track to resolve head-tail ambiguity
 - [x] **RECON-04**: System optimizes per-frame fish pose via Adam with warm-start from previous frame's solution
-- [ ] **RECON-05**: System validates reconstruction via cross-view holdout (fit on N-k cameras, evaluate IoU on k held-out cameras), achieving ≥0.80 mean holdout IoU
+- [x] **RECON-05**: System validates reconstruction via cross-view holdout (fit on N-k cameras, evaluate IoU on k held-out cameras), achieving ≥0.80 mean holdout IoU
 
 ### Tracking
 
@@ -114,7 +114,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RECON-02 | Phase 4 | Complete |
 | RECON-03 | Phase 4 | Complete |
 | RECON-04 | Phase 4 | Complete |
-| RECON-05 | Phase 4 | Pending |
+| RECON-05 | Phase 4 | Complete |
 | TRACK-01 | Phase 5 | Pending |
 | TRACK-02 | Phase 5 | Pending |
 | TRACK-03 | Phase 5 | Pending |

@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Calibration and Refractive Geometry** - Differentiable refractive projection validated and ready for use by all downstream phases
 - [ ] **Phase 2: Segmentation Pipeline** - Multi-view binary masks ready for every frame; annotation workflow established
 - [ ] **Phase 3: Fish Mesh Model and 3D Initialization** - Parametric fish mesh differentiable in PyTorch; first-frame cold-start working from coarse keypoints
-- [ ] **Phase 4: Per-Fish Reconstruction** - Per-frame pose optimization converges on real data for all detected fish (optimized independently); cross-view holdout IoU meets threshold
+- [x] **Phase 4: Per-Fish Reconstruction** - Per-frame pose optimization converges on real data for all detected fish (optimized independently); cross-view holdout IoU meets threshold (completed 2026-02-21)
 - [ ] **Phase 5: Tracking and Sex Classification** - Frame-to-frame track continuity with temporal smoothness loss active; population constraint enforced
 - [ ] **Phase 6: Output and Visualization** - Per-frame trajectories written to HDF5; 2D overlay and 3D rerun visualization operational
 
@@ -44,10 +44,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. A trained U-Net model produces binary mask predictions on resized bbox crops (best val IoU: 0.623 — below 0.90 target but accepted as sufficient to unblock Phase 4; can revisit with more training data)
   4. The segmentation pipeline accepts N fish as input (returning a list of masks) even in the single-fish v1 operating mode
 **Plans**: 4 plans
-- [ ] 02-01-PLAN.md — Delete Label Studio code, remove debug scripts, clean dependencies
-- [ ] 02-02-PLAN.md — Update pseudo-labeler (box-only SAM2, quality filtering) and dataset (variable crops, stratified split)
-- [ ] 02-03-PLAN.md — Update Mask R-CNN (separate detect/crop/segment stages, crop-space output, variable crops)
-- [ ] 02-04-PLAN.md — Integration wiring and human verification of full pipeline
+- [x] 02-01-PLAN.md — Delete Label Studio code, remove debug scripts, clean dependencies
+- [x] 02-02-PLAN.md — Update pseudo-labeler (box-only SAM2, quality filtering) and dataset (variable crops, stratified split)
+- [x] 02-03-PLAN.md — Update Mask R-CNN (separate detect/crop/segment stages, crop-space output, variable crops)
+- [x] 02-04-PLAN.md — Integration wiring and human verification of full pipeline
 
 ### Phase 02.1: Segmentation Troubleshooting (INSERTED)
 
@@ -139,6 +139,6 @@ Note: Phase 3 depends only on Phase 1 (not Phase 2), so Phases 2 and 3 can devel
 | 02.1 Segmentation Troubleshooting | 3/3 | Complete | 2026-02-20 |
 | 02.1.1 Object-detection alternative to MOG2 | 3/3 | Complete | 2026-02-20 |
 | 3. Fish Mesh Model and 3D Initialization | 0/2 | Planning complete | - |
-| 4. Per-Fish Reconstruction | 1/3 | In Progress|  |
+| 4. Per-Fish Reconstruction | 3/3 | Complete   | 2026-02-21 |
 | 5. Tracking and Sex Classification | 0/TBD | Not started | - |
 | 6. Output and Visualization | 0/TBD | Not started | - |

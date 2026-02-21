@@ -119,6 +119,7 @@ Recent decisions affecting current work:
 - Phase 04 shelved (2026-02-21): Analysis-by-synthesis too slow (30+ min/sec). Replaced by direct triangulation pipeline.
 - Phases 05-06 rewritten (2026-02-21): Phase 5 = Cross-View Identity & 3D Tracking; Phase 6 = 2D Medial Axis & Arc-Length Sampling
 - Phases 07-08 pending addition via /gsd:add-phase: Phase 7 = Triangulation & Spline Fitting; Phase 8 = Output & Visualization
+- Phase 04.1 inserted after Phase 04: Isolate phase-4 specific code post-archive (URGENT)
 
 ### Pending Todos
 

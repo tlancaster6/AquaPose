@@ -104,7 +104,7 @@ Plans:
 **Plans:** 1/1 plans complete
 
 Plans:
-- [ ] 04.1-01-PLAN.md — Archive ABS code to branch, delete optimization module/tests/scripts, verify clean build
+- [x] 04.1-01-PLAN.md — Archive ABS code to branch, delete optimization module/tests/scripts, verify clean build
 
 ### Phase 5: Cross-View Identity and 3D Tracking
 **Goal**: Given per-camera detections, determine which masks across cameras correspond to the same physical fish, and maintain persistent fish IDs across frames — providing the cross-view identity mapping that all downstream reconstruction stages depend on
@@ -115,7 +115,12 @@ Plans:
   2. Triangulated 3D centroid per fish has a reprojection residual below a defined threshold; high-residual associations are flagged for downstream quality checks
   3. Hungarian assignment in 3D space maintains persistent fish IDs across frames on a test clip; track count remains stable at the known population size (9 fish) with no persistent ID swaps
   4. The identity module exposes a clean interface consumed by downstream stages: given a frame's detections, returns per-fish camera sets, 3D centroids, and persistent IDs
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — RANSAC centroid ray clustering for cross-view association (TRACK-01, TRACK-02)
+- [ ] 05-02-PLAN.md — FishTracker with Hungarian assignment and track lifecycle (TRACK-03, TRACK-04)
+- [ ] 05-03-PLAN.md — HDF5 serialization and tracking module public API
 
 ### Phase 6: 2D Medial Axis and Arc-Length Sampling
 **Goal**: Extract stable 2D midlines from segmentation masks and produce fixed-size, arc-length-normalized point correspondences across cameras — the 2D input that multi-view triangulation consumes
@@ -143,5 +148,5 @@ Note: Phase 5 depends on Phase 2 (segmentation) and Phase 1 (refractive ray mode
 | 02.1.1 Object-detection alternative to MOG2 | 3/3 | Complete | 2026-02-20 |
 | 3. Fish Mesh Model and 3D Initialization | 0/2 | Planning complete | - |
 | 4. Per-Fish Reconstruction | 0/3 | Shelved    | 2026-02-21 |
-| 5. Cross-View Identity and 3D Tracking | 0/TBD | Not started | - |
+| 5. Cross-View Identity and 3D Tracking | 0/3 | Planning complete | - |
 | 6. 2D Medial Axis and Arc-Length Sampling | 0/TBD | Not started | - |

@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Reconstruction pivot complete — roadmap restructured; ready to begin Phase 5 (Cross-View Identity and 3D Tracking)
+**Current focus:** Phase 5 in progress — Plan 01 complete: RANSAC centroid ray clustering for cross-view fish identity association
 
 ## Current Position
 
 Phase: 05-cross-view-identity-and-3d-tracking
-Plan: Not yet planned
-Status: Roadmap, requirements, and planning docs updated for reconstruction pivot. Ready for /gsd:plan-phase or /gsd:add-phase for Phase 7+.
-Last activity: 2026-02-21 — Reconstruction pivot: archived Phase 4 (analysis-by-synthesis), rewrote Phases 5-6 for direct triangulation pipeline, updated REQUIREMENTS.md
+Plan: 02 (Plan 01 complete — 05-01-SUMMARY.md)
+Status: Plan 01 complete. RANSAC centroid clustering implemented and tested. Plans 02 (tracker) and 03 (HDF5 output) remain.
+Last activity: 2026-02-21 — Phase 05 Plan 01: RANSAC centroid ray clustering implemented (src/aquapose/tracking/associate.py + unit tests)
 
-Progress: [██████░░░░] 55% (phases 1-3 complete, phase 4 shelved, phases 5-8 pending)
+Progress: [███████░░░] 60% (phases 1-3 complete, phase 4 shelved, phase 5 in progress)
 
 ## Performance Metrics
 
@@ -42,6 +42,7 @@ Progress: [██████░░░░] 55% (phases 1-3 complete, phase 4 she
 | Phase 04-per-fish-reconstruction P02 | 6 | 2 tasks | 3 files |
 | Phase 04-per-fish-reconstruction P03 | 8 | 2 tasks | 4 files |
 | Phase 04.1-isolate-phase-4-specific-code-post-archive P01 | 2 | 2 tasks | 15 files |
+| Phase 05-cross-view-identity-and-3d-tracking P01 | 5 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -100,6 +101,8 @@ Recent decisions affecting current work:
 - [Phase 04.1-01]: archive/phase4-abs branch created before stripping — preserves full ABS codebase (renderer, optimizer, loss, validation)
 - [Phase 04.1-01]: diagnose_real_frame.py and diagnose_synthetic.py deleted (imported from aquapose.optimization); visualize_val_predictions.py retained (segmentation-only imports)
 - [Phase 04.1-01]: pytorch3d.structures retained in mesh/builder.py — shared infrastructure, not ABS-specific
+- [Phase 05-01]: assigned_mask dict prevents double-assignment across both prior-guided and RANSAC passes
+- [Phase 05-01]: Single-view detections use 0.5m default tank depth along refracted ray as centroid heuristic
 
 ### Phase 4 Shelved Decisions (Analysis-by-Synthesis)
 

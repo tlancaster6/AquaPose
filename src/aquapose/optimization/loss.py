@@ -93,14 +93,14 @@ def compute_angular_diversity_weights(
     # Extract world-space view directions: camera looks along -Z in camera frame.
     view_dirs: list[np.ndarray] = []
     for model in models:
-        R_np = model.R.detach().cpu().numpy().astype(np.float64)  # (3, 3)
-        view_dir = R_np.T @ np.array([0.0, 0.0, -1.0])  # (3,) world-space
+        r_mat = model.R.detach().cpu().numpy().astype(np.float64)  # (3, 3)
+        view_dir = r_mat.T @ np.array([0.0, 0.0, -1.0])  # (3,) world-space
         norm = np.linalg.norm(view_dir)
         view_dirs.append(view_dir / (norm + 1e-12))
-    V = np.stack(view_dirs, axis=0)  # (N, 3)
+    view_mat = np.stack(view_dirs, axis=0)  # (N, 3)
 
     # Pairwise dot products -> angles.
-    dots = V @ V.T  # (N, N)
+    dots = view_mat @ view_mat.T  # (N, N)
     dots = np.clip(dots, -1.0, 1.0)
 
     # For each camera find the minimum angle to any OTHER camera.

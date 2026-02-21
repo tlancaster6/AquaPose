@@ -1,4 +1,4 @@
-# Phase 4: Single-Fish Reconstruction - Context
+# Phase 4: Per-Fish Reconstruction - Context
 
 **Gathered:** 2026-02-20
 **Status:** Ready for planning
@@ -67,5 +67,5 @@ None — discussion stayed within phase scope
 
 ---
 
-*Phase: 04-single-fish-reconstruction*
+*Phase: 04-per-fish-reconstruction*
 *Context gathered: 2026-02-20*

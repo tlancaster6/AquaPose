@@ -2,7 +2,7 @@
 
 ## Overview
 
-AquaPose is built in strict dependency order: the refractive camera model must be validated before any optimization code is written, segmentation masks must exist before initialization is possible, a working parametric mesh model must precede differentiable rendering, and single-fish reconstruction must be validated before tracking and identity layers are added. Six phases follow this natural dependency chain — each phase delivers a coherent, testable capability that the next phase depends on.
+AquaPose is built in strict dependency order: the refractive camera model must be validated before any optimization code is written, segmentation masks must exist before initialization is possible, a working parametric mesh model must precede differentiable rendering, and per-fish reconstruction must be validated before tracking and identity layers are added. Six phases follow this natural dependency chain — each phase delivers a coherent, testable capability that the next phase depends on.
 
 ## Phases
 
@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Calibration and Refractive Geometry** - Differentiable refractive projection validated and ready for use by all downstream phases
 - [ ] **Phase 2: Segmentation Pipeline** - Multi-view binary masks ready for every frame; annotation workflow established
 - [ ] **Phase 3: Fish Mesh Model and 3D Initialization** - Parametric fish mesh differentiable in PyTorch; first-frame cold-start working from coarse keypoints
-- [ ] **Phase 4: Single-Fish Reconstruction** - Per-frame pose optimization converges on real data; cross-view holdout IoU meets threshold
+- [ ] **Phase 4: Per-Fish Reconstruction** - Per-frame pose optimization converges on real data for all detected fish (optimized independently); cross-view holdout IoU meets threshold
 - [ ] **Phase 5: Tracking and Sex Classification** - Frame-to-frame track continuity with temporal smoothness loss active; population constraint enforced
 - [ ] **Phase 6: Output and Visualization** - Per-frame trajectories written to HDF5; 2D overlay and 3D rerun visualization operational
 
@@ -87,16 +87,16 @@ Plans:
 - [x] 03-01-PLAN.md — Differentiable parametric fish mesh (FishState, spine, cross-sections, builder, PyTorch3D Meshes)
 - [x] 03-02-PLAN.md — PCA keypoint extraction and refractive triangulation for 3D initialization
 
-### Phase 4: Single-Fish Reconstruction
-**Goal**: The full analysis-by-synthesis loop works end-to-end on real data — a single fish's pose is recovered frame-by-frame with cross-view holdout IoU demonstrating the system generalizes beyond the cameras it was fit on
+### Phase 4: Per-Fish Reconstruction
+**Goal**: The full analysis-by-synthesis loop works end-to-end on real data — each detected fish's pose is recovered independently per frame with cross-view holdout IoU demonstrating the system generalizes beyond the cameras it was fit on. All fish in the scene are processed (one at a time, no inter-fish constraints); tracking and multi-fish interactions come in Phase 5.
 **Depends on**: Phase 2, Phase 3
 **Requirements**: RECON-01, RECON-02, RECON-03, RECON-04, RECON-05
 **Success Criteria** (what must be TRUE):
   1. Differentiable silhouettes of the fish mesh render correctly into each camera view via refractive projection + PyTorch3D rasterizer, with per-camera angular-diversity weighting applied
   2. The multi-objective loss computes silhouette IoU + gravity prior + morphological constraint terms; temporal smoothness term activates once tracking associations are available (see Phase 5), but the loss is architecturally ready for it
   3. First-frame optimization runs 2-start (forward + 180° flip) and selects the lower-loss result, resolving head-tail ambiguity on real footage
-  4. Frame-by-frame warm-start optimization converges in ≤100 Adam iterations on frames after the first, producing visually plausible reconstructions
-  5. Cross-view holdout validation achieves ≥0.80 mean IoU on held-out cameras across a representative clip
+  4. Frame-by-frame warm-start optimization converges within the iteration cap on frames after the first, producing visually plausible reconstructions for each fish independently
+  5. Cross-view holdout validation achieves ≥0.80 mean IoU (global average, no camera below 0.60) on held-out cameras across a representative clip
 **Plans**: TBD
 
 ### Phase 5: Tracking and Sex Classification
@@ -135,6 +135,6 @@ Note: Phase 3 depends only on Phase 1 (not Phase 2), so Phases 2 and 3 can devel
 | 02.1 Segmentation Troubleshooting | 3/3 | Complete | 2026-02-20 |
 | 02.1.1 Object-detection alternative to MOG2 | 3/3 | Complete | 2026-02-20 |
 | 3. Fish Mesh Model and 3D Initialization | 0/2 | Planning complete | - |
-| 4. Single-Fish Reconstruction | 0/TBD | Not started | - |
+| 4. Per-Fish Reconstruction | 0/TBD | Not started | - |
 | 5. Tracking and Sex Classification | 0/TBD | Not started | - |
 | 6. Output and Visualization | 0/TBD | Not started | - |

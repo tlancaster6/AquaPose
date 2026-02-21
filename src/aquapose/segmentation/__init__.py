@@ -1,9 +1,9 @@
 """Multi-view fish segmentation pipeline."""
 
 from .crop import CropRegion, compute_crop_region, extract_crop, paste_mask
-from .dataset import CropDataset, stratified_split
+from .dataset import BinaryMaskDataset, CropDataset, stratified_split
 from .detector import Detection, MOG2Detector, YOLODetector, make_detector
-from .model import MaskRCNNSegmentor, SegmentationResult
+from .model import MaskRCNNSegmentor, SegmentationResult, UNetSegmentor
 from .pseudo_labeler import (
     AnnotatedFrame,
     FrameAnnotation,
@@ -15,6 +15,7 @@ from .training import evaluate, train
 
 __all__ = [
     "AnnotatedFrame",
+    "BinaryMaskDataset",
     "CropDataset",
     "CropRegion",
     "Detection",
@@ -23,6 +24,7 @@ __all__ = [
     "MaskRCNNSegmentor",
     "SAMPseudoLabeler",
     "SegmentationResult",
+    "UNetSegmentor",
     "YOLODetector",
     "compute_crop_region",
     "evaluate",

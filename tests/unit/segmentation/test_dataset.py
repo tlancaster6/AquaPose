@@ -1,4 +1,4 @@
-"""Unit tests for COCO-format training dataset."""
+"""Unit tests for COCO-format training datasets."""
 
 from __future__ import annotations
 
@@ -10,7 +10,11 @@ import numpy as np
 import pycocotools.mask as mask_util
 import torch
 
-from aquapose.segmentation.dataset import CropDataset, stratified_split
+from aquapose.segmentation.dataset import (
+    BinaryMaskDataset,
+    CropDataset,
+    stratified_split,
+)
 
 
 def _create_coco_fixture(
@@ -164,6 +168,11 @@ def _create_multi_camera_fixture(
         json.dump(coco, f)
 
     return coco_path, images_dir
+
+
+# ===================================================================
+# CropDataset tests (existing, for backward compat with Mask R-CNN)
+# ===================================================================
 
 
 class TestCropDatasetBasic:
@@ -401,6 +410,136 @@ class TestCropDatasetMultipleAnnotations:
         assert target["masks"].shape[0] == 3
 
 
+# ===================================================================
+# BinaryMaskDataset tests
+# ===================================================================
+
+
+class TestBinaryMaskDatasetBasic:
+    """Basic BinaryMaskDataset loading tests."""
+
+    def test_length_matches_images(self, tmp_path: Path) -> None:
+        coco_path, image_root = _create_coco_fixture(tmp_path, num_images=3)
+        ds = BinaryMaskDataset(coco_path, image_root)
+        assert len(ds) == 3
+
+    def test_getitem_returns_image_and_mask_tensors(self, tmp_path: Path) -> None:
+        coco_path, image_root = _create_coco_fixture(tmp_path)
+        ds = BinaryMaskDataset(coco_path, image_root)
+        image, mask = ds[0]
+
+        assert isinstance(image, torch.Tensor)
+        assert isinstance(mask, torch.Tensor)
+
+    def test_fixed_128_output_shape(self, tmp_path: Path) -> None:
+        """Output is always 128x128 regardless of input size."""
+        coco_path, image_root = _create_coco_fixture(
+            tmp_path, num_images=1, img_size=(64, 80)
+        )
+        ds = BinaryMaskDataset(coco_path, image_root)
+        image, mask = ds[0]
+
+        assert image.shape == (3, 128, 128)
+        assert mask.shape == (1, 128, 128)
+
+    def test_image_tensor_is_float_in_zero_one(self, tmp_path: Path) -> None:
+        coco_path, image_root = _create_coco_fixture(tmp_path)
+        ds = BinaryMaskDataset(coco_path, image_root)
+        image, _ = ds[0]
+
+        assert image.dtype == torch.float32
+        assert image.min() >= 0.0
+        assert image.max() <= 1.0
+
+    def test_mask_tensor_is_binary_float(self, tmp_path: Path) -> None:
+        """Mask values should be 0.0 or 1.0."""
+        coco_path, image_root = _create_coco_fixture(tmp_path)
+        ds = BinaryMaskDataset(coco_path, image_root)
+        _, mask = ds[0]
+
+        assert mask.dtype == torch.float32
+        unique_vals = set(torch.unique(mask).tolist())
+        assert unique_vals.issubset({0.0, 1.0})
+
+    def test_mask_has_foreground_for_positive_example(self, tmp_path: Path) -> None:
+        """Positive examples should have non-zero mask pixels."""
+        coco_path, image_root = _create_coco_fixture(tmp_path)
+        ds = BinaryMaskDataset(coco_path, image_root)
+        _, mask = ds[0]
+
+        assert mask.sum() > 0
+
+
+class TestBinaryMaskDatasetNegative:
+    """Test negative (no-annotation) examples."""
+
+    def test_negative_frame_returns_zero_mask(self, tmp_path: Path) -> None:
+        """Image with no annotations returns all-zero mask."""
+        images_dir = tmp_path / "images"
+        images_dir.mkdir()
+        img = np.zeros((80, 60, 3), dtype=np.uint8)
+        cv2.imwrite(str(images_dir / "empty.jpg"), img)
+
+        coco = {
+            "images": [
+                {
+                    "id": 1,
+                    "file_name": "empty.jpg",
+                    "width": 60,
+                    "height": 80,
+                    "camera_id": "cam01",
+                }
+            ],
+            "annotations": [],
+            "categories": [{"id": 1, "name": "fish"}],
+        }
+        coco_path = tmp_path / "coco.json"
+        with open(coco_path, "w") as f:
+            json.dump(coco, f)
+
+        ds = BinaryMaskDataset(coco_path, images_dir)
+        image, mask = ds[0]
+
+        assert image.shape == (3, 128, 128)
+        assert mask.shape == (1, 128, 128)
+        assert mask.sum() == 0.0
+
+
+class TestBinaryMaskDatasetAugmentation:
+    """Test augmentation on BinaryMaskDataset."""
+
+    def test_augmentation_produces_valid_output(self, tmp_path: Path) -> None:
+        coco_path, image_root = _create_coco_fixture(tmp_path)
+        ds = BinaryMaskDataset(coco_path, image_root, augment=True)
+
+        for _ in range(5):
+            image, mask = ds[0]
+            assert image.shape == (3, 128, 128)
+            assert mask.shape == (1, 128, 128)
+            assert image.dtype == torch.float32
+            assert mask.dtype == torch.float32
+
+
+class TestBinaryMaskDatasetMergesMasks:
+    """Test that multiple annotations are merged into a single binary mask."""
+
+    def test_multiple_annotations_merged(self, tmp_path: Path) -> None:
+        coco_path, image_root = _create_coco_fixture(
+            tmp_path, num_images=1, num_anns_per_image=2
+        )
+        ds = BinaryMaskDataset(coco_path, image_root)
+        _, mask = ds[0]
+
+        # Single binary mask (merged), not multi-instance
+        assert mask.shape == (1, 128, 128)
+        assert mask.sum() > 0
+
+
+# ===================================================================
+# stratified_split tests (works with both dataset types)
+# ===================================================================
+
+
 class TestStratifiedSplit:
     """Tests for per-camera stratified split function."""
 
@@ -483,3 +622,14 @@ class TestStratifiedSplit:
 
         assert len(train_idx) + len(val_idx) == 10
         assert len(val_idx) >= 1
+
+    def test_stratified_split_with_binary_mask_dataset(self, tmp_path: Path) -> None:
+        """stratified_split works with BinaryMaskDataset too."""
+        cameras = {"cam01": 10, "cam02": 8}
+        coco_path, image_root = _create_multi_camera_fixture(tmp_path, cameras)
+        ds = BinaryMaskDataset(coco_path, image_root)
+
+        train_idx, val_idx = stratified_split(ds, val_fraction=0.2)
+
+        all_indices = sorted(train_idx + val_idx)
+        assert all_indices == list(range(len(ds)))

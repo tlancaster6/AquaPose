@@ -1,4 +1,4 @@
-"""Unit tests for Mask R-CNN training and evaluation."""
+"""Unit tests for U-Net training and evaluation."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pycocotools.mask as mask_util
-import pytest
 
 from aquapose.segmentation.training import evaluate, train
 
@@ -125,9 +124,8 @@ def _split_coco_json(
         json.dump(_filter(coco, val_ids), f)
 
 
-@pytest.mark.slow
 class TestTrain:
-    """Tests for the train() function (slow -- instantiates Mask R-CNN)."""
+    """Tests for the train() function."""
 
     def test_train_one_epoch(self, tmp_path: Path) -> None:
         """Train for 1 epoch and verify output model file exists."""
@@ -140,6 +138,7 @@ class TestTrain:
             output_dir,
             epochs=1,
             batch_size=1,
+            num_workers=0,
             device="cpu",
         )
 
@@ -148,8 +147,7 @@ class TestTrain:
         assert (output_dir / "final_model.pth").exists()
 
     def test_train_uses_stratified_split(self, tmp_path: Path) -> None:
-        """train() without pre-split JSON uses stratified_split (not random_split)."""
-        # Create dataset with 6 images across 2 cameras so split is observable
+        """train() without pre-split JSON uses stratified_split."""
         coco_path, image_root = _create_training_fixture(
             tmp_path,
             num_images=6,
@@ -157,7 +155,6 @@ class TestTrain:
         )
         output_dir = tmp_path / "output"
 
-        # Should not raise; stratified_split is called internally
         best_model = train(
             coco_path,
             image_root,
@@ -165,6 +162,7 @@ class TestTrain:
             epochs=1,
             batch_size=1,
             val_split=0.33,
+            num_workers=0,
             device="cpu",
         )
         assert best_model.exists()
@@ -185,6 +183,7 @@ class TestTrain:
             val_json=val_json,
             epochs=1,
             batch_size=1,
+            num_workers=0,
             device="cpu",
         )
         assert best_model.exists()
@@ -201,15 +200,15 @@ class TestTrain:
             image_root,
             output_dir,
             epochs=1,
-            batch_size=1,
+            batch_size=2,
+            num_workers=0,
             device="cpu",
         )
         assert best_model.exists()
 
 
-@pytest.mark.slow
 class TestEvaluate:
-    """Tests for the evaluate() function (slow -- loads Mask R-CNN)."""
+    """Tests for the evaluate() function."""
 
     def test_evaluate_returns_expected_keys(self, tmp_path: Path) -> None:
         """Evaluate after 1-epoch training and check return dict structure."""
@@ -222,6 +221,7 @@ class TestEvaluate:
             output_dir,
             epochs=1,
             batch_size=1,
+            num_workers=0,
             device="cpu",
         )
 
@@ -248,6 +248,7 @@ class TestEvaluate:
             output_dir,
             epochs=1,
             batch_size=1,
+            num_workers=0,
             device="cpu",
         )
 

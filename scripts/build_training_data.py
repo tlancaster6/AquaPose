@@ -1,4 +1,4 @@
-"""End-to-end Mask R-CNN training data pipeline: videos -> COCO dataset -> train."""
+"""End-to-end U-Net training data pipeline: videos -> COCO dataset -> train."""
 
 from __future__ import annotations
 
@@ -100,12 +100,13 @@ def _generate_negative_crops(
     images_dir: Path,
     frame_stride: int,
     rng: random.Random,
+    positive_crop_sizes: list[tuple[int, int]] | None = None,
 ) -> list[AnnotatedFrame]:
     """Sample random background crops from frames with no fish.
 
-    Reads video frames at stride intervals, skips frames where a detector
-    would fire, and crops random patches of plausible fish sizes as negative
-    training examples.
+    Reads video frames at stride intervals and crops random patches as negative
+    training examples. Crop sizes are sampled from the actual positive crop size
+    distribution to avoid introducing a size-based shortcut for the model.
 
     Args:
         video_path: Path to video file to sample from.
@@ -114,6 +115,9 @@ def _generate_negative_crops(
         images_dir: Directory to save negative crop images.
         frame_stride: Sampling interval between candidate frames.
         rng: Seeded random instance for reproducibility.
+        positive_crop_sizes: List of (width, height) from positive crops.
+            If provided, negative crop sizes are sampled from this distribution.
+            Falls back to 30-200px uniform if empty or None.
 
     Returns:
         List of AnnotatedFrame objects with empty mask lists.
@@ -141,9 +145,16 @@ def _generate_negative_crops(
 
         frame_h, frame_w = frame.shape[:2]
 
-        # Sample a random crop of plausible fish size (100-300px in each dim)
-        crop_h = rng.randint(100, min(300, frame_h // 2))
-        crop_w = rng.randint(100, min(300, frame_w // 2))
+        # Sample crop size from the positive crop distribution
+        if positive_crop_sizes:
+            ref_w, ref_h = rng.choice(positive_crop_sizes)
+            # Add +-20% jitter so negatives aren't exact copies of positive sizes
+            crop_w = max(10, int(ref_w * rng.uniform(0.8, 1.2)))
+            crop_h = max(10, int(ref_h * rng.uniform(0.8, 1.2)))
+        else:
+            crop_w = rng.randint(30, min(200, frame_w // 2))
+            crop_h = rng.randint(30, min(200, frame_h // 2))
+
         if frame_h <= crop_h or frame_w <= crop_w:
             continue
 
@@ -291,6 +302,7 @@ def cmd_generate(args: argparse.Namespace) -> None:
         # Re-open video to read selected frames at full quality
         cap = cv2.VideoCapture(str(video_path))
         cam_crops: list[AnnotatedFrame] = []
+        cam_crop_sizes: list[tuple[int, int]] = []
 
         for frame_pos, _det_count in scored:
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
@@ -341,6 +353,7 @@ def cmd_generate(args: argparse.Namespace) -> None:
                         camera_id=camera_id,
                     )
                 )
+                cam_crop_sizes.append((crop_img.shape[1], crop_img.shape[0]))
                 total_kept += 1
 
         cap.release()
@@ -349,7 +362,13 @@ def cmd_generate(args: argparse.Namespace) -> None:
         n_neg = max(0, round(len(cam_crops) * args.neg_fraction))
         if n_neg > 0:
             negatives = _generate_negative_crops(
-                video_path, camera_id, n_neg, images_dir, args.frame_stride, rng
+                video_path,
+                camera_id,
+                n_neg,
+                images_dir,
+                args.frame_stride,
+                rng,
+                positive_crop_sizes=cam_crop_sizes,
             )
             cam_crops.extend(negatives)
             print(
@@ -393,7 +412,7 @@ def cmd_generate(args: argparse.Namespace) -> None:
 
 
 def cmd_train(args: argparse.Namespace) -> None:
-    """Train Mask R-CNN on a generated COCO dataset.
+    """Train U-Net on a generated COCO dataset.
 
     Args:
         args: Parsed CLI arguments for the train subcommand.
@@ -411,7 +430,7 @@ def cmd_train(args: argparse.Namespace) -> None:
         print(f"Error: COCO JSON not found at '{coco_json}'.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Training Mask R-CNN for {args.epochs} epochs...")
+    print(f"Training U-Net for {args.epochs} epochs...")
     print(f"  COCO JSON  : {coco_json}")
     if train_json:
         print(f"  Train JSON : {train_json}")
@@ -451,7 +470,7 @@ def cmd_train(args: argparse.Namespace) -> None:
 
 
 def cmd_evaluate(args: argparse.Namespace) -> None:
-    """Evaluate a trained Mask R-CNN on a COCO val split.
+    """Evaluate a trained U-Net on a COCO val split.
 
     Loads the trained model, runs inference on all images in the val JSON,
     computes per-image mask IoU against ground-truth annotations, and prints
@@ -507,7 +526,7 @@ def build_parser() -> argparse.ArgumentParser:
         Configured ArgumentParser.
     """
     parser = argparse.ArgumentParser(
-        description="Build Mask R-CNN training data from raw videos and train.",
+        description="Build U-Net training data from raw videos and train.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -610,7 +629,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- train ---
     tr = subparsers.add_parser(
         "train",
-        help="Train Mask R-CNN on generated COCO dataset.",
+        help="Train U-Net on generated COCO dataset.",
     )
     tr.add_argument(
         "--coco-json",
@@ -626,9 +645,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tr.add_argument(
         "--output-dir",
-        default="output/maskrcnn/",
+        default="output/unet/",
         type=Path,
-        help="Directory for model checkpoints (default: output/maskrcnn/).",
+        help="Directory for model checkpoints (default: output/unet/).",
     )
     tr.add_argument(
         "--epochs",
@@ -654,13 +673,13 @@ def build_parser() -> argparse.ArgumentParser:
     # --- evaluate ---
     ev = subparsers.add_parser(
         "evaluate",
-        help="Evaluate a trained Mask R-CNN on a COCO val split.",
+        help="Evaluate a trained U-Net on a COCO val split.",
     )
     ev.add_argument(
         "--model-path",
         required=True,
         type=Path,
-        help="Path to saved Mask R-CNN model checkpoint (best_model.pth).",
+        help="Path to saved U-Net model checkpoint (best_model.pth).",
     )
     ev.add_argument(
         "--val-json",

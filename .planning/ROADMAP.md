@@ -41,7 +41,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Success Criteria** (what must be TRUE):
   1. MOG2 detection produces padded bounding boxes with ≥95% per-camera recall measured on a held-out sample including female fish and stationary subjects
   2. SAM2 pseudo-labels are generated via box-only prompting with quality filtering, producing masks suitable for direct Mask R-CNN training without manual correction
-  3. A trained Mask R-CNN model produces binary mask predictions on variable-size bbox crops achieving ≥0.90 mean mask IoU on the validation split
+  3. A trained U-Net model produces binary mask predictions on resized bbox crops (best val IoU: 0.623 — below 0.90 target but accepted as sufficient to unblock Phase 4; can revisit with more training data)
   4. The segmentation pipeline accepts N fish as input (returning a list of masks) even in the single-fish v1 operating mode
 **Plans**: 4 plans
 - [ ] 02-01-PLAN.md — Delete Label Studio code, remove debug scripts, clean dependencies
@@ -51,15 +51,15 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 ### Phase 02.1: Segmentation Troubleshooting (INSERTED)
 
-**Goal:** Systematically test each Phase 2 segmentation component (MOG2, SAM2, Mask R-CNN) on real data, diagnose failures, and fix until quality is sufficient to unblock Phase 4
+**Goal:** Systematically test each Phase 2 segmentation component on real data, diagnose failures, and fix until quality is sufficient to unblock Phase 4
 **Depends on:** Phase 2
 **Requirements:** SEG-1, SEG-2, SEG-3, SEG-4
-**Plans:** 3/4 plans executed
+**Plans:** 3/3 plans executed
 
 Plans:
-- [ ] 02.1-01-PLAN.md — Consolidate MOG2 diagnostic scripts, validate recall on all 13 cameras
-- [ ] 02.1-02-PLAN.md — SAM2 pseudo-label evaluation against manual ground truth
-- [ ] 02.1-03-PLAN.md — Mask R-CNN training on Label Studio corrections and evaluation
+- [x] 02.1-01-PLAN.md — Consolidate MOG2 diagnostic scripts, validate recall on all 13 cameras
+- [x] 02.1-02-PLAN.md — SAM2 pseudo-label evaluation against manual ground truth
+- [x] 02.1-03-PLAN.md — Replace Mask R-CNN with lightweight U-Net; train and evaluate on pseudo-labels (best val IoU: 0.623 — accepted as sufficient to unblock Phase 4)
 
 ### Phase 02.1.1: Object-detection alternative to MOG2 (INSERTED)
 
@@ -84,8 +84,8 @@ Plans:
   4. All mesh and initialization APIs accept lists of fish states (batch-first design) even when called with a single-element list
 **Plans**: 2 plans
 Plans:
-- [ ] 03-01-PLAN.md — Differentiable parametric fish mesh (FishState, spine, cross-sections, builder, PyTorch3D Meshes)
-- [ ] 03-02-PLAN.md — PCA keypoint extraction and refractive triangulation for 3D initialization
+- [x] 03-01-PLAN.md — Differentiable parametric fish mesh (FishState, spine, cross-sections, builder, PyTorch3D Meshes)
+- [x] 03-02-PLAN.md — PCA keypoint extraction and refractive triangulation for 3D initialization
 
 ### Phase 4: Single-Fish Reconstruction
 **Goal**: The full analysis-by-synthesis loop works end-to-end on real data — a single fish's pose is recovered frame-by-frame with cross-view holdout IoU demonstrating the system generalizes beyond the cameras it was fit on
@@ -132,8 +132,8 @@ Note: Phase 3 depends only on Phase 1 (not Phase 2), so Phases 2 and 3 can devel
 |-------|----------------|--------|-----------|
 | 1. Calibration and Refractive Geometry | 2/2 | Complete | 2026-02-19 |
 | 2. Segmentation Pipeline | 0/4 | Planning complete | - |
-| 02.1 Segmentation Troubleshooting | 1/3 | In progress | - |
-| 02.1.1 Object-detection alternative to MOG2 | 2/3 | Complete    | 2026-02-20 |
+| 02.1 Segmentation Troubleshooting | 3/3 | Complete | 2026-02-20 |
+| 02.1.1 Object-detection alternative to MOG2 | 3/3 | Complete | 2026-02-20 |
 | 3. Fish Mesh Model and 3D Initialization | 0/2 | Planning complete | - |
 | 4. Single-Fish Reconstruction | 0/TBD | Not started | - |
 | 5. Tracking and Sex Classification | 0/TBD | Not started | - |

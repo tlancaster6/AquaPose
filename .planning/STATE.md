@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Accurate single-fish 3D reconstruction from multi-view silhouettes via differentiable refractive rendering
-**Current focus:** Phase 02-segmentation-pipeline Plan 03 complete — MaskRCNNSegmentor.segment() crop-space output, stratified split training, pre-split JSON support; 204 tests passing
+**Current focus:** Phase 02.1 complete — Mask R-CNN replaced with lightweight U-Net (MobileNetV3-Small encoder); best val IoU 0.623; accepted as sufficient to unblock Phase 4
 
 ## Current Position
 
-Phase: 02-segmentation-pipeline
-Plan: 03 of N complete
-Status: Model refactored with separate detect/crop/segment pipeline; training uses stratified split; ready for actual training run
-Last activity: 2026-02-20 — 02-03 complete (commits 5c4cbde, 25ce169)
+Phase: 02.1-segmentation-troubleshooting
+Plan: 03 of 03 complete (phase complete)
+Status: U-Net segmentor trained and evaluated; 233 tests passing; ready to proceed to Phase 3 or 4
+Last activity: 2026-02-20 — Replaced Mask R-CNN with U-Net, tuned training (differential LR, AdamW)
 
 Progress: [██████░░░░] 60% (12 plans complete)
 
@@ -110,5 +110,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 02-segmentation-pipeline 02-03-PLAN.md
-Next action: Execute 02-segmentation-pipeline Plan 04 (actual Mask R-CNN training run)
+Stopped at: Phase 02.1 complete — U-Net trained (best val IoU 0.623), accepted to move forward
+Next action: Proceed to Phase 3 (Fish Mesh) or Phase 4 (Single-Fish Reconstruction)

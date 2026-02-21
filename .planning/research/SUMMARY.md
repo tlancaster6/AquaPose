@@ -163,7 +163,7 @@ Phases with standard patterns (skip research-phase):
 |------|------------|-------|
 | Stack | MEDIUM-HIGH | PyTorch/PyTorch3D version pinning is HIGH confidence (official docs confirmed). Detectron2, SAM2, kornia are HIGH confidence. The 5-version compatibility gap between PyTorch 2.4.1 and current (2.10.0) introduces real installation risk. |
 | Features | MEDIUM | Table stakes and anti-features are HIGH confidence (competitor analysis is clear). Differentiators (refractive rendering, shape Re-ID) have no direct comparators, so feature scope is validated by domain logic rather than industry patterns. |
-| Architecture | HIGH | System design is confirmed by the detailed project spec in `.planning/proposed_pipeline.md`. PyTorch3D rendering architecture verified via official docs. Build order derives from clear data dependencies. |
+| Architecture | HIGH | System design is confirmed by the detailed project spec in `.planning/inbox/proposed_pipeline.md`. PyTorch3D rendering architecture verified via official docs. Build order derives from clear data dependencies. |
 | Pitfalls | MEDIUM | Core optics and math pitfalls (refractive distortion, Z-weakness, silhouette ambiguity) are HIGH confidence from peer-reviewed literature. Multi-fish extension pitfalls are MEDIUM from analogous animal tracking work. Some implementation specifics (shape Re-ID stability) are LOW — flagged. |
 
 **Overall confidence:** MEDIUM
@@ -181,7 +181,7 @@ Phases with standard patterns (skip research-phase):
 ### Primary (HIGH confidence)
 - PyTorch3D INSTALL.md — version compatibility matrix (PyTorch 2.4.1 + PyTorch3D 0.7.9 confirmed): https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md
 - PyTorch3D renderer docs — SoftSilhouetteShader, MeshRasterizer, batched API: https://pytorch3d.readthedocs.io/en/latest/modules/renderer/mesh/rasterizer.html
-- AquaPose proposed_pipeline.md — authoritative project spec (internal document)
+- AquaPose proposed_pipeline.md — authoritative project spec (see `.planning/inbox/proposed_pipeline.md`)
 - Refractive Two-View Reconstruction for Underwater 3D Vision (IJCV 2019) — refractive model correctness requirements: https://link.springer.com/article/10.1007/s11263-019-01218-9
 - Multi-animal pose estimation and tracking with DeepLabCut (Nature Methods 2022) — competitor baseline: https://www.nature.com/articles/s41592-022-01443-0
 - WaterMask: Instance Segmentation for Underwater Imagery (ICCV 2023) — underwater segmentation precedent: https://openaccess.thecvf.com/content/ICCV2023/papers/Lian_WaterMask_Instance_Segmentation_for_Underwater_Imagery_ICCV_2023_paper.pdf

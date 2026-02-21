@@ -2,7 +2,7 @@
 
 **Domain:** Multi-view 3D animal pose estimation (analysis-by-synthesis, differentiable rendering)
 **Researched:** 2026-02-19
-**Confidence:** HIGH (system design confirmed by detailed project spec in `.planning/proposed_pipeline.md`; PyTorch3D rendering architecture verified via official docs)
+**Confidence:** HIGH (system design confirmed by detailed project spec in `.planning/inbox/proposed_pipeline.md`; PyTorch3D rendering architecture verified via official docs)
 
 ---
 
@@ -465,7 +465,7 @@ KeypointExtractor ──────┤
 - PyTorch3D renderer architecture: [https://pytorch3d.org/docs/renderer](https://pytorch3d.org/docs/renderer) — HIGH confidence (official docs)
 - PyTorch3D rasterizer output tensors (zbuf, bary_coords, gradients): [https://pytorch3d.readthedocs.io/en/latest/modules/renderer/mesh/rasterizer.html](https://pytorch3d.readthedocs.io/en/latest/modules/renderer/mesh/rasterizer.html) — HIGH confidence (official docs)
 - PyTorch3D SoftSilhouetteShader: verified via official renderer getting started guide — HIGH confidence
-- AquaPose proposed pipeline (authoritative project spec): `.planning/proposed_pipeline.md` — HIGH confidence (project owner document)
+- AquaPose proposed pipeline (authoritative project spec): `.planning/inbox/proposed_pipeline.md` — HIGH confidence (project owner document)
 - Refractive underwater camera calibration (2024): [https://arxiv.org/abs/2405.18018](https://arxiv.org/abs/2405.18018) — MEDIUM confidence
 - Multi-view 3D pose estimation with triangulation + iterative refinement patterns (CVPR 2024): [MVGFormer](https://openaccess.thecvf.com/content/CVPR2024/papers/Liao_Multiple_View_Geometry_Transformers_for_3D_Human_Pose_Estimation_CVPR_2024_paper.pdf) — MEDIUM confidence
 - Multi-fish tracking with EKF + Hungarian: [SOD-SORT](https://arxiv.org/html/2507.06400v3) — MEDIUM confidence (confirms EKF + Hungarian as standard for fish tracking)

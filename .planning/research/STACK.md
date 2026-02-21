@@ -205,8 +205,8 @@ pip install \
 - kornia losses docs — Lovász hinge loss for differentiable binary IoU: https://kornia.readthedocs.io/en/latest/losses.html
 - rerun-sdk PyPI — v0.22.1, active 2025 development: https://pypi.org/project/rerun-sdk/0.22.1/
 - filterpy GitHub — v1.4.4, EKF API stable: https://github.com/rlabbe/filterpy
-- AquaPose proposed_pipeline.md — project-specific library selections already validated by author: internal document
-- AquaPose detection_segmentation_brief.md — MOG2 → Detectron2 decision rationale: internal document
+- AquaPose proposed_pipeline.md — project-specific library selections already validated by author: see `.planning/inbox/proposed_pipeline.md`
+- AquaPose detection_segmentation_brief.md — MOG2 → Detectron2 decision rationale: see `.planning/inbox/detection_segmentation_brief.md`
 
 ---
 

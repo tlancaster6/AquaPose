@@ -90,15 +90,11 @@ The key open question is distortion handling: AquaMVS's `RefractiveProjectionMod
 **Installation:**
 
 ```bash
-# AquaCal must be installed as a local editable dependency
-pip install -e "C:/Users/tucke/PycharmProjects/AquaCal"
-
-# Add to pyproject.toml [project] dependencies (local path):
-# aquacal @ file:///C:/Users/tucke/PycharmProjects/AquaCal
-# OR keep as developer-installed and document separately
+# AquaCal is on PyPI — add to pyproject.toml dependencies normally
+pip install aquacal
 ```
 
-> Note: AquaCal is not on PyPI. It must be installed as a local editable install, the same pattern AquaMVS uses.
+> Note: AquaCal is available on PyPI. Add `"aquacal"` to `[project] dependencies` in pyproject.toml.
 
 ---
 
@@ -235,6 +231,26 @@ from aquapose.calibration import RefractiveProjectionModel  # our port
 
 **Output format:** Markdown file with embedded base64 PNG plots (or separate PNG files linked from markdown). Three plots minimum: X-error vs depth, Y-error vs depth, Z-error vs depth. One plot per camera or aggregate stats.
 
+### Pattern 5: AquaCal Synthetic Rig Generation (for CALIB-04)
+
+**What:** AquaCal's `aquacal.datasets.synthetic` module provides `generate_real_rig_array()` which creates the exact 13-camera aquarium geometry: 1 center camera (cam0) + 6 inner ring (cam1-6, 300mm radius) + 6 outer ring (cam7-12, 600mm radius). 1600x1200 pixels, 56° FOV, ~750mm above water, all pointing straight down.
+
+**When to use:** For `build_synthetic_rig()` in `uncertainty.py` — use AquaCal's realistic geometry instead of hand-rolling camera placement.
+
+**Source:** `C:/Users/tucke/PycharmProjects/AquaCal/src/aquacal/datasets/synthetic.py` — `generate_real_rig_array()` (lines 215-315)
+
+```python
+from aquacal.datasets.synthetic import generate_real_rig_array
+
+intrinsics, extrinsics, water_zs = generate_real_rig_array()
+# intrinsics: dict[str, CameraIntrinsics] — K, dist_coeffs, image_size per camera
+# extrinsics: dict[str, CameraExtrinsics] — R, t per camera
+# water_zs: dict[str, float] — interface distance per camera
+# Convert to RefractiveProjectionModel instances using K, R, t, water_z
+```
+
+**Also available:** `generate_camera_array()` for custom layouts (grid, line, ring), `generate_synthetic_detections()` for projecting through refractive interface with noise, `compute_calibration_errors()` for comparing against ground truth.
+
 ### Anti-Patterns to Avoid
 
 - **In-place tensor operations in autograd path:** Use `torch.clamp` not `r_p.clamp_()`. Use `torch.minimum` not `r_p = min(r_p, r_q)`. AquaMVS correctly avoids these already.
@@ -279,11 +295,9 @@ from aquapose.calibration import RefractiveProjectionModel  # our port
 
 ### Pitfall 3: AquaCal Not in AquaPose's pyproject.toml
 
-**What goes wrong:** AquaCal is not on PyPI and is not listed in AquaPose's `pyproject.toml` dependencies. A fresh `hatch env create` will not install it, causing import errors.
+**What goes wrong:** AquaCal is not listed in AquaPose's `pyproject.toml` dependencies. A fresh `hatch env create` will not install it, causing import errors.
 
-**Why it happens:** AquaCal is a local project installed with `pip install -e`. The `file://` path dependency format in pyproject.toml is fragile across machines.
-
-**How to avoid:** Add `aquacal @ file:///path/to/AquaCal` as a dependency in pyproject.toml, OR document it clearly in CLAUDE.md as a prerequisite step (like pytorch3d). The AquaMVS README handles this with explicit install instructions. Consider the same pattern for AquaPose.
+**How to avoid:** Add `"aquacal"` to `[project] dependencies` in pyproject.toml. AquaCal is on PyPI and installs normally.
 
 ### Pitfall 4: Fisheye Camera in 13-Camera Rig
 
@@ -428,9 +442,7 @@ gradcheck(lambda p: model_double.project(p)[0], (points_double,), atol=1e-4)
 ## Open Questions
 
 1. **AquaCal as AquaPose dependency: how to manage it**
-   - What we know: AquaCal is not on PyPI, installed locally with `pip install -e`
-   - What's unclear: Whether `aquacal @ file:///...` in pyproject.toml is acceptable, or whether it should be documented as a manual prerequisite like pytorch3d
-   - Recommendation: Follow the pytorch3d pattern — add a comment in pyproject.toml and a setup step in CLAUDE.md. Using `file://` paths breaks portability.
+   - RESOLVED: AquaCal is on PyPI. Add `"aquacal"` to `[project] dependencies` in pyproject.toml normally.
 
 2. **Auxiliary (fisheye center) camera handling in projection**
    - What we know: In AquaMVS the center camera is "source only" — it provides photometric evidence but never produces a depth map itself

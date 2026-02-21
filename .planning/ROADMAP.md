@@ -13,11 +13,11 @@ AquaPose is built in strict dependency order: the refractive camera model must b
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Calibration and Refractive Geometry** - Differentiable refractive projection validated and ready for use by all downstream phases
-- [ ] **Phase 2: Segmentation Pipeline** - Multi-view binary masks ready for every frame; annotation workflow established
-- [ ] **Phase 3: Fish Mesh Model and 3D Initialization** - Parametric fish mesh differentiable in PyTorch; first-frame cold-start working from coarse keypoints
-- [x] **Phase 4: Per-Fish Reconstruction** - Per-frame pose optimization converges on real data for all detected fish (optimized independently); cross-view holdout IoU meets threshold (completed 2026-02-21)
-- [ ] **Phase 5: Tracking and Sex Classification** - Frame-to-frame track continuity with temporal smoothness loss active; population constraint enforced
-- [ ] **Phase 6: Output and Visualization** - Per-frame trajectories written to HDF5; 2D overlay and 3D rerun visualization operational
+- [x] **Phase 2: Segmentation Pipeline** - Multi-view binary masks ready for every frame; annotation workflow established
+- [x] **Phase 3: Fish Mesh Model and 3D Initialization** - Parametric fish mesh differentiable in PyTorch; first-frame cold-start working from coarse keypoints
+- [x] **Phase 4: Per-Fish Reconstruction** - ~~Analysis-by-synthesis mesh optimization~~ *(shelved 2026-02-21 — primary workflow replaced by direct triangulation pipeline, Phases 5+)*
+- [ ] **Phase 5: Cross-View Identity and 3D Tracking** - RANSAC-based cross-view identity association and persistent 3D fish tracking via Hungarian assignment
+- [ ] **Phase 6: 2D Medial Axis and Arc-Length Sampling** - Skeleton-based midline extraction from masks with normalized arc-length correspondence across views
 
 ## Phase Details
 
@@ -87,50 +87,53 @@ Plans:
 - [x] 03-01-PLAN.md — Differentiable parametric fish mesh (FishState, spine, cross-sections, builder, PyTorch3D Meshes)
 - [x] 03-02-PLAN.md — PCA keypoint extraction and refractive triangulation for 3D initialization
 
-### Phase 4: Per-Fish Reconstruction
-**Goal**: The full analysis-by-synthesis loop works end-to-end on real data — each detected fish's pose is recovered independently per frame with cross-view holdout IoU demonstrating the system generalizes beyond the cameras it was fit on. All fish in the scene are processed (one at a time, no inter-fish constraints); tracking and multi-fish interactions come in Phase 5.
-**Depends on**: Phase 2, Phase 3
-**Requirements**: RECON-01, RECON-02, RECON-03, RECON-04, RECON-05
-**Success Criteria** (what must be TRUE):
-  1. Differentiable silhouettes of the fish mesh render correctly into each camera view via refractive projection + PyTorch3D rasterizer, with per-camera angular-diversity weighting applied
-  2. The multi-objective loss computes silhouette IoU + gravity prior + morphological constraint terms; temporal smoothness term activates once tracking associations are available (see Phase 5), but the loss is architecturally ready for it
-  3. First-frame optimization runs 2-start (forward + 180° flip) and selects the lower-loss result, resolving head-tail ambiguity on real footage
-  4. Frame-by-frame warm-start optimization converges within the iteration cap on frames after the first, producing visually plausible reconstructions for each fish independently
-  5. Cross-view holdout validation achieves ≥0.80 mean IoU (global average, no camera below 0.60) on held-out cameras across a representative clip
-**Plans**: 3 plans
+### Phase 4: Per-Fish Reconstruction *(Archived)*
+**Status**: Shelved 2026-02-21. The analysis-by-synthesis approach (differentiable mesh rendering + Adam optimization) was functionally complete but took 30+ minutes per second of video, making it impractical as the primary pipeline. Replaced by a direct triangulation pipeline (Phases 5–7) for main workflow. Code from Phase 3 (mesh model, refractive projection) is retained; the renderer and optimizer remain available as an optional advanced route.
+**Requirements**: RECON-ABS-01, RECON-ABS-02, RECON-ABS-03, RECON-ABS-04, RECON-ABS-05
+**Plans**: 3 plans (not executed)
 Plans:
-- [ ] 04-01-PLAN.md — Differentiable silhouette renderer and multi-objective loss (RefractiveCamera, soft IoU, angular diversity weighting)
-- [ ] 04-02-PLAN.md — FishOptimizer with 2-start first-frame and warm-start frame-to-frame optimization
-- [ ] 04-03-PLAN.md — Cross-view holdout validation on real data with visual overlay QA
+- [x] 04-01-PLAN.md — *(shelved)* Differentiable silhouette renderer and multi-objective loss
+- [x] 04-02-PLAN.md — *(shelved)* FishOptimizer with 2-start first-frame and warm-start optimization
+- [x] 04-03-PLAN.md — *(shelved)* Cross-view holdout validation
 
-### Phase 5: Tracking and Sex Classification
-**Goal**: Fish identities persist frame-to-frame, the temporal smoothness loss becomes active (completing the multi-objective loss), and the population constraint prevents track count from deviating from 9
-**Depends on**: Phase 4
-**Requirements**: TRACK-01, TRACK-02, TRACK-03, TRACK-04, SEX-01, SEX-02, SEX-03
+### Phase 04.1: Isolate phase4-specific code post-archive (INSERTED)
+
+**Goal:** Archive the analysis-by-synthesis codebase to a dedicated branch, then strip all Phase 4-specific code from the working branch so only shared infrastructure remains for Phase 5+
+**Depends on:** Phase 4
+**Requirements:** RECON-ABS-01, RECON-ABS-02, RECON-ABS-03, RECON-ABS-04, RECON-ABS-05
+**Plans:** 1 plan
+
+Plans:
+- [ ] 04.1-01-PLAN.md — Archive ABS code to branch, delete optimization module/tests/scripts, verify clean build
+
+### Phase 5: Cross-View Identity and 3D Tracking
+**Goal**: Given per-camera detections, determine which masks across cameras correspond to the same physical fish, and maintain persistent fish IDs across frames — providing the cross-view identity mapping that all downstream reconstruction stages depend on
+**Depends on**: Phase 2 (segmentation), Phase 1 (refractive ray model)
+**Requirements**: TRACK-01, TRACK-02, TRACK-03, TRACK-04
 **Success Criteria** (what must be TRUE):
-  1. A 3D Extended Kalman Filter maintains position + velocity state per fish with anisotropic process noise; the filter's predicted bounding box is injected into detection for frame 2+ (tracker safety net active)
-  2. Hungarian assignment with Mahalanobis distance cost successfully links detections to tracks across a test clip; the sex-mismatch cost penalty visibly reduces male-female swap events compared to baseline
-  3. Temporal smoothness loss activates via the track associations provided by the EKF, and its gradient flows back through pose parameters without breaking the optimizer
-  4. Population constraint logic links a lost track to a new detection in the same frame window, keeping active track count at 9 throughout a test clip with no persistent occlusions
-  5. Each track carries a stable sex label derived from per-frame color histogram classifier votes aggregated across cameras and time
+  1. For each frame, RANSAC-based centroid ray clustering correctly associates detections across cameras to physical fish, producing a (camera_id, detection_id) → fish_id mapping with ≥ 2 cameras per fish
+  2. Triangulated 3D centroid per fish has a reprojection residual below a defined threshold; high-residual associations are flagged for downstream quality checks
+  3. Hungarian assignment in 3D space maintains persistent fish IDs across frames on a test clip; track count remains stable at the known population size (9 fish) with no persistent ID swaps
+  4. The identity module exposes a clean interface consumed by downstream stages: given a frame's detections, returns per-fish camera sets, 3D centroids, and persistent IDs
 **Plans**: TBD
 
-### Phase 6: Output and Visualization
-**Goal**: Results are persisted in a machine-readable format and inspectable via 2D overlays and 3D visualization, making the system usable for downstream behavioral research
-**Depends on**: Phase 5
-**Requirements**: OUT-01, OUT-02, OUT-03
+### Phase 6: 2D Medial Axis and Arc-Length Sampling
+**Goal**: Extract stable 2D midlines from segmentation masks and produce fixed-size, arc-length-normalized point correspondences across cameras — the 2D input that multi-view triangulation consumes
+**Depends on**: Phase 5 (cross-view identity), Phase 2 (segmentation masks)
+**Requirements**: RECON-01, RECON-02
 **Success Criteria** (what must be TRUE):
-  1. An HDF5 file is written containing per-frame, per-fish records with all required fields: fish_id, position, heading, midline, curvature, scale, sex, confidence, n_cameras, silhouette_loss — and the file is readable by standard h5py code without custom schemas
-  2. 2D overlay video (projected 3D mesh on original camera frames) can be generated for any clip and any subset of cameras for visual QA
-  3. 3D rerun-sdk visualization shows fish meshes moving through the tank volume with trajectory trails and identity coloring, rendering in real time from the HDF5 output
+  1. Morphological smoothing + skeletonization produces a single clean head-to-tail skeleton from U-Net masks, with spurious branches pruned via longest-path BFS, on ≥90% of masks across a test clip
+  2. Arc-length resampling produces N fixed-size 2D midline points (plus half-widths) per fish per camera, with consistent head-to-tail ordering across cameras verified by reprojecting Stage 0's 3D centroid
+  3. Coordinate transforms correctly map crop-space midline points back to full-frame pixel coordinates using detection bounding boxes
+  4. The module handles edge cases gracefully: masks too small to skeletonize, degenerate skeletons (no clear longest path), and single-camera fish (passes through without crashing, flagged for downstream)
 **Plans**: TBD
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
+Phases execute in numeric order: 1 → 2 → 3 → 4 (shelved) → 5 → 6 → 7+ (TBD)
 
-Note: Phase 3 depends only on Phase 1 (not Phase 2), so Phases 2 and 3 can develop in parallel if needed. Phase 4 requires both Phase 2 and Phase 3 to be complete.
+Note: Phase 5 depends on Phase 2 (segmentation) and Phase 1 (refractive ray model). Phase 6 depends on Phase 5. Phases 7–8 will be added via /gsd:add-phase.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -139,6 +142,6 @@ Note: Phase 3 depends only on Phase 1 (not Phase 2), so Phases 2 and 3 can devel
 | 02.1 Segmentation Troubleshooting | 3/3 | Complete | 2026-02-20 |
 | 02.1.1 Object-detection alternative to MOG2 | 3/3 | Complete | 2026-02-20 |
 | 3. Fish Mesh Model and 3D Initialization | 0/2 | Planning complete | - |
-| 4. Per-Fish Reconstruction | 3/3 | Complete   | 2026-02-21 |
-| 5. Tracking and Sex Classification | 0/TBD | Not started | - |
-| 6. Output and Visualization | 0/TBD | Not started | - |
+| 4. Per-Fish Reconstruction | 0/3 | Shelved    | 2026-02-21 |
+| 5. Cross-View Identity and 3D Tracking | 0/TBD | Not started | - |
+| 6. 2D Medial Axis and Arc-Length Sampling | 0/TBD | Not started | - |

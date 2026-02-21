@@ -24,8 +24,8 @@ Reference document: `.planning/inbox/fish-reconstruction-pivot.md` (Stage 1 + St
 ### Head-to-tail orientation
 - **Anatomical ordering**: point 0 = snout, point 14 = tail tip
 - Use the track's **3D velocity vector** (from Phase 5's `FishTrack`) to determine which skeleton endpoint is the head — the leading edge of motion is the head
-- **Ambiguous frames** (near-zero velocity): inherit orientation from previous frame
-- **First frame of tracklet**: arbitrary assignment, then **back-correct** early frames once velocity establishes direction
+- **Ambiguous frames** (velocity < 0.5 body-lengths/second): inherit orientation from previous frame
+- **First frame of tracklet**: arbitrary assignment, then **back-correct** early frames once velocity establishes direction — **capped at 30 frames or 1 second** (whichever is less). After the cap, early frames keep whatever orientation they had.
 - **Cross-view consistency enforced**: all cameras orient the same way for a given fish on a given frame, driven by the shared 3D velocity
 
 ### Skeletonization approach
@@ -38,6 +38,7 @@ Reference document: `.planning/inbox/fish-reconstruction-pivot.md` (Stage 1 + St
 ### Edge case handling
 - **Masks too small**: skip silently — no midline output for that camera, other cameras compensate
 - **Degenerate skeletons** (round mask, skeleton shorter than N points): skip this view entirely
+- **Boundary-clipped masks**: if mask has nonzero pixels touching any edge of the crop, skip this view — truncated skeletons produce endpoints at arbitrary cutoff points, breaking arc-length parameterization
 - **Single-camera fish** (only 1 camera sees fish this frame): skip entirely — need ≥2 cameras for triangulation
 - **No diagnostic output** from this module — diagnostics via separate scripts if needed
 

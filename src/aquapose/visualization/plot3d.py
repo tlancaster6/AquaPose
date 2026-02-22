@@ -93,10 +93,12 @@ def plot_3d_frame(
     # Equal aspect ratio approximation for 3D axes
     if all_pts:
         combined = np.vstack(all_pts)
-        ranges = combined.max(axis=0) - combined.min(axis=0)
+        lo = np.percentile(combined, 2, axis=0)
+        hi = np.percentile(combined, 98, axis=0)
+        ranges = hi - lo
         max_range = float(ranges.max())
         if max_range > 0:
-            centers = (combined.max(axis=0) + combined.min(axis=0)) / 2.0
+            centers = (lo + hi) / 2.0
             for set_lim, center in zip(
                 [ax.set_xlim, ax.set_ylim, ax.set_zlim], centers, strict=True
             ):
@@ -160,10 +162,13 @@ def render_3d_animation(
         return
 
     combined = np.vstack(all_pts)
-    ranges = combined.max(axis=0) - combined.min(axis=0)
+    # Use 2nd/98th percentile bounds to ignore outlier reconstructions
+    lo = np.percentile(combined, 2, axis=0)
+    hi = np.percentile(combined, 98, axis=0)
+    ranges = hi - lo
     max_range = float(ranges.max())
     pad = max(max_range * 0.1, 0.01)
-    centers = (combined.max(axis=0) + combined.min(axis=0)) / 2.0
+    centers = (lo + hi) / 2.0
     half = max_range / 2.0 + pad
 
     # Precompute centroids for trail rendering

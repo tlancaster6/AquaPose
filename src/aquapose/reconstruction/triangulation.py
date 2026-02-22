@@ -59,12 +59,17 @@ class Midline3D:
         half_widths: Half-width of the fish at each of the 15 body positions
             in world metres, shape (N_SAMPLE_POINTS,), float32.
         n_cameras: Minimum number of camera observations across body points.
-        mean_residual: Mean reprojection residual in pixels across all body
-            points and inlier cameras.
-        max_residual: Maximum reprojection residual in pixels across all body
-            points and inlier cameras.
-        is_low_confidence: True when any body point was triangulated from
-            only 2 cameras.
+        mean_residual: Mean spline reprojection residual in pixels.  Computed
+            by evaluating the fitted spline at N_SAMPLE_POINTS positions,
+            reprojecting into every observing camera, and averaging the pixel
+            distance to the corresponding observed 2D midline point.
+        max_residual: Maximum single-point spline reprojection residual in
+            pixels across all (camera, body_point) pairs.
+        is_low_confidence: True when more than 20% of body points were
+            triangulated from fewer than 3 cameras.
+        per_camera_residuals: Mean spline reprojection residual per camera.
+            Maps camera_id to mean pixel error across all body points for
+            that camera.  Useful for diagnosing cross-view identity errors.
     """
 
     fish_id: int
@@ -78,6 +83,7 @@ class Midline3D:
     mean_residual: float
     max_residual: float
     is_low_confidence: bool = False
+    per_camera_residuals: dict[str, float] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -108,8 +114,10 @@ def _triangulate_body_point(
             camera as an inlier during re-triangulation.
 
     Returns:
-        Tuple of (point_3d, inlier_cam_ids, max_residual) where point_3d has
-        shape (3,) float32, or None if fewer than 2 cameras are available.
+        Tuple of (point_3d, inlier_cam_ids, mean_residual) where point_3d has
+        shape (3,) float32 and mean_residual is the mean reprojection error
+        across inlier cameras in pixels. Returns None if fewer than 2 cameras
+        are available.
     """
     cam_ids = [cid for cid in pixels if cid in models]
     n_cams = len(cam_ids)
@@ -131,7 +139,16 @@ def _triangulate_body_point(
         origs = torch.stack([origins[cid] for cid in cam_ids])  # (2, 3)
         dirs = torch.stack([directions[cid] for cid in cam_ids])  # (2, 3)
         pt3d = triangulate_rays(origs, dirs)
-        return pt3d, cam_ids, 0.0
+        # Compute actual reprojection residual
+        residuals = []
+        pt3d_batch = pt3d.unsqueeze(0)  # (1, 3)
+        for cid in cam_ids:
+            proj_px, valid = models[cid].project(pt3d_batch)
+            if valid[0]:
+                err = float(torch.linalg.norm(proj_px[0] - pixels[cid]).item())
+                residuals.append(err)
+        mean_res = float(np.mean(residuals)) if residuals else 0.0
+        return pt3d, cam_ids, mean_res
 
     if n_cams <= 7:
         # Exhaustive pairwise search
@@ -191,7 +208,7 @@ def _triangulate_body_point(
             final_pt3d = best_pt3d
             inlier_ids = best_cam_ids
 
-        # Compute max residual among inliers
+        # Compute mean residual among inliers
         final_residuals = []
         pt3d_batch = final_pt3d.unsqueeze(0)  # (1, 3)
         for cid in inlier_ids:
@@ -199,9 +216,9 @@ def _triangulate_body_point(
             if valid[0]:
                 err = float(torch.linalg.norm(proj_px[0] - pixels[cid]).item())
                 final_residuals.append(err)
-        max_residual = max(final_residuals) if final_residuals else 0.0
+        mean_residual = float(np.mean(final_residuals)) if final_residuals else 0.0
 
-        return final_pt3d, inlier_ids, max_residual
+        return final_pt3d, inlier_ids, mean_residual
 
     # n_cams > 7: Residual rejection
     origs = torch.stack([origins[cid] for cid in cam_ids])
@@ -241,9 +258,9 @@ def _triangulate_body_point(
         if valid[0]:
             err = float(torch.linalg.norm(proj_px[0] - pixels[cid]).item())
             final_residuals.append(err)
-    max_residual = max(final_residuals) if final_residuals else 0.0
+    mean_residual = float(np.mean(final_residuals)) if final_residuals else 0.0
 
-    return final_pt3d, inlier_ids, max_residual
+    return final_pt3d, inlier_ids, mean_residual
 
 
 def _fit_spline(
@@ -456,8 +473,8 @@ def triangulate_midlines(
     half-widths to world metres, and returns a Midline3D per fish.
 
     Fish with fewer than MIN_BODY_POINTS valid triangulated points are skipped
-    (spline cannot be fit reliably). Fish observed from only 2 cameras (at any
-    body point) are flagged as is_low_confidence=True.
+    (spline cannot be fit reliably). Fish where >20% of body points have fewer
+    than 3 inlier cameras are flagged as is_low_confidence=True.
 
     Args:
         midline_set: Nested dict mapping fish_id to camera_id to Midline2D.
@@ -498,12 +515,12 @@ def triangulate_midlines(
             if result is None:
                 continue
 
-            pt3d, inlier_ids, max_res = result
+            pt3d, inlier_ids, mean_res = result
             pt3d_np = pt3d.detach().cpu().numpy().astype(np.float64)
 
             valid_indices.append(i)
             pts_3d_list.append(pt3d_np)
-            per_point_residuals.append(max_res)
+            per_point_residuals.append(mean_res)
             per_point_n_cams.append(len(inlier_ids))
             per_point_inlier_ids.append(inlier_ids)
 
@@ -570,15 +587,41 @@ def triangulate_midlines(
         elif len(valid_indices) == 1:
             hw_metres_all[:] = hw_metres_valid[0]
 
-        # Compute summary stats
-        mean_residual = (
-            float(np.mean(per_point_residuals)) if per_point_residuals else 0.0
+        # Compute spline-based residuals: reproject fitted spline into each
+        # camera and compare against observed 2D midline points.  This measures
+        # the quality of the smoothed reconstruction, not raw per-point noise.
+        spline_obj = scipy.interpolate.BSpline(
+            SPLINE_KNOTS, control_points.astype(np.float64), SPLINE_K
         )
-        max_residual_val = (
-            float(np.max(per_point_residuals)) if per_point_residuals else 0.0
-        )
+        u_sample = np.linspace(0.0, 1.0, N_SAMPLE_POINTS)
+        spline_pts_3d = torch.from_numpy(
+            spline_obj(u_sample).astype(np.float32)
+        )  # (N_SAMPLE_POINTS, 3)
+
+        all_residuals: list[float] = []
+        cam_residuals: dict[str, float] = {}
+        cam_ids_active = [cid for cid in cam_midlines if cid in models]
+        for cid in cam_ids_active:
+            proj_px, valid = models[cid].project(spline_pts_3d)
+            proj_np = proj_px.detach().cpu().numpy()
+            valid_np = valid.detach().cpu().numpy()
+            obs_pts = cam_midlines[cid].points  # (N_SAMPLE_POINTS, 2)
+            cam_errs: list[float] = []
+            for j in range(N_SAMPLE_POINTS):
+                if valid_np[j] and not np.any(np.isnan(proj_np[j])):
+                    err = float(np.linalg.norm(proj_np[j] - obs_pts[j]))
+                    cam_errs.append(err)
+                    all_residuals.append(err)
+            if cam_errs:
+                cam_residuals[cid] = float(np.mean(cam_errs))
+
+        mean_residual = float(np.mean(all_residuals)) if all_residuals else 0.0
+        max_residual_val = float(np.max(all_residuals)) if all_residuals else 0.0
+
         min_n_cams = min(per_point_n_cams) if per_point_n_cams else 0
-        is_low_confidence = min_n_cams <= 2
+        # Flag low confidence when >20% of body points have fewer than 3 cameras
+        n_weak = sum(1 for nc in per_point_n_cams if nc < 3)
+        is_low_confidence = n_weak > 0.2 * len(per_point_n_cams)
 
         midline_3d = Midline3D(
             fish_id=fish_id,
@@ -592,6 +635,7 @@ def triangulate_midlines(
             mean_residual=mean_residual,
             max_residual=max_residual_val,
             is_low_confidence=is_low_confidence,
+            per_camera_residuals=cam_residuals,
         )
         results[fish_id] = midline_3d
 

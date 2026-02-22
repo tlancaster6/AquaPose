@@ -1122,6 +1122,95 @@ def write_diagnostic_report(
             )
         lines.append("")
 
+        # Per-camera residual breakdown (averaged over all fish and frames)
+        cam_res_accum: dict[str, list[float]] = {}
+        fish_cam_res: dict[int, dict[str, list[float]]] = {}
+        for frame_midlines in midlines_3d_per_frame:
+            for fid, ml in frame_midlines.items():
+                if ml.per_camera_residuals:
+                    if fid not in fish_cam_res:
+                        fish_cam_res[fid] = {}
+                    for cid, res in ml.per_camera_residuals.items():
+                        cam_res_accum.setdefault(cid, []).append(res)
+                        fish_cam_res[fid].setdefault(cid, []).append(res)
+
+        if cam_res_accum:
+            # Fish x Camera residual matrix
+            all_cam_ids = sorted(cam_res_accum)
+            all_fish_ids = sorted(fish_cam_res)
+            lines.append("### Per-Camera Residual Breakdown (mean px)")
+            lines.append("")
+            header = "| Fish \\ Cam | " + " | ".join(all_cam_ids) + " |"
+            sep = "|-----------|" + "|".join("---:" for _ in all_cam_ids) + "|"
+            lines.append(header)
+            lines.append(sep)
+            for fid in all_fish_ids:
+                cells = []
+                for cid in all_cam_ids:
+                    vals = fish_cam_res.get(fid, {}).get(cid, [])
+                    if vals:
+                        mean_val = float(np.mean(vals))
+                        # Flag outliers with bold
+                        if mean_val > 50.0:
+                            cells.append(f"**{mean_val:.0f}**")
+                        else:
+                            cells.append(f"{mean_val:.1f}")
+                    else:
+                        cells.append("-")
+                lines.append(f"| {fid} | " + " | ".join(cells) + " |")
+
+            # Camera summary row
+            cells = []
+            for cid in all_cam_ids:
+                vals = cam_res_accum[cid]
+                cells.append(f"{float(np.mean(vals)):.1f}")
+            lines.append("| **All** | " + " | ".join(cells) + " |")
+            lines.append("")
+
+        # Arc length distribution
+        all_arc_for_dist = [
+            ml.arc_length for fm in midlines_3d_per_frame for ml in fm.values()
+        ]
+        if all_arc_for_dist:
+            arc_arr = np.array(all_arc_for_dist)
+            lines.append("### Arc Length Distribution")
+            lines.append("")
+            lines.append(
+                f"| Stat | Value (m) |\n|------|----------|\n"
+                f"| Min | {float(arc_arr.min()):.4f} |\n"
+                f"| P5 | {float(np.percentile(arc_arr, 5)):.4f} |\n"
+                f"| P25 | {float(np.percentile(arc_arr, 25)):.4f} |\n"
+                f"| Median | {float(np.median(arc_arr)):.4f} |\n"
+                f"| P75 | {float(np.percentile(arc_arr, 75)):.4f} |\n"
+                f"| P95 | {float(np.percentile(arc_arr, 95)):.4f} |\n"
+                f"| Max | {float(arc_arr.max()):.4f} |"
+            )
+            lines.append("")
+
+        # Per-fish temporal stability: arc length std over time
+        # High std → identity swaps or reconstruction instability
+        lines.append("### Temporal Stability (per-fish arc length)")
+        lines.append("")
+        lines.append(
+            "| Fish ID | Mean Arc (m) | Std Arc (m) | CoV | Mean Residual Std (px) |"
+        )
+        lines.append(
+            "|---------|-------------|------------|-----|----------------------|"
+        )
+        for fid in sorted(fish_tri_stats):
+            s = fish_tri_stats[fid]
+            arcs = np.array(s["arc_lengths"])
+            resids = np.array(s["mean_residuals"])
+            mean_a = float(arcs.mean())
+            std_a = float(arcs.std())
+            cov = std_a / mean_a if mean_a > 0 else 0.0
+            std_r = float(resids.std())
+            cov_str = f"**{cov:.2f}**" if cov > 0.3 else f"{cov:.2f}"
+            lines.append(
+                f"| {fid} | {mean_a:.4f} | {std_a:.4f} | {cov_str} | {std_r:.1f} |"
+            )
+        lines.append("")
+
         # Overall summary
         all_mean_res = [
             ml.mean_residual for fm in midlines_3d_per_frame for ml in fm.values()
@@ -1166,3 +1255,59 @@ def write_diagnostic_report(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("\n".join(lines), encoding="utf-8")
     logger.info("Diagnostic report written to %s", output_path)
+
+    # Write per-frame CSV for time-series analysis
+    csv_path = output_path.with_name("per_frame_metrics.csv")
+    csv_lines = [
+        "frame,fish_id,mean_residual_px,max_residual_px,arc_length_m,"
+        "n_cameras,is_low_confidence,"
+        + ",".join(
+            f"res_{cid}"
+            for cid in sorted(
+                {
+                    cid
+                    for fm in midlines_3d_per_frame
+                    for ml in fm.values()
+                    if ml.per_camera_residuals
+                    for cid in ml.per_camera_residuals
+                }
+            )
+        )
+    ]
+    all_cam_ids_csv = sorted(
+        {
+            cid
+            for fm in midlines_3d_per_frame
+            for ml in fm.values()
+            if ml.per_camera_residuals
+            for cid in ml.per_camera_residuals
+        }
+    )
+    # Rewrite header with known camera list
+    csv_lines = [
+        "frame,fish_id,mean_residual_px,max_residual_px,arc_length_m,"
+        "n_cameras,is_low_confidence"
+        + (
+            "," + ",".join(f"res_{c}" for c in all_cam_ids_csv)
+            if all_cam_ids_csv
+            else ""
+        )
+    ]
+    for fi, fm in enumerate(midlines_3d_per_frame):
+        for fid, ml in sorted(fm.items()):
+            cam_vals = []
+            for cid in all_cam_ids_csv:
+                if ml.per_camera_residuals and cid in ml.per_camera_residuals:
+                    cam_vals.append(f"{ml.per_camera_residuals[cid]:.2f}")
+                else:
+                    cam_vals.append("")
+            row = (
+                f"{fi},{fid},{ml.mean_residual:.2f},{ml.max_residual:.2f},"
+                f"{ml.arc_length:.6f},{ml.n_cameras},"
+                f"{int(ml.is_low_confidence)}"
+            )
+            if cam_vals:
+                row += "," + ",".join(cam_vals)
+            csv_lines.append(row)
+    csv_path.write_text("\n".join(csv_lines), encoding="utf-8")
+    logger.info("Per-frame metrics CSV written to %s", csv_path)

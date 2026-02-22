@@ -14,6 +14,11 @@ from aquapose.segmentation.detector import Detection
 # Default tank depth below water surface used for single-view centroid heuristic.
 _DEFAULT_TANK_DEPTH: float = 0.5
 
+# Max XY shift (metres) allowed when re-triangulating from inlier rays.
+# If the refined centroid moves further than this, inliers likely include
+# detections from a different physical fish; the original seed is kept.
+_RETRI_MAX_SHIFT: float = 0.05
+
 
 @dataclass
 class AssociationResult:
@@ -507,6 +512,31 @@ def ransac_centroid_cluster(
         )
 
         if len(inliers) >= min_cameras:
+            # Re-triangulate using ALL inlier rays (not just the 2-camera
+            # seed) to improve 3D accuracy when 3+ cameras see the fish.
+            # Guard: reject if centroid shifts too far (mixed-fish inliers).
+            if len(inliers) > 2:
+                inlier_origins = []
+                inlier_dirs = []
+                for inlier_cam, inlier_det in inliers:
+                    if inlier_cam in rays_per_camera:
+                        o, d = rays_per_camera[inlier_cam]
+                        if inlier_det < o.shape[0]:
+                            inlier_origins.append(o[inlier_det])
+                            inlier_dirs.append(d[inlier_det])
+                if len(inlier_origins) >= 3:
+                    with torch.no_grad():
+                        try:
+                            refined = triangulate_rays(
+                                torch.stack(inlier_origins),
+                                torch.stack(inlier_dirs),
+                            )
+                            xy_shift = float(torch.norm(refined[:2] - candidate_3d[:2]))
+                            if xy_shift < _RETRI_MAX_SHIFT:
+                                candidate_3d = refined
+                        except Exception:
+                            pass  # keep original 2-camera result
+
             # Only mark the *sampled* detections as assigned (not all inliers)
             # so future iterations can still sample from other cameras for
             # the same fish — the merge pass will unify them.

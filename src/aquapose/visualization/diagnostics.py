@@ -17,6 +17,7 @@ import cv2
 import numpy as np
 from matplotlib import pyplot as plt
 
+from aquapose.io.video import VideoSet
 from aquapose.visualization.overlay import FISH_COLORS, draw_midline_overlay
 
 if TYPE_CHECKING:
@@ -56,27 +57,6 @@ class TrackSnapshot:
 # ---------------------------------------------------------------------------
 
 
-def _read_video_frame(video_path: Path, frame_idx: int) -> np.ndarray | None:
-    """Read a single frame from a video file by index.
-
-    Args:
-        video_path: Path to the video file.
-        frame_idx: Zero-based frame index to read.
-
-    Returns:
-        BGR frame as uint8 ndarray, or None if the frame could not be read.
-    """
-    cap = cv2.VideoCapture(str(video_path))
-    try:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-        ret, frame = cap.read()
-        if ret:
-            return frame
-        return None
-    finally:
-        cap.release()
-
-
 # ---------------------------------------------------------------------------
 # Stage 1: Detection
 # ---------------------------------------------------------------------------
@@ -84,7 +64,7 @@ def _read_video_frame(video_path: Path, frame_idx: int) -> np.ndarray | None:
 
 def vis_detection_grid(
     detections_per_frame: list[dict[str, list[Detection]]],
-    video_paths: dict[str, Path],
+    video_set: VideoSet,
     output_path: Path,
 ) -> None:
     """Save a 3x3 grid of frames with detection bounding boxes.
@@ -94,7 +74,7 @@ def vis_detection_grid(
 
     Args:
         detections_per_frame: Per-frame detection dicts from Stage 1.
-        video_paths: Camera ID to video path mapping.
+        video_set: Opened VideoSet providing undistorted frames.
         output_path: Output PNG path.
     """
     n_frames = len(detections_per_frame)
@@ -102,6 +82,7 @@ def vis_detection_grid(
         logger.warning("vis_detection_grid: no frames")
         return
 
+    camera_ids = set(video_set.camera_ids)
     frame_indices = np.linspace(0, n_frames - 1, 9, dtype=int)
 
     fig, axes = plt.subplots(3, 3, figsize=(15, 12))
@@ -113,13 +94,14 @@ def vis_detection_grid(
 
         # Pick camera with most detections
         best_cam = max(frame_dets, key=lambda c: len(frame_dets[c]), default=None)
-        if best_cam is None or best_cam not in video_paths:
+        if best_cam is None or best_cam not in camera_ids:
             ax.set_title(f"Frame {fi}: no data")
             ax.axis("off")
             continue
 
-        frame = _read_video_frame(video_paths[best_cam], fi)
-        if frame is None:
+        try:
+            frame = video_set.read_frame(fi)[best_cam]
+        except (IndexError, RuntimeError):
             ax.set_title(f"Frame {fi}: read failed")
             ax.axis("off")
             continue
@@ -200,7 +182,7 @@ def vis_confidence_histogram(
 def vis_claiming_overlay(
     snapshots_per_frame: list[list[TrackSnapshot]],
     detections_per_frame: list[dict[str, list[Detection]]],
-    video_paths: dict[str, Path],
+    video_set: VideoSet,
     models: dict[str, RefractiveProjectionModel],
     output_path: Path,
     *,
@@ -215,7 +197,7 @@ def vis_claiming_overlay(
     Args:
         snapshots_per_frame: Per-frame lists of TrackSnapshot objects.
         detections_per_frame: Per-frame detection dicts from Stage 1.
-        video_paths: Camera ID to video path mapping.
+        video_set: Opened VideoSet providing undistorted frames.
         models: Per-camera refractive projection models.
         output_path: Output MP4 path.
         cameras: Optional list of 4 camera IDs. If None, picks top 4 by
@@ -229,6 +211,8 @@ def vis_claiming_overlay(
         logger.warning("vis_claiming_overlay: no frames")
         return
 
+    available_cams = set(video_set.camera_ids)
+
     # Select top cameras by detection count (up to 6 for 2x3 grid)
     if cameras is None:
         cam_counts: dict[str, int] = {}
@@ -238,128 +222,113 @@ def vis_claiming_overlay(
         sorted_cams = sorted(cam_counts, key=lambda c: cam_counts[c], reverse=True)
         cameras = sorted_cams[:6]
 
-    cameras = [c for c in cameras if c in video_paths]
+    cameras = [c for c in cameras if c in available_cams]
     if not cameras:
         logger.warning("vis_claiming_overlay: no valid cameras")
         return
 
-    # Open video captures
-    captures: dict[str, cv2.VideoCapture] = {}
+    # Determine tile size from first frame (2x3 grid: 2 rows, 3 cols)
+    n_cols = 3
+    n_rows = 2
+    sample_frame = video_set.read_frame(0)[cameras[0]]
+    full_h, full_w = sample_frame.shape[:2]
+    tile_w = full_w // n_cols
+    tile_h = full_h // n_rows
+
+    out_w = tile_w * n_cols
+    out_h = tile_h * n_rows
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fourcc = cv2.VideoWriter.fourcc(*"mp4v")
+    writer = cv2.VideoWriter(str(output_path), fourcc, fps, (out_w, out_h))
+
     try:
-        for cam in cameras:
-            cap = cv2.VideoCapture(str(video_paths[cam]))
-            if not cap.isOpened():
-                logger.warning("Cannot open video for camera %s", cam)
-                continue
-            captures[cam] = cap
+        for fi in range(min(n_frames, len(snapshots_per_frame))):
+            canvas = np.zeros((out_h, out_w, 3), dtype=np.uint8)
+            frame_snaps = snapshots_per_frame[fi]
+            frame_dets = detections_per_frame[fi]
 
-        if not captures:
-            return
+            # Read all camera frames for this index
+            all_frames = video_set.read_frame(fi)
 
-        # Determine tile size from first frame (2x3 grid: 2 rows, 3 cols)
-        n_cols = 3
-        n_rows = 2
-        sample_cap = next(iter(captures.values()))
-        tile_w = int(sample_cap.get(cv2.CAP_PROP_FRAME_WIDTH)) // n_cols
-        tile_h = int(sample_cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) // n_rows
+            # Build claim lookup: cam -> det_idx -> fish_id
+            claim_map: dict[str, dict[int, int]] = {}
+            for snap in frame_snaps:
+                for cam, di in snap.camera_detections.items():
+                    claim_map.setdefault(cam, {})[di] = snap.fish_id
 
-        out_w = tile_w * n_cols
-        out_h = tile_h * n_rows
+            for cam_idx, cam in enumerate(cameras[: n_cols * n_rows]):
+                if cam not in all_frames:
+                    continue
+                frame = all_frames[cam]
 
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        fourcc = cv2.VideoWriter.fourcc(*"mp4v")
-        writer = cv2.VideoWriter(str(output_path), fourcc, fps, (out_w, out_h))
+                tile = cv2.resize(frame, (tile_w, tile_h))
+                scale_x = tile_w / frame.shape[1]
+                scale_y = tile_h / frame.shape[0]
 
-        try:
-            for fi in range(min(n_frames, len(snapshots_per_frame))):
-                canvas = np.zeros((out_h, out_w, 3), dtype=np.uint8)
-                frame_snaps = snapshots_per_frame[fi]
-                frame_dets = detections_per_frame[fi]
+                dets = frame_dets.get(cam, [])
+                cam_claims = claim_map.get(cam, {})
 
-                # Build claim lookup: cam -> det_idx -> fish_id
-                claim_map: dict[str, dict[int, int]] = {}
-                for snap in frame_snaps:
-                    for cam, di in snap.camera_detections.items():
-                        claim_map.setdefault(cam, {})[di] = snap.fish_id
+                # Draw all detection boxes
+                for di, det in enumerate(dets):
+                    bx, by, bw, bh = det.bbox
+                    sx = int(bx * scale_x)
+                    sy = int(by * scale_y)
+                    sw = int(bw * scale_x)
+                    sh = int(bh * scale_y)
 
-                for cam_idx, cam in enumerate(cameras[: n_cols * n_rows]):
-                    # Read frame
-                    if cam not in captures:
-                        continue
-                    ret, frame = captures[cam].read()
-                    if not ret:
-                        continue
+                    if di in cam_claims:
+                        fish_id = cam_claims[di]
+                        color = FISH_COLORS[fish_id % len(FISH_COLORS)]
+                    else:
+                        color = (128, 128, 128)
 
-                    tile = cv2.resize(frame, (tile_w, tile_h))
-                    scale_x = tile_w / frame.shape[1]
-                    scale_y = tile_h / frame.shape[0]
+                    cv2.rectangle(tile, (sx, sy), (sx + sw, sy + sh), color, 2)
 
-                    dets = frame_dets.get(cam, [])
-                    cam_claims = claim_map.get(cam, {})
+                # Draw reprojected track positions
+                if cam in models:
+                    model = models[cam]
+                    for snap in frame_snaps:
+                        color = FISH_COLORS[snap.fish_id % len(FISH_COLORS)]
+                        pos_tensor = torch.tensor(
+                            snap.position, dtype=torch.float32
+                        ).unsqueeze(0)
+                        pixels, valid = model.project(pos_tensor)
+                        if valid[0]:
+                            px = int(float(pixels[0, 0]) * scale_x)
+                            py = int(float(pixels[0, 1]) * scale_y)
+                            cv2.circle(tile, (px, py), 5, color, -1)
 
-                    # Draw all detection boxes
-                    for di, det in enumerate(dets):
-                        bx, by, bw, bh = det.bbox
-                        sx = int(bx * scale_x)
-                        sy = int(by * scale_y)
-                        sw = int(bw * scale_x)
-                        sh = int(bh * scale_y)
+                            # Draw line to claimed bbox center
+                            if cam in snap.camera_detections:
+                                di = snap.camera_detections[cam]
+                                if di < len(dets):
+                                    bx, by, bw, bh = dets[di].bbox
+                                    cx = int((bx + bw / 2) * scale_x)
+                                    cy = int((by + bh / 2) * scale_y)
+                                    cv2.line(tile, (px, py), (cx, cy), color, 1)
 
-                        if di in cam_claims:
-                            fish_id = cam_claims[di]
-                            color = FISH_COLORS[fish_id % len(FISH_COLORS)]
-                        else:
-                            color = (128, 128, 128)
+                # Place tile in canvas
+                row = cam_idx // n_cols
+                col = cam_idx % n_cols
+                y0, y1 = row * tile_h, (row + 1) * tile_h
+                x0, x1 = col * tile_w, (col + 1) * tile_w
+                canvas[y0:y1, x0:x1] = tile
 
-                        cv2.rectangle(tile, (sx, sy), (sx + sw, sy + sh), color, 2)
+                # Camera label
+                cv2.putText(
+                    canvas,
+                    cam,
+                    (x0 + 5, y0 + 20),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (255, 255, 255),
+                    1,
+                )
 
-                    # Draw reprojected track positions
-                    if cam in models:
-                        model = models[cam]
-                        for snap in frame_snaps:
-                            color = FISH_COLORS[snap.fish_id % len(FISH_COLORS)]
-                            pos_tensor = torch.tensor(
-                                snap.position, dtype=torch.float32
-                            ).unsqueeze(0)
-                            pixels, valid = model.project(pos_tensor)
-                            if valid[0]:
-                                px = int(float(pixels[0, 0]) * scale_x)
-                                py = int(float(pixels[0, 1]) * scale_y)
-                                cv2.circle(tile, (px, py), 5, color, -1)
-
-                                # Draw line to claimed bbox center
-                                if cam in snap.camera_detections:
-                                    di = snap.camera_detections[cam]
-                                    if di < len(dets):
-                                        bx, by, bw, bh = dets[di].bbox
-                                        cx = int((bx + bw / 2) * scale_x)
-                                        cy = int((by + bh / 2) * scale_y)
-                                        cv2.line(tile, (px, py), (cx, cy), color, 1)
-
-                    # Place tile in canvas
-                    row = cam_idx // n_cols
-                    col = cam_idx % n_cols
-                    y0, y1 = row * tile_h, (row + 1) * tile_h
-                    x0, x1 = col * tile_w, (col + 1) * tile_w
-                    canvas[y0:y1, x0:x1] = tile
-
-                    # Camera label
-                    cv2.putText(
-                        canvas,
-                        cam,
-                        (x0 + 5, y0 + 20),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.6,
-                        (255, 255, 255),
-                        1,
-                    )
-
-                writer.write(canvas)
-        finally:
-            writer.release()
+            writer.write(canvas)
     finally:
-        for cap in captures.values():
-            cap.release()
+        writer.release()
 
     logger.info("Claiming overlay video saved to %s", output_path)
 
@@ -373,7 +342,7 @@ def vis_midline_extraction_montage(
     tracks_per_frame: list[list[FishTrack]],
     masks_per_frame: list[dict[str, list[tuple[np.ndarray, CropRegion]]]],
     detections_per_frame: list[dict[str, list[Detection]]],
-    video_paths: dict[str, Path],
+    video_set: VideoSet,
     output_path: Path,
 ) -> None:
     """Save a 5x5 montage showing crop and midline extraction sub-pipeline stages.
@@ -386,7 +355,7 @@ def vis_midline_extraction_montage(
         tracks_per_frame: Per-frame confirmed track lists from Stage 3.
         masks_per_frame: Per-frame mask dicts from Stage 2.
         detections_per_frame: Per-frame detection dicts from Stage 1.
-        video_paths: Camera ID to video path mapping.
+        video_set: Opened VideoSet providing undistorted frames.
         output_path: Output PNG path.
     """
     from aquapose.reconstruction.midline import (
@@ -398,6 +367,7 @@ def vis_midline_extraction_montage(
     )
 
     # Build flat list of valid (frame_idx, cam, det_idx, mask, crop_region) tuples
+    camera_ids = set(video_set.camera_ids)
     valid_tuples: list[tuple[int, str, int, np.ndarray, CropRegion]] = []
     for fi, tracks in enumerate(tracks_per_frame):
         if fi >= len(masks_per_frame):
@@ -405,7 +375,7 @@ def vis_midline_extraction_montage(
         frame_masks = masks_per_frame[fi]
         for track in tracks:
             for cam, di in track.camera_detections.items():
-                if cam not in frame_masks or cam not in video_paths:
+                if cam not in frame_masks or cam not in camera_ids:
                     continue
                 mask_list = frame_masks[cam]
                 if di >= len(mask_list):
@@ -431,9 +401,10 @@ def vis_midline_extraction_montage(
     for ax_idx, (fi, cam, _di, mask, crop_region) in enumerate(samples):
         ax = axes_flat[ax_idx]
 
-        # Read the raw frame and extract the crop
-        frame = _read_video_frame(video_paths[cam], fi)
-        if frame is None:
+        # Read the frame (undistorted via VideoSet) and extract the crop
+        try:
+            frame = video_set.read_frame(fi)[cam]
+        except (IndexError, RuntimeError, KeyError):
             ax.set_title(f"F{fi} {cam}")
             ax.axis("off")
             continue
@@ -734,7 +705,7 @@ def vis_arclength_histogram(
 def vis_spline_camera_overlay(
     midlines_3d_per_frame: list[dict[int, Midline3D]],
     models: dict[str, RefractiveProjectionModel],
-    video_paths: dict[str, Path],
+    video_set: VideoSet,
     output_path: Path,
 ) -> None:
     """Save a cropped camera frame with all 3D splines reprojected onto it.
@@ -745,7 +716,7 @@ def vis_spline_camera_overlay(
     Args:
         midlines_3d_per_frame: Per-frame triangulation results from Stage 5.
         models: Per-camera refractive projection models.
-        video_paths: Camera ID to video path mapping.
+        video_set: Opened VideoSet providing undistorted frames.
         output_path: Output PNG path.
     """
     import scipy.interpolate
@@ -769,13 +740,14 @@ def vis_spline_camera_overlay(
         return
 
     frame_midlines = midlines_3d_per_frame[best_fi]
+    camera_ids = set(video_set.camera_ids)
 
     # For each camera, count how many splines project within image bounds
     best_cam = None
     best_cam_count = 0
 
     for cam_id in models:
-        if cam_id not in video_paths:
+        if cam_id not in camera_ids:
             continue
         model = models[cam_id]
         in_bounds = 0
@@ -804,9 +776,10 @@ def vis_spline_camera_overlay(
         logger.warning("vis_spline_camera_overlay: no camera with valid projections")
         return
 
-    # Read the frame
-    frame = _read_video_frame(video_paths[best_cam], best_fi)
-    if frame is None:
+    # Read the frame (undistorted via VideoSet to match projection model coordinates)
+    try:
+        frame = video_set.read_frame(best_fi)[best_cam]
+    except (IndexError, RuntimeError, KeyError):
         logger.warning("vis_spline_camera_overlay: could not read frame")
         return
 

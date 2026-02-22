@@ -522,77 +522,83 @@ def main() -> int:
     # -----------------------------------------------------------------------
     print("\n=== Generating Diagnostic Visualizations ===")
 
-    vis_funcs = [
-        (
-            "detection_grid.png",
-            lambda: vis_detection_grid(
-                detections_per_frame, video_paths, diag_dir / "detection_grid.png"
+    with VideoSet(video_paths, undistortion=undist_maps) as vis_video_set:
+        vis_funcs = [
+            (
+                "detection_grid.png",
+                lambda: vis_detection_grid(
+                    detections_per_frame,
+                    vis_video_set,
+                    diag_dir / "detection_grid.png",
+                ),
             ),
-        ),
-        (
-            "confidence_histogram.png",
-            lambda: vis_confidence_histogram(
-                detections_per_frame, diag_dir / "confidence_histogram.png"
+            (
+                "confidence_histogram.png",
+                lambda: vis_confidence_histogram(
+                    detections_per_frame, diag_dir / "confidence_histogram.png"
+                ),
             ),
-        ),
-        (
-            "3d_animation.mp4",
-            lambda: render_3d_animation(midlines_3d, diag_dir / "3d_animation"),
-        ),
-        (
-            "claiming_overlay.mp4",
-            lambda: vis_claiming_overlay(
-                snapshots_per_frame,
-                detections_per_frame,
-                video_paths,
-                models,
-                diag_dir / "claiming_overlay.mp4",
-                cameras=args.cameras,
+            (
+                "3d_animation.mp4",
+                lambda: render_3d_animation(midlines_3d, diag_dir / "3d_animation"),
             ),
-        ),
-        (
-            "midline_montage.png",
-            lambda: vis_midline_extraction_montage(
-                tracks_per_frame,
-                masks_per_frame,
-                detections_per_frame,
-                video_paths,
-                diag_dir / "midline_montage.png",
+            (
+                "claiming_overlay.mp4",
+                lambda: vis_claiming_overlay(
+                    snapshots_per_frame,
+                    detections_per_frame,
+                    vis_video_set,
+                    models,
+                    diag_dir / "claiming_overlay.mp4",
+                    cameras=args.cameras,
+                ),
             ),
-        ),
-        (
-            "skip_reasons.png",
-            lambda: vis_skip_reason_pie(
-                tracks_per_frame, masks_per_frame, diag_dir / "skip_reasons.png"
+            (
+                "midline_montage.png",
+                lambda: vis_midline_extraction_montage(
+                    tracks_per_frame,
+                    masks_per_frame,
+                    detections_per_frame,
+                    vis_video_set,
+                    diag_dir / "midline_montage.png",
+                ),
             ),
-        ),
-        (
-            "residual_heatmap.png",
-            lambda: vis_residual_heatmap(
-                midlines_3d, diag_dir / "residual_heatmap.png"
+            (
+                "skip_reasons.png",
+                lambda: vis_skip_reason_pie(
+                    tracks_per_frame, masks_per_frame, diag_dir / "skip_reasons.png"
+                ),
             ),
-        ),
-        (
-            "arclength_histogram.png",
-            lambda: vis_arclength_histogram(
-                midlines_3d, diag_dir / "arclength_histogram.png"
+            (
+                "residual_heatmap.png",
+                lambda: vis_residual_heatmap(
+                    midlines_3d, diag_dir / "residual_heatmap.png"
+                ),
             ),
-        ),
-        (
-            "spline_overlay.png",
-            lambda: vis_spline_camera_overlay(
-                midlines_3d, models, video_paths, diag_dir / "spline_overlay.png"
+            (
+                "arclength_histogram.png",
+                lambda: vis_arclength_histogram(
+                    midlines_3d, diag_dir / "arclength_histogram.png"
+                ),
             ),
-        ),
-    ]
+            (
+                "spline_overlay.png",
+                lambda: vis_spline_camera_overlay(
+                    midlines_3d,
+                    models,
+                    vis_video_set,
+                    diag_dir / "spline_overlay.png",
+                ),
+            ),
+        ]
 
-    for name, func in vis_funcs:
-        try:
-            print(f"  Generating {name}...")
-            func()
-        except Exception as exc:
-            print(f"  [WARN] Failed to generate {name}: {exc}")
-            logger.exception("Failed to generate %s", name)
+        for name, func in vis_funcs:
+            try:
+                print(f"  Generating {name}...")
+                func()
+            except Exception as exc:
+                print(f"  [WARN] Failed to generate {name}: {exc}")
+                logger.exception("Failed to generate %s", name)
 
     # -----------------------------------------------------------------------
     # Quantitative Markdown Report

@@ -861,5 +861,21 @@ def discover_births(
         min_cameras=min_cameras,
     )
 
+    # Remap camera_detections indices from filtered-list space back to
+    # original detections_per_camera space.  RANSAC operated on filtered
+    # lists where index 0 may correspond to original index 5, etc.
+    index_mapping: dict[str, list[int]] = {
+        cam_id: list(indices) for cam_id, indices in unclaimed_indices.items()
+    }
+    for assoc in result.associations:
+        remapped: dict[str, int] = {}
+        for cam_id, filtered_idx in assoc.camera_detections.items():
+            mapping = index_mapping.get(cam_id)
+            if mapping is not None and filtered_idx < len(mapping):
+                remapped[cam_id] = mapping[filtered_idx]
+            else:
+                remapped[cam_id] = filtered_idx
+        assoc.camera_detections = remapped
+
     # Filter to high-confidence associations only (births require multi-view)
     return [a for a in result.associations if not a.is_low_confidence]

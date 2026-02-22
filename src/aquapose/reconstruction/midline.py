@@ -60,14 +60,21 @@ class Midline2D:
 # ---------------------------------------------------------------------------
 
 
-def _check_skip_mask(mask: np.ndarray, min_area: int = 300) -> str | None:
+def _check_skip_mask(
+    mask: np.ndarray,
+    crop_region: CropRegion,
+    min_area: int = 300,
+) -> str | None:
     """Return a skip reason if the mask should be discarded, else None.
 
-    Skips masks that are too small or have foreground pixels touching any
-    edge of the crop (indicating the fish is partially outside the crop).
+    Skips masks that are too small or have foreground pixels touching the
+    full-frame image boundary (indicating the fish is partially outside
+    the camera's field of view). Only checks crop edges that coincide
+    with the full-frame boundary.
 
     Args:
         mask: Binary mask, uint8, values 0 or 255 (or 0/1). Shape (H, W).
+        crop_region: CropRegion with full-frame position and frame dimensions.
         min_area: Minimum number of nonzero pixels required.
 
     Returns:
@@ -77,14 +84,16 @@ def _check_skip_mask(mask: np.ndarray, min_area: int = 300) -> str | None:
     if nonzero < min_area:
         return f"too small: {nonzero} < {min_area}"
 
-    # Check if any foreground pixel touches any edge
-    if (
-        np.any(mask[0, :])
-        or np.any(mask[-1, :])
-        or np.any(mask[:, 0])
-        or np.any(mask[:, -1])
-    ):
-        return "boundary-clipped: mask touches crop edge"
+    # Only check edges where the crop touches the full-frame boundary.
+    # Mask pixels at interior crop edges are fine (fish continues in frame).
+    if crop_region.y1 == 0 and np.any(mask[0, :]):
+        return "boundary-clipped: mask touches top frame edge"
+    if crop_region.y2 >= crop_region.frame_h and np.any(mask[-1, :]):
+        return "boundary-clipped: mask touches bottom frame edge"
+    if crop_region.x1 == 0 and np.any(mask[:, 0]):
+        return "boundary-clipped: mask touches left frame edge"
+    if crop_region.x2 >= crop_region.frame_w and np.any(mask[:, -1]):
+        return "boundary-clipped: mask touches right frame edge"
 
     return None
 
@@ -500,7 +509,7 @@ class MidlineExtractor:
                 crop_h, crop_w = mask.shape[:2]
 
                 # 1. Check skip conditions
-                skip_reason = _check_skip_mask(mask, self.min_area)
+                skip_reason = _check_skip_mask(mask, crop_region, self.min_area)
                 if skip_reason:
                     logger.debug(
                         "Skipping fish %d camera %s frame %d: %s",

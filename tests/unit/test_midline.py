@@ -168,24 +168,37 @@ class _MockProjectionModel:
 def test_check_skip_mask_valid() -> None:
     """Valid long mask should pass (returns None)."""
     mask = _make_long_mask()
-    result = _check_skip_mask(mask)
+    crop = _make_crop_region()  # interior crop — no frame edges
+    result = _check_skip_mask(mask, crop)
     assert result is None
 
 
 def test_check_skip_mask_too_small() -> None:
     """Tiny mask should be skipped with 'too small' reason."""
     mask = _make_tiny_mask()
-    result = _check_skip_mask(mask)
+    crop = _make_crop_region()
+    result = _check_skip_mask(mask, crop)
     assert result is not None
     assert "too small" in result.lower()
 
 
 def test_check_skip_mask_boundary_clipped() -> None:
-    """Mask touching top edge should be skipped with 'boundary' reason."""
-    mask = _make_boundary_mask()
-    result = _check_skip_mask(mask)
+    """Mask touching top frame edge should be skipped with 'boundary' reason."""
+    mask = _make_boundary_mask()  # touches top of 64x64 crop
+    # Crop at the top of the frame (y1=0), so the crop's top edge IS the frame edge
+    crop = CropRegion(x1=100, y1=0, x2=164, y2=64, frame_h=1200, frame_w=1600)
+    result = _check_skip_mask(mask, crop)
     assert result is not None
     assert "boundary" in result.lower()
+
+
+def test_check_skip_mask_boundary_interior_crop() -> None:
+    """Mask touching crop edge but NOT frame edge should NOT be skipped."""
+    mask = _make_boundary_mask()  # touches top of 64x64 crop
+    # Crop is interior (y1=200), so the crop's top edge is NOT the frame edge
+    crop = CropRegion(x1=100, y1=200, x2=164, y2=264, frame_h=1200, frame_w=1600)
+    result = _check_skip_mask(mask, crop)
+    assert result is None
 
 
 # ---------------------------------------------------------------------------

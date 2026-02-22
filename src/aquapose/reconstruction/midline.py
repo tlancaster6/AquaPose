@@ -1,8 +1,8 @@
 """2D medial axis extraction and arc-length sampling pipeline.
 
 Extracts ordered 15-point 2D midlines with half-widths from binary fish masks.
-Produces Midline2D structs in full-frame pixel coordinates with consistent
-head-to-tail orientation via 3D velocity cues and back-correction buffering.
+Produces Midline2D structs in full-frame pixel coordinates. Point ordering is
+arbitrary (BFS traversal); cross-camera flip alignment is handled downstream.
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ class Midline2D:
     fish_id: int
     camera_id: str
     frame_index: int
-    is_head_to_tail: bool = True
+    is_head_to_tail: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -322,84 +322,6 @@ def _crop_to_frame(
     return xy_frame, hw_frame
 
 
-def _orient_midline(
-    xy_frame: np.ndarray,
-    track: FishTrack,
-    camera_id: str,
-    projection_models: dict,
-    fps: float,
-    body_length_m: float,
-) -> tuple[np.ndarray, bool]:
-    """Orient midline endpoints so point[0] is closest to the head.
-
-    Projects a predicted 3D head position into this camera and compares
-    distance to both endpoints. If the fish is moving too slowly to
-    determine orientation, returns is_established=False so the caller
-    can apply inheritance.
-
-    Args:
-        xy_frame: Full-frame midline points, shape (N, 2), float32.
-        track: FishTrack with positions and velocity.
-        camera_id: Camera identifier (key into projection_models).
-        projection_models: Dict mapping camera_id to projection model
-            with a project(points) method.
-        fps: Frames per second (for speed threshold conversion).
-        body_length_m: Fish body length in metres (for speed threshold).
-
-    Returns:
-        oriented_xy: Midline oriented head-to-tail, shape (N, 2), float32.
-        is_established: True if orientation was determined from velocity;
-            False if speed was below threshold (inheritance required).
-    """
-    velocity_threshold_bls = 0.5  # body-lengths per second
-    speed_threshold_mps = velocity_threshold_bls * body_length_m  # m/s
-    speed_threshold_mpf = speed_threshold_mps / fps  # m/frame
-
-    # Compute current speed
-    vel = track.velocity  # shape (3,)
-    speed = float(np.linalg.norm(vel))
-
-    if speed < speed_threshold_mpf:
-        return xy_frame, False
-
-    # Predicted head position: centroid + velocity_unit * half_body
-    if len(track.positions) == 0:
-        return xy_frame, False
-
-    last_pos = list(track.positions)[-1]  # shape (3,)
-    vel_unit = vel / (speed + 1e-12)
-    half_body = body_length_m / 2.0
-    head_3d = last_pos + vel_unit * half_body  # shape (3,)
-
-    # Project head position into this camera
-    model = projection_models.get(camera_id)
-    if model is None:
-        return xy_frame, False
-
-    try:
-        import torch
-
-        head_tensor = torch.tensor(head_3d, dtype=torch.float32).unsqueeze(0)  # (1, 3)
-        pixels, valid = model.project(head_tensor)
-        if not valid[0]:
-            return xy_frame, False
-        head_2d = pixels[0].numpy()  # (2,) = (u, v)
-    except Exception:
-        return xy_frame, False
-
-    # Compare distances from head_2d to both endpoints
-    p0 = xy_frame[0]  # (2,)
-    p1 = xy_frame[-1]  # (2,)
-    dist0 = float(np.linalg.norm(p0 - head_2d))
-    dist1 = float(np.linalg.norm(p1 - head_2d))
-
-    if dist1 < dist0:
-        # Endpoint[-1] is closer to head — flip
-        return xy_frame[::-1].copy(), True
-
-    return xy_frame, True
-
-
 # ---------------------------------------------------------------------------
 # Stateful extractor
 # ---------------------------------------------------------------------------
@@ -409,46 +331,22 @@ class MidlineExtractor:
     """Extracts ordered 2D midlines from per-camera binary masks.
 
     Handles the full pipeline: mask validation, morphological smoothing,
-    skeletonization, longest-path pruning, arc-length resampling,
-    coordinate transform, and head-to-tail orientation with inheritance
-    and back-correction buffering.
+    skeletonization, longest-path pruning, arc-length resampling, and
+    coordinate transform. Head-to-tail orientation is deferred to the
+    triangulation stage (cross-camera flip alignment).
 
     Args:
         n_points: Number of midline points to produce. Default 15.
         min_area: Minimum mask area (pixels) to attempt extraction. Default 300.
-        fps: Video frame rate, used to convert speed thresholds. Default 30.0.
-        body_length_m: Typical fish body length in metres. Default 0.15.
-        velocity_threshold_bls: Speed threshold in body-lengths/second below
-            which orientation is considered ambiguous. Default 0.5.
     """
 
     def __init__(
         self,
         n_points: int = 15,
         min_area: int = 300,
-        fps: float = 30.0,
-        body_length_m: float = 0.15,
-        velocity_threshold_bls: float = 0.5,
     ) -> None:
         self.n_points = n_points
         self.min_area = min_area
-        self.fps = fps
-        self.body_length_m = body_length_m
-        self.velocity_threshold_bls = velocity_threshold_bls
-
-        # fish_id → last known head-first boolean
-        self._orientations: dict[int, bool] = {}
-
-        # fish_id → list of (frame_idx, camera_id, Midline2D) awaiting orientation
-        self._back_correction_buffers: dict[int, list[tuple[int, str, Midline2D]]] = {}
-
-        # fish_id → frames since track start (for back-correction cap)
-        self._back_correction_frame_counts: dict[int, int] = {}
-
-    @property
-    def _back_correction_cap(self) -> int:
-        """Back-correction buffer cap: min(30, fps) frames."""
-        return min(30, int(self.fps))
 
     def extract_midlines(
         self,
@@ -456,14 +354,14 @@ class MidlineExtractor:
         masks_per_camera: dict[str, list[np.ndarray]],
         crop_regions_per_camera: dict[str, list[CropRegion]],
         detections_per_camera: dict[str, list],
-        projection_models: dict,
         frame_index: int,
     ) -> dict[int, dict[str, Midline2D]]:
         """Extract 2D midlines for all tracks in a single frame.
 
         For each confirmed track, attempts midline extraction in every camera
-        where it has a detection. Applies orientation inheritance and
-        back-correction buffering.
+        where it has a detection. Midline point ordering is arbitrary (BFS
+        traversal order); cross-camera flip alignment is handled downstream
+        in the triangulation stage.
 
         Args:
             tracks: List of FishTrack objects from the current frame.
@@ -471,7 +369,6 @@ class MidlineExtractor:
             crop_regions_per_camera: Per-camera list of CropRegion objects.
             detections_per_camera: Per-camera detection lists (used for
                 index lookup; content not directly inspected here).
-            projection_models: Dict mapping camera_id to projection model.
             frame_index: Current frame index.
 
         Returns:
@@ -482,27 +379,6 @@ class MidlineExtractor:
 
         for track in tracks:
             fish_id = track.fish_id
-
-            # Initialise back-correction tracking for new fish
-            if fish_id not in self._back_correction_frame_counts:
-                self._back_correction_frame_counts[fish_id] = 0
-                self._back_correction_buffers[fish_id] = []
-
-            self._back_correction_frame_counts[fish_id] += 1
-            frame_count = self._back_correction_frame_counts[fish_id]
-
-            # Check if back-correction window has expired; commit buffer as-is
-            cap = self._back_correction_cap
-            if frame_count > cap and fish_id in self._back_correction_buffers:
-                buf = self._back_correction_buffers.get(fish_id, [])
-                if buf:
-                    # Commit buffer midlines as-is (no orientation flip)
-                    for _fi, _cam, _ml in buf:
-                        if fish_id not in results:
-                            results[fish_id] = {}
-                        results[fish_id][_cam] = _ml
-                    self._back_correction_buffers[fish_id] = []
-
             fish_results: dict[str, Midline2D] = {}
 
             for camera_id, det_idx in track.camera_detections.items():
@@ -561,81 +437,15 @@ class MidlineExtractor:
                     xy_crop, half_widths, crop_region, crop_h, crop_w
                 )
 
-                # 8. Orientation
-                oriented_xy, is_established = _orient_midline(
-                    xy_frame,
-                    track,
-                    camera_id,
-                    projection_models,
-                    self.fps,
-                    self.body_length_m,
+                midline = Midline2D(
+                    points=xy_frame,
+                    half_widths=hw_frame,
+                    fish_id=fish_id,
+                    camera_id=camera_id,
+                    frame_index=frame_index,
+                    is_head_to_tail=False,
                 )
-
-                # Handle orientation logic
-                if is_established:
-                    # Determine if flip was applied by comparing endpoints
-                    was_flipped = not np.allclose(oriented_xy[0], xy_frame[0])
-
-                    midline = Midline2D(
-                        points=oriented_xy,
-                        half_widths=hw_frame,
-                        fish_id=fish_id,
-                        camera_id=camera_id,
-                        frame_index=frame_index,
-                        is_head_to_tail=True,
-                    )
-
-                    # If first orientation established, back-correct buffer
-                    if fish_id not in self._orientations:
-                        buf = self._back_correction_buffers.get(fish_id, [])
-                        if buf:
-                            # Buffer was built with arbitrary (un-flipped) orientation.
-                            # If current result was flipped, buffer needs flipping too.
-                            if was_flipped:
-                                for _fi, _cam, _ml in buf:
-                                    _ml.points = _ml.points[::-1].copy()
-                                    _ml.is_head_to_tail = True
-                            else:
-                                for _fi, _cam, _ml in buf:
-                                    _ml.is_head_to_tail = True
-                            # Commit buffer
-                            if fish_id not in results:
-                                results[fish_id] = {}
-                            for _fi, _cam, _ml in buf:
-                                results[fish_id][_cam] = _ml
-                            self._back_correction_buffers[fish_id] = []
-
-                    self._orientations[fish_id] = True  # head-first = point[0] is head
-                    fish_results[camera_id] = midline
-
-                else:
-                    # Orientation not established this frame
-                    if fish_id in self._orientations:
-                        # Inherit: keep current order, mark as unestablished
-                        midline = Midline2D(
-                            points=xy_frame,
-                            half_widths=hw_frame,
-                            fish_id=fish_id,
-                            camera_id=camera_id,
-                            frame_index=frame_index,
-                            is_head_to_tail=False,
-                        )
-                        fish_results[camera_id] = midline
-                    else:
-                        # No previous orientation; store in back-correction buffer
-                        midline = Midline2D(
-                            points=xy_frame,
-                            half_widths=hw_frame,
-                            fish_id=fish_id,
-                            camera_id=camera_id,
-                            frame_index=frame_index,
-                            is_head_to_tail=False,
-                        )
-                        buf = self._back_correction_buffers.setdefault(fish_id, [])
-                        if frame_count <= cap:
-                            buf.append((frame_index, camera_id, midline))
-                        # Do NOT add to fish_results yet — committed on
-                        # orientation establishment or cap expiry
+                fish_results[camera_id] = midline
 
             if fish_results:
                 if fish_id not in results:

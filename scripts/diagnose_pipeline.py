@@ -135,9 +135,13 @@ def main() -> int:
     # -----------------------------------------------------------------------
     # Setup (replicates orchestrator logic)
     # -----------------------------------------------------------------------
-    from aquapose.calibration.loader import load_calibration_data
+    from aquapose.calibration.loader import (
+        compute_undistortion_maps,
+        load_calibration_data,
+    )
     from aquapose.calibration.projection import RefractiveProjectionModel
     from aquapose.io.midline_writer import Midline3DWriter
+    from aquapose.io.video import VideoSet
     from aquapose.pipeline.stages import (
         run_detection,
         run_midline_extraction,
@@ -182,16 +186,19 @@ def main() -> int:
 
     print(f"Found {len(video_paths)} cameras: {sorted(video_paths)}")
 
-    # Load calibration
+    # Load calibration + undistortion
     calib = load_calibration_data(args.calibration)
+    undist_maps = {}
     models: dict[str, RefractiveProjectionModel] = {}
     for cam_id in video_paths:
         if cam_id not in calib.cameras:
             logger.warning("Camera %r not in calibration; skipping", cam_id)
             continue
         cam_data = calib.cameras[cam_id]
+        maps = compute_undistortion_maps(cam_data)
+        undist_maps[cam_id] = maps
         models[cam_id] = RefractiveProjectionModel(
-            K=cam_data.K,
+            K=maps.K_new,
             R=cam_data.R,
             t=cam_data.t,
             water_z=calib.water_z,
@@ -217,12 +224,13 @@ def main() -> int:
     # -----------------------------------------------------------------------
     print("\nRunning Stage 1: Detection...")
     t0 = time.perf_counter()
-    detections_per_frame = run_detection(
-        video_paths=video_paths,
-        stop_frame=args.stop_frame,
-        detector_kind="yolo",
-        model_path=args.yolo_weights,
-    )
+    with VideoSet(video_paths, undistortion=undist_maps) as det_video_set:
+        detections_per_frame = run_detection(
+            video_set=det_video_set,
+            stop_frame=args.stop_frame,
+            detector_kind="yolo",
+            model_path=args.yolo_weights,
+        )
     stage_timing["detection"] = time.perf_counter() - t0
 
     # -----------------------------------------------------------------------
@@ -230,12 +238,13 @@ def main() -> int:
     # -----------------------------------------------------------------------
     print("Running Stage 2: Segmentation...")
     t0 = time.perf_counter()
-    masks_per_frame = run_segmentation(
-        detections_per_frame=detections_per_frame,
-        video_paths=video_paths,
-        segmentor=segmentor,
-        stop_frame=args.stop_frame,
-    )
+    with VideoSet(video_paths, undistortion=undist_maps) as seg_video_set:
+        masks_per_frame = run_segmentation(
+            detections_per_frame=detections_per_frame,
+            video_set=seg_video_set,
+            segmentor=segmentor,
+            stop_frame=args.stop_frame,
+        )
     stage_timing["segmentation"] = time.perf_counter() - t0
 
     # -----------------------------------------------------------------------
@@ -275,7 +284,6 @@ def main() -> int:
         tracks_per_frame=tracks_per_frame,
         masks_per_frame=masks_per_frame,
         detections_per_frame=detections_per_frame,
-        models=models,
         extractor=extractor,
     )
     stage_timing["midline_extraction"] = time.perf_counter() - t0

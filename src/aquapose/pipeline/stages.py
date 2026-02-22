@@ -8,16 +8,15 @@ from __future__ import annotations
 
 import logging
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-import cv2
 import numpy as np
 
 from aquapose.segmentation.detector import Detection, make_detector
 
 if TYPE_CHECKING:
     from aquapose.calibration.projection import RefractiveProjectionModel
+    from aquapose.io.video import VideoSet
     from aquapose.reconstruction.midline import MidlineExtractor
     from aquapose.reconstruction.triangulation import Midline3D, MidlineSet
     from aquapose.segmentation.crop import CropRegion
@@ -28,18 +27,18 @@ logger = logging.getLogger(__name__)
 
 
 def run_detection(
-    video_paths: dict[str, Path],
+    video_set: VideoSet,
     stop_frame: int | None = None,
     detector_kind: str = "mog2",
     **detector_kwargs: object,
 ) -> list[dict[str, list[Detection]]]:
     """Detect fish in all cameras across all frames.
 
-    Creates one detector per camera and reads all videos in lockstep across
-    cameras, processing each frame and collecting detections.
+    Creates one detector per camera and iterates the VideoSet in lockstep,
+    processing each frame and collecting detections.
 
     Args:
-        video_paths: Mapping from camera_id to video file path.
+        video_set: Opened :class:`~aquapose.io.video.VideoSet` context manager.
         stop_frame: If provided, stop after this many frames (exclusive).
             If None, process the entire video.
         detector_kind: Detector type — ``"mog2"`` or ``"yolo"``.
@@ -50,49 +49,24 @@ def run_detection(
         to list of :class:`~aquapose.segmentation.detector.Detection`.
     """
     t0 = time.perf_counter()
-    camera_ids = list(video_paths.keys())
+    camera_ids = video_set.camera_ids
 
     # Create one detector per camera
     detectors = {
         cam: make_detector(detector_kind, **detector_kwargs) for cam in camera_ids
     }
 
-    # Open all video captures
-    captures: dict[str, cv2.VideoCapture] = {}
-    try:
-        for cam, path in video_paths.items():
-            cap = cv2.VideoCapture(str(path))
-            if not cap.isOpened():
-                raise RuntimeError(f"Cannot open video: {path}")
-            captures[cam] = cap
+    detections_per_frame: list[dict[str, list[Detection]]] = []
 
-        detections_per_frame: list[dict[str, list[Detection]]] = []
-        frame_idx = 0
+    for frame_idx, frames in video_set:
+        if stop_frame is not None and frame_idx >= stop_frame:
+            break
 
-        while True:
-            if stop_frame is not None and frame_idx >= stop_frame:
-                break
+        frame_dets: dict[str, list[Detection]] = {}
+        for cam in camera_ids:
+            frame_dets[cam] = detectors[cam].detect(frames[cam])
 
-            frame_dets: dict[str, list[Detection]] = {}
-            all_eof = True
-
-            for cam in camera_ids:
-                ret, frame = captures[cam].read()
-                if not ret:
-                    frame_dets[cam] = []
-                else:
-                    all_eof = False
-                    frame_dets[cam] = detectors[cam].detect(frame)
-
-            if all_eof:
-                break
-
-            detections_per_frame.append(frame_dets)
-            frame_idx += 1
-
-    finally:
-        for cap in captures.values():
-            cap.release()
+        detections_per_frame.append(frame_dets)
 
     elapsed = time.perf_counter() - t0
     logger.info(
@@ -106,7 +80,7 @@ def run_detection(
 
 def run_segmentation(
     detections_per_frame: list[dict[str, list[Detection]]],
-    video_paths: dict[str, Path],
+    video_set: VideoSet,
     segmentor: UNetSegmentor,
     stop_frame: int | None = None,
 ) -> list[dict[str, list[tuple[np.ndarray, CropRegion]]]]:
@@ -118,7 +92,7 @@ def run_segmentation(
 
     Args:
         detections_per_frame: Output of :func:`run_detection`.
-        video_paths: Mapping from camera_id to video file path.
+        video_set: Opened :class:`~aquapose.io.video.VideoSet` context manager.
         segmentor: Instantiated :class:`~aquapose.segmentation.model.UNetSegmentor`.
         stop_frame: If provided, stop after this many frames (exclusive).
 
@@ -130,75 +104,61 @@ def run_segmentation(
     from aquapose.segmentation.crop import compute_crop_region, extract_crop
 
     t0 = time.perf_counter()
-    camera_ids = list(video_paths.keys())
+    camera_ids = video_set.camera_ids
     n_frames = (
         min(len(detections_per_frame), stop_frame)
         if stop_frame is not None
         else len(detections_per_frame)
     )
 
-    # Open all video captures
-    captures: dict[str, cv2.VideoCapture] = {}
-    try:
-        for cam, path in video_paths.items():
-            cap = cv2.VideoCapture(str(path))
-            if not cap.isOpened():
-                raise RuntimeError(f"Cannot open video: {path}")
-            captures[cam] = cap
+    masks_per_frame: list[dict[str, list[tuple[np.ndarray, CropRegion]]]] = []
 
-        masks_per_frame: list[dict[str, list[tuple[np.ndarray, CropRegion]]]] = []
+    for frame_idx, frames in video_set:
+        if frame_idx >= n_frames:
+            break
 
-        for frame_idx in range(n_frames):
-            frame_dets = detections_per_frame[frame_idx]
-            frame_masks: dict[str, list[tuple[np.ndarray, CropRegion]]] = {}
+        frame_dets = detections_per_frame[frame_idx]
+        frame_masks: dict[str, list[tuple[np.ndarray, CropRegion]]] = {}
 
-            for cam in camera_ids:
-                ret, frame = captures[cam].read()
-                if not ret:
-                    frame_masks[cam] = []
-                    continue
+        for cam in camera_ids:
+            frame = frames[cam]
+            cam_dets = frame_dets.get(cam, [])
+            if not cam_dets:
+                frame_masks[cam] = []
+                continue
 
-                cam_dets = frame_dets.get(cam, [])
-                if not cam_dets:
-                    frame_masks[cam] = []
-                    continue
+            h_frame, w_frame = frame.shape[:2]
 
-                h_frame, w_frame = frame.shape[:2]
+            # Build crops for all detections in this camera
+            crops: list[np.ndarray] = []
+            crop_regions: list[CropRegion] = []
 
-                # Build crops for all detections in this camera
-                crops: list[np.ndarray] = []
-                crop_regions: list[CropRegion] = []
+            for det in cam_dets:
+                region = compute_crop_region(
+                    bbox=det.bbox,
+                    frame_h=h_frame,
+                    frame_w=w_frame,
+                )
+                crop = extract_crop(frame, region)
+                crops.append(crop)
+                crop_regions.append(region)
 
-                for det in cam_dets:
-                    region = compute_crop_region(
-                        bbox=det.bbox,
-                        frame_h=h_frame,
-                        frame_w=w_frame,
-                    )
-                    crop = extract_crop(frame, region)
-                    crops.append(crop)
-                    crop_regions.append(region)
+            # Run segmentor on all crops at once
+            results = segmentor.segment(crops, crop_regions)
 
-                # Run segmentor on all crops at once
-                results = segmentor.segment(crops, crop_regions)
+            # Extract (mask, crop_region) per detection
+            cam_masks: list[tuple[np.ndarray, CropRegion]] = []
+            for seg_results, region in zip(results, crop_regions, strict=True):
+                if seg_results:
+                    cam_masks.append((seg_results[0].mask, region))
+                else:
+                    # Fallback: empty mask
+                    empty = np.zeros((region.height, region.width), dtype=np.uint8)
+                    cam_masks.append((empty, region))
 
-                # Extract (mask, crop_region) per detection
-                cam_masks: list[tuple[np.ndarray, CropRegion]] = []
-                for seg_results, region in zip(results, crop_regions, strict=True):
-                    if seg_results:
-                        cam_masks.append((seg_results[0].mask, region))
-                    else:
-                        # Fallback: empty mask
-                        empty = np.zeros((region.height, region.width), dtype=np.uint8)
-                        cam_masks.append((empty, region))
+            frame_masks[cam] = cam_masks
 
-                frame_masks[cam] = cam_masks
-
-            masks_per_frame.append(frame_masks)
-
-    finally:
-        for cap in captures.values():
-            cap.release()
+        masks_per_frame.append(frame_masks)
 
     elapsed = time.perf_counter() - t0
     logger.info(
@@ -251,22 +211,19 @@ def run_midline_extraction(
     tracks_per_frame: list[list[FishTrack]],
     masks_per_frame: list[dict[str, list[tuple[np.ndarray, CropRegion]]]],
     detections_per_frame: list[dict[str, list[Detection]]],
-    models: dict[str, RefractiveProjectionModel],
     extractor: MidlineExtractor,
 ) -> list[MidlineSet]:
     """Extract 2D midlines for all tracked fish across all frames.
 
     The extractor MUST be externally instantiated and passed in. This function
-    does NOT create a new extractor, preserving caller-controlled orientation
-    state and back-correction buffers.
+    does NOT create a new extractor, preserving caller-controlled state.
 
     Args:
         tracks_per_frame: Output of :func:`run_tracking`.
         masks_per_frame: Output of :func:`run_segmentation`.
         detections_per_frame: Output of :func:`run_detection`.
-        models: Per-camera :class:`~aquapose.calibration.projection.RefractiveProjectionModel`.
         extractor: An externally-created :class:`~aquapose.reconstruction.midline.MidlineExtractor`
-            instance. State is mutated in place.
+            instance.
 
     Returns:
         List indexed by frame_idx of :data:`~aquapose.reconstruction.triangulation.MidlineSet`
@@ -291,7 +248,6 @@ def run_midline_extraction(
             masks_per_camera=masks_per_camera,
             crop_regions_per_camera=crop_regions_per_camera,
             detections_per_camera=frame_dets,
-            projection_models=models,
             frame_index=frame_idx,
         )
         midline_sets.append(midline_set)

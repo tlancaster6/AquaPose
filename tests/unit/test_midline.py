@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import dataclass, field
 
 import cv2
@@ -119,45 +118,11 @@ class _MockFishTrack:
 
     Attributes:
         fish_id: Fish identifier.
-        velocity: 3D velocity vector, shape (3,).
-        positions: Position history.
         camera_detections: Per-camera detection index map.
     """
 
     fish_id: int = 0
-    velocity: np.ndarray = field(
-        default_factory=lambda: np.array([0.01, 0.0, 0.0], dtype=np.float32)
-    )
-    positions: deque = field(
-        default_factory=lambda: deque(
-            [np.array([0.0, 0.0, 0.5], dtype=np.float32)], maxlen=2
-        )
-    )
     camera_detections: dict[str, int] = field(default_factory=lambda: {"cam0": 0})
-
-
-class _MockProjectionModel:
-    """Orthographic projection model for testing (drops Z coordinate).
-
-    Returns (x * 100, y * 100) as pixel coordinates, always valid.
-    """
-
-    def project(self, points: object) -> tuple[object, object]:
-        """Project 3D points to 2D pixels (orthographic, scaled by 100).
-
-        Args:
-            points: Tensor of shape (N, 3).
-
-        Returns:
-            pixels: Tensor of shape (N, 2).
-            valid: Boolean tensor of shape (N,), all True.
-        """
-        import torch
-
-        pts = points if isinstance(points, torch.Tensor) else torch.tensor(points)
-        pixels = pts[:, :2] * 100.0
-        valid = torch.ones(pts.shape[0], dtype=torch.bool)
-        return pixels, valid
 
 
 # ---------------------------------------------------------------------------
@@ -372,24 +337,15 @@ def test_crop_to_frame_with_resize() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_track_and_data(
-    velocity: np.ndarray | None = None,
-) -> tuple[_MockFishTrack, dict, dict, dict, dict]:
+def _make_track_and_data() -> tuple[_MockFishTrack, dict, dict, dict]:
     """Create a complete set of inputs for extract_midlines.
-
-    Args:
-        velocity: 3D velocity for the mock track. Defaults to [0.01, 0, 0].
 
     Returns:
         Tuple of (track, masks_per_camera, crop_regions_per_camera,
-                  detections_per_camera, projection_models).
+                  detections_per_camera).
     """
-    if velocity is None:
-        velocity = np.array([0.01, 0.0, 0.0], dtype=np.float32)
-
     track = _MockFishTrack(
         fish_id=0,
-        velocity=velocity,
         camera_detections={"cam0": 0},
     )
 
@@ -399,22 +355,18 @@ def _make_track_and_data(
     masks_per_camera: dict[str, list[np.ndarray]] = {"cam0": [mask]}
     crop_regions_per_camera: dict[str, list[CropRegion]] = {"cam0": [crop]}
     detections_per_camera: dict[str, list] = {"cam0": [object()]}
-    projection_models: dict[str, _MockProjectionModel] = {
-        "cam0": _MockProjectionModel()
-    }
 
     return (
         track,
         masks_per_camera,
         crop_regions_per_camera,
         detections_per_camera,
-        projection_models,
     )
 
 
 def test_extract_midlines_full_pipeline() -> None:
     """Full pipeline: long ellipse mask → Midline2D with 15 points in frame coords."""
-    track, masks, crops, dets, models = _make_track_and_data()
+    track, masks, crops, dets = _make_track_and_data()
     extractor = MidlineExtractor(n_points=15, min_area=300)
 
     result = extractor.extract_midlines(
@@ -422,7 +374,6 @@ def test_extract_midlines_full_pipeline() -> None:
         masks_per_camera=masks,
         crop_regions_per_camera=crops,
         detections_per_camera=dets,
-        projection_models=models,
         frame_index=0,
     )
 
@@ -436,6 +387,7 @@ def test_extract_midlines_full_pipeline() -> None:
     assert midline.fish_id == 0
     assert midline.camera_id == "cam0"
     assert midline.frame_index == 0
+    assert midline.is_head_to_tail is False
 
     # Points should be in full-frame coordinates (within frame bounds)
     crop_region = crops["cam0"][0]
@@ -459,102 +411,9 @@ def test_extract_midlines_skips_small_mask() -> None:
         masks_per_camera={"cam0": [tiny_mask]},
         crop_regions_per_camera={"cam0": [crop]},
         detections_per_camera={"cam0": [object()]},
-        projection_models={"cam0": _MockProjectionModel()},
         frame_index=0,
     )
 
     # fish_id may be absent or present with empty camera dict
     cam_result = result.get(0, {})
     assert "cam0" not in cam_result
-
-
-# ---------------------------------------------------------------------------
-# Test orientation inheritance
-# ---------------------------------------------------------------------------
-
-
-def test_orientation_inheritance() -> None:
-    """Second low-velocity frame should inherit orientation from first high-velocity frame."""
-    extractor = MidlineExtractor(n_points=15, min_area=300)
-
-    high_vel = np.array([1.0, 0.0, 0.0], dtype=np.float32)  # fast → establishes orient
-    zero_vel = np.array([0.0, 0.0, 0.0], dtype=np.float32)  # slow → inherit
-
-    # Frame 0: high velocity — orientation established
-    track0 = _MockFishTrack(
-        fish_id=1,
-        velocity=high_vel,
-        camera_detections={"cam0": 0},
-    )
-    result0 = extractor.extract_midlines(
-        tracks=[track0],  # type: ignore[list-item]
-        masks_per_camera={"cam0": [_make_long_mask()]},
-        crop_regions_per_camera={"cam0": [_make_crop_region()]},
-        detections_per_camera={"cam0": [object()]},
-        projection_models={"cam0": _MockProjectionModel()},
-        frame_index=0,
-    )
-    assert 1 in result0
-    assert "cam0" in result0[1]
-    mid0 = result0[1]["cam0"]
-
-    # Frame 1: zero velocity — should inherit
-    track1 = _MockFishTrack(
-        fish_id=1,
-        velocity=zero_vel,
-        camera_detections={"cam0": 0},
-    )
-    result1 = extractor.extract_midlines(
-        tracks=[track1],  # type: ignore[list-item]
-        masks_per_camera={"cam0": [_make_long_mask()]},
-        crop_regions_per_camera={"cam0": [_make_crop_region()]},
-        detections_per_camera={"cam0": [object()]},
-        projection_models={"cam0": _MockProjectionModel()},
-        frame_index=1,
-    )
-
-    # Result should have an entry (inheritance, not skip)
-    assert 1 in result1, "Should inherit orientation"
-    assert "cam0" in result1[1], "Should inherit orientation"
-    mid1 = result1[1]["cam0"]
-
-    # Both midlines should have 15 points in frame coordinates
-    assert mid0.points.shape == (15, 2)
-    assert mid1.points.shape == (15, 2)
-
-
-# ---------------------------------------------------------------------------
-# Test back-correction cap
-# ---------------------------------------------------------------------------
-
-
-def test_back_correction_cap() -> None:
-    """After cap (30) frames with zero velocity, buffer should be cleared."""
-    extractor = MidlineExtractor(n_points=15, min_area=300, fps=60.0)
-    # fps=60 → cap = min(30, 60) = 30
-
-    zero_vel = np.array([0.0, 0.0, 0.0], dtype=np.float32)
-
-    # Call 35 times with zero velocity (orientation never established)
-    for frame_idx in range(35):
-        track = _MockFishTrack(
-            fish_id=2,
-            velocity=zero_vel,
-            camera_detections={"cam0": 0},
-        )
-        extractor.extract_midlines(
-            tracks=[track],  # type: ignore[list-item]
-            masks_per_camera={"cam0": [_make_long_mask()]},
-            crop_regions_per_camera={"cam0": [_make_crop_region()]},
-            detections_per_camera={"cam0": [object()]},
-            projection_models={"cam0": _MockProjectionModel()},
-            frame_index=frame_idx,
-        )
-
-    # After cap, buffer should be empty (committed or discarded)
-    buf = extractor._back_correction_buffers.get(2, [])
-    assert len(buf) == 0, f"Buffer should be empty after cap, got {len(buf)} entries"
-
-    # Frame count should reflect all 35 calls
-    count = extractor._back_correction_frame_counts.get(2, 0)
-    assert count == 35

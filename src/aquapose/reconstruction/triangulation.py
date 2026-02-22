@@ -171,18 +171,17 @@ def _triangulate_body_point(
             return None
 
         inlier_ids: list[str] = []
+        pt3d_batch = best_pt3d.unsqueeze(0)  # (1, 3)
         for cid in cam_ids:
-            pt3d_batch = best_pt3d.unsqueeze(0)  # (1, 3)
             proj_px, valid = models[cid].project(pt3d_batch)
             if valid[0]:
                 err = float(torch.linalg.norm(proj_px[0] - pixels[cid]).item())
                 if err < inlier_threshold:
                     inlier_ids.append(cid)
-            # Also include the seed pair regardless
-        # Ensure seed pair is always included
-        for cid in best_cam_ids:
-            if cid not in inlier_ids:
-                inlier_ids.append(cid)
+
+        # Ensure at least 2 cameras (fall back to seed pair if needed)
+        if len(inlier_ids) < 2:
+            inlier_ids = list(best_cam_ids)
 
         if len(inlier_ids) >= 2:
             origs = torch.stack([origins[cid] for cid in inlier_ids])
@@ -313,6 +312,132 @@ def _pixel_half_width_to_metres(
     return hw_px * depth_m / focal_px
 
 
+def _flip_midline(midline: Midline2D) -> Midline2D:
+    """Return a copy of the midline with points and half_widths reversed.
+
+    Args:
+        midline: Input 2D midline.
+
+    Returns:
+        New Midline2D with reversed point and half-width order.
+    """
+    return Midline2D(
+        points=midline.points[::-1].copy(),
+        half_widths=midline.half_widths[::-1].copy(),
+        fish_id=midline.fish_id,
+        camera_id=midline.camera_id,
+        frame_index=midline.frame_index,
+        is_head_to_tail=midline.is_head_to_tail,
+    )
+
+
+def _pairwise_chord_length(
+    ref_ml: Midline2D,
+    cand_ml: Midline2D,
+    ref_model: RefractiveProjectionModel,
+    cand_model: RefractiveProjectionModel,
+    sample_indices: list[int],
+) -> float:
+    """Compute chord length of triangulated sample points from two cameras.
+
+    Triangulates sampled body points from a reference and candidate camera,
+    then sums the segment lengths between consecutive 3D points. A correct
+    orientation produces a smooth curve with short chord; a flipped orientation
+    produces a zigzag with much longer chord.
+
+    Args:
+        ref_ml: Reference camera midline (orientation fixed).
+        cand_ml: Candidate camera midline (may be flipped).
+        ref_model: Projection model for the reference camera.
+        cand_model: Projection model for the candidate camera.
+        sample_indices: Body point indices to triangulate.
+
+    Returns:
+        Total chord length in metres. Returns inf if triangulation fails.
+    """
+    pair_models = {"ref": ref_model, "cand": cand_model}
+    pts_3d: list[torch.Tensor] = []
+
+    for bp_idx in sample_indices:
+        pixels = {
+            "ref": torch.from_numpy(ref_ml.points[bp_idx]).float(),
+            "cand": torch.from_numpy(cand_ml.points[bp_idx]).float(),
+        }
+        result = _triangulate_body_point(pixels, pair_models, inlier_threshold=50.0)
+        if result is not None:
+            pts_3d.append(result[0])
+
+    if len(pts_3d) < 2:
+        return float("inf")
+
+    total = 0.0
+    for j in range(len(pts_3d) - 1):
+        total += float(torch.linalg.norm(pts_3d[j + 1] - pts_3d[j]).item())
+    return total
+
+
+def _align_midline_orientations(
+    cam_midlines: dict[str, Midline2D],
+    models: dict[str, RefractiveProjectionModel],
+    inlier_threshold: float = DEFAULT_INLIER_THRESHOLD,
+) -> dict[str, Midline2D]:
+    """Align midline orientations across cameras via greedy pairwise alignment.
+
+    Ensures that body point i from camera A corresponds to the same physical
+    point as body point i from camera B. Without this, arbitrary BFS traversal
+    order causes head/tail mismatch and zigzag 3D reconstructions.
+
+    Algorithm: fixes the first camera (sorted order) as reference, then for
+    each remaining camera independently tries both orientations and picks the
+    one producing shorter chord length when triangulated against the reference.
+    This is O(N) in camera count rather than O(2^N) brute-force.
+
+    For N < 2 cameras: returns unchanged (triangulation will skip anyway).
+
+    Args:
+        cam_midlines: Per-camera midlines for a single fish.
+        models: Per-camera refractive projection models.
+        inlier_threshold: Maximum reprojection error for inlier classification.
+
+    Returns:
+        Dict of (possibly flipped) midlines with consistent orientation.
+    """
+    cam_ids = sorted(cid for cid in cam_midlines if cid in models)
+    n_cams = len(cam_ids)
+
+    if n_cams < 2:
+        return cam_midlines
+
+    # Sample head, mid, tail for chord-length comparison
+    sample_indices = [0, N_SAMPLE_POINTS // 2, N_SAMPLE_POINTS - 1]
+
+    ref_id = cam_ids[0]
+    ref_ml = cam_midlines[ref_id]
+    ref_model = models[ref_id]
+
+    result = dict(cam_midlines)
+
+    for cid in cam_ids[1:]:
+        cand_ml = cam_midlines[cid]
+        cand_model = models[cid]
+
+        # Score original orientation
+        chord_orig = _pairwise_chord_length(
+            ref_ml, cand_ml, ref_model, cand_model, sample_indices
+        )
+
+        # Score flipped orientation
+        flipped_ml = _flip_midline(cand_ml)
+        chord_flip = _pairwise_chord_length(
+            ref_ml, flipped_ml, ref_model, cand_model, sample_indices
+        )
+
+        if chord_flip < chord_orig:
+            result[cid] = flipped_ml
+
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -348,6 +473,9 @@ def triangulate_midlines(
     results: dict[int, Midline3D] = {}
 
     for fish_id, cam_midlines in midline_set.items():
+        cam_midlines = _align_midline_orientations(
+            cam_midlines, models, inlier_threshold
+        )
         valid_indices: list[int] = []
         pts_3d_list: list[np.ndarray] = []
         per_point_residuals: list[float] = []

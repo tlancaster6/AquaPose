@@ -27,7 +27,7 @@ class ReconstructResult:
     """Result of a :func:`reconstruct` run.
 
     Attributes:
-        output_dir: Directory where HDF5 and diagnostic files were written.
+        output_dir: Directory where HDF5 output was written.
         midlines_3d: Per-frame triangulation results. Indexed by frame_idx,
             each entry maps fish_id to :class:`~aquapose.reconstruction.triangulation.Midline3D`.
         stage_timing: Wall-clock seconds spent in each stage, keyed by stage name.
@@ -44,8 +44,7 @@ def reconstruct(
     output_dir: Path,
     *,
     stop_frame: int | None = None,
-    mode: str = "production",
-    detector_kind: str = "mog2",
+    detector_kind: str = "yolo",
     unet_weights: Path | None = None,
     max_fish: int = 9,
     **detector_kwargs: object,
@@ -64,13 +63,10 @@ def reconstruct(
         video_dir: Directory containing per-camera ``.avi`` or ``.mp4`` files.
             Camera ID is inferred from the filename stem.
         calibration_path: Path to the AquaCal calibration JSON file.
-        output_dir: Directory to write ``midlines_3d.h5`` and optional
-            diagnostic outputs. Created if it does not exist.
+        output_dir: Directory to write ``midlines_3d.h5``.
+            Created if it does not exist.
         stop_frame: If provided, process only the first ``stop_frame`` frames.
-        mode: ``"production"`` (default) or ``"diagnostic"``. In diagnostic
-            mode, intermediate detection and mask data are saved as ``.npz``
-            files in ``output_dir``.
-        detector_kind: Detector type — ``"mog2"`` or ``"yolo"``.
+        detector_kind: Detector type — ``"yolo"`` (default) or ``"mog2"``.
         unet_weights: Optional path to U-Net weights ``.pth`` file. If None,
             uses ImageNet-pretrained backbone (for testing only).
         max_fish: Maximum number of fish slots in HDF5 output and tracker
@@ -85,9 +81,13 @@ def reconstruct(
         FileNotFoundError: If ``video_dir`` or ``calibration_path`` do not exist.
         ValueError: If no valid camera videos are found.
     """
-    from aquapose.calibration.loader import load_calibration_data
+    from aquapose.calibration.loader import (
+        compute_undistortion_maps,
+        load_calibration_data,
+    )
     from aquapose.calibration.projection import RefractiveProjectionModel
     from aquapose.io.midline_writer import Midline3DWriter
+    from aquapose.io.video import VideoSet
     from aquapose.reconstruction.midline import MidlineExtractor
     from aquapose.segmentation.model import UNetSegmentor
     from aquapose.tracking.tracker import FishTracker
@@ -115,7 +115,7 @@ def reconstruct(
     video_paths: dict[str, Path] = {}
     for suffix in ("*.avi", "*.mp4"):
         for p in video_dir.glob(suffix):
-            camera_id = p.stem
+            camera_id = p.stem.split("-")[0]
             if camera_id == _SKIP_CAMERA_ID:
                 logger.info("Skipping excluded camera: %s", camera_id)
                 continue
@@ -128,17 +128,20 @@ def reconstruct(
 
     logger.info("Found %d cameras: %s", len(video_paths), sorted(video_paths))
 
-    # --- Load calibration ---
+    # --- Load calibration + undistortion ---
     calib = load_calibration_data(calibration_path)
 
+    undist_maps = {}
     models: dict[str, RefractiveProjectionModel] = {}
     for cam_id in video_paths:
         if cam_id not in calib.cameras:
             logger.warning("Camera %r not in calibration; skipping", cam_id)
             continue
         cam_data = calib.cameras[cam_id]
+        maps = compute_undistortion_maps(cam_data)
+        undist_maps[cam_id] = maps
         models[cam_id] = RefractiveProjectionModel(
-            K=cam_data.K,
+            K=maps.K_new,
             R=cam_data.R,
             t=cam_data.t,
             water_z=calib.water_z,
@@ -159,32 +162,26 @@ def reconstruct(
 
     # --- Stage 1: Detection ---
     t0 = time.perf_counter()
-    detections_per_frame = run_detection(
-        video_paths=video_paths,
-        stop_frame=stop_frame,
-        detector_kind=detector_kind,
-        **detector_kwargs,
-    )
+    video_set = VideoSet(video_paths, undistortion=undist_maps)
+    with video_set:
+        detections_per_frame = run_detection(
+            video_set=video_set,
+            stop_frame=stop_frame,
+            detector_kind=detector_kind,
+            **detector_kwargs,
+        )
     stage_timing["detection"] = time.perf_counter() - t0
     logger.info("Stage 1 (detection): %.2fs", stage_timing["detection"])
 
-    if mode == "diagnostic":
-        import numpy as np
-
-        det_counts = [[len(v) for v in f.values()] for f in detections_per_frame]
-        np.savez(
-            str(output_dir / "stage1_detection_counts.npz"),
-            detection_counts=np.array(det_counts),
-        )
-
     # --- Stage 2: Segmentation ---
     t0 = time.perf_counter()
-    masks_per_frame = run_segmentation(
-        detections_per_frame=detections_per_frame,
-        video_paths=video_paths,
-        segmentor=segmentor,
-        stop_frame=stop_frame,
-    )
+    with VideoSet(video_paths, undistortion=undist_maps) as seg_video_set:
+        masks_per_frame = run_segmentation(
+            detections_per_frame=detections_per_frame,
+            video_set=seg_video_set,
+            segmentor=segmentor,
+            stop_frame=stop_frame,
+        )
     stage_timing["segmentation"] = time.perf_counter() - t0
     logger.info("Stage 2 (segmentation): %.2fs", stage_timing["segmentation"])
 
@@ -204,7 +201,6 @@ def reconstruct(
         tracks_per_frame=tracks_per_frame,
         masks_per_frame=masks_per_frame,
         detections_per_frame=detections_per_frame,
-        models=models,
         extractor=extractor,
     )
     stage_timing["midline_extraction"] = time.perf_counter() - t0
@@ -229,71 +225,6 @@ def reconstruct(
             writer.write_frame(frame_idx, frame_midlines)
     stage_timing["hdf5_write"] = time.perf_counter() - t0
     logger.info("HDF5 written to %s (%.2fs)", h5_path, stage_timing["hdf5_write"])
-
-    # --- Diagnostic mode: visualizations and report ---
-    if mode == "diagnostic":
-        import matplotlib.pyplot as plt
-
-        from aquapose.pipeline.report import write_diagnostic_report
-        from aquapose.visualization import (
-            plot_3d_frame,
-            render_3d_animation,
-            render_overlay_video,
-        )
-
-        figures_dir = output_dir / "figures"
-        figures_dir.mkdir(parents=True, exist_ok=True)
-
-        # Save a 3D sample plot for the first non-empty frame
-        sample_frame_midlines: dict[int, Midline3D] = {}
-        for frame_midlines in midlines_3d:
-            if frame_midlines:
-                sample_frame_midlines = frame_midlines
-                break
-
-        if sample_frame_midlines:
-            try:
-                fig = plot_3d_frame(sample_frame_midlines)
-                sample_fig_path = figures_dir / "midline_3d_sample.png"
-                fig.savefig(str(sample_fig_path), dpi=100, bbox_inches="tight")
-                plt.close(fig)
-                logger.info("3D sample figure saved to %s", sample_fig_path)
-            except Exception as exc:
-                logger.warning("Failed to save 3D sample figure: %s", exc)
-
-        # Render 3D animation
-        try:
-            render_3d_animation(midlines_3d, output_dir / "midlines_3d.mp4")
-        except Exception as exc:
-            logger.warning("Failed to render 3D animation: %s", exc)
-
-        # Render per-camera overlay videos
-        overlays_dir = output_dir / "overlays"
-        overlays_dir.mkdir(parents=True, exist_ok=True)
-        for cam_id, vid_path in video_paths.items():
-            if cam_id not in models:
-                continue
-            try:
-                render_overlay_video(
-                    video_path=vid_path,
-                    output_path=overlays_dir / f"{cam_id}.mp4",
-                    midlines_per_frame=midlines_3d,
-                    model=models[cam_id],
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Failed to render overlay for camera %s: %s", cam_id, exc
-                )
-
-        # Write Markdown report
-        n_frames_actual = len(midlines_3d)
-        write_diagnostic_report(
-            output_dir=output_dir,
-            stage_timing=stage_timing,
-            midlines_per_frame=midlines_3d,
-            n_frames=n_frames_actual,
-            n_cameras=len(models),
-        )
 
     return ReconstructResult(
         output_dir=output_dir,

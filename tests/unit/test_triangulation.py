@@ -13,6 +13,7 @@ from aquapose.reconstruction.triangulation import (
     N_SAMPLE_POINTS,
     Midline3D,
     MidlineSet,
+    _align_midline_orientations,
     _fit_spline,
     _pixel_half_width_to_metres,
     _triangulate_body_point,
@@ -428,3 +429,174 @@ class TestRefineMidlineLmStub:
 
         result = refine_midline_lm(midline_3d, midline_set, models)
         assert result is midline_3d, "refine_midline_lm should return the exact input"
+
+
+# ---------------------------------------------------------------------------
+# Tests for _align_midline_orientations
+# ---------------------------------------------------------------------------
+
+
+def _flip_midline2d(ml: Midline2D) -> Midline2D:
+    """Return a midline with reversed points and half_widths (test helper)."""
+    return Midline2D(
+        points=ml.points[::-1].copy(),
+        half_widths=ml.half_widths[::-1].copy(),
+        fish_id=ml.fish_id,
+        camera_id=ml.camera_id,
+        frame_index=ml.frame_index,
+        is_head_to_tail=ml.is_head_to_tail,
+    )
+
+
+class TestAlignMidlineOrientations:
+    """Tests for _align_midline_orientations."""
+
+    def test_align_no_flip_needed(self) -> None:
+        """3 cameras, all correctly oriented — returns unchanged."""
+        models = _build_synthetic_rig(n_cameras=3)
+        gt_pts = _make_3d_arc(n_points=15)
+
+        cam_midlines = {
+            cam_id: _build_midline2d(0, cam_id, 0, gt_pts, model)
+            for cam_id, model in models.items()
+        }
+
+        aligned = _align_midline_orientations(cam_midlines, models)
+
+        for cam_id in cam_midlines:
+            np.testing.assert_allclose(
+                aligned[cam_id].points,
+                cam_midlines[cam_id].points,
+                atol=1e-4,
+            )
+
+    def test_align_detects_single_flip(self) -> None:
+        """3 cameras, one midline reversed — verify it gets corrected."""
+        models = _build_synthetic_rig(n_cameras=3)
+        gt_pts = _make_3d_arc(n_points=15)
+        cam_ids = sorted(models.keys())
+
+        cam_midlines = {
+            cam_id: _build_midline2d(0, cam_id, 0, gt_pts, model)
+            for cam_id, model in models.items()
+        }
+
+        # Flip the last camera
+        flip_cam = cam_ids[-1]
+        original_points = cam_midlines[flip_cam].points.copy()
+        cam_midlines[flip_cam] = _flip_midline2d(cam_midlines[flip_cam])
+
+        aligned = _align_midline_orientations(cam_midlines, models)
+
+        # The flipped camera should now match the original (unflipped) points
+        np.testing.assert_allclose(aligned[flip_cam].points, original_points, atol=1e-4)
+
+    def test_align_detects_multiple_flips(self) -> None:
+        """4 cameras, 2 reversed — verify correction."""
+        models = _build_synthetic_rig(n_cameras=4)
+        gt_pts = _make_3d_arc(n_points=15)
+        cam_ids = sorted(models.keys())
+
+        cam_midlines = {
+            cam_id: _build_midline2d(0, cam_id, 0, gt_pts, model)
+            for cam_id, model in models.items()
+        }
+
+        # Flip cameras 1 and 3 (indices into sorted cam_ids)
+        for flip_idx in [1, 3]:
+            cid = cam_ids[flip_idx]
+            cam_midlines[cid] = _flip_midline2d(cam_midlines[cid])
+
+        aligned = _align_midline_orientations(cam_midlines, models)
+
+        # All cameras should now have consistent orientation
+        # Check that all cameras produce the same triangulated head point
+        head_pixels = {}
+        for cid in cam_ids:
+            head_pixels[cid] = torch.from_numpy(aligned[cid].points[0]).float()
+        head_result = _triangulate_body_point(head_pixels, models, 15.0)
+        assert head_result is not None
+
+        tail_pixels = {}
+        for cid in cam_ids:
+            tail_pixels[cid] = torch.from_numpy(aligned[cid].points[-1]).float()
+        tail_result = _triangulate_body_point(tail_pixels, models, 15.0)
+        assert tail_result is not None
+
+        # Head and tail should be different 3D points, separated roughly by arc length
+        head_3d = head_result[0]
+        tail_3d = tail_result[0]
+        dist = float(torch.linalg.norm(head_3d - tail_3d).item())
+        assert dist > 0.1, (
+            f"Head-tail distance {dist:.4f}m too small — alignment failed"
+        )
+
+    def test_align_two_cameras_chord_length(self) -> None:
+        """2 cameras, one flipped — chord-length tiebreaker selects correct orientation."""
+        models = _build_synthetic_rig(n_cameras=2)
+        gt_pts = _make_3d_arc(n_points=15)
+        cam_ids = sorted(models.keys())
+
+        cam_midlines = {
+            cam_id: _build_midline2d(0, cam_id, 0, gt_pts, model)
+            for cam_id, model in models.items()
+        }
+
+        # Flip second camera
+        original_points = cam_midlines[cam_ids[1]].points.copy()
+        cam_midlines[cam_ids[1]] = _flip_midline2d(cam_midlines[cam_ids[1]])
+
+        aligned = _align_midline_orientations(cam_midlines, models)
+
+        # Second camera should be unflipped (matching original)
+        np.testing.assert_allclose(
+            aligned[cam_ids[1]].points, original_points, atol=1e-4
+        )
+
+    def test_align_single_camera_passthrough(self) -> None:
+        """1 camera returns unchanged."""
+        models = _build_synthetic_rig(n_cameras=1)
+        cam_id = next(iter(models.keys()))
+        gt_pts = _make_3d_arc(n_points=15)
+
+        cam_midlines = {cam_id: _build_midline2d(0, cam_id, 0, gt_pts, models[cam_id])}
+
+        aligned = _align_midline_orientations(cam_midlines, models)
+        np.testing.assert_allclose(
+            aligned[cam_id].points, cam_midlines[cam_id].points, atol=1e-4
+        )
+
+
+class TestTriangulateMidlinesWithFlippedCameras:
+    """Integration test: flipped cameras should produce valid 3D midlines."""
+
+    def test_triangulate_midlines_with_flipped_cameras(self) -> None:
+        """3-camera rig with one camera's midline reversed still produces valid output."""
+        models = _build_synthetic_rig(n_cameras=3)
+        gt_pts = _make_3d_arc(n_points=15)
+        cam_ids = sorted(models.keys())
+
+        midlines = {
+            cam_id: _build_midline2d(0, cam_id, 0, gt_pts, model)
+            for cam_id, model in models.items()
+        }
+
+        # Flip one camera's midline
+        midlines[cam_ids[-1]] = _flip_midline2d(midlines[cam_ids[-1]])
+
+        midline_set: MidlineSet = {0: midlines}
+        results = triangulate_midlines(midline_set, models, frame_index=0)
+
+        assert 0 in results, "Fish 0 should appear despite flipped camera"
+        m3d = results[0]
+
+        # Arc length should be reasonable (not zigzag)
+        assert m3d.arc_length < 0.5, (
+            f"Arc length {m3d.arc_length:.4f}m too large — alignment may have failed"
+        )
+        assert m3d.arc_length > 0.05, f"Arc length {m3d.arc_length:.4f}m too small"
+
+        # Mean residual should be low
+        assert m3d.mean_residual < 5.0, (
+            f"Mean residual {m3d.mean_residual:.2f}px too high"
+        )

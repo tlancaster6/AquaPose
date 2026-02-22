@@ -110,12 +110,16 @@ def render_3d_animation(
     output_path: Path,
     *,
     fps: int = 15,
-    n_eval: int = 30,
+    n_eval: int = 15,
 ) -> None:
-    """Render an animated MP4 (or GIF fallback) of 3D fish midlines.
+    """Render an animated MP4 (or GIF fallback) of 3D fish midlines with body widths.
 
-    Each frame draws all fish midlines plus centroid trail dots for the last
-    ``_TRAIL_FRAMES`` frames. Fish colors are consistent across frames.
+    Each frame draws fish midlines as spline curves with scatter points sized
+    by the interpolated half-width at each evaluation point, giving a
+    sausage-like body representation. Centroid trails from previous frames
+    provide motion context.
+
+    Axis bounds are precomputed from all frames so the camera stays fixed.
 
     Args:
         midlines_per_frame: Per-frame fish midlines. Each entry maps
@@ -123,7 +127,7 @@ def render_3d_animation(
         output_path: Output file path. Extension determines format: ``.mp4``
             for FFMpeg, ``.gif`` for Pillow.
         fps: Frame rate for the animation.
-        n_eval: Number of evaluation points per spline.
+        n_eval: Number of evaluation points per spline (and body spheres).
     """
     from matplotlib.animation import FFMpegWriter, PillowWriter
 
@@ -134,14 +138,43 @@ def render_3d_animation(
         logger.warning("render_3d_animation: no frames to render")
         return
 
-    fig = plt.figure(figsize=(8, 6))
+    fig = plt.figure(figsize=(10, 8))
     ax: Axes3D = fig.add_subplot(111, projection="3d")  # type: ignore[assignment]
 
     u_vals = np.linspace(0.0, 1.0, n_eval)
 
-    # Precompute centroids per frame per fish for trail rendering
+    # Precompute fixed axis bounds from all midline points across all frames
+    all_pts: list[np.ndarray] = []
+    for frame_midlines in midlines_per_frame:
+        for midline in frame_midlines.values():
+            spline = scipy.interpolate.BSpline(
+                midline.knots.astype(np.float64),
+                midline.control_points.astype(np.float64),
+                midline.degree,
+            )
+            all_pts.append(spline(u_vals))
+
+    if not all_pts:
+        logger.warning("render_3d_animation: no midline points")
+        plt.close(fig)
+        return
+
+    combined = np.vstack(all_pts)
+    ranges = combined.max(axis=0) - combined.min(axis=0)
+    max_range = float(ranges.max())
+    pad = max(max_range * 0.1, 0.01)
+    centers = (combined.max(axis=0) + combined.min(axis=0)) / 2.0
+    half = max_range / 2.0 + pad
+
+    # Precompute centroids for trail rendering
     def _centroid(midline: Midline3D) -> np.ndarray:
-        return midline.control_points.mean(axis=0)  # shape (3,)
+        return midline.control_points.mean(axis=0)
+
+    # Scale factor: convert half-width in metres to scatter marker size (points^2).
+    # matplotlib scatter `s` is area in points^2. We map half-width to a visible
+    # diameter relative to the axis range. Tuned so a typical fish (~0.02m hw)
+    # gives a reasonable dot size.
+    hw_scale = (72.0 * 10.0 / max(max_range, 0.01)) ** 2
 
     from matplotlib.artist import Artist
 
@@ -152,9 +185,13 @@ def render_3d_animation(
         ax.set_zlabel("Z (m)")
         ax.set_title(f"Frame {frame_idx}")
 
+        # Fixed axis bounds
+        ax.set_xlim(centers[0] - half, centers[0] + half)
+        ax.set_ylim(centers[1] - half, centers[1] + half)
+        ax.set_zlim(centers[2] - half, centers[2] + half)
+
         frame_midlines = midlines_per_frame[frame_idx]
 
-        # Draw midlines
         for fish_id, midline in frame_midlines.items():
             color = _get_rgb_color(fish_id)
             spline = scipy.interpolate.BSpline(
@@ -163,14 +200,37 @@ def render_3d_animation(
                 midline.degree,
             )
             pts = spline(u_vals)  # (n_eval, 3)
-            ax.plot(pts[:, 0], pts[:, 1], pts[:, 2], color=color)
 
-        # Draw centroid trails (last _TRAIL_FRAMES frames)
+            # Spline line
+            ax.plot(pts[:, 0], pts[:, 1], pts[:, 2], color=color, linewidth=1)
+
+            # Interpolate half-widths to n_eval points
+            hw = midline.half_widths
+            if len(hw) == n_eval:
+                hw_interp = hw.astype(np.float64)
+            else:
+                hw_u = np.linspace(0.0, 1.0, len(hw))
+                hw_interp = np.interp(u_vals, hw_u, hw.astype(np.float64))
+
+            # Scatter sized by half-width
+            sizes = hw_interp**2 * hw_scale
+            sizes = np.clip(sizes, 5, 500)
+            ax.scatter(
+                pts[:, 0],
+                pts[:, 1],
+                pts[:, 2],
+                s=sizes,
+                c=[color],
+                alpha=0.35,
+                edgecolors=color,
+                linewidths=0.5,
+            )
+
+        # Centroid trails (last _TRAIL_FRAMES frames)
         trail_start = max(0, frame_idx - _TRAIL_FRAMES)
-        for trail_frame_idx in range(trail_start, frame_idx):
-            alpha = (trail_frame_idx - trail_start + 1) / _TRAIL_FRAMES
-            trail_midlines = midlines_per_frame[trail_frame_idx]
-            for fish_id, midline in trail_midlines.items():
+        for trail_fi in range(trail_start, frame_idx):
+            alpha = (trail_fi - trail_start + 1) / _TRAIL_FRAMES
+            for fish_id, midline in midlines_per_frame[trail_fi].items():
                 color = _get_rgb_color(fish_id)
                 centroid = _centroid(midline)
                 ax.scatter(
@@ -178,8 +238,8 @@ def render_3d_animation(
                     centroid[1],
                     centroid[2],
                     color=color,
-                    alpha=alpha * 0.7,
-                    s=10,
+                    alpha=alpha * 0.5,
+                    s=8,
                 )
 
         return []
@@ -193,7 +253,6 @@ def render_3d_animation(
         blit=False,
     )
 
-    # Determine writer based on FFMpeg availability
     if FFMpegWriter.isAvailable():
         writer = FFMpegWriter(fps=fps)
         save_path = output_path.with_suffix(".mp4")

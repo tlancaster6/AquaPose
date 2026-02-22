@@ -111,6 +111,15 @@ def _adaptive_smooth(mask: np.ndarray) -> np.ndarray:
         Smoothed binary mask, uint8 (0/255). Shape (H, W).
     """
     bool_mask = mask > 0
+
+    # Keep only the largest connected component to discard stray blobs
+    # (e.g. a second fish partially visible in the crop).
+    labeled, n_labels = scipy.ndimage.label(bool_mask)
+    if n_labels > 1:
+        component_sizes = scipy.ndimage.sum(bool_mask, labeled, range(1, n_labels + 1))
+        largest_label = int(np.argmax(component_sizes)) + 1
+        bool_mask = labeled == largest_label
+
     props = regionprops(bool_mask.astype(np.uint8))
     minor = props[0].axis_minor_length if props else 10.0
     radius = max(3, int(minor) // 8)

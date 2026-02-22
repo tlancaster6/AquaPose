@@ -19,7 +19,7 @@ from .associate import (
 
 # --- Module-level defaults ---
 
-DEFAULT_MIN_HITS: int = 2
+DEFAULT_MIN_HITS: int = 5
 """Frames before a track is confirmed (birth confirmation)."""
 
 DEFAULT_MAX_AGE: int = 7
@@ -28,10 +28,10 @@ DEFAULT_MAX_AGE: int = 7
 DEFAULT_REPROJECTION_THRESHOLD: float = 15.0
 """Maximum pixel distance for a track to claim a detection."""
 
-DEFAULT_MIN_CAMERAS_BIRTH: int = 2
+DEFAULT_MIN_CAMERAS_BIRTH: int = 3
 """Minimum cameras in an association to birth a new track."""
 
-DEFAULT_BIRTH_INTERVAL: int = 5
+DEFAULT_BIRTH_INTERVAL: int = 30
 """Frames between birth RANSAC attempts (when not triggered by deficit)."""
 
 DEFAULT_RESIDUAL_REJECT_FACTOR: float = 3.0
@@ -441,9 +441,9 @@ class FishTracker:
             }
 
         # ----------------------------------------------------------
-        # Phase 1.5: Deduplicate confirmed tracks
+        # Phase 1.5: Deduplicate confirmed tracks (disabled for testing)
         # ----------------------------------------------------------
-        self._dedup_confirmed_tracks()
+        # self._dedup_confirmed_tracks()
 
         # ----------------------------------------------------------
         # Phase 2: Birth Discovery
@@ -454,7 +454,6 @@ class FishTracker:
         should_birth = (
             self.frame_count == 0
             or confirmed_count < self.expected_count
-            or total_unclaimed > self.expected_count - confirmed_count
             or self.frame_count % self.birth_interval == 0
         )
 
@@ -477,6 +476,20 @@ class FishTracker:
                 births = sorted(births, key=lambda a: float(a.centroid_3d[0]))
 
             for birth in births:
+                # Pre-birth proximity check: reject if too close to an
+                # existing confirmed track (prevents ghost duplicates).
+                too_close = False
+                for t in self.tracks:
+                    if t.is_confirmed and len(t.positions) > 0:
+                        dist = float(
+                            np.linalg.norm(birth.centroid_3d - list(t.positions)[-1])
+                        )
+                        if dist < self.dedup_distance:
+                            too_close = True
+                            break
+                if too_close:
+                    continue
+
                 dead_id = next(dead_id_iter, None)
                 self._create_track(birth, fish_id_override=dead_id)
 

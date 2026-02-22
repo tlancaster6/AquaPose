@@ -37,6 +37,16 @@ FISH_COLORS: list[tuple[int, int, int]] = [
     (0, 165, 255),  # 7: amber
     (0, 128, 255),  # 8: orange-red
     (255, 255, 0),  # 9: cyan
+    (0, 128, 0),  # 10: dark green
+    (128, 0, 0),  # 11: dark blue (navy)
+    (0, 0, 128),  # 12: dark red (maroon)
+    (0, 200, 200),  # 13: teal
+    (200, 0, 200),  # 14: dark magenta
+    (128, 128, 0),  # 15: olive
+    (0, 200, 128),  # 16: spring green
+    (200, 128, 0),  # 17: steel blue
+    (64, 64, 255),  # 18: salmon
+    (128, 255, 128),  # 19: light green
 ]
 
 

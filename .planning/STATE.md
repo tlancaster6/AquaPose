@@ -167,6 +167,7 @@ Recent decisions affecting current work:
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 1 | Fix triangulation bugs: NaN contamination, coupled thresholds, greedy orientation | 2026-02-23 | 4d3d07e | [1-fix-triangulation-bugs-nan-contamination](./quick/1-fix-triangulation-bugs-nan-contamination/) |
+| 2 | Add synthetic data module (FishConfig, MidlineSet generation, GT Midline3D, --synthetic flag) | 2026-02-23 | b9dd734 | [2-add-synthetic-data-module-as-drop-in-rep](./quick/2-add-synthetic-data-module-as-drop-in-rep/) |
 
 ### Blockers/Concerns
 
@@ -177,6 +178,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-02-21
-Stopped at: Completed 07-01-PLAN.md
-Next action: Phase 07 Plan 01 complete — triangulation module and tests done. Add Phase 08 (Output & Visualization) via /gsd:add-phase or continue to next phase.
+Last session: 2026-02-23
+Stopped at: Completed quick-2 (add-synthetic-data-module-as-drop-in-rep)
+Next action: Synthetic module available for controlled testing. Continue with Phase 09 Plan 02 (integration/validation against real data) or use --synthetic for further development.

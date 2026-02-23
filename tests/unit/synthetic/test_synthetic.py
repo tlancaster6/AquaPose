@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from math import pi
 
 import numpy as np
 import torch
@@ -290,3 +291,118 @@ def test_round_trip_accuracy() -> None:
         if valid_np[i] and not np.any(np.isnan(ml.points[i])):
             err = float(np.linalg.norm(ml.points[i] - direct_np[i]))
             assert err < 1.0, f"Point {i}: round-trip error {err:.3f}px > 1px"
+
+
+# ---------------------------------------------------------------------------
+# Drift tests
+# ---------------------------------------------------------------------------
+
+
+def test_drift_position_changes_across_frames() -> None:
+    """Fish with non-zero velocity drifts linearly in position across frames."""
+    rig = build_fabricated_rig()
+    initial_x = 0.0
+    cfg = FishConfig(
+        position=(initial_x, 0.0, 1.25),
+        velocity=(0.01, 0.0, 0.0),
+        angular_velocity=0.0,
+    )
+    n_frames = 5
+    _, ground_truths = generate_synthetic_midline_sets(
+        rig, fish_configs=[cfg], n_frames=n_frames
+    )
+
+    # Extract mean X position of control points per frame
+    x_centroids = []
+    for frame_gt in ground_truths:
+        ctrl_pts = frame_gt[0].control_points  # shape (SPLINE_N_CTRL, 3)
+        x_centroids.append(float(np.mean(ctrl_pts[:, 0])))
+
+    # X centroid must increase monotonically across frames
+    for t in range(1, n_frames):
+        assert x_centroids[t] > x_centroids[t - 1], (
+            f"X centroid did not increase at frame {t}: "
+            f"{x_centroids[t - 1]:.6f} -> {x_centroids[t]:.6f}"
+        )
+
+    # Frame 0 centroid should be close to initial_x
+    assert abs(x_centroids[0] - initial_x) < 1e-3, (
+        f"Frame 0 X centroid {x_centroids[0]:.6f} != initial_x {initial_x}"
+    )
+
+    # Frame 4 centroid should be approximately initial_x + 4 * 0.01
+    expected_x4 = initial_x + 4 * 0.01
+    assert abs(x_centroids[4] - expected_x4) < 1e-3, (
+        f"Frame 4 X centroid {x_centroids[4]:.6f} != expected {expected_x4:.6f}"
+    )
+
+
+def test_drift_heading_changes_across_frames() -> None:
+    """Fish with non-zero angular_velocity rotates its orientation over frames."""
+    rig = build_fabricated_rig()
+
+    cfg_static = FishConfig(
+        position=(0.0, 0.0, 1.25),
+        heading_rad=0.0,
+        angular_velocity=0.0,
+    )
+    cfg_rotating = FishConfig(
+        position=(0.0, 0.0, 1.25),
+        heading_rad=0.0,
+        angular_velocity=pi / 10,
+    )
+
+    _, gt_static = generate_synthetic_midline_sets(
+        rig, fish_configs=[cfg_static], n_frames=3
+    )
+    _, gt_rotating = generate_synthetic_midline_sets(
+        rig, fish_configs=[cfg_rotating], n_frames=3
+    )
+
+    # Static fish: control points identical across all frames
+    pts0 = gt_static[0][0].control_points
+    pts1 = gt_static[1][0].control_points
+    pts2 = gt_static[2][0].control_points
+    assert np.allclose(pts0, pts1, atol=1e-5), "Static fish changed between frames 0-1"
+    assert np.allclose(pts0, pts2, atol=1e-5), "Static fish changed between frames 0-2"
+
+    # Rotating fish: orientation direction (last - first control point) should
+    # differ between frame 0 and frame 2
+    def spine_direction(ctrl_pts: np.ndarray) -> np.ndarray:
+        """Unit vector from first to last control point."""
+        v = ctrl_pts[-1] - ctrl_pts[0]
+        return v / (np.linalg.norm(v) + 1e-12)
+
+    dir_frame0 = spine_direction(gt_rotating[0][0].control_points)
+    dir_frame2 = spine_direction(gt_rotating[2][0].control_points)
+
+    # The dot product should be < 1 (directions differ after rotation)
+    dot = float(np.dot(dir_frame0[:2], dir_frame2[:2]))
+    assert dot < 0.99, (
+        f"Rotating fish spine direction unchanged across 2 frames (dot={dot:.4f})"
+    )
+
+
+def test_zero_drift_matches_static() -> None:
+    """FishConfig with default zero drift produces identical GT across all frames."""
+    rig = build_fabricated_rig()
+    cfg = FishConfig(
+        position=(0.0, 0.0, 1.25),
+        curvature=5.0,
+        velocity=(0.0, 0.0, 0.0),
+        angular_velocity=0.0,
+    )
+    _, ground_truths = generate_synthetic_midline_sets(
+        rig, fish_configs=[cfg], n_frames=3
+    )
+
+    pts0 = ground_truths[0][0].control_points
+    pts1 = ground_truths[1][0].control_points
+    pts2 = ground_truths[2][0].control_points
+
+    assert np.allclose(pts0, pts1, atol=1e-5), (
+        "Zero-drift fish control points differ between frames 0 and 1"
+    )
+    assert np.allclose(pts0, pts2, atol=1e-5), (
+        "Zero-drift fish control points differ between frames 0 and 2"
+    )

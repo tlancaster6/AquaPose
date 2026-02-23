@@ -328,12 +328,21 @@ def _run_synthetic(args: argparse.Namespace) -> int:
     for i in range(args.n_fish):
         x_pos = i * 0.1 - (args.n_fish - 1) * 0.05
         curvature = 0.0 if i % 2 == 0 else 15.0
+        # Alternate between stationary and drifting fish
+        if i % 2 == 0:
+            velocity = (0.0, 0.0, 0.0)
+            angular_vel = 0.0
+        else:
+            velocity = (0.002, 0.001, 0.0)
+            angular_vel = 0.05
         fish_configs.append(
             FishConfig(
                 position=(x_pos, 0.0, 1.25),
                 heading_rad=0.0,
                 curvature=curvature,
                 scale=0.085,
+                velocity=velocity,
+                angular_velocity=angular_vel,
             )
         )
     print(f"  Generating {args.n_fish} synthetic fish, {args.stop_frame} frame(s).\n")

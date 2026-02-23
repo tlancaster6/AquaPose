@@ -347,21 +347,22 @@ def _curvature_penalty(
     v1 = ctrl_pts[:, 1:-1, :] - ctrl_pts[:, :-2, :]  # (N_fish, K-2, 3)
     v2 = ctrl_pts[:, 2:, :] - ctrl_pts[:, 1:-1, :]  # (N_fish, K-2, 3)
 
-    # Cosine of bend angle at each interior control point
+    # Bend angle at C_i: angle between incoming segment (v1) and outgoing segment (v2).
+    # For a straight spine, v1 and v2 are parallel (same direction), bend_angle = 0.
+    # For a sharp 90° bend, v1 and v2 are orthogonal, bend_angle = 90°.
     norm1 = torch.linalg.norm(v1, dim=2, keepdim=True).clamp(min=1e-8)
     norm2 = torch.linalg.norm(v2, dim=2, keepdim=True).clamp(min=1e-8)
     v1_unit = v1 / norm1
     v2_unit = v2 / norm2
 
-    cos_angle = (v1_unit * v2_unit).sum(dim=2)  # (N_fish, K-2)
-    cos_angle = torch.clamp(cos_angle, -1.0, 1.0)
+    # cos(bend_angle) = v1 · v2 — 1 when straight, <1 when bent
+    cos_bend = (v1_unit * v2_unit).sum(dim=2)  # (N_fish, K-2)
+    # Clamp away from ±1 to keep acos gradient finite (gradient of acos is
+    # -1/sqrt(1 - x^2), which blows up at x = ±1 for collinear/antiparallel pts)
+    _EPS = 1e-6
+    cos_bend = torch.clamp(cos_bend, -1.0 + _EPS, 1.0 - _EPS)
 
-    # Bend angle at C_i is pi - acos(cos_angle) (exterior angle between segments)
-    # Or equivalently the supplement: angle between v1 and -v2
-    cos_bend = -(v1_unit * v2_unit).sum(dim=2)  # (N_fish, K-2), bend from straight
-    cos_bend = torch.clamp(cos_bend, -1.0, 1.0)
-
-    # Bend angle in degrees
+    # Bend angle in radians (0 = straight, pi = U-turn)
     bend_angles_rad = torch.acos(cos_bend)  # (N_fish, K-2)
 
     max_rad = torch.tensor(

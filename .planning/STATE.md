@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-02-21)
 Phase: 08-end-to-end-integration-testing-and-benchmarking
 Plan: 03 in progress (paused at checkpoint:human-verify Task 2)
 Status: Task 1 complete (0df6d96) — E2E test script written and committed. Awaiting user to run `hatch run test-all tests/e2e/test_reconstruct.py -k test_reconstruct_e2e -s` and visually verify diagnostic output.
-Last activity: 2026-02-21 — Phase 08 Plan 03: E2E test script (Task 1 committed 0df6d96)
+Last activity: 2026-02-23 - Completed quick task 1: Fix triangulation bugs: NaN contamination, coupled thresholds, greedy orientation
 Stopped at: Checkpoint:human-verify Task 2 of 08-03-PLAN.md
 
 Progress: [█████████░] 92% (phases 1-3 complete, phase 4 shelved, phases 5-8 plan 02 complete)
@@ -156,6 +156,12 @@ Recent decisions affecting current work:
 - **Consolidate scripts into CLI workflow** (tooling) — scripts/ now cleaned to 5 production scripts (build_training_data.py, eval_yolo_vs_mog2.py, organize_yolo_dataset.py, sample_yolo_frames.py, train_yolo.py)
 - **Integrate full-frame exclusion masks from AquaMVS** (calibration) — load optional per-camera masks to filter out invalid regions before detection/segmentation/triangulation
 - **Add Phase 7 and Phase 8 to roadmap** via /gsd:add-phase
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 1 | Fix triangulation bugs: NaN contamination, coupled thresholds, greedy orientation | 2026-02-23 | 4d3d07e | [1-fix-triangulation-bugs-nan-contamination](./quick/1-fix-triangulation-bugs-nan-contamination/) |
 
 ### Blockers/Concerns
 

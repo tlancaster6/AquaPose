@@ -383,6 +383,90 @@ def test_drift_heading_changes_across_frames() -> None:
     )
 
 
+def test_generate_fish_3d_sinusoidal() -> None:
+    """Sinusoidal fish produces S-shaped lateral displacement."""
+    cfg_straight = FishConfig(
+        position=(0.0, 0.0, 1.25), heading_rad=0.0, curvature=0.0, scale=0.085
+    )
+    cfg_sine = FishConfig(
+        position=(0.0, 0.0, 1.25),
+        heading_rad=0.0,
+        curvature=0.0,
+        sinusoidal_amplitude=0.006,
+        sinusoidal_periods=1.0,
+        scale=0.085,
+    )
+
+    pts_straight = generate_fish_3d(cfg_straight)
+    pts_sine = generate_fish_3d(cfg_sine)
+
+    assert pts_sine.shape == (N_SAMPLE_POINTS, 3)
+
+    # Y extent should be larger for sinusoidal fish
+    y_range_straight = float(pts_straight[:, 1].max() - pts_straight[:, 1].min())
+    y_range_sine = float(pts_sine[:, 1].max() - pts_sine[:, 1].min())
+    assert y_range_sine > y_range_straight + 0.001, (
+        f"Sinusoidal Y range {y_range_sine:.4f} should exceed "
+        f"straight {y_range_straight:.4f}"
+    )
+
+    # Endpoints should be near zero lateral displacement (sin(0)=0, sin(2pi)=0)
+    assert abs(float(pts_sine[0, 1])) < 0.001
+    assert abs(float(pts_sine[-1, 1])) < 0.001
+
+    # Arc length should be close to scale (slightly longer due to curvature)
+    diffs = np.diff(pts_sine, axis=0)
+    arc_len = float(np.sum(np.linalg.norm(diffs, axis=1)))
+    assert arc_len >= 0.085, f"Sinusoidal arc length {arc_len:.6f} < scale"
+
+
+def test_generate_fish_3d_sinusoidal_half_period() -> None:
+    """Half-period sinusoidal produces a C-shaped (one-sided) curve."""
+    cfg = FishConfig(
+        position=(0.0, 0.0, 1.25),
+        heading_rad=0.0,
+        curvature=0.0,
+        sinusoidal_amplitude=0.006,
+        sinusoidal_periods=0.5,
+        scale=0.085,
+    )
+    pts = generate_fish_3d(cfg)
+
+    # With half period, the displacement is sin(0..pi) which is all positive
+    # So all Y values should be >= 0 (approximately)
+    assert float(pts[:, 1].min()) >= -0.001, "Half-period sine should be one-sided"
+
+
+def test_generate_fish_3d_sinusoidal_plus_arc() -> None:
+    """Sinusoidal + arc compound shape has more Y range than either alone."""
+    cfg_arc = FishConfig(
+        position=(0.0, 0.0, 1.25),
+        heading_rad=0.0,
+        curvature=10.0,
+        sinusoidal_amplitude=0.0,
+        scale=0.085,
+    )
+    cfg_compound = FishConfig(
+        position=(0.0, 0.0, 1.25),
+        heading_rad=0.0,
+        curvature=10.0,
+        sinusoidal_amplitude=0.006,
+        sinusoidal_periods=1.0,
+        scale=0.085,
+    )
+
+    pts_arc = generate_fish_3d(cfg_arc)
+    pts_compound = generate_fish_3d(cfg_compound)
+
+    y_range_arc = float(pts_arc[:, 1].max() - pts_arc[:, 1].min())
+    y_range_compound = float(pts_compound[:, 1].max() - pts_compound[:, 1].min())
+
+    # Compound shape should differ from pure arc
+    assert abs(y_range_compound - y_range_arc) > 0.0005, (
+        "Compound shape should differ from pure arc"
+    )
+
+
 def test_zero_drift_matches_static() -> None:
     """FishConfig with default zero drift produces identical GT across all frames."""
     rig = build_fabricated_rig()

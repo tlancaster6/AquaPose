@@ -37,6 +37,14 @@ class FishConfig:
             0 means the fish points along the positive X axis.
         curvature: Body curvature in m^-1. 0 produces a straight fish.
             Non-zero values produce a circular arc with radius=1/|curvature|.
+        sinusoidal_amplitude: Lateral amplitude for sinusoidal (S-shaped) spine
+            in metres. 0 disables sinusoidal shape. When non-zero, the spine
+            follows a sine wave with one full period over the body length,
+            producing an S-curve. Can be combined with curvature for compound
+            shapes. Default 0.0.
+        sinusoidal_periods: Number of sine-wave periods over the body length.
+            Default 1.0 gives an S-shape; 0.5 gives a C-shape; 2.0 gives a
+            double-S. Only used when sinusoidal_amplitude != 0.
         scale: Total body arc length in metres. Default 0.085 (85mm).
         n_points: Number of evenly spaced body points. Default N_SAMPLE_POINTS.
         velocity: Per-frame position displacement in metres (dx, dy, dz).
@@ -49,6 +57,8 @@ class FishConfig:
     position: tuple[float, float, float] = (0.0, 0.0, 1.25)
     heading_rad: float = 0.0
     curvature: float = 0.0
+    sinusoidal_amplitude: float = 0.0
+    sinusoidal_periods: float = 1.0
     scale: float = 0.085
     n_points: int = N_SAMPLE_POINTS
     velocity: tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -63,6 +73,11 @@ def generate_fish_3d(config: FishConfig) -> np.ndarray:
     (curvature != 0), produces a circular arc with the given radius, subtending
     an arc length equal to ``config.scale``, rotated by ``config.heading_rad``
     around the Z axis.
+
+    When ``sinusoidal_amplitude`` is non-zero, a lateral sine-wave displacement
+    is added perpendicular to the heading direction, producing S-shaped or
+    compound curves. The number of sine periods is controlled by
+    ``sinusoidal_periods``.
 
     Args:
         config: FishConfig specifying shape, position, and heading.
@@ -81,34 +96,30 @@ def generate_fish_3d(config: FishConfig) -> np.ndarray:
 
     if abs(kappa) < 1e-9:
         # Straight line along heading direction
-        cos_h = np.cos(heading)
-        sin_h = np.sin(heading)
-        x = cx + t_vals * cos_h
-        y = cy + t_vals * sin_h
-        z = np.full(n, cz, dtype=np.float64)
+        x_local = t_vals
+        y_local = np.zeros(n, dtype=np.float64)
     else:
         # Circular arc in XY plane, radius = 1/|kappa|
         r = 1.0 / abs(kappa)
-        # Angle subtended by each arc-length step
-        theta_vals = t_vals / r  # angle from arc midpoint
-
-        # Unrotated arc: centred at origin, midpoint at angle 0
-        # Arc points along the heading direction
-        # Centre of curvature is perpendicular to heading at the fish centroid
+        theta_vals = t_vals / r
         sign = 1.0 if kappa > 0 else -1.0
-
-        # In the local frame (heading=0):
-        # centre of curvature is at (0, sign*r) from fish centroid
-        # arc points: x_local = r * sin(theta), y_local = sign * r * (1 - cos(theta))
         x_local = r * np.sin(theta_vals)
         y_local = sign * r * (1.0 - np.cos(theta_vals))
 
-        # Rotate by heading_rad
-        cos_h = np.cos(heading)
-        sin_h = np.sin(heading)
-        x = cx + cos_h * x_local - sin_h * y_local
-        y = cy + sin_h * x_local + cos_h * y_local
-        z = np.full(n, cz, dtype=np.float64)
+    # Add sinusoidal lateral displacement if configured
+    if abs(config.sinusoidal_amplitude) > 1e-9:
+        # Normalised position along body: 0 at head, 1 at tail
+        u = (t_vals - t_vals[0]) / (t_vals[-1] - t_vals[0]) if L > 0 else np.zeros(n)
+        y_local = y_local + config.sinusoidal_amplitude * np.sin(
+            2.0 * np.pi * config.sinusoidal_periods * u
+        )
+
+    # Rotate by heading_rad and translate to world position
+    cos_h = np.cos(heading)
+    sin_h = np.sin(heading)
+    x = cx + cos_h * x_local - sin_h * y_local
+    y = cy + sin_h * x_local + cos_h * y_local
+    z = np.full(n, cz, dtype=np.float64)
 
     pts = np.stack([x, y, z], axis=1).astype(np.float32)
     return pts

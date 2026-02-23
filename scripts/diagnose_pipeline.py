@@ -322,13 +322,37 @@ def _run_synthetic(args: argparse.Namespace) -> int:
         print(f"  Using fabricated {n}x{n} rig ({len(models)} cameras).")
 
     # -----------------------------------------------------------------------
-    # Build fish configs
+    # Build fish configs — diverse shapes to expose failure modes
     # -----------------------------------------------------------------------
+    # Each fish gets a unique combination of curvature, heading, sinusoidal
+    # amplitude, and drift. The pattern cycles through shape archetypes:
+    #   0: straight
+    #   1: gentle arc (C-shape)
+    #   2: sinusoidal S-curve
+    #   3: tight arc
+    #   4: sinusoidal + arc (compound)
+    #   5: opposite-direction arc
+    #   6+: repeats with offset heading
+    _SHAPE_PRESETS: list[dict[str, float]] = [
+        {"curvature": 0.0, "sinusoidal_amplitude": 0.0, "sinusoidal_periods": 1.0},
+        {"curvature": 10.0, "sinusoidal_amplitude": 0.0, "sinusoidal_periods": 1.0},
+        {"curvature": 0.0, "sinusoidal_amplitude": 0.006, "sinusoidal_periods": 1.0},
+        {"curvature": 25.0, "sinusoidal_amplitude": 0.0, "sinusoidal_periods": 1.0},
+        {"curvature": 8.0, "sinusoidal_amplitude": 0.004, "sinusoidal_periods": 1.0},
+        {"curvature": -15.0, "sinusoidal_amplitude": 0.0, "sinusoidal_periods": 1.0},
+        {"curvature": 0.0, "sinusoidal_amplitude": 0.005, "sinusoidal_periods": 0.5},
+    ]
+
     fish_configs: list[FishConfig] = []
     for i in range(args.n_fish):
+        # Spread fish in a line along X, offset in Y for variety
         x_pos = i * 0.1 - (args.n_fish - 1) * 0.05
-        curvature = 0.0 if i % 2 == 0 else 15.0
-        # Alternate between stationary and drifting fish
+        y_pos = 0.015 * (i % 3 - 1)  # slight Y scatter
+        # Vary heading across fish (spread over ~180 degrees)
+        heading = i * np.pi / max(args.n_fish, 1)
+        # Cycle through shape presets
+        preset = _SHAPE_PRESETS[i % len(_SHAPE_PRESETS)]
+        # Alternate drift: odd fish drift, even fish stationary
         if i % 2 == 0:
             velocity = (0.0, 0.0, 0.0)
             angular_vel = 0.0
@@ -337,9 +361,11 @@ def _run_synthetic(args: argparse.Namespace) -> int:
             angular_vel = 0.05
         fish_configs.append(
             FishConfig(
-                position=(x_pos, 0.0, 1.25),
-                heading_rad=0.0,
-                curvature=curvature,
+                position=(x_pos, y_pos, 1.25),
+                heading_rad=heading,
+                curvature=preset["curvature"],
+                sinusoidal_amplitude=preset["sinusoidal_amplitude"],
+                sinusoidal_periods=preset["sinusoidal_periods"],
                 scale=0.085,
                 velocity=velocity,
                 angular_velocity=angular_vel,

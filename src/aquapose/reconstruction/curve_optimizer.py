@@ -239,6 +239,13 @@ def _data_loss(
     NaN/invalid projections are filtered before chamfer computation. Cameras with
     no valid projections are skipped and do not contribute to the per-fish average.
 
+    If a fish has NO valid projections in ANY camera (all spline points are above
+    the water surface), a depth penalty is used instead of chamfer distance. The
+    depth penalty is proportional to how far above the water surface the spline
+    lies, scaled by 100 to match chamfer pixel units. This provides gradients that
+    push the spline back underwater, preventing silent convergence at loss=0 when
+    the initialization is physically invalid.
+
     Args:
         ctrl_pts: Control points tensor, shape (N_fish, K, 3), float32.
         basis: B-spline basis matrix, shape (n_eval, K), float32.
@@ -248,10 +255,14 @@ def _data_loss(
         config: Optimizer configuration.
 
     Returns:
-        Scalar mean chamfer distance in pixels, averaged over fish and cameras.
+        Scalar mean loss in pixel units, averaged over fish and cameras.
     """
     n_fish = ctrl_pts.shape[0]
     fish_losses: list[torch.Tensor] = []
+
+    # Use the first available model to get water_z for the depth penalty below
+    any_model = next(iter(models.values()))
+    water_z = any_model.water_z
 
     for i in range(n_fish):
         c = ctrl_pts[i]  # (K, 3)
@@ -282,6 +293,25 @@ def _data_loss(
             # Average chamfer over cameras for this fish
             fish_loss = torch.stack(cam_losses).mean()
             fish_losses.append(fish_loss)
+        else:
+            # No valid projections: all control points are above the water surface.
+            # Add a penalty proportional to how far above water the spline is, so
+            # gradients push the spline back underwater. The penalty is zero when all
+            # points are below water (h_q >= 0) and grows linearly with violation.
+            # Scale factor (~100) puts this in the same pixel-unit ballpark as chamfer.
+            h_q = spline_pts[:, 2] - water_z  # (n_eval,): positive = underwater
+            above_water = torch.clamp(-h_q, min=0.0)  # (n_eval,): > 0 when above water
+            depth_penalty = above_water.mean() * 100.0
+            fish_losses.append(depth_penalty)
+            logger.debug(
+                "Fish %d in batch: no valid projections, depth_penalty=%.4f "
+                "(all control points above water; Z range [%.4f, %.4f], water_z=%.4f)",
+                i,
+                float(depth_penalty.item()),
+                float(spline_pts[:, 2].min().item()),
+                float(spline_pts[:, 2].max().item()),
+                water_z,
+            )
 
     if not fish_losses:
         return torch.zeros(1, device=ctrl_pts.device)
@@ -697,6 +727,9 @@ class CurveOptimizer:
                 for model in models.values():
                     model.to(device)
                 seeded = []
+                skipped_bad_seed = []
+                first_model = next(iter(models.values()))
+                seed_water_z = first_model.water_z
                 for fid in fish_needing_cold_start:
                     if fid in tri_results:
                         ctrl = torch.as_tensor(
@@ -704,6 +737,25 @@ class CurveOptimizer:
                             dtype=torch.float32,
                             device=device,
                         )
+                        # Validate: require that the majority of control points are
+                        # below the water surface (Z > water_z). Bad triangulation
+                        # (e.g. RANSAC failure, degenerate geometry) can produce
+                        # control points far above water, which prevents the optimizer
+                        # from computing any valid projections and causes loss=0.
+                        n_underwater = int((ctrl[:, 2] > seed_water_z).sum().item())
+                        if n_underwater < ctrl.shape[0] // 2:
+                            logger.warning(
+                                "Frame %d fish %d: triangulation seed rejected "
+                                "(%d/%d ctrl pts below water_z=%.4f); "
+                                "falling back to cold start",
+                                frame_index,
+                                fid,
+                                n_underwater,
+                                ctrl.shape[0],
+                                seed_water_z,
+                            )
+                            skipped_bad_seed.append(fid)
+                            continue
                         self._warm_starts[fid] = ctrl
                         init_type[fid] = "tri-seed"
                         seeded.append(fid)
@@ -714,6 +766,14 @@ class CurveOptimizer:
                         len(seeded),
                         len(fish_needing_cold_start),
                         seeded,
+                    )
+                if skipped_bad_seed:
+                    logger.info(
+                        "Frame %d: rejected %d bad triangulation seeds (cold-start "
+                        "fallback): %s",
+                        frame_index,
+                        len(skipped_bad_seed),
+                        skipped_bad_seed,
                     )
             except Exception:
                 # Ensure models are back on GPU even if triangulation failed

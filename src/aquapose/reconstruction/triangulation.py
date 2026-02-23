@@ -398,20 +398,18 @@ def _align_midline_orientations(
     models: dict[str, RefractiveProjectionModel],
     inlier_threshold: float = DEFAULT_INLIER_THRESHOLD,
 ) -> dict[str, Midline2D]:
-    """Align midline orientations across cameras via brute-force enumeration.
+    """Align midline orientations across cameras via greedy pairwise alignment.
 
     Ensures that body point i from camera A corresponds to the same physical
     point as body point i from camera B. Without this, arbitrary BFS traversal
     order causes head/tail mismatch and zigzag 3D reconstructions.
 
-    Algorithm: fixes the first camera (sorted order) as reference, then
-    enumerates all 2^(N-1) flip combinations for the remaining cameras.
-    Each combination is scored by triangulating sample body points using
-    all cameras and measuring mean reprojection residual. With typical fish
-    seen by 3-4 cameras (max 8 combos), this is affordable.
+    Algorithm: fixes the first camera (sorted order) as reference, then for
+    each remaining camera independently tries both orientations and picks the
+    one producing shorter chord length when triangulated against the reference.
+    This is O(N) in camera count rather than O(2^N) brute-force.
 
-    Falls back to greedy pairwise alignment if more than 7 non-reference
-    cameras (2^7 = 128 combos) to avoid combinatorial blowup.
+    For N < 2 cameras: returns unchanged (triangulation will skip anyway).
 
     Args:
         cam_midlines: Per-camera midlines for a single fish.
@@ -427,66 +425,7 @@ def _align_midline_orientations(
     if n_cams < 2:
         return cam_midlines
 
-    others = cam_ids[1:]
-    sample_indices = [0, N_SAMPLE_POINTS // 2, N_SAMPLE_POINTS - 1]
-
-    # Fall back to greedy for >7 non-reference cameras
-    if len(others) > 7:
-        return _align_midline_orientations_greedy(
-            cam_midlines, models, inlier_threshold
-        )
-
-    best_combo: dict[str, Midline2D] = dict(cam_midlines)
-    best_score = float("inf")
-
-    for bits in range(1 << len(others)):
-        trial = dict(cam_midlines)
-        for j, cid in enumerate(others):
-            if bits & (1 << j):
-                trial[cid] = _flip_midline(cam_midlines[cid])
-
-        # Score: multi-camera reprojection residual on sample body points
-        total_res = 0.0
-        n_valid = 0
-        for bp_idx in sample_indices:
-            pixels: dict[str, torch.Tensor] = {}
-            for cid in cam_ids:
-                pt = trial[cid].points[bp_idx]
-                if not np.any(np.isnan(pt)):
-                    pixels[cid] = torch.from_numpy(pt).float()
-            result = _triangulate_body_point(pixels, models, inlier_threshold)
-            if result is not None:
-                total_res += result[2]  # mean reprojection residual
-                n_valid += 1
-
-        score = total_res / n_valid if n_valid > 0 else float("inf")
-        if score < best_score:
-            best_score = score
-            best_combo = trial
-
-    return best_combo
-
-
-def _align_midline_orientations_greedy(
-    cam_midlines: dict[str, Midline2D],
-    models: dict[str, RefractiveProjectionModel],
-    inlier_threshold: float = DEFAULT_INLIER_THRESHOLD,
-) -> dict[str, Midline2D]:
-    """Greedy pairwise orientation alignment fallback for many cameras.
-
-    Used when brute-force enumeration would be too expensive (>7 non-reference
-    cameras). Fixes the first camera as reference, then independently decides
-    whether to flip each other camera based on pairwise chord length.
-
-    Args:
-        cam_midlines: Per-camera midlines for a single fish.
-        models: Per-camera refractive projection models.
-        inlier_threshold: Maximum reprojection error for inlier classification.
-
-    Returns:
-        Dict of (possibly flipped) midlines with consistent orientation.
-    """
-    cam_ids = sorted(cid for cid in cam_midlines if cid in models)
+    # Sample head, mid, tail for chord-length comparison
     sample_indices = [0, N_SAMPLE_POINTS // 2, N_SAMPLE_POINTS - 1]
 
     ref_id = cam_ids[0]
@@ -499,10 +438,12 @@ def _align_midline_orientations_greedy(
         cand_ml = cam_midlines[cid]
         cand_model = models[cid]
 
+        # Score original orientation
         chord_orig = _pairwise_chord_length(
             ref_ml, cand_ml, ref_model, cand_model, sample_indices
         )
 
+        # Score flipped orientation
         flipped_ml = _flip_midline(cand_ml)
         chord_flip = _pairwise_chord_length(
             ref_ml, flipped_ml, ref_model, cand_model, sample_indices

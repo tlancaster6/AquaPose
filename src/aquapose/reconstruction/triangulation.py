@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import itertools
 import logging
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -32,6 +33,15 @@ SPLINE_KNOTS: np.ndarray = np.array(
 MIN_BODY_POINTS: int = 9  # SPLINE_N_CTRL + 2
 DEFAULT_INLIER_THRESHOLD: float = 50.0  # pixels
 N_SAMPLE_POINTS: int = 15  # matches Phase 6 output
+
+# Minimum angle (degrees) between two ray directions before their pairwise
+# triangulation is considered ill-conditioned and skipped.  Rays more nearly
+# parallel than this threshold produce wildly inaccurate DLT solutions.
+# For the 12-camera ring rig the geometric minimum angle for any valid in-tank
+# fish position is ~8 degrees, so 5 degrees never filters real pairs while
+# catching degenerate/corrupted 2D observations.
+_MIN_RAY_ANGLE_DEG: float = 5.0
+_COS_MIN_RAY_ANGLE: float = math.cos(math.radians(_MIN_RAY_ANGLE_DEG))
 
 # ---------------------------------------------------------------------------
 # Type aliases
@@ -95,6 +105,7 @@ def _triangulate_body_point(
     pixels: dict[str, torch.Tensor],
     models: dict[str, RefractiveProjectionModel],
     inlier_threshold: float,
+    water_z: float | None = None,
 ) -> tuple[torch.Tensor, list[str], float] | None:
     """Triangulate a single 3D body point from multi-camera 2D observations.
 
@@ -106,18 +117,31 @@ def _triangulate_body_point(
     - 8+ cameras: all-camera triangulation with residual-based outlier
       rejection (drop cameras with residual > median + 2*sigma).
 
+    Physical constraint: if ``water_z`` is provided, any candidate point with
+    Z <= water_z is considered physically impossible (above or at the water
+    surface) and is rejected.  This prevents ill-conditioned pairwise
+    triangulations from contaminating the result.
+
+    Ray-angle filter (Layer 2): pairwise triangulations where the angle
+    between ray directions is below ``_MIN_RAY_ANGLE_DEG`` are skipped.
+    Near-parallel rays produce ill-conditioned DLT solutions with enormous
+    Z errors.
+
     Args:
         pixels: Mapping from camera_id to pixel coordinate tensor, shape (2,),
             float32. Each tensor is a single (u, v) observation.
         models: Mapping from camera_id to RefractiveProjectionModel.
         inlier_threshold: Maximum reprojection error (pixels) to classify a
             camera as an inlier during re-triangulation.
+        water_z: Z coordinate of the water surface in world frame.  Points
+            with Z <= water_z are rejected as physically impossible.  When
+            None, no Z-lower-bound check is applied.
 
     Returns:
         Tuple of (point_3d, inlier_cam_ids, mean_residual) where point_3d has
         shape (3,) float32 and mean_residual is the mean reprojection error
         across inlier cameras in pixels. Returns None if fewer than 2 cameras
-        are available.
+        are available or no physically valid candidate could be found.
     """
     cam_ids = [cid for cid in pixels if cid in models]
     n_cams = len(cam_ids)
@@ -134,11 +158,39 @@ def _triangulate_body_point(
         origins[cid] = o[0]  # (3,)
         directions[cid] = d[0]  # (3,)
 
+    def _is_below_water(pt: torch.Tensor) -> bool:
+        """Return True if the point is at or above the water surface."""
+        if water_z is None:
+            return False
+        return float(pt[2].item()) <= water_z
+
     if n_cams == 2:
-        # Single pair — no held-out scoring possible
+        # Single pair — check angle first (Layer 2), then Z validity (Layer 1)
+        pa, pb = cam_ids[0], cam_ids[1]
+        cos_angle = float(torch.dot(directions[pa], directions[pb]).abs().item())
+        if cos_angle > _COS_MIN_RAY_ANGLE:
+            logger.debug(
+                "2-cam pair (%s, %s) skipped: ray angle ~%.2f deg < %.1f deg minimum",
+                pa,
+                pb,
+                math.degrees(math.acos(min(cos_angle, 1.0))),
+                _MIN_RAY_ANGLE_DEG,
+            )
+            return None
+
         origs = torch.stack([origins[cid] for cid in cam_ids])  # (2, 3)
         dirs = torch.stack([directions[cid] for cid in cam_ids])  # (2, 3)
         pt3d = triangulate_rays(origs, dirs)
+
+        # Layer 1: reject physically impossible points
+        if _is_below_water(pt3d):
+            logger.debug(
+                "2-cam triangulation rejected: Z=%.3f <= water_z=%.3f",
+                float(pt3d[2].item()),
+                water_z,
+            )
+            return None
+
         # Compute actual reprojection residual
         residuals = []
         pt3d_batch = pt3d.unsqueeze(0)  # (1, 3)
@@ -158,9 +210,19 @@ def _triangulate_body_point(
 
         for pair in itertools.combinations(cam_ids, 2):
             pa, pb = pair
+
+            # Layer 2: skip near-parallel ray pairs (ill-conditioned DLT)
+            cos_angle = float(torch.dot(directions[pa], directions[pb]).abs().item())
+            if cos_angle > _COS_MIN_RAY_ANGLE:
+                continue
+
             origs = torch.stack([origins[pa], origins[pb]])  # (2, 3)
             dirs = torch.stack([directions[pa], directions[pb]])  # (2, 3)
             pt3d_candidate = triangulate_rays(origs, dirs)
+
+            # Layer 1: reject candidate if above water surface
+            if _is_below_water(pt3d_candidate):
+                continue
 
             # Score by max reprojection error across held-out cameras
             held_out = [cid for cid in cam_ids if cid not in pair]
@@ -208,6 +270,15 @@ def _triangulate_body_point(
             final_pt3d = best_pt3d
             inlier_ids = best_cam_ids
 
+        # Layer 1: final Z validation after inlier re-triangulation
+        if _is_below_water(final_pt3d):
+            logger.debug(
+                "Final re-triangulated point rejected: Z=%.3f <= water_z=%.3f",
+                float(final_pt3d[2].item()),
+                water_z,
+            )
+            return None
+
         # Compute mean residual among inliers
         final_residuals = []
         pt3d_batch = final_pt3d.unsqueeze(0)  # (1, 3)
@@ -250,6 +321,15 @@ def _triangulate_body_point(
     origs = torch.stack([origins[cid] for cid in inlier_ids])
     dirs = torch.stack([directions[cid] for cid in inlier_ids])
     final_pt3d = triangulate_rays(origs, dirs)
+
+    # Layer 1: final Z validation for the large-camera-count path
+    if _is_below_water(final_pt3d):
+        logger.debug(
+            "Large-rig triangulated point rejected: Z=%.3f <= water_z=%.3f",
+            float(final_pt3d[2].item()),
+            water_z,
+        )
+        return None
 
     pt3d_batch = final_pt3d.unsqueeze(0)
     final_residuals = []
@@ -632,6 +712,7 @@ def triangulate_midlines(
     frame_index: int = 0,
     inlier_threshold: float = DEFAULT_INLIER_THRESHOLD,
     snap_threshold: float = 20.0,
+    max_depth: float | None = None,
 ) -> dict[int, Midline3D]:
     """Triangulate 2D midlines from multiple cameras into 3D B-spline midlines.
 
@@ -643,6 +724,19 @@ def triangulate_midlines(
     (spline cannot be fit reliably). Fish where >20% of body points have fewer
     than 3 inlier cameras are flagged as is_low_confidence=True.
 
+    Physical constraints applied (three-layer defence against ill-conditioned
+    triangulation):
+
+    - **Layer 1** - Z lower bound: points with Z <= water_z are rejected inside
+      ``_triangulate_body_point``.  ``water_z`` is read from the camera models
+      (all models in a rig share the same value).
+    - **Layer 2** - Ray-angle filter: pairwise triangulations where the angle
+      between ray directions is below ``_MIN_RAY_ANGLE_DEG`` are skipped
+      inside ``_triangulate_body_point``.
+    - **Layer 3** - Depth validation before spline fitting: points with
+      Z > water_z + max_depth are rejected here (only when ``max_depth`` is
+      not None).
+
     Args:
         midline_set: Nested dict mapping fish_id to camera_id to Midline2D.
         models: Mapping from camera_id to RefractiveProjectionModel.
@@ -653,12 +747,21 @@ def triangulate_midlines(
             to accept a correspondence during epipolar refinement. Decoupled
             from inlier_threshold to allow tight matching with permissive
             inlier gating.
+        max_depth: Maximum allowed fish depth below the water surface in
+            metres.  When set, points with Z > water_z + max_depth are
+            discarded (Layer 3).  When None (default), no upper depth bound
+            is enforced — only the water_z lower bound applies.  Set this
+            to the physical tank depth to catch above-water outliers that
+            survive Layer 1/2.
 
     Returns:
         Dict mapping fish_id to Midline3D. Only includes fish with sufficient
         valid body points for spline fitting.
     """
     results: dict[int, Midline3D] = {}
+
+    # Derive water_z once from the model collection (all cameras share it)
+    water_z: float = next(iter(models.values())).water_z
 
     for fish_id, cam_midlines in midline_set.items():
         cam_midlines = _align_midline_orientations(
@@ -688,12 +791,26 @@ def triangulate_midlines(
                 pixels[cam_id] = torch.from_numpy(pt).float()
                 hw_px_list.append(float(midline.half_widths[i]))
 
-            result = _triangulate_body_point(pixels, models, inlier_threshold)
+            result = _triangulate_body_point(
+                pixels, models, inlier_threshold, water_z=water_z
+            )
             if result is None:
                 continue
 
             pt3d, inlier_ids, mean_res = result
             pt3d_np = pt3d.detach().cpu().numpy().astype(np.float64)
+
+            # Layer 3: upper depth bound (only when max_depth is configured)
+            point_z = float(pt3d_np[2])
+            if max_depth is not None and point_z > water_z + max_depth:
+                logger.debug(
+                    "Fish %d body point %d rejected: Z=%.3f > water_z+max_depth=%.3f",
+                    fish_id,
+                    i,
+                    point_z,
+                    water_z + max_depth,
+                )
+                continue
 
             valid_indices.append(i)
             pts_3d_list.append(pt3d_np)
@@ -705,9 +822,7 @@ def triangulate_midlines(
             avg_hw_px = float(np.mean(hw_px_list)) if hw_px_list else 0.0
             per_point_hw_px.append(avg_hw_px)
 
-            # Depth below water surface: use first available model's water_z
-            water_z = next(iter(models.values())).water_z
-            depth_m = max(0.0, float(pt3d_np[2]) - water_z)
+            depth_m = max(0.0, point_z - water_z)
             per_point_depths.append(depth_m)
 
         if len(valid_indices) < MIN_BODY_POINTS:

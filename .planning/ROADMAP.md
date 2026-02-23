@@ -184,5 +184,5 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 09-01-PLAN.md — Core CurveOptimizer module: B-spline basis, chamfer loss, coarse-to-fine L-BFGS, warm-start, unit tests
+- [x] 09-01-PLAN.md — Core CurveOptimizer module: B-spline basis, chamfer loss, coarse-to-fine L-BFGS, warm-start, unit tests (2026-02-23)
 - [ ] 09-02-PLAN.md — Pipeline wiring (--method flag in diagnose_pipeline.py) and human verification on real data

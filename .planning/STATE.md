@@ -5,17 +5,17 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 8 Plan 03 in progress — E2E integration test (Task 1 complete) awaiting human-verify checkpoint (Task 2)
+**Current focus:** Phase 9 Plan 01 complete — CurveOptimizer implemented with coarse-to-fine B-spline optimization
 
 ## Current Position
 
-Phase: 08-end-to-end-integration-testing-and-benchmarking
-Plan: 03 in progress (paused at checkpoint:human-verify Task 2)
-Status: Task 1 complete (0df6d96) — E2E test script written and committed. Awaiting user to run `hatch run test-all tests/e2e/test_reconstruct.py -k test_reconstruct_e2e -s` and visually verify diagnostic output.
-Last activity: 2026-02-23 - Completed quick task 1: Fix triangulation bugs: NaN contamination, coupled thresholds, greedy orientation
-Stopped at: Checkpoint:human-verify Task 2 of 08-03-PLAN.md
+Phase: 09-curve-based-optimization-as-a-replacement-for-triangulation
+Plan: 01 complete
+Status: curve_optimizer.py implemented, 21 unit tests passing. Ready for Phase 9 Plan 02 (integration/validation against real data).
+Last activity: 2026-02-23 - Completed 09-01: CurveOptimizer implementation with coarse-to-fine B-spline optimization, chamfer distance, warm-start, adaptive early stopping.
+Stopped at: Completed 09-01-PLAN.md
 
-Progress: [█████████░] 92% (phases 1-3 complete, phase 4 shelved, phases 5-8 plan 02 complete)
+Progress: [█████████░] 93% (phases 1-3 complete, phase 4 shelved, phases 5-9 plan 01 complete)
 
 ## Performance Metrics
 
@@ -124,6 +124,9 @@ Recent decisions affecting current work:
 - [Phase 08]: FISH_COLORS defined as BGR tuples in overlay.py; plot3d.py converts BGR->RGB floats on import for matplotlib compatibility
 - [Phase 08]: render_3d_animation checks FFMpegWriter.isAvailable() at runtime and falls back to PillowWriter (GIF) with UserWarning -- no hard FFMpeg dependency
 - [Phase 08]: Diagnostic mode catches all visualization exceptions individually to avoid crashing the main pipeline on render failures
+- [Phase 09-01]: Bend angle computed as acos(v1·v2) — 0 for straight spine, pi for U-turn. Clamped cos_bend to [-1+1e-6, 1-1e-6] before acos to prevent NaN gradients at collinear/antiparallel control points
+- [Phase 09-01]: Huber delta fixed at 17.5px (midpoint of 15-20px range) for per-camera chamfer aggregation
+- [Phase 09-01]: test_optimize_synthetic_fish marked @pytest.mark.slow (5-10s on CPU with L-BFGS)
 
 ### Phase 4 Shelved Decisions (Analysis-by-Synthesis)
 

@@ -275,6 +275,10 @@ def _run_synthetic(args: argparse.Namespace) -> int:
     from aquapose.visualization.diagnostics import (
         vis_arclength_histogram,
         vis_residual_heatmap,
+        vis_synthetic_3d_comparison,
+        vis_synthetic_camera_overlays,
+        vis_synthetic_error_distribution,
+        write_synthetic_report,
     )
     from aquapose.visualization.plot3d import render_3d_animation
 
@@ -426,6 +430,29 @@ def _run_synthetic(args: argparse.Namespace) -> int:
                 midlines_3d, diag_dir / "arclength_histogram.png"
             ),
         ),
+        (
+            "synthetic_3d_comparison.png",
+            lambda: vis_synthetic_3d_comparison(
+                midlines_3d, ground_truths, diag_dir / "synthetic_3d_comparison.png"
+            ),
+        ),
+        (
+            "synthetic_camera_overlays/",
+            lambda: vis_synthetic_camera_overlays(
+                midlines_3d,
+                ground_truths,
+                models,
+                diag_dir / "synthetic_camera_overlays",
+            ),
+        ),
+        (
+            "synthetic_error_distribution.png",
+            lambda: vis_synthetic_error_distribution(
+                midlines_3d,
+                ground_truths,
+                diag_dir / "synthetic_error_distribution.png",
+            ),
+        ),
     ]
 
     for name, func in vis_funcs_syn:
@@ -440,6 +467,25 @@ def _run_synthetic(args: argparse.Namespace) -> int:
     # Ground truth comparison
     # -----------------------------------------------------------------------
     _print_ground_truth_comparison(midlines_3d, ground_truths)
+
+    # -----------------------------------------------------------------------
+    # Synthetic Markdown Report
+    # -----------------------------------------------------------------------
+    print("  Generating synthetic_report.md...")
+    try:
+        write_synthetic_report(
+            output_path=diag_dir / "synthetic_report.md",
+            stage_timing=stage_timing,
+            midlines_3d=midlines_3d,
+            ground_truths=ground_truths,
+            models=models,
+            fish_configs=fish_configs,
+            method=args.method,
+            diag_dir=diag_dir,
+        )
+    except Exception as exc:
+        print(f"  [WARN] Failed to generate synthetic_report.md: {exc}")
+        logger.exception("Failed to generate synthetic_report.md")
 
     print(f"\nDiagnostics written to: {diag_dir}")
     print(f"HDF5 output: {h5_path}")

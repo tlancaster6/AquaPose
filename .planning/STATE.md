@@ -127,6 +127,7 @@ Recent decisions affecting current work:
 - [Phase 09-01]: Bend angle computed as acos(v1·v2) — 0 for straight spine, pi for U-turn. Clamped cos_bend to [-1+1e-6, 1-1e-6] before acos to prevent NaN gradients at collinear/antiparallel control points
 - [Phase 09-01]: Huber delta fixed at 17.5px (midpoint of 15-20px range) for per-camera chamfer aggregation
 - [Phase 09-01]: test_optimize_synthetic_fish marked @pytest.mark.slow (5-10s on CPU with L-BFGS)
+- [Phase 09-02]: --method flag defaults to triangulation; curve opt-in via --method curve in diagnose_pipeline.py
 
 ### Phase 4 Shelved Decisions (Analysis-by-Synthesis)
 

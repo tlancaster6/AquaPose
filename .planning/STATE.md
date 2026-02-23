@@ -170,6 +170,7 @@ Recent decisions affecting current work:
 | 2 | Add synthetic data module (FishConfig, MidlineSet generation, GT Midline3D, --synthetic flag) | 2026-02-23 | b9dd734 | [2-add-synthetic-data-module-as-drop-in-rep](./quick/2-add-synthetic-data-module-as-drop-in-rep/) |
 | 3 | Add synthetic mode diagnostic visualizations (3D GT comparison, camera overlays, error distribution, markdown report) | 2026-02-23 | b3a4dd7 | [3-add-synthetic-mode-diagnostic-visualizat](./quick/3-add-synthetic-mode-diagnostic-visualizat/) |
 | 4 | Add drift dynamics + sinusoidal/compound spine shapes + diverse fish configs | 2026-02-23 | 58385c1 | [4-add-per-frame-position-drift-and-heading](./quick/4-add-per-frame-position-drift-and-heading/) |
+| 5 | Investigate spline folding: numerical evidence that K=7 allows 150-degree fold with zero penalty; 6 ranked recommendations | 2026-02-23 | cedbbe1 | [5-improve-3d-spline-constraints-investigat](./quick/5-improve-3d-spline-constraints-investigat/) |
 
 ### Blockers/Concerns
 
@@ -181,5 +182,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-23
-Stopped at: Completed quick-4 (add-per-frame-position-drift-and-heading)
-Next action: Synthetic fish now drift realistically across frames. Continue with Phase 09 Plan 02 (integration/validation against real data) using --synthetic for visual quality assessment with motion.
+Stopped at: Completed quick-5 (improve-3d-spline-constraints-investigat)
+Next action: Implement spline folding fixes from quick-5 report — priority: chord-arc penalty + increase lambda_curvature. Then continue Phase 09 Plan 02 (integration/validation against real data).

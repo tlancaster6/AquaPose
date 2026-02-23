@@ -30,7 +30,7 @@ SPLINE_KNOTS: np.ndarray = np.array(
     [0.0, 0.0, 0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 1.0], dtype=np.float64
 )
 MIN_BODY_POINTS: int = 9  # SPLINE_N_CTRL + 2
-DEFAULT_INLIER_THRESHOLD: float = 15.0  # pixels
+DEFAULT_INLIER_THRESHOLD: float = 50.0  # pixels
 N_SAMPLE_POINTS: int = 15  # matches Phase 6 output
 
 # ---------------------------------------------------------------------------
@@ -456,6 +456,159 @@ def _align_midline_orientations(
 
 
 # ---------------------------------------------------------------------------
+# Epipolar correspondence refinement
+# ---------------------------------------------------------------------------
+
+
+def _skeleton_arc_length_px(points: np.ndarray) -> float:
+    """Sum of Euclidean distances between consecutive 2D points.
+
+    Args:
+        points: 2D pixel coordinates, shape (N, 2).
+
+    Returns:
+        Total arc length in pixels.
+    """
+    diffs = np.diff(points, axis=0)
+    return float(np.sum(np.linalg.norm(diffs, axis=1)))
+
+
+def _select_reference_camera(cam_midlines: dict[str, Midline2D]) -> str:
+    """Return camera ID with the longest 2D skeleton arc length.
+
+    The least foreshortened view produces the longest arc, making it the
+    most reliable reference for epipolar matching.
+
+    Args:
+        cam_midlines: Per-camera midlines for a single fish.
+
+    Returns:
+        Camera ID string.
+    """
+    best_id = ""
+    best_len = -1.0
+    for cam_id, midline in cam_midlines.items():
+        arc = _skeleton_arc_length_px(midline.points)
+        if arc > best_len:
+            best_len = arc
+            best_id = cam_id
+    return best_id
+
+
+def _trace_epipolar_curve(
+    pixel: torch.Tensor,
+    src_model: RefractiveProjectionModel,
+    tgt_model: RefractiveProjectionModel,
+    depth_samples: torch.Tensor,
+) -> torch.Tensor | None:
+    """Trace an epipolar curve from a source pixel into a target camera.
+
+    Casts a ray from the source pixel, samples 3D points along the ray at
+    the given depths, and projects them into the target camera.
+
+    Args:
+        pixel: Source pixel coordinate, shape (2,), float32.
+        src_model: Refractive projection model for the source camera.
+        tgt_model: Refractive projection model for the target camera.
+        depth_samples: Depth values along the ray, shape (S,), float32.
+
+    Returns:
+        Valid target pixel coordinates, shape (S', 2), float32, or None
+        if no valid projections exist.
+    """
+    origin, direction = src_model.cast_ray(pixel.unsqueeze(0))  # (1, 3) each
+    origin = origin[0]  # (3,)
+    direction = direction[0]  # (3,)
+
+    # Sample 3D points: origin + d * direction for each depth
+    pts_3d = origin.unsqueeze(0) + depth_samples.unsqueeze(1) * direction.unsqueeze(
+        0
+    )  # (S, 3)
+
+    proj_px, valid = tgt_model.project(pts_3d)  # (S, 2), (S,)
+    if not valid.any():
+        return None
+    return proj_px[valid]  # (S', 2)
+
+
+def _refine_correspondences_epipolar(
+    cam_midlines: dict[str, Midline2D],
+    models: dict[str, RefractiveProjectionModel],
+    n_depth_samples: int = 25,
+    snap_threshold: float = 15.0,
+) -> dict[str, Midline2D]:
+    """Refine per-body-point correspondences using epipolar geometry.
+
+    For each body point on the reference camera (longest arc length), traces
+    its epipolar curve in every target camera and snaps to the nearest
+    skeleton point. Points that are too far from the epipolar curve are
+    rejected (set to NaN).
+
+    Args:
+        cam_midlines: Per-camera midlines for a single fish (post flip-alignment).
+        models: Per-camera refractive projection models.
+        n_depth_samples: Number of depth samples along each ray.
+        snap_threshold: Maximum distance in pixels from epipolar curve to
+            accept a correspondence.
+
+    Returns:
+        Dict of refined midlines. Reference camera unchanged; target cameras
+        have snapped point/half-width ordering.
+    """
+    valid_cams = {cid: ml for cid, ml in cam_midlines.items() if cid in models}
+    if len(valid_cams) < 2:
+        return cam_midlines
+
+    ref_id = _select_reference_camera(valid_cams)
+    ref_midline = valid_cams[ref_id]
+    n_pts = len(ref_midline.points)
+
+    depth_samples = torch.linspace(0.5, 3.0, 50)
+
+    result = dict(cam_midlines)
+
+    for tgt_id, tgt_midline in valid_cams.items():
+        if tgt_id == ref_id:
+            continue
+
+        tgt_pts_torch = torch.from_numpy(tgt_midline.points).float()  # (N, 2)
+        new_points = np.full_like(tgt_midline.points, np.nan)
+        new_hw = np.full_like(tgt_midline.half_widths, np.nan)
+
+        for i in range(n_pts):
+            ref_px = torch.from_numpy(ref_midline.points[i]).float()
+            epi_curve = _trace_epipolar_curve(
+                ref_px, models[ref_id], models[tgt_id], depth_samples
+            )
+            if epi_curve is None:
+                continue
+
+            # Distance from each target skeleton point to the epipolar curve
+            dists = torch.cdist(tgt_pts_torch.unsqueeze(0), epi_curve.unsqueeze(0))[
+                0
+            ]  # (N, S')
+            min_dist_to_curve, _ = dists.min(dim=1)  # (N,)
+
+            best_idx = int(min_dist_to_curve.argmin().item())
+            best_dist = float(min_dist_to_curve[best_idx].item())
+
+            if best_dist <= snap_threshold:
+                new_points[i] = tgt_midline.points[best_idx]
+                new_hw[i] = tgt_midline.half_widths[best_idx]
+
+        result[tgt_id] = Midline2D(
+            points=new_points.astype(np.float32),
+            half_widths=new_hw.astype(np.float32),
+            fish_id=tgt_midline.fish_id,
+            camera_id=tgt_midline.camera_id,
+            frame_index=tgt_midline.frame_index,
+            is_head_to_tail=tgt_midline.is_head_to_tail,
+        )
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -493,6 +646,9 @@ def triangulate_midlines(
         cam_midlines = _align_midline_orientations(
             cam_midlines, models, inlier_threshold
         )
+        cam_midlines = _refine_correspondences_epipolar(
+            cam_midlines, models, snap_threshold=inlier_threshold
+        )
         valid_indices: list[int] = []
         pts_3d_list: list[np.ndarray] = []
         per_point_residuals: list[float] = []
@@ -508,7 +664,10 @@ def triangulate_midlines(
             for cam_id, midline in cam_midlines.items():
                 if cam_id not in models:
                     continue
-                pixels[cam_id] = torch.from_numpy(midline.points[i]).float()
+                pt = midline.points[i]
+                if np.any(np.isnan(pt)):
+                    continue
+                pixels[cam_id] = torch.from_numpy(pt).float()
                 hw_px_list.append(float(midline.half_widths[i]))
 
             result = _triangulate_body_point(pixels, models, inlier_threshold)
@@ -608,7 +767,11 @@ def triangulate_midlines(
             obs_pts = cam_midlines[cid].points  # (N_SAMPLE_POINTS, 2)
             cam_errs: list[float] = []
             for j in range(N_SAMPLE_POINTS):
-                if valid_np[j] and not np.any(np.isnan(proj_np[j])):
+                if (
+                    valid_np[j]
+                    and not np.any(np.isnan(proj_np[j]))
+                    and not np.any(np.isnan(obs_pts[j]))
+                ):
                     err = float(np.linalg.norm(proj_np[j] - obs_pts[j]))
                     cam_errs.append(err)
                     all_residuals.append(err)

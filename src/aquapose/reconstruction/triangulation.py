@@ -406,9 +406,9 @@ def _align_midline_orientations(
 
     Algorithm: fixes the first camera (sorted order) as reference, then
     enumerates all 2^(N-1) flip combinations for the remaining cameras.
-    Each combination is scored by summing pairwise chord lengths across all
-    camera pairs — a correct orientation produces smooth curves with short
-    chords, while flipped orientations produce zigzags with long chords.
+    Each combination is scored by triangulating sample body points using
+    all cameras and measuring mean reprojection residual. With typical fish
+    seen by 3-4 cameras (max 8 combos), this is affordable.
 
     Falls back to greedy pairwise alignment if more than 7 non-reference
     cameras (2^7 = 128 combos) to avoid combinatorial blowup.
@@ -445,16 +445,23 @@ def _align_midline_orientations(
             if bits & (1 << j):
                 trial[cid] = _flip_midline(cam_midlines[cid])
 
-        # Score: sum of pairwise chord lengths across ALL camera pairs
-        total_chord = 0.0
-        for ca, cb in itertools.combinations(cam_ids, 2):
-            chord = _pairwise_chord_length(
-                trial[ca], trial[cb], models[ca], models[cb], sample_indices
-            )
-            total_chord += chord
+        # Score: multi-camera reprojection residual on sample body points
+        total_res = 0.0
+        n_valid = 0
+        for bp_idx in sample_indices:
+            pixels: dict[str, torch.Tensor] = {}
+            for cid in cam_ids:
+                pt = trial[cid].points[bp_idx]
+                if not np.any(np.isnan(pt)):
+                    pixels[cid] = torch.from_numpy(pt).float()
+            result = _triangulate_body_point(pixels, models, inlier_threshold)
+            if result is not None:
+                total_res += result[2]  # mean reprojection residual
+                n_valid += 1
 
-        if total_chord < best_score:
-            best_score = total_chord
+        score = total_res / n_valid if n_valid > 0 else float("inf")
+        if score < best_score:
+            best_score = score
             best_combo = trial
 
     return best_combo

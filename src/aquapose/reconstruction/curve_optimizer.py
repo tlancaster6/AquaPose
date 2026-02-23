@@ -18,7 +18,6 @@ from dataclasses import dataclass, field
 import numpy as np
 import scipy.interpolate
 import torch
-import torch.nn.functional as F
 
 from aquapose.calibration.projection import RefractiveProjectionModel
 from aquapose.reconstruction.triangulation import (
@@ -29,6 +28,7 @@ from aquapose.reconstruction.triangulation import (
     Midline3D,
     MidlineSet,
     _pixel_half_width_to_metres,
+    triangulate_midlines,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,9 +44,6 @@ _MAX_BEND_ANGLE_DEG_DEFAULT: float = 30.0
 # Coarse and fine control point counts
 _N_COARSE_CTRL: int = 4
 _N_FINE_CTRL: int = SPLINE_N_CTRL  # 7, matches Midline3D contract
-
-# Huber delta in pixel units (per proposal Pitfall 7)
-_HUBER_DELTA_PX: float = 17.5  # midpoint of 15-20px range
 
 # ---------------------------------------------------------------------------
 # B-spline basis cache
@@ -154,7 +151,9 @@ class CurveOptimizerConfig:
         lbfgs_max_iter_coarse: Maximum L-BFGS iterations for coarse stage.
         lbfgs_max_iter_fine: Maximum L-BFGS iterations for fine stage.
         lbfgs_history_size: L-BFGS history size. Default 10.
-        convergence_delta: Loss delta below which a fish is considered converged.
+        convergence_delta: Absolute per-fish loss delta (in pixels) below which
+            a fish is considered converged. Uses absolute not relative comparison
+            to avoid premature freeze at high loss. Default 0.5 (half a pixel).
         convergence_patience: Steps with delta < convergence_delta before freeze.
         warm_start_loss_ratio: If warm-start loss / prev_loss > this ratio, fall
             back to cold start for that fish. Default 2.0.
@@ -170,10 +169,10 @@ class CurveOptimizerConfig:
     n_fine_ctrl: int = _N_FINE_CTRL
     n_eval_points: int = 20
     lbfgs_lr: float = 1.0
-    lbfgs_max_iter_coarse: int = 50
-    lbfgs_max_iter_fine: int = 100
+    lbfgs_max_iter_coarse: int = 20
+    lbfgs_max_iter_fine: int = 40
     lbfgs_history_size: int = 10
-    convergence_delta: float = 1e-4
+    convergence_delta: float = 0.5
     convergence_patience: int = 3
     warm_start_loss_ratio: float = 2.0
     # Not directly used in loss but provided for downstream consumers
@@ -228,12 +227,17 @@ def _data_loss(
     models: dict[str, RefractiveProjectionModel],
     config: CurveOptimizerConfig,
 ) -> torch.Tensor:
-    """Compute the data loss: chamfer distance between reprojected spline and observed skeleton.
+    """Compute the data loss: mean chamfer distance per fish averaged over cameras.
 
     For each fish, evaluates the spline via basis matrix multiply, reprojects
-    through each camera's refractive model, computes chamfer distance to the
-    observed 2D skeleton points, and aggregates per-camera with Huber loss.
-    NaN/invalid projections are filtered before chamfer computation.
+    through each camera's refractive model, and computes the symmetric chamfer
+    distance to the observed 2D skeleton points. The per-camera chamfer distances
+    are averaged to give a per-fish loss, then averaged across all fish. This
+    ensures the loss magnitude is always in units of pixels (mean chamfer distance)
+    regardless of camera count or fish count.
+
+    NaN/invalid projections are filtered before chamfer computation. Cameras with
+    no valid projections are skipped and do not contribute to the per-fish average.
 
     Args:
         ctrl_pts: Control points tensor, shape (N_fish, K, 3), float32.
@@ -244,16 +248,17 @@ def _data_loss(
         config: Optimizer configuration.
 
     Returns:
-        Scalar total data loss.
+        Scalar mean chamfer distance in pixels, averaged over fish and cameras.
     """
     n_fish = ctrl_pts.shape[0]
-    total_loss = torch.zeros(1, device=ctrl_pts.device)
+    fish_losses: list[torch.Tensor] = []
 
     for i in range(n_fish):
         c = ctrl_pts[i]  # (K, 3)
         # Evaluate spline: (n_eval, K) @ (K, 3) -> (n_eval, 3)
         spline_pts = basis @ c  # (n_eval, 3)
 
+        cam_losses: list[torch.Tensor] = []
         for cam_id, obs_pts in midlines_per_fish[i].items():
             if cam_id not in models:
                 continue
@@ -269,19 +274,20 @@ def _data_loss(
 
             proj_valid = proj_px[valid_mask]  # (M_valid, 2)
 
-            # Chamfer distance between projected and observed
+            # Chamfer distance in pixels between projected spline and observed skeleton
             chamfer = _chamfer_distance_2d(proj_valid, obs_pts)
+            cam_losses.append(chamfer)
 
-            # Huber loss for robust per-camera aggregation
-            cam_loss = F.huber_loss(
-                chamfer,
-                torch.zeros_like(chamfer),
-                delta=_HUBER_DELTA_PX,
-                reduction="mean",
-            )
-            total_loss = total_loss + cam_loss
+        if cam_losses:
+            # Average chamfer over cameras for this fish
+            fish_loss = torch.stack(cam_losses).mean()
+            fish_losses.append(fish_loss)
 
-    return total_loss
+    if not fish_losses:
+        return torch.zeros(1, device=ctrl_pts.device)
+
+    # Average over fish — loss is always in pixel units
+    return torch.stack(fish_losses).mean()
 
 
 def _length_penalty(
@@ -671,6 +677,54 @@ class CurveOptimizer:
                 centroid_3d = origin[0] + depth_est * direction[0]
                 centroids[fid] = centroid_3d.detach()
 
+        # ---- Triangulation-seeded cold start ----
+        # Track init type per fish for diagnostics
+        init_type: dict[int, str] = {}
+        for fid in valid_fish_ids:
+            init_type[fid] = "warm" if fid in self._warm_starts else "cold"
+
+        fish_needing_cold_start = [
+            fid for fid in valid_fish_ids if fid not in self._warm_starts
+        ]
+        if fish_needing_cold_start:
+            try:
+                # triangulate_midlines is numpy/scipy-based — move models to CPU
+                for model in models.values():
+                    model.to("cpu")
+                tri_results = triangulate_midlines(
+                    midline_set, models, frame_index=frame_index
+                )
+                for model in models.values():
+                    model.to(device)
+                seeded = []
+                for fid in fish_needing_cold_start:
+                    if fid in tri_results:
+                        ctrl = torch.as_tensor(
+                            tri_results[fid].control_points,
+                            dtype=torch.float32,
+                            device=device,
+                        )
+                        self._warm_starts[fid] = ctrl
+                        init_type[fid] = "tri-seed"
+                        seeded.append(fid)
+                if seeded:
+                    logger.info(
+                        "Frame %d: triangulation-seeded %d/%d cold-start fish: %s",
+                        frame_index,
+                        len(seeded),
+                        len(fish_needing_cold_start),
+                        seeded,
+                    )
+            except Exception:
+                # Ensure models are back on GPU even if triangulation failed
+                for model in models.values():
+                    model.to(device)
+                logger.warning(
+                    "Frame %d: triangulation seeding failed, falling back to cold start",
+                    frame_index,
+                    exc_info=True,
+                )
+
         # ---- Stage 1: Coarse optimization (K=n_coarse_ctrl) ----
         n_coarse = cfg.n_coarse_ctrl
         coarse_basis = get_basis(cfg.n_eval_points, n_coarse, device)
@@ -721,6 +775,12 @@ class CurveOptimizer:
 
             return total
 
+        logger.info(
+            "Frame %d: coarse stage (%d fish, max %d L-BFGS iters)...",
+            frame_index,
+            n_fish,
+            cfg.lbfgs_max_iter_coarse,
+        )
         optimizer_coarse.step(closure_coarse)
 
         # Update convergence tracking post-coarse (simplified: one step)
@@ -730,7 +790,9 @@ class CurveOptimizer:
             )
 
         coarse_loss_val = data_l.item()
-        logger.debug("Frame %d coarse stage loss: %.4f", frame_index, coarse_loss_val)
+        logger.info(
+            "Frame %d: coarse stage done, loss=%.4f", frame_index, coarse_loss_val
+        )
 
         # ---- Stage 2: Fine optimization (K=n_fine_ctrl) ----
         n_fine = cfg.n_fine_ctrl
@@ -817,10 +879,18 @@ class CurveOptimizer:
             return total
 
         # Run fine optimization with adaptive per-fish stopping
+        logger.info(
+            "Frame %d: fine stage (max %d iters)...",
+            frame_index,
+            cfg.lbfgs_max_iter_fine,
+        )
         for step in range(cfg.lbfgs_max_iter_fine):
             if fine_frozen_mask.all():
-                logger.debug(
-                    "Frame %d: all fish converged at step %d", frame_index, step
+                logger.info(
+                    "Frame %d: all fish converged at step %d/%d",
+                    frame_index,
+                    step,
+                    cfg.lbfgs_max_iter_fine,
                 )
                 break
 
@@ -854,6 +924,46 @@ class CurveOptimizer:
                         patience_counters_fine[idx] = 0
 
                     prev_losses_fine[idx] = fish_loss
+
+            # Log per-fish losses at step 0 to diagnose init quality
+            if step == 0:
+                for idx, fid in enumerate(valid_fish_ids):
+                    logger.info(
+                        "Frame %d fish %d [%s]: fine step 0 loss=%.1f",
+                        frame_index,
+                        fid,
+                        init_type[fid],
+                        final_per_fish_losses[idx],
+                    )
+
+            # Log loss stats every 10 steps for diagnostics
+            if step % 10 == 0:
+                active_losses = [
+                    final_per_fish_losses[i]
+                    for i in range(n_fish)
+                    if not fine_frozen_mask[i]
+                ]
+                n_active = len(active_losses)
+                n_frozen = int(fine_frozen_mask.sum().item())
+                if active_losses:
+                    logger.info(
+                        "Frame %d step %d: %d active / %d frozen, "
+                        "loss min=%.4f max=%.4f",
+                        frame_index,
+                        step,
+                        n_active,
+                        n_frozen,
+                        min(active_losses),
+                        max(active_losses),
+                    )
+
+        n_converged = int(fine_frozen_mask.sum().item())
+        logger.info(
+            "Frame %d: fine stage done, %d/%d fish converged",
+            frame_index,
+            n_converged,
+            n_fish,
+        )
 
         # ---- Build output Midline3D structs ----
         results: dict[int, Midline3D] = {}

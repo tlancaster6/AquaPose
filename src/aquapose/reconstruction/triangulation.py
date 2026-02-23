@@ -618,6 +618,7 @@ def triangulate_midlines(
     models: dict[str, RefractiveProjectionModel],
     frame_index: int = 0,
     inlier_threshold: float = DEFAULT_INLIER_THRESHOLD,
+    snap_threshold: float = 20.0,
 ) -> dict[int, Midline3D]:
     """Triangulate 2D midlines from multiple cameras into 3D B-spline midlines.
 
@@ -635,6 +636,10 @@ def triangulate_midlines(
         frame_index: Frame index to embed in output Midline3D structs.
         inlier_threshold: Maximum reprojection error (pixels) for inlier
             classification during pairwise re-triangulation.
+        snap_threshold: Maximum distance (pixels) from the epipolar curve
+            to accept a correspondence during epipolar refinement. Decoupled
+            from inlier_threshold to allow tight matching with permissive
+            inlier gating.
 
     Returns:
         Dict mapping fish_id to Midline3D. Only includes fish with sufficient
@@ -647,7 +652,7 @@ def triangulate_midlines(
             cam_midlines, models, inlier_threshold
         )
         cam_midlines = _refine_correspondences_epipolar(
-            cam_midlines, models, snap_threshold=inlier_threshold
+            cam_midlines, models, snap_threshold=snap_threshold
         )
         valid_indices: list[int] = []
         pts_3d_list: list[np.ndarray] = []

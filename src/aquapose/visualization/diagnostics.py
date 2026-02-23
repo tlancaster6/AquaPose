@@ -1,9 +1,10 @@
 """Per-stage diagnostic visualizations for the AquaPose reconstruction pipeline.
 
-Provides 10 visualization functions covering all 5 pipeline stages:
+Provides visualization functions covering all 5 pipeline stages:
 detection grids, confidence histograms, mask montages, trajectory videos,
 claiming overlays, midline extraction montages, skip-reason charts,
-residual heatmaps, arc-length histograms, and spline camera overlays.
+residual heatmaps, arc-length histograms, spline camera overlays, and
+synthetic-mode GT comparison, camera overlay, error distribution, and report.
 """
 
 from __future__ import annotations
@@ -22,9 +23,10 @@ from aquapose.visualization.overlay import FISH_COLORS, draw_midline_overlay
 
 if TYPE_CHECKING:
     from aquapose.calibration.projection import RefractiveProjectionModel
-    from aquapose.reconstruction.triangulation import Midline3D
+    from aquapose.reconstruction.triangulation import Midline3D, MidlineSet
     from aquapose.segmentation.crop import CropRegion
     from aquapose.segmentation.detector import Detection
+    from aquapose.synthetic.fish import FishConfig
     from aquapose.tracking.tracker import FishTrack, TrackState
 
 logger = logging.getLogger(__name__)
@@ -291,7 +293,9 @@ def vis_claiming_overlay(
                     for snap in frame_snaps:
                         color = FISH_COLORS[snap.fish_id % len(FISH_COLORS)]
                         pos_tensor = torch.tensor(
-                            snap.position, dtype=torch.float32
+                            snap.position,
+                            dtype=torch.float32,
+                            device=model.K.device,
                         ).unsqueeze(0)
                         pixels, valid = model.project(pos_tensor)
                         if valid[0]:
@@ -702,102 +706,167 @@ def vis_arclength_histogram(
     logger.info("Arc-length histogram saved to %s", output_path)
 
 
-def vis_spline_camera_overlay(
-    midlines_3d_per_frame: list[dict[int, Midline3D]],
+def vis_per_camera_spline_overlays(
+    frame_index: int,
+    frame_3d: dict[int, Midline3D],
+    frame_2d: MidlineSet,
     models: dict[str, RefractiveProjectionModel],
     video_set: VideoSet,
-    output_path: Path,
+    output_dir: Path,
 ) -> None:
-    """Save a cropped camera frame with all 3D splines reprojected onto it.
+    """Save per-camera overlay images with 3D spline reprojections and 2D midline dots.
 
-    Finds the frame with the most fish, picks the camera where most splines
-    project within bounds, draws overlays, and crops to a tight bounding box.
+    Generates one PNG per camera for the given frame showing:
+      - 3D spline reprojections as colored polylines with width indicators
+      - 2D midline sample points as colored dots with white outlines
+      - Per-fish annotation: fish_id, residual, arc_length
+
+    Comparing the 2D dots (from midline extraction) against the 3D lines
+    (from reconstruction) reveals whether reconstruction or calibration is
+    at fault when overlays don't match the fish.
 
     Args:
-        midlines_3d_per_frame: Per-frame triangulation results from Stage 5.
+        frame_index: Frame index to render overlays for.
+        frame_3d: 3D reconstruction results for the target frame.
+        frame_2d: 2D midline sets for the target frame.
         models: Per-camera refractive projection models.
         video_set: Opened VideoSet providing undistorted frames.
-        output_path: Output PNG path.
+        output_dir: Directory for per-camera PNG outputs.
     """
     import scipy.interpolate
     import torch
 
-    if not midlines_3d_per_frame:
-        logger.warning("vis_spline_camera_overlay: no frames")
+    if not frame_3d:
+        logger.warning(
+            "vis_per_camera_spline_overlays: no 3D midlines at frame %d", frame_index
+        )
         return
 
-    # Find frame with most fish (limit to first 9)
-    best_fi = 0
-    best_count = 0
-    for fi, frame_midlines in enumerate(midlines_3d_per_frame):
-        count = min(len(frame_midlines), 9)
-        if count > best_count:
-            best_count = count
-            best_fi = fi
+    logger.info(
+        "Per-camera overlays: frame %d, %d 3D midlines, %d 2D midline sets",
+        frame_index,
+        len(frame_3d),
+        len(frame_2d),
+    )
 
-    if best_count == 0:
-        logger.warning("vis_spline_camera_overlay: no midlines in any frame")
-        return
-
-    frame_midlines = midlines_3d_per_frame[best_fi]
+    output_dir.mkdir(parents=True, exist_ok=True)
     camera_ids = set(video_set.camera_ids)
 
-    # For each camera, count how many splines project within image bounds
-    best_cam = None
-    best_cam_count = 0
-
-    for cam_id in models:
-        if cam_id not in camera_ids:
-            continue
-        model = models[cam_id]
-        in_bounds = 0
-
-        for ml in frame_midlines.values():
-            spline = scipy.interpolate.BSpline(
-                ml.knots.astype(np.float64),
-                ml.control_points.astype(np.float64),
-                ml.degree,
-            )
-            pts_3d = spline(np.linspace(0, 1, 15)).astype(np.float32)
-            pixels, valid = model.project(torch.from_numpy(pts_3d))
-            pixels_np = pixels.detach().cpu().numpy()
-            valid_np = valid.detach().cpu().numpy()
-
-            # Check if majority of points are within reasonable bounds
-            valid_pts = pixels_np[valid_np]
-            if len(valid_pts) >= 5:
-                in_bounds += 1
-
-        if in_bounds > best_cam_count:
-            best_cam_count = in_bounds
-            best_cam = cam_id
-
-    if best_cam is None:
-        logger.warning("vis_spline_camera_overlay: no camera with valid projections")
-        return
-
-    # Read the frame (undistorted via VideoSet to match projection model coordinates)
     try:
-        frame = video_set.read_frame(best_fi)[best_cam]
-    except (IndexError, RuntimeError, KeyError):
-        logger.warning("vis_spline_camera_overlay: could not read frame")
+        all_frames = video_set.read_frame(frame_index)
+    except (IndexError, RuntimeError):
+        logger.warning(
+            "vis_per_camera_spline_overlays: could not read frame %d", frame_index
+        )
         return
 
-    # Draw all midline overlays on the full frame
-    for ml in frame_midlines.values():
-        draw_midline_overlay(frame, ml, models[best_cam])
+    n_saved = 0
+    for cam_id in sorted(models):
+        if cam_id not in camera_ids or cam_id not in all_frames:
+            continue
 
-    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    h, w = frame.shape[:2]
-    fig, ax = plt.subplots(figsize=(w / 100, h / 100))
-    ax.imshow(frame_rgb)
-    ax.set_title(f"Spline Overlay — Frame {best_fi}, Camera {best_cam}")
-    ax.axis("off")
+        frame = all_frames[cam_id].copy()
+        model = models[cam_id]
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(str(output_path), dpi=200, bbox_inches="tight")
-    plt.close(fig)
-    logger.info("Spline camera overlay saved to %s", output_path)
+        # Draw 3D spline reprojections (thick colored lines)
+        for fish_id, m3d in sorted(frame_3d.items()):
+            color = FISH_COLORS[fish_id % len(FISH_COLORS)]
+            draw_midline_overlay(
+                frame,
+                m3d,
+                model,
+                color=color,
+                thickness=3,
+                n_eval=40,
+                draw_widths=True,
+            )
+
+            # Annotate near the spline head
+            spline = scipy.interpolate.BSpline(
+                m3d.knots.astype(np.float64),
+                m3d.control_points.astype(np.float64),
+                m3d.degree,
+            )
+            head_3d = spline(0.0).astype(np.float32)
+            head_px, head_valid = model.project(torch.from_numpy(head_3d.reshape(1, 3)))
+            if head_valid[0]:
+                hx = round(float(head_px[0, 0]))
+                hy = round(float(head_px[0, 1]))
+                label = (
+                    f"F{fish_id} res={m3d.mean_residual:.0f}px "
+                    f"arc={m3d.arc_length:.3f}m"
+                )
+                _annotate_label(frame, label, (hx + 5, hy - 10), color)
+
+        # Draw 2D midline dots (filled circles with white outline)
+        for fish_id, cam_midlines in frame_2d.items():
+            if cam_id not in cam_midlines:
+                continue
+            m2d = cam_midlines[cam_id]
+            color = FISH_COLORS[fish_id % len(FISH_COLORS)]
+            for pt in m2d.points:
+                px, py = round(float(pt[0])), round(float(pt[1]))
+                cv2.circle(frame, (px, py), 4, color, -1)
+                cv2.circle(frame, (px, py), 4, (255, 255, 255), 1)
+
+        # Camera / frame label
+        cv2.putText(
+            frame,
+            f"Camera: {cam_id}  Frame: {frame_index}",
+            (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            frame,
+            "Lines=3D spline  Dots=2D midline",
+            (10, 60),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (200, 200, 200),
+            1,
+            cv2.LINE_AA,
+        )
+
+        out_path = output_dir / f"spline_overlay_{cam_id}.png"
+        cv2.imwrite(str(out_path), frame)
+        n_saved += 1
+
+    logger.info("%d per-camera spline overlays saved to %s", n_saved, output_dir)
+
+
+def _annotate_label(
+    frame: np.ndarray,
+    text: str,
+    position: tuple[int, int],
+    color: tuple[int, int, int],
+) -> None:
+    """Draw a text label with a dark background for readability.
+
+    Args:
+        frame: BGR image, modified in-place.
+        text: Label string.
+        position: (x, y) pixel position for text origin.
+        color: BGR text color.
+    """
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = 0.5
+    thickness = 1
+    (tw, th), baseline = cv2.getTextSize(text, font, scale, thickness)
+    x, y = position
+    x = max(0, min(x, frame.shape[1] - tw - 4))
+    y = max(th + 4, min(y, frame.shape[0] - 4))
+    cv2.rectangle(
+        frame,
+        (x - 2, y - th - 4),
+        (x + tw + 2, y + baseline + 2),
+        (0, 0, 0),
+        cv2.FILLED,
+    )
+    cv2.putText(frame, text, (x, y), font, scale, color, thickness, cv2.LINE_AA)
 
 
 # ---------------------------------------------------------------------------
@@ -1284,3 +1353,587 @@ def write_diagnostic_report(
             csv_lines.append(row)
     csv_path.write_text("\n".join(csv_lines), encoding="utf-8")
     logger.info("Per-frame metrics CSV written to %s", csv_path)
+
+
+# ---------------------------------------------------------------------------
+# Synthetic Mode Diagnostics
+# ---------------------------------------------------------------------------
+
+
+def vis_synthetic_3d_comparison(
+    midlines_3d: list[dict[int, Midline3D]],
+    ground_truths: list[dict[int, Midline3D]],
+    output_path: Path,
+    *,
+    n_eval: int = 30,
+) -> None:
+    """Save a 3D plot comparing GT and reconstructed midlines for all fish.
+
+    Evaluates both ground truth and reconstructed B-splines at ``n_eval``
+    points and overlays them in a single 3D axes.  Mean control-point error
+    (in mm) is annotated for each fish.
+
+    Args:
+        midlines_3d: Reconstructed Midline3D dicts, one per frame.
+        ground_truths: Ground truth Midline3D dicts, one per frame.
+        output_path: Output PNG path.
+        n_eval: Number of evaluation points along each spline.
+    """
+    import scipy.interpolate
+
+    from aquapose.visualization.plot3d import _robust_bounds
+
+    # Pick the frame with the most GT fish (prefer frame 0)
+    best_frame_idx = 0
+    for fi, gt_frame in enumerate(ground_truths):
+        if len(gt_frame) >= len(ground_truths[best_frame_idx]):
+            best_frame_idx = fi
+
+    gt_frame = ground_truths[best_frame_idx]
+    recon_frame = (
+        midlines_3d[best_frame_idx] if best_frame_idx < len(midlines_3d) else {}
+    )
+
+    if not gt_frame:
+        logger.warning("vis_synthetic_3d_comparison: no ground truth data")
+        return
+
+    fig = plt.figure(figsize=(12, 9))
+    ax = fig.add_subplot(111, projection="3d")
+
+    t_eval = np.linspace(0.0, 1.0, n_eval)
+    all_pts: list[np.ndarray] = []
+
+    for fish_id, gt_midline in sorted(gt_frame.items()):
+        bgr = FISH_COLORS[fish_id % len(FISH_COLORS)]
+        rgb = (bgr[2] / 255.0, bgr[1] / 255.0, bgr[0] / 255.0)
+
+        # Evaluate GT spline
+        gt_spline = scipy.interpolate.BSpline(
+            gt_midline.knots.astype(np.float64),
+            gt_midline.control_points.astype(np.float64),
+            gt_midline.degree,
+        )
+        gt_pts = gt_spline(t_eval)  # (n_eval, 3)
+        all_pts.append(gt_pts)
+
+        ax.plot(
+            gt_pts[:, 0],
+            gt_pts[:, 1],
+            gt_pts[:, 2],
+            linestyle="--",
+            color=rgb,
+            linewidth=1.5,
+            label=f"GT Fish {fish_id}",
+        )
+
+        if fish_id in recon_frame:
+            recon_midline = recon_frame[fish_id]
+            recon_spline = scipy.interpolate.BSpline(
+                recon_midline.knots.astype(np.float64),
+                recon_midline.control_points.astype(np.float64),
+                recon_midline.degree,
+            )
+            recon_pts = recon_spline(t_eval)  # (n_eval, 3)
+            all_pts.append(recon_pts)
+
+            ax.plot(
+                recon_pts[:, 0],
+                recon_pts[:, 1],
+                recon_pts[:, 2],
+                linestyle="-",
+                color=rgb,
+                linewidth=2.0,
+                label=f"Recon Fish {fish_id}",
+            )
+
+            # Compute mean control-point error in mm
+            mean_err_mm = float(
+                np.linalg.norm(
+                    recon_midline.control_points - gt_midline.control_points,
+                    axis=1,
+                ).mean()
+                * 1000.0
+            )
+            # Annotate at GT head position
+            ax.text(
+                gt_pts[0, 0],
+                gt_pts[0, 1],
+                gt_pts[0, 2],
+                f"F{fish_id}: {mean_err_mm:.1f}mm",
+                fontsize=8,
+                color=rgb,
+            )
+
+    ax.set_xlabel("X (m)")
+    ax.set_ylabel("Y (m)")
+    ax.set_zlabel("Z (m)")  # type: ignore[attr-defined]
+    ax.set_title("GT vs Reconstructed 3D Midlines")
+    ax.legend(fontsize=7)
+
+    if all_pts:
+        combined = np.concatenate(all_pts, axis=0)
+        bounds = _robust_bounds(combined)
+        if bounds is not None:
+            centers, half_range = bounds
+            ax.set_xlim(centers[0] - half_range, centers[0] + half_range)
+            ax.set_ylim(centers[1] - half_range, centers[1] + half_range)
+            ax.set_zlim(centers[2] - half_range, centers[2] + half_range)  # type: ignore[attr-defined]
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(output_path), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("Synthetic 3D comparison saved to %s", output_path)
+
+
+def vis_synthetic_camera_overlays(
+    midlines_3d: list[dict[int, Midline3D]],
+    ground_truths: list[dict[int, Midline3D]],
+    models: dict[str, RefractiveProjectionModel],
+    output_dir: Path,
+    *,
+    canvas_size: tuple[int, int] = (720, 1280),
+    n_eval: int = 40,
+) -> None:
+    """Save per-camera overlay images comparing GT and reconstructed midline projections.
+
+    For each camera, generates a PNG showing ground truth midlines as dashed
+    green polylines and reconstructed midlines as solid colored polylines.
+    Per-fish reprojection residual (mean pixel distance) is annotated.
+
+    Args:
+        midlines_3d: Reconstructed Midline3D dicts, one per frame.
+        ground_truths: Ground truth Midline3D dicts, one per frame.
+        models: Per-camera refractive projection models.
+        output_dir: Directory for per-camera PNG outputs.
+        canvas_size: (height, width) of the output canvas.
+        n_eval: Number of points to evaluate along each spline.
+    """
+    import scipy.interpolate
+    import torch
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Pick best frame (most GT fish)
+    best_frame_idx = 0
+    for fi, gt_frame in enumerate(ground_truths):
+        if len(gt_frame) >= len(ground_truths[best_frame_idx]):
+            best_frame_idx = fi
+
+    gt_frame = ground_truths[best_frame_idx]
+    recon_frame = (
+        midlines_3d[best_frame_idx] if best_frame_idx < len(midlines_3d) else {}
+    )
+
+    if not gt_frame:
+        logger.warning("vis_synthetic_camera_overlays: no ground truth data")
+        return
+
+    t_eval = np.linspace(0.0, 1.0, n_eval)
+    n_saved = 0
+
+    for cam_id in sorted(models):
+        model = models[cam_id]
+        canvas = np.full((canvas_size[0], canvas_size[1], 3), 64, dtype=np.uint8)
+
+        for fish_id, gt_midline in sorted(gt_frame.items()):
+            bgr = FISH_COLORS[fish_id % len(FISH_COLORS)]
+
+            # Evaluate and project GT spline
+            gt_spline = scipy.interpolate.BSpline(
+                gt_midline.knots.astype(np.float64),
+                gt_midline.control_points.astype(np.float64),
+                gt_midline.degree,
+            )
+            gt_pts_3d = gt_spline(t_eval).astype(np.float32)
+            gt_px, gt_valid = model.project(torch.from_numpy(gt_pts_3d))
+            gt_px_np = gt_px.numpy()
+            gt_valid_np = gt_valid.numpy()
+
+            # Draw GT as dashed green (alternate segments)
+            gt_color = (0, 200, 0)
+            gt_screen = [
+                (round(float(gt_px_np[i, 0])), round(float(gt_px_np[i, 1])))
+                for i in range(n_eval)
+                if gt_valid_np[i]
+            ]
+            for seg_idx in range(0, len(gt_screen) - 1, 2):
+                p0 = gt_screen[seg_idx]
+                p1 = gt_screen[seg_idx + 1]
+                cv2.line(canvas, p0, p1, gt_color, 1)
+
+            # Evaluate and project reconstructed spline (if available)
+            if fish_id in recon_frame:
+                recon_midline = recon_frame[fish_id]
+                recon_spline = scipy.interpolate.BSpline(
+                    recon_midline.knots.astype(np.float64),
+                    recon_midline.control_points.astype(np.float64),
+                    recon_midline.degree,
+                )
+                recon_pts_3d = recon_spline(t_eval).astype(np.float32)
+                recon_px, recon_valid = model.project(torch.from_numpy(recon_pts_3d))
+                recon_px_np = recon_px.numpy()
+                recon_valid_np = recon_valid.numpy()
+
+                # Draw solid colored polyline for reconstructed
+                recon_screen = np.array(
+                    [
+                        [
+                            round(float(recon_px_np[i, 0])),
+                            round(float(recon_px_np[i, 1])),
+                        ]
+                        for i in range(n_eval)
+                        if recon_valid_np[i]
+                    ],
+                    dtype=np.int32,
+                )
+                if len(recon_screen) >= 2:
+                    cv2.polylines(
+                        canvas,
+                        [recon_screen.reshape(-1, 1, 2)],
+                        isClosed=False,
+                        color=bgr,
+                        thickness=2,
+                    )
+
+                # Compute reprojection residual (mean pixel distance between
+                # GT projected and recon projected at matching valid points)
+                both_valid = gt_valid_np & recon_valid_np
+                if both_valid.any():
+                    gt_valid_px = gt_px_np[both_valid]
+                    recon_valid_px = recon_px_np[both_valid]
+                    residual = float(
+                        np.linalg.norm(gt_valid_px - recon_valid_px, axis=1).mean()
+                    )
+                    # Annotate near the first projected GT point
+                    if len(gt_screen) > 0:
+                        label = f"F{fish_id} res={residual:.1f}px"
+                        _annotate_label(
+                            canvas,
+                            label,
+                            (gt_screen[0][0] + 5, gt_screen[0][1] - 10),
+                            bgr,
+                        )
+
+        # Camera label and legend
+        cv2.putText(
+            canvas,
+            f"Camera: {cam_id}",
+            (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            canvas,
+            "Dashed=GT, Solid=Reconstructed",
+            (10, 60),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (200, 200, 200),
+            1,
+            cv2.LINE_AA,
+        )
+
+        out_path = output_dir / f"synthetic_overlay_{cam_id}.png"
+        cv2.imwrite(str(out_path), canvas)
+        n_saved += 1
+
+    logger.info("%d synthetic camera overlays saved to %s", n_saved, output_dir)
+
+
+def vis_synthetic_error_distribution(
+    midlines_3d: list[dict[int, Midline3D]],
+    ground_truths: list[dict[int, Midline3D]],
+    output_path: Path,
+) -> None:
+    """Save a 3-panel figure showing the distribution of 3D control-point errors.
+
+    Panels: (a) histogram of all per-control-point errors in mm,
+    (b) box plot grouped by fish ID, (c) scatter of error vs body position.
+
+    Args:
+        midlines_3d: Reconstructed Midline3D dicts, one per frame.
+        ground_truths: Ground truth Midline3D dicts, one per frame.
+        output_path: Output PNG path.
+    """
+    # Collect per-control-point errors
+    all_errors_mm: list[float] = []
+    fish_errors: dict[int, list[float]] = {}
+    cp_errors: list[tuple[int, int, float]] = []  # (fish_id, cp_idx, error_mm)
+
+    for _fi, (recon_frame, gt_frame) in enumerate(
+        zip(midlines_3d, ground_truths, strict=False)
+    ):
+        for fish_id, gt_midline in gt_frame.items():
+            if fish_id not in recon_frame:
+                continue
+            recon_midline = recon_frame[fish_id]
+            errors = (
+                np.linalg.norm(
+                    recon_midline.control_points - gt_midline.control_points,
+                    axis=1,
+                )
+                * 1000.0
+            )  # mm, shape (7,)
+            for cp_idx, err in enumerate(errors.tolist()):
+                all_errors_mm.append(err)
+                fish_errors.setdefault(fish_id, []).append(err)
+                cp_errors.append((fish_id, cp_idx, err))
+
+    if not all_errors_mm:
+        logger.warning("vis_synthetic_error_distribution: no matching fish data")
+        return
+
+    all_errors_arr = np.array(all_errors_mm)
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+
+    # Panel (a): histogram
+    ax = axes[0]
+    ax.hist(all_errors_arr, bins=30, edgecolor="black", alpha=0.7)
+    mean_err = float(all_errors_arr.mean())
+    median_err = float(np.median(all_errors_arr))
+    ax.axvline(mean_err, color="red", linestyle="--", label=f"Mean: {mean_err:.2f} mm")
+    ax.axvline(
+        median_err, color="blue", linestyle=":", label=f"Median: {median_err:.2f} mm"
+    )
+    ax.set_title("Control-Point Error Distribution")
+    ax.set_xlabel("Error (mm)")
+    ax.set_ylabel("Count")
+    ax.legend()
+
+    # Panel (b): box plot per fish
+    ax = axes[1]
+    fish_ids_sorted = sorted(fish_errors.keys())
+    box_data = [fish_errors[fid] for fid in fish_ids_sorted]
+    ax.boxplot(box_data, labels=[str(fid) for fid in fish_ids_sorted])
+    ax.set_title("Per-Fish Error Distribution")
+    ax.set_xlabel("Fish ID")
+    ax.set_ylabel("Error (mm)")
+
+    # Panel (c): scatter error vs control-point index
+    ax = axes[2]
+    for fish_id, cp_idx, err_mm in cp_errors:
+        bgr = FISH_COLORS[fish_id % len(FISH_COLORS)]
+        rgb = (bgr[2] / 255.0, bgr[1] / 255.0, bgr[0] / 255.0)
+        ax.scatter(cp_idx, err_mm, color=rgb, alpha=0.5, s=20)
+    ax.set_title("Error vs Body Position")
+    ax.set_xlabel("Control Point Index (head->tail)")
+    ax.set_ylabel("Error (mm)")
+
+    plt.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(output_path), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("Synthetic error distribution saved to %s", output_path)
+
+
+def write_synthetic_report(
+    output_path: Path,
+    stage_timing: dict[str, float],
+    midlines_3d: list[dict[int, Midline3D]],
+    ground_truths: list[dict[int, Midline3D]],
+    models: dict[str, RefractiveProjectionModel],
+    fish_configs: list[FishConfig],
+    method: str,
+    diag_dir: Path,
+) -> None:
+    """Write a structured Markdown report for a synthetic pipeline run.
+
+    Includes configuration summary, per-fish GT comparison table, per-camera
+    mean reprojection residuals, error statistics, stage timing, and a list
+    of all diagnostic files produced.
+
+    Args:
+        output_path: Path for the output .md file.
+        stage_timing: Stage name to wall-clock seconds mapping.
+        midlines_3d: Reconstructed Midline3D dicts, one per frame.
+        ground_truths: Ground truth Midline3D dicts, one per frame.
+        models: Per-camera refractive projection models.
+        fish_configs: List of FishConfig objects used to generate synthetic fish.
+        method: Reconstruction method name (``"triangulation"`` or ``"curve"``).
+        diag_dir: Directory containing diagnostic output files.
+    """
+    from datetime import UTC, datetime
+
+    lines: list[str] = []
+    n_frames = len(midlines_3d)
+    n_fish = len(fish_configs)
+    n_cameras = len(models)
+
+    # ------------------------------------------------------------------
+    # Header
+    # ------------------------------------------------------------------
+    lines.append("# Synthetic Diagnostic Report")
+    lines.append("")
+    lines.append(f"- **Date**: {datetime.now(tz=UTC).strftime('%Y-%m-%d %H:%M UTC')}")
+    lines.append(f"- **Method**: {method}")
+    lines.append("")
+
+    # ------------------------------------------------------------------
+    # Config Summary
+    # ------------------------------------------------------------------
+    lines.append("## Configuration")
+    lines.append("")
+    lines.append("| Parameter | Value |")
+    lines.append("|-----------|-------|")
+    lines.append(f"| n_fish | {n_fish} |")
+    lines.append(f"| n_cameras | {n_cameras} |")
+    lines.append(f"| n_frames | {n_frames} |")
+    lines.append(f"| method | {method} |")
+    lines.append("")
+
+    lines.append("### Fish Configurations")
+    lines.append("")
+    lines.append("| Fish | Position | Heading (rad) | Curvature (m⁻¹) | Scale (m) |")
+    lines.append("|------|----------|---------------|-----------------|-----------|")
+    for fi, fc in enumerate(fish_configs):
+        pos_str = f"({fc.position[0]:.3f}, {fc.position[1]:.3f}, {fc.position[2]:.3f})"
+        lines.append(
+            f"| {fi} | {pos_str} | {fc.heading_rad:.3f} | {fc.curvature:.3f} | {fc.scale:.4f} |"
+        )
+    lines.append("")
+
+    # ------------------------------------------------------------------
+    # Per-Fish GT Comparison
+    # ------------------------------------------------------------------
+    lines.append("## Per-Fish GT Comparison")
+    lines.append("")
+
+    # Collect per-fish stats across all frames
+    fish_ctrl_errors: dict[int, list[float]] = {}
+    fish_arc_errors: dict[int, list[float]] = {}
+
+    for _fi, (recon_frame, gt_frame) in enumerate(
+        zip(midlines_3d, ground_truths, strict=False)
+    ):
+        for fish_id, gt_midline in gt_frame.items():
+            if fish_id not in recon_frame:
+                continue
+            recon_midline = recon_frame[fish_id]
+            cp_errors_m = np.linalg.norm(
+                recon_midline.control_points - gt_midline.control_points, axis=1
+            )
+            for err in cp_errors_m.tolist():
+                fish_ctrl_errors.setdefault(fish_id, []).append(err * 1000.0)
+            arc_err_mm = abs(recon_midline.arc_length - gt_midline.arc_length) * 1000.0
+            fish_arc_errors.setdefault(fish_id, []).append(arc_err_mm)
+
+    # Per-camera residuals from reconstructed midlines
+    fish_cam_residuals: dict[int, list[float]] = {}
+    for recon_frame in midlines_3d:
+        for fish_id, ml in recon_frame.items():
+            if ml.per_camera_residuals:
+                for res in ml.per_camera_residuals.values():
+                    fish_cam_residuals.setdefault(fish_id, []).append(res)
+
+    if fish_ctrl_errors:
+        lines.append(
+            "| Fish ID | Mean Error (mm) | Max Error (mm) | Std Error (mm) "
+            "| Arc Length Error (mm) | Mean Residual (px) |"
+        )
+        lines.append(
+            "|---------|-----------------|----------------|----------------|"
+            "-----------------------|--------------------|"
+        )
+        for fish_id in sorted(fish_ctrl_errors):
+            errs = np.array(fish_ctrl_errors[fish_id])
+            arc_errs = np.array(fish_arc_errors.get(fish_id, [0.0]))
+            cam_res = fish_cam_residuals.get(fish_id, [])
+            mean_res = float(np.mean(cam_res)) if cam_res else float("nan")
+            lines.append(
+                f"| {fish_id} | {float(errs.mean()):.2f} | {float(errs.max()):.2f} "
+                f"| {float(errs.std()):.2f} | {float(arc_errs.mean()):.2f} "
+                f"| {mean_res:.2f} |"
+            )
+    else:
+        lines.append("No matched fish found between reconstruction and ground truth.")
+    lines.append("")
+
+    # ------------------------------------------------------------------
+    # Per-Camera Mean Reprojection Residual
+    # ------------------------------------------------------------------
+    cam_res_accum: dict[str, list[float]] = {}
+    for recon_frame in midlines_3d:
+        for ml in recon_frame.values():
+            if ml.per_camera_residuals:
+                for cam_id, res in ml.per_camera_residuals.items():
+                    cam_res_accum.setdefault(cam_id, []).append(res)
+
+    if cam_res_accum:
+        lines.append("## Per-Camera Mean Reprojection Residual")
+        lines.append("")
+        lines.append("| Camera ID | Mean Residual (px) |")
+        lines.append("|-----------|-------------------|")
+        for cam_id in sorted(cam_res_accum):
+            mean_res = float(np.mean(cam_res_accum[cam_id]))
+            lines.append(f"| {cam_id} | {mean_res:.2f} |")
+        lines.append("")
+
+    # ------------------------------------------------------------------
+    # Error Statistics
+    # ------------------------------------------------------------------
+    lines.append("## Error Statistics")
+    lines.append("")
+
+    all_errs_mm: list[float] = [e for errs in fish_ctrl_errors.values() for e in errs]
+    if all_errs_mm:
+        arr = np.array(all_errs_mm)
+        lines.append("| Percentile | Error (mm) |")
+        lines.append("|------------|-----------|")
+        for pct, label in [
+            (5, "p5"),
+            (25, "p25"),
+            (50, "p50"),
+            (75, "p75"),
+            (95, "p95"),
+        ]:
+            lines.append(f"| {label} | {float(np.percentile(arr, pct)):.2f} |")
+        lines.append(f"| max | {float(arr.max()):.2f} |")
+    else:
+        lines.append("No error data available.")
+    lines.append("")
+
+    # ------------------------------------------------------------------
+    # Stage Timing
+    # ------------------------------------------------------------------
+    lines.append("## Stage Timing")
+    lines.append("")
+    total_time = sum(stage_timing.values())
+    lines.append("| Stage | Wall Time (s) | % of Total |")
+    lines.append("|-------|--------------|-----------|")
+    for stage_name, elapsed in stage_timing.items():
+        pct = 100.0 * elapsed / total_time if total_time > 0 else 0.0
+        lines.append(f"| {stage_name} | {elapsed:.2f} | {pct:.1f}% |")
+    lines.append(f"| **TOTAL** | **{total_time:.2f}** | **100.0%** |")
+    lines.append("")
+
+    # ------------------------------------------------------------------
+    # Diagnostic Files
+    # ------------------------------------------------------------------
+    lines.append("## Diagnostic Files")
+    lines.append("")
+    generated_files: list[Path] = []
+    if diag_dir.exists():
+        for p in sorted(diag_dir.iterdir()):
+            if p.is_file() and p.suffix in (".png", ".mp4", ".gif", ".md"):
+                generated_files.append(p)
+            elif p.is_dir():
+                # Include subdirectory contents
+                for sub_p in sorted(p.iterdir()):
+                    if sub_p.is_file() and sub_p.suffix in (".png", ".mp4", ".gif"):
+                        generated_files.append(sub_p)
+
+    if generated_files:
+        for f in generated_files:
+            rel = f.relative_to(diag_dir) if f.is_relative_to(diag_dir) else f
+            lines.append(f"- `{rel}`")
+    else:
+        lines.append("No visualization files found.")
+    lines.append("")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text("\n".join(lines), encoding="utf-8")
+    logger.info("Synthetic diagnostic report written to %s", output_path)

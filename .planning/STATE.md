@@ -169,6 +169,7 @@ Recent decisions affecting current work:
 | 1 | Fix triangulation bugs: NaN contamination, coupled thresholds, greedy orientation | 2026-02-23 | 4d3d07e | [1-fix-triangulation-bugs-nan-contamination](./quick/1-fix-triangulation-bugs-nan-contamination/) |
 | 2 | Add synthetic data module (FishConfig, MidlineSet generation, GT Midline3D, --synthetic flag) | 2026-02-23 | b9dd734 | [2-add-synthetic-data-module-as-drop-in-rep](./quick/2-add-synthetic-data-module-as-drop-in-rep/) |
 | 3 | Add synthetic mode diagnostic visualizations (3D GT comparison, camera overlays, error distribution, markdown report) | 2026-02-23 | b3a4dd7 | [3-add-synthetic-mode-diagnostic-visualizat](./quick/3-add-synthetic-mode-diagnostic-visualizat/) |
+| 4 | Add per-frame position drift (velocity) and heading drift (angular_velocity) to FishConfig for realistic multi-frame synthetic testing | 2026-02-23 | 48b12b5 | [4-add-per-frame-position-drift-and-heading](./quick/4-add-per-frame-position-drift-and-heading/) |
 
 ### Blockers/Concerns
 
@@ -180,5 +181,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-23
-Stopped at: Completed quick-3 (add-synthetic-mode-diagnostic-visualizat)
-Next action: Synthetic diagnostic mode now fully featured. Continue with Phase 09 Plan 02 (integration/validation against real data) using --synthetic for visual quality assessment.
+Stopped at: Completed quick-4 (add-per-frame-position-drift-and-heading)
+Next action: Synthetic fish now drift realistically across frames. Continue with Phase 09 Plan 02 (integration/validation against real data) using --synthetic for visual quality assessment with motion.

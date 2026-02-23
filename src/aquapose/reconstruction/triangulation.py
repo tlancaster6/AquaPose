@@ -398,18 +398,20 @@ def _align_midline_orientations(
     models: dict[str, RefractiveProjectionModel],
     inlier_threshold: float = DEFAULT_INLIER_THRESHOLD,
 ) -> dict[str, Midline2D]:
-    """Align midline orientations across cameras via greedy pairwise alignment.
+    """Align midline orientations across cameras via brute-force enumeration.
 
     Ensures that body point i from camera A corresponds to the same physical
     point as body point i from camera B. Without this, arbitrary BFS traversal
     order causes head/tail mismatch and zigzag 3D reconstructions.
 
-    Algorithm: fixes the first camera (sorted order) as reference, then for
-    each remaining camera independently tries both orientations and picks the
-    one producing shorter chord length when triangulated against the reference.
-    This is O(N) in camera count rather than O(2^N) brute-force.
+    Algorithm: fixes the first camera (sorted order) as reference, then
+    enumerates all 2^(N-1) flip combinations for the remaining cameras.
+    Each combination is scored by summing pairwise chord lengths across all
+    camera pairs — a correct orientation produces smooth curves with short
+    chords, while flipped orientations produce zigzags with long chords.
 
-    For N < 2 cameras: returns unchanged (triangulation will skip anyway).
+    Falls back to greedy pairwise alignment if more than 7 non-reference
+    cameras (2^7 = 128 combos) to avoid combinatorial blowup.
 
     Args:
         cam_midlines: Per-camera midlines for a single fish.
@@ -425,7 +427,59 @@ def _align_midline_orientations(
     if n_cams < 2:
         return cam_midlines
 
-    # Sample head, mid, tail for chord-length comparison
+    others = cam_ids[1:]
+    sample_indices = [0, N_SAMPLE_POINTS // 2, N_SAMPLE_POINTS - 1]
+
+    # Fall back to greedy for >7 non-reference cameras
+    if len(others) > 7:
+        return _align_midline_orientations_greedy(
+            cam_midlines, models, inlier_threshold
+        )
+
+    best_combo: dict[str, Midline2D] = dict(cam_midlines)
+    best_score = float("inf")
+
+    for bits in range(1 << len(others)):
+        trial = dict(cam_midlines)
+        for j, cid in enumerate(others):
+            if bits & (1 << j):
+                trial[cid] = _flip_midline(cam_midlines[cid])
+
+        # Score: sum of pairwise chord lengths across ALL camera pairs
+        total_chord = 0.0
+        for ca, cb in itertools.combinations(cam_ids, 2):
+            chord = _pairwise_chord_length(
+                trial[ca], trial[cb], models[ca], models[cb], sample_indices
+            )
+            total_chord += chord
+
+        if total_chord < best_score:
+            best_score = total_chord
+            best_combo = trial
+
+    return best_combo
+
+
+def _align_midline_orientations_greedy(
+    cam_midlines: dict[str, Midline2D],
+    models: dict[str, RefractiveProjectionModel],
+    inlier_threshold: float = DEFAULT_INLIER_THRESHOLD,
+) -> dict[str, Midline2D]:
+    """Greedy pairwise orientation alignment fallback for many cameras.
+
+    Used when brute-force enumeration would be too expensive (>7 non-reference
+    cameras). Fixes the first camera as reference, then independently decides
+    whether to flip each other camera based on pairwise chord length.
+
+    Args:
+        cam_midlines: Per-camera midlines for a single fish.
+        models: Per-camera refractive projection models.
+        inlier_threshold: Maximum reprojection error for inlier classification.
+
+    Returns:
+        Dict of (possibly flipped) midlines with consistent orientation.
+    """
+    cam_ids = sorted(cid for cid in cam_midlines if cid in models)
     sample_indices = [0, N_SAMPLE_POINTS // 2, N_SAMPLE_POINTS - 1]
 
     ref_id = cam_ids[0]
@@ -438,12 +492,10 @@ def _align_midline_orientations(
         cand_ml = cam_midlines[cid]
         cand_model = models[cid]
 
-        # Score original orientation
         chord_orig = _pairwise_chord_length(
             ref_ml, cand_ml, ref_model, cand_model, sample_indices
         )
 
-        # Score flipped orientation
         flipped_ml = _flip_midline(cand_ml)
         chord_flip = _pairwise_chord_length(
             ref_ml, flipped_ml, ref_model, cand_model, sample_indices

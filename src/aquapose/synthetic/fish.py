@@ -39,6 +39,11 @@ class FishConfig:
             Non-zero values produce a circular arc with radius=1/|curvature|.
         scale: Total body arc length in metres. Default 0.085 (85mm).
         n_points: Number of evenly spaced body points. Default N_SAMPLE_POINTS.
+        velocity: Per-frame position displacement in metres (dx, dy, dz).
+            Applied linearly: position_t = position + t * velocity. Default (0, 0, 0)
+            produces a stationary fish (backward compatible).
+        angular_velocity: Per-frame heading change in radians. Applied linearly:
+            heading_t = heading_rad + t * angular_velocity. Default 0.0 is stationary.
     """
 
     position: tuple[float, float, float] = (0.0, 0.0, 1.25)
@@ -46,6 +51,8 @@ class FishConfig:
     curvature: float = 0.0
     scale: float = 0.085
     n_points: int = N_SAMPLE_POINTS
+    velocity: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    angular_velocity: float = 0.0
 
 
 def generate_fish_3d(config: FishConfig) -> np.ndarray:
@@ -305,10 +312,25 @@ def generate_synthetic_midline_sets(
         frame_gt: dict[int, Midline3D] = {}
 
         for fish_id, cfg in enumerate(fish_configs):
-            pts_3d = generate_fish_3d(cfg)
-            half_widths = generate_fish_half_widths(
-                n_points=cfg.n_points,
+            # Apply per-frame drift to position and heading
+            bx, by, bz = cfg.position
+            drifted_cfg = FishConfig(
+                position=(
+                    bx + frame_offset * cfg.velocity[0],
+                    by + frame_offset * cfg.velocity[1],
+                    bz + frame_offset * cfg.velocity[2],
+                ),
+                heading_rad=cfg.heading_rad + frame_offset * cfg.angular_velocity,
+                curvature=cfg.curvature,
                 scale=cfg.scale,
+                n_points=cfg.n_points,
+                velocity=cfg.velocity,
+                angular_velocity=cfg.angular_velocity,
+            )
+            pts_3d = generate_fish_3d(drifted_cfg)
+            half_widths = generate_fish_half_widths(
+                n_points=drifted_cfg.n_points,
+                scale=drifted_cfg.scale,
             )
 
             # Ground truth Midline3D

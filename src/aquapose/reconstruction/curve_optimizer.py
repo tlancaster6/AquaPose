@@ -547,7 +547,7 @@ def _upsample_ctrl_pts(
     # Evaluate coarse spline at n_fine parameter positions
     B_up = get_basis(n_fine, n_coarse, device)  # (n_fine, n_coarse)
     # (N_fish, n_fine, 3) = (n_fine, n_coarse) @ (N_fish, n_coarse, 3)
-    return torch.einsum("fk,nkd->nfd", B_up, coarse_ctrl)
+    return torch.einsum("fk,nkd->nfd", B_up, coarse_ctrl).contiguous()
 
 
 # ---------------------------------------------------------------------------

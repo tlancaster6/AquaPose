@@ -175,3 +175,14 @@ Plans:
 - [ ] 08-01-PLAN.md — Pipeline orchestrator, stage functions, and HDF5 midline writer (OUT-01)
 - [ ] 08-02-PLAN.md — 2D reprojection overlays, 3D animation, and diagnostic report (OUT-02, OUT-03)
 - [ ] 08-03-PLAN.md — End-to-end integration test on real data with visual inspection checkpoint
+
+### Phase 9: Curve-Based Optimization as a Replacement for Triangulation
+
+**Goal:** Replace the interior of `triangulate_midlines()` with a correspondence-free B-spline optimizer that fits 3D splines directly against observed 2D skeletons via refractive reprojection + chamfer distance, eliminating five interacting subsystems and achieving faster runtime than the current ~76s/30-frame pipeline
+**Depends on:** Phase 8
+**Requirements:** RECON-03, RECON-04, RECON-05
+**Plans:** 2 plans
+
+Plans:
+- [ ] 09-01-PLAN.md — Core CurveOptimizer module: B-spline basis, chamfer loss, coarse-to-fine L-BFGS, warm-start, unit tests
+- [ ] 09-02-PLAN.md — Pipeline wiring (--method flag in diagnose_pipeline.py) and human verification on real data

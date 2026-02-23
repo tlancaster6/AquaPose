@@ -354,6 +354,7 @@ def _pairwise_chord_length(
     ref_model: RefractiveProjectionModel,
     cand_model: RefractiveProjectionModel,
     sample_indices: list[int],
+    inlier_threshold: float = DEFAULT_INLIER_THRESHOLD,
 ) -> float:
     """Compute chord length of triangulated sample points from two cameras.
 
@@ -368,6 +369,8 @@ def _pairwise_chord_length(
         ref_model: Projection model for the reference camera.
         cand_model: Projection model for the candidate camera.
         sample_indices: Body point indices to triangulate.
+        inlier_threshold: Maximum reprojection error (pixels) for inlier
+            classification during triangulation.
 
     Returns:
         Total chord length in metres. Returns inf if triangulation fails.
@@ -380,7 +383,7 @@ def _pairwise_chord_length(
             "ref": torch.from_numpy(ref_ml.points[bp_idx]).float(),
             "cand": torch.from_numpy(cand_ml.points[bp_idx]).float(),
         }
-        result = _triangulate_body_point(pixels, pair_models, inlier_threshold=50.0)
+        result = _triangulate_body_point(pixels, pair_models, inlier_threshold)
         if result is not None:
             pts_3d.append(result[0])
 
@@ -440,13 +443,23 @@ def _align_midline_orientations(
 
         # Score original orientation
         chord_orig = _pairwise_chord_length(
-            ref_ml, cand_ml, ref_model, cand_model, sample_indices
+            ref_ml,
+            cand_ml,
+            ref_model,
+            cand_model,
+            sample_indices,
+            inlier_threshold,
         )
 
         # Score flipped orientation
         flipped_ml = _flip_midline(cand_ml)
         chord_flip = _pairwise_chord_length(
-            ref_ml, flipped_ml, ref_model, cand_model, sample_indices
+            ref_ml,
+            flipped_ml,
+            ref_model,
+            cand_model,
+            sample_indices,
+            inlier_threshold,
         )
 
         if chord_flip < chord_orig:

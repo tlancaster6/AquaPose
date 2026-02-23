@@ -150,6 +150,7 @@ Recent decisions affecting current work:
 - Phase 04.1 inserted after Phase 04: Isolate phase-4 specific code post-archive (URGENT)
 - Phase 7 added: Multi-View Triangulation
 - Phase 8 added: End-to-end integration testing and benchmarking
+- Phase 9 added: Curve-based optimization as a replacement for triangulation
 
 ### Pending Todos
 

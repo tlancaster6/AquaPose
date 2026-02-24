@@ -163,6 +163,7 @@ Recent decisions affecting current work:
 - **Add Phase 7 and Phase 8 to roadmap** via /gsd:add-phase
 - **Add YOLO-OBB support** (segmentation) — train OBB model for oriented bounding boxes, update detector and crop utilities
 - **Keypoint-based pose estimation alternative to segmentation** (initialization) — predict midline keypoints directly from crops, bypassing segmentation+skeletonization
+- **Active calibration refinement** (calibration) — refine extrinsics and refractive parameters using reconstruction reprojection residuals
 
 ### Quick Tasks Completed
 

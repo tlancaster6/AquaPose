@@ -125,6 +125,8 @@ class FishTrack:
             association (pixels).
         confidence: Confidence from the latest association.
         n_cameras: Number of cameras observing this fish in the latest frame.
+        _coasting_prediction: Running predicted position advanced each coasting
+            frame. None when not coasting (predict() uses positions directly).
     """
 
     fish_id: int
@@ -145,6 +147,7 @@ class FishTrack:
     reprojection_residual: float = 0.0
     confidence: float = 1.0
     n_cameras: int = 0
+    _coasting_prediction: np.ndarray | None = field(default=None, repr=False)
 
     @property
     def is_confirmed(self) -> bool:
@@ -156,10 +159,15 @@ class FishTrack:
         return self.state in (TrackState.CONFIRMED, TrackState.COASTING)
 
     def predict(self) -> np.ndarray:
-        """Predict the next 3D position using velocity with coasting damping.
+        """Predict the next 3D position using constant-velocity extrapolation.
 
-        During COASTING, velocity is damped by ``velocity_damping^frames_since_update``
-        to decay prediction confidence over time.
+        When coasting, returns the running ``_coasting_prediction`` that is
+        advanced by ``mark_missed()`` each frame.  This ensures the prediction
+        keeps pace with the fish rather than stalling at the last observed
+        position with a rapidly-decaying velocity offset.
+
+        When active (not coasting), adds one step of velocity to the last
+        observed position.
 
         Returns:
             Predicted 3D centroid, shape (3,).
@@ -167,13 +175,11 @@ class FishTrack:
         if len(self.positions) == 0:
             return np.zeros(3, dtype=np.float32)
 
+        if self._coasting_prediction is not None:
+            return self._coasting_prediction.copy()
+
         last_pos = list(self.positions)[-1]
-        vel = self.velocity.copy()
-
-        if self.state == TrackState.COASTING and self.frames_since_update > 0:
-            vel *= self.velocity_damping**self.frames_since_update
-
-        return last_pos + vel
+        return last_pos + self.velocity
 
     def update_from_claim(
         self,
@@ -202,6 +208,7 @@ class FishTrack:
 
         self.positions.append(centroid_3d.copy())
         self.frames_since_update = 0
+        self._coasting_prediction = None  # reset on re-acquisition
         self.age += 1
         self.camera_detections = dict(camera_detections)
         self.camera_history.append(frozenset(camera_detections.keys()))
@@ -241,6 +248,7 @@ class FishTrack:
         """
         self.positions.append(centroid_3d.copy())
         self.frames_since_update = 0
+        self._coasting_prediction = None  # reset on re-acquisition
         self.age += 1
         self.camera_detections = dict(camera_detections)
         self.camera_history.append(frozenset(camera_detections.keys()))
@@ -268,6 +276,10 @@ class FishTrack:
 
         CONFIRMED → COASTING, reset consecutive_hits.
         PROBATIONARY stays PROBATIONARY.
+
+        Advances the coasting prediction by one damped velocity step so that
+        subsequent ``predict()`` calls continue tracking the fish trajectory
+        rather than stalling at the last observed position.
         """
         self.frames_since_update += 1
         self.health.consecutive_hits = 0
@@ -275,6 +287,25 @@ class FishTrack:
 
         if self.state == TrackState.CONFIRMED:
             self.state = TrackState.COASTING
+            # Seed the coasting prediction from the last observed position.
+            if len(self.positions) > 0:
+                last_pos = list(self.positions)[-1]
+                self._coasting_prediction = (
+                    last_pos + self.velocity * self.velocity_damping
+                )
+            else:
+                self._coasting_prediction = None
+        elif self.state == TrackState.COASTING:
+            # Advance the running prediction by one more damped velocity step.
+            if self._coasting_prediction is not None:
+                self._coasting_prediction = (
+                    self._coasting_prediction + self.velocity * self.velocity_damping
+                )
+            elif len(self.positions) > 0:
+                last_pos = list(self.positions)[-1]
+                self._coasting_prediction = (
+                    last_pos + self.velocity * self.velocity_damping
+                )
 
     @property
     def is_dead(self) -> bool:

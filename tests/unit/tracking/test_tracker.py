@@ -135,7 +135,11 @@ def test_two_fish_no_swap(
 ) -> None:
     """Two fish with separated trajectories maintain stable IDs."""
     tracker = FishTracker(
-        min_hits=2, max_age=7, expected_count=9, reprojection_threshold=25.0
+        min_hits=2,
+        max_age=7,
+        expected_count=9,
+        reprojection_threshold=25.0,
+        min_cameras_birth=2,
     )
 
     id_a: int | None = None
@@ -347,16 +351,28 @@ def test_get_seed_points(
 
 
 def test_coasting_velocity_damping() -> None:
-    """During COASTING, velocity is damped by damping^frames_since_update."""
+    """During COASTING, each mark_missed advances prediction by damped velocity step.
+
+    After 2 mark_missed calls (2 coasting frames) with velocity=[1, 0, 0] and
+    damping=0.5, the cumulative prediction is:
+      step1: last_pos + vel*0.5 = [0.5, 0, 1]
+      step2: [0.5, 0, 1] + vel*0.5 = [1.0, 0, 1]
+    """
     track = FishTrack(fish_id=0, velocity_damping=0.5)
-    track.state = TrackState.COASTING
+    track.state = TrackState.CONFIRMED
     track.positions.append(np.array([0.0, 0.0, 1.0], dtype=np.float32))
     track.velocity = np.array([1.0, 0.0, 0.0], dtype=np.float32)
-    track.frames_since_update = 2
 
-    predicted = track.predict()
-    # damping = 0.5^2 = 0.25, so velocity = 0.25
-    np.testing.assert_allclose(predicted, [0.25, 0.0, 1.0], atol=1e-6)
+    # First missed frame: CONFIRMED -> COASTING, prediction seeded
+    track.mark_missed()
+    assert track.state == TrackState.COASTING
+    # After first miss: prediction = [0, 0, 1] + [1, 0, 0]*0.5 = [0.5, 0, 1]
+    np.testing.assert_allclose(track.predict(), [0.5, 0.0, 1.0], atol=1e-6)
+
+    # Second missed frame: prediction advances
+    track.mark_missed()
+    # After second miss: [0.5, 0, 1] + [1, 0, 0]*0.5 = [1.0, 0, 1]
+    np.testing.assert_allclose(track.predict(), [1.0, 0.0, 1.0], atol=1e-6)
 
 
 # ---------------------------------------------------------------------------
@@ -586,3 +602,49 @@ def test_dedup_requires_full_window() -> None:
     # Only 5 frames of history, need 10 — no dedup
     assert a.state == TrackState.CONFIRMED
     assert b.state == TrackState.CONFIRMED
+
+
+# ---------------------------------------------------------------------------
+# Coasting prediction accumulation regression test
+# ---------------------------------------------------------------------------
+
+
+def test_coasting_prediction_tracks_fish() -> None:
+    """Coasting prediction accumulates over missed frames, tracking fish motion.
+
+    Regression test for the jerk-freeze-die bug: the old predict() computed
+    last_pos + vel*damping^fsu, which stalled near last_pos as fsu grew.
+    After max_age=7 missed frames at fish speed 0.05 m/s, prediction error
+    was ~36 px (>> reprojection_threshold=15 px), preventing re-acquisition.
+
+    The fix advances _coasting_prediction by vel*damping each mark_missed()
+    call, keeping the prediction close to the fish trajectory.
+    """
+    # Simulate a fish at 0.05 m/s (1.67 mm/frame at 30fps)
+    vel = np.array([0.00167, 0.0, 0.0], dtype=np.float32)
+    start_pos = np.array([0.0, 0.0, 0.5], dtype=np.float32)
+
+    track = FishTrack(fish_id=0, velocity_damping=0.8)
+    track.state = TrackState.CONFIRMED
+    track.positions.append(start_pos.copy())
+    track.velocity = vel.copy()
+
+    # Simulate max_age=7 coasting frames
+    for _ in range(7):
+        track.mark_missed()
+
+    # True fish position after 7 frames
+    true_pos_after_7 = start_pos + vel * 7  # ~11.7 mm from start
+
+    # Predicted position from coasting model
+    predicted = track.predict()
+
+    # With the fix: error should be small (damping=0.8 means each step is
+    # slightly shorter, but 7*vel*0.8 ≈ 5.6*vel vs 7*vel → error = 1.4*vel ≈ 2.3mm)
+    # Without the fix (old bug): error would be last_pos + vel*0.8^7 ≈ last_pos + 0.37*vel
+    # → error from true pos = (7 - 0.37)*vel ≈ 6.63*vel ≈ 11mm ≈ 36px
+    error_mm = float(np.linalg.norm(predicted - true_pos_after_7)) * 1000
+    assert error_mm < 5.0, (
+        f"Coasting prediction error {error_mm:.1f}mm is too large. "
+        f"Predicted: {predicted}, true: {true_pos_after_7}"
+    )

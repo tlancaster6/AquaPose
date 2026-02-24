@@ -41,7 +41,20 @@ DEFAULT_VELOCITY_DAMPING: float = 0.8
 """Per-frame velocity damping factor during coasting."""
 
 DEFAULT_DEDUP_DISTANCE: float = 0.04
-"""3D proximity threshold (metres) for duplicate detection."""
+"""3D proximity threshold (metres) for confirmed-track deduplication."""
+
+DEFAULT_BIRTH_PROXIMITY_DISTANCE: float = 0.08
+"""3D proximity threshold (metres) for pre-birth ghost rejection.
+
+Larger than dedup_distance (4 cm) because cross-fish phantoms (triangulated
+from one detection of each fish) land at the midpoint between fish.  The
+synthetic trajectory generator enforces a minimum fish separation of 17 cm
+(2 x body length), so the nearest a real phantom can appear to a legitimate
+fish is ~8.5 cm.  An 8 cm threshold therefore catches the majority of
+cross-fish phantoms (those from fish pairs > 16 cm apart, i.e. almost all
+real-scenario pairs) while not blocking legitimate births from newly arriving
+fish that are physically separated by the collision-avoidance minimum.
+"""
 
 DEFAULT_DEDUP_WINDOW: int = 10
 """Consecutive frames two tracks must be close before dedup fires."""
@@ -300,7 +313,13 @@ class FishTracker:
         birth_interval: Frames between periodic birth RANSAC.
         residual_reject_factor: Reject claim if residual > mean * this.
         velocity_damping: Per-frame velocity damping during coasting.
-        dedup_distance: 3D proximity threshold (metres) for duplicate detection.
+        dedup_distance: 3D proximity threshold (metres) for confirmed-track
+            deduplication (covisibility-based dedup).
+        birth_proximity_distance: 3D proximity threshold (metres) for
+            pre-birth ghost rejection. Larger than dedup_distance because
+            cross-fish phantoms land at the midpoint between two fish
+            (typically 15-25 cm away) which is too far from either fish to
+            be caught by the smaller dedup_distance threshold.
         dedup_window: Consecutive close frames required before dedup fires.
         dedup_covisibility: Maximum camera co-visibility ratio to consider
             two tracks duplicates (low = they're splitting one fish's
@@ -318,6 +337,7 @@ class FishTracker:
         residual_reject_factor: float = DEFAULT_RESIDUAL_REJECT_FACTOR,
         velocity_damping: float = DEFAULT_VELOCITY_DAMPING,
         dedup_distance: float = DEFAULT_DEDUP_DISTANCE,
+        birth_proximity_distance: float = DEFAULT_BIRTH_PROXIMITY_DISTANCE,
         dedup_window: int = DEFAULT_DEDUP_WINDOW,
         dedup_covisibility: float = DEFAULT_DEDUP_COVISIBILITY_THRESHOLD,
     ) -> None:
@@ -330,6 +350,7 @@ class FishTracker:
         self.residual_reject_factor = residual_reject_factor
         self.velocity_damping = velocity_damping
         self.dedup_distance = dedup_distance
+        self.birth_proximity_distance = birth_proximity_distance
         self.dedup_window = dedup_window
         self.dedup_covisibility = dedup_covisibility
 
@@ -448,12 +469,17 @@ class FishTracker:
         # ----------------------------------------------------------
         # Phase 2: Birth Discovery
         # ----------------------------------------------------------
-        confirmed_count = sum(1 for t in self.tracks if t.state == TrackState.CONFIRMED)
+        # Use total non-dead track count (not just confirmed) to gate births.
+        # During the probationary window confirmed_count is always 0, which
+        # would trigger birth every frame even though all fish are already
+        # being tracked as probationary. non_dead_count correctly reflects
+        # how many fish are already accounted for.
+        non_dead_count = len([t for t in self.tracks if not t.is_dead])
         total_unclaimed = sum(len(v) for v in unclaimed_indices.values())
 
         should_birth = (
             self.frame_count == 0
-            or confirmed_count < self.expected_count
+            or non_dead_count < self.expected_count
             or self.frame_count % self.birth_interval == 0
         )
 
@@ -479,13 +505,17 @@ class FishTracker:
             for birth in births:
                 # Pre-birth proximity check: reject if too close to an
                 # existing non-dead track (prevents ghost duplicates).
+                # Uses birth_proximity_distance (default 8 cm) rather than
+                # dedup_distance (4 cm) because cross-fish phantoms land at
+                # the midpoint between two fish (typically 15-25 cm away)
+                # which is too far from either to be caught by dedup_distance.
                 too_close = False
                 for t in self.tracks:
                     if not t.is_dead and len(t.positions) > 0:
                         dist = float(
                             np.linalg.norm(birth.centroid_3d - list(t.positions)[-1])
                         )
-                        if dist < self.dedup_distance:
+                        if dist < self.birth_proximity_distance:
                             too_close = True
                             break
                 if too_close:

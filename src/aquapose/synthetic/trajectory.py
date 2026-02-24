@@ -114,12 +114,19 @@ class TankConfig:
         wall_margin: Soft-repulsion zone width near cylindrical wall in metres.
         water_z: Z coordinate of the water surface in world frame. Matches
             build_fabricated_rig convention: cameras at Z=0, water at water_z.
+        center_x: X offset of the tank centre in world frame (default 0.0).
+            When using a real camera rig the coverage zone centroid may not
+            coincide with the world origin; set this to shift fish spawning
+            into the well-covered region.
+        center_y: Y offset of the tank centre in world frame (default 0.0).
     """
 
     radius: float = 1.0
     depth: float = 1.0
     wall_margin: float = 0.05
     water_z: float = 0.75
+    center_x: float = 0.0
+    center_y: float = 0.0
 
 
 @dataclass
@@ -206,15 +213,16 @@ def _init_positions(
     z_min = tank.water_z + tank.wall_margin
     z_max = tank.water_z + tank.depth - tank.wall_margin
 
-    # Uniform sampling in cylinder: rejection sample XY within inner radius
+    # Uniform sampling in cylinder: rejection sample XY within inner radius.
+    # Apply tank center offset so fish spawn in the world-frame coverage zone.
     positions = np.zeros((n_fish, 3), dtype=np.float64)
     for i in range(n_fish):
         while True:
             x = rng.uniform(-inner_r, inner_r)
             y = rng.uniform(-inner_r, inner_r)
             if x * x + y * y <= inner_r * inner_r:
-                positions[i, 0] = x
-                positions[i, 1] = y
+                positions[i, 0] = x + tank.center_x
+                positions[i, 1] = y + tank.center_y
                 break
         positions[i, 2] = rng.uniform(z_min, z_max)
 
@@ -246,8 +254,9 @@ def _boundary_force(
     repulsion_zone = 0.10  # metres
     corrections = np.zeros(n_fish, dtype=np.float64)
 
-    x = positions[:, 0]
-    y = positions[:, 1]
+    # Compute radial distance from tank centre (accounting for offset)
+    x = positions[:, 0] - tank.center_x
+    y = positions[:, 1] - tank.center_y
     r = np.sqrt(x * x + y * y)
     dist_to_wall = tank.radius - r
 
@@ -458,13 +467,17 @@ def generate_trajectories(config: TrajectoryConfig) -> TrajectoryResult:
         positions = positions + speeds[:, np.newaxis] * direction * dt
 
         # --- Hard clamp to tank volume (safety net) ---
+        # Compute radial distance from tank centre (accounting for center offset)
         inner_r = tank.radius - tank.wall_margin
-        r_xy = np.sqrt(positions[:, 0] ** 2 + positions[:, 1] ** 2)
+        cx_off = positions[:, 0] - tank.center_x
+        cy_off = positions[:, 1] - tank.center_y
+        r_xy = np.sqrt(cx_off**2 + cy_off**2)
         over_wall = r_xy > inner_r
         if np.any(over_wall):
             scale = inner_r / (r_xy[over_wall] + 1e-12)
-            positions[over_wall, 0] *= scale
-            positions[over_wall, 1] *= scale
+            # Scale the offset from centre, then re-add centre
+            positions[over_wall, 0] = cx_off[over_wall] * scale + tank.center_x
+            positions[over_wall, 1] = cy_off[over_wall] * scale + tank.center_y
 
         z_min = tank.water_z + tank.wall_margin
         z_max = tank.water_z + tank.depth - tank.wall_margin

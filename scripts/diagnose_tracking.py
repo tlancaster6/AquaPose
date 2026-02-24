@@ -1160,9 +1160,30 @@ def run_scenario(
     scenario_fn = _SCENARIO_REGISTRY[scenario_name]
     traj_cfg, noise_cfg = scenario_fn(**scenario_kwargs)  # type: ignore[call-arg, misc]
 
-    # Patch water_z for real calibration so fish spawn in the correct volume
+    # Patch tank geometry for real calibration.
+    #
+    # When using the real 12-camera aquarium rig, the camera coverage zone
+    # does not fill the full tank cylinder centred at (0, 0).  The viable
+    # zone (>= 3 cameras in image bounds at nominal fish depth) has:
+    #   - XY range: approximately X in [-0.8, 0.8], Y in [-0.7, 0.8]
+    #   - Centroid: approximately (-0.06, 0.15) — offset from world origin
+    #
+    # Without patching, the TankConfig defaults (radius=1.0, centre=(0,0))
+    # allow fish to spawn at positions outside camera coverage (e.g. Y < -0.7).
+    # Such fish are undetectable by RANSAC (projections outside image bounds),
+    # causing repeated birth/death cycles and inflated confirmed track counts.
+    #
+    # Fix: shift the tank centre to the coverage zone centroid and reduce the
+    # radius so fish remain within the well-covered region.
+    _REAL_CAL_TANK_CENTER_X: float = -0.06
+    _REAL_CAL_TANK_CENTER_Y: float = 0.15
+    _REAL_CAL_TANK_RADIUS: float = 0.60  # conservative: keep fish in Y [-0.45, 0.75]
+
     if real_water_z is not None:
         traj_cfg.tank.water_z = real_water_z
+        traj_cfg.tank.center_x = _REAL_CAL_TANK_CENTER_X
+        traj_cfg.tank.center_y = _REAL_CAL_TANK_CENTER_Y
+        traj_cfg.tank.radius = _REAL_CAL_TANK_RADIUS
 
     trajectory = generate_trajectories(traj_cfg)
     dataset = generate_detection_dataset(trajectory, models, noise_config=noise_cfg)

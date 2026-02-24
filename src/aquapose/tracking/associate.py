@@ -14,6 +14,13 @@ from aquapose.segmentation.detector import Detection
 # Default tank depth below water surface used for single-view centroid heuristic.
 _DEFAULT_TANK_DEPTH: float = 0.5
 
+# Maximum plausible fish depth below the water surface in metres.
+# Triangulated positions deeper than water_z + this value are physically
+# impossible and indicate a ghost (cross-fish or false-positive mix).
+# Set to 4x the single-view heuristic depth to allow real variation while
+# still catching ghosts that triangulate to 2-3 m below the surface.
+_MAX_FISH_DEPTH_BELOW_SURFACE: float = 2.0
+
 # Max XY shift (metres) allowed when re-triangulating from inlier rays.
 # If the refined centroid moves further than this, inliers likely include
 # detections from a different physical fish; the original seed is kept.
@@ -82,6 +89,45 @@ class ClaimResult:
     centroid_3d: np.ndarray
     reprojection_residual: float
     n_cameras: int
+
+
+def _get_water_z(models: dict[str, RefractiveProjectionModel]) -> float | None:
+    """Return the water surface Z-coordinate from the first available model.
+
+    Args:
+        models: Per-camera refractive projection models.
+
+    Returns:
+        water_z float, or None if models is empty.
+    """
+    for model in models.values():
+        return float(model.water_z)
+    return None
+
+
+def _is_depth_valid(
+    centroid_3d: np.ndarray | torch.Tensor,
+    water_z: float,
+) -> bool:
+    """Check whether a triangulated 3D centroid is within the valid depth band.
+
+    Fish must be below the water surface (z > water_z) and at most
+    ``_MAX_FISH_DEPTH_BELOW_SURFACE`` metres deeper. Points outside this range
+    are physically impossible in the aquarium context and indicate a ghost
+    association formed from cross-fish or false-positive detections.
+
+    Args:
+        centroid_3d: Triangulated 3D position, shape (3,).
+        water_z: Z-coordinate of the water surface in world frame.
+
+    Returns:
+        True if z is in the valid range [water_z, water_z + MAX_DEPTH].
+    """
+    if isinstance(centroid_3d, torch.Tensor):
+        z = float(centroid_3d[2].item())
+    else:
+        z = float(centroid_3d[2])
+    return water_z <= z <= water_z + _MAX_FISH_DEPTH_BELOW_SURFACE
 
 
 def _detection_centroid(det: Detection) -> tuple[float, float]:
@@ -727,6 +773,9 @@ def claim_detections_for_tracks(
             if origins.shape[0] > 0:
                 rays_per_camera[cam_id] = (origins, directions)
 
+    # Water surface Z for depth-validity checks (None if models is empty).
+    water_z = _get_water_z(models)
+
     claims: list[ClaimResult] = []
     for track_id, cam_dets in track_claims.items():
         n_cameras = len(cam_dets)
@@ -761,6 +810,25 @@ def claim_detections_for_tracks(
                             )
                         )
                         continue
+
+                # Depth validity: reject the triangulated position if it falls
+                # outside the physically plausible depth band.  Ghost associations
+                # (cross-fish or false-positive mixes) often triangulate to depths
+                # well below the tank floor, producing 3D positions that would
+                # jerk tracks far from their true location.  Use the predicted
+                # position (coast) when this happens.
+                if water_z is not None and not _is_depth_valid(centroid_3d, water_z):
+                    centroid_3d_np = predicted_positions[track_id].copy()
+                    claims.append(
+                        ClaimResult(
+                            track_id=track_id,
+                            camera_detections=cam_dets,
+                            centroid_3d=centroid_3d_np,
+                            reprojection_residual=0.0,
+                            n_cameras=n_cameras,
+                        )
+                    )
+                    continue
 
                 # Compute reprojection residual
                 residuals: list[float] = []
@@ -802,16 +870,39 @@ def claim_detections_for_tracks(
                     )
                 )
         else:
-            # Single camera — ray-depth heuristic
+            # Single camera — depth-anchored ray intersection.
+            # Use the track's predicted z-depth to find the ray parameter t
+            # at which the ray reaches that depth, then compute the 3D point.
+            # This is far more accurate than the constant _DEFAULT_TANK_DEPTH
+            # heuristic when the track already has a reliable z from prior
+            # multi-view frames, and avoids the 0.3-0.5 m z-error that causes
+            # position jerks when only one camera detects the fish.
             cam_id = next(iter(cam_dets))
             det_idx = cam_dets[cam_id]
             if cam_id in rays_per_camera:
                 origins, directions = rays_per_camera[cam_id]
                 if det_idx < origins.shape[0]:
                     with torch.no_grad():
-                        centroid_3d_np = (
-                            origins[det_idx] + _DEFAULT_TANK_DEPTH * directions[det_idx]
-                        ).numpy()
+                        origin = origins[det_idx]
+                        direction = directions[det_idx]
+                        pred_z = float(predicted_positions[track_id][2])
+                        dir_z = float(direction[2].item())
+                        origin_z = float(origin[2].item())
+                        # Advance ray to predicted depth; fall back to
+                        # _DEFAULT_TANK_DEPTH if direction is near-horizontal.
+                        if abs(dir_z) > 1e-6:
+                            t = (pred_z - origin_z) / dir_z
+                            if t > 0:
+                                centroid_3d_np = (origin + t * direction).numpy()
+                            else:
+                                # Ray going wrong way — fall back to heuristic
+                                centroid_3d_np = (
+                                    origin + _DEFAULT_TANK_DEPTH * direction
+                                ).numpy()
+                        else:
+                            centroid_3d_np = (
+                                origin + _DEFAULT_TANK_DEPTH * direction
+                            ).numpy()
                 else:
                     centroid_3d_np = predicted_positions[track_id].copy()
             else:
@@ -912,4 +1003,16 @@ def discover_births(
         assoc.camera_detections = remapped
 
     # Filter to high-confidence associations only (births require multi-view)
-    return [a for a in result.associations if not a.is_low_confidence]
+    high_conf = [a for a in result.associations if not a.is_low_confidence]
+
+    # Depth validity: reject births whose triangulated 3D centroid lies outside
+    # the physically plausible depth band [water_z, water_z + MAX_DEPTH].
+    # Ghost associations formed from cross-fish or false-positive detections
+    # frequently triangulate to z-positions well below the tank floor (e.g.
+    # 2-3 m deeper than the water surface), causing immediate track birth at a
+    # wrong location that then exhibits the jerk-freeze-die failure cycle.
+    water_z = _get_water_z(models)
+    if water_z is not None:
+        high_conf = [a for a in high_conf if _is_depth_valid(a.centroid_3d, water_z)]
+
+    return high_conf

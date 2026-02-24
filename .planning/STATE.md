@@ -12,8 +12,8 @@ See: .planning/PROJECT.md (updated 2026-02-21)
 Phase: 09-curve-based-optimization-as-a-replacement-for-triangulation
 Plan: 01 complete
 Status: curve_optimizer.py implemented, 21 unit tests passing. Ready for Phase 9 Plan 02 (integration/validation against real data).
-Last activity: 2026-02-23 - Completed quick-4: sinusoidal spine shapes and diverse fish configs for synthetic testing
-Stopped at: Completed 09-01-PLAN.md
+Last activity: 2026-02-24 - Completed quick-6: synthetic data generation system for tracker evaluation
+Stopped at: Completed quick-6-PLAN.md
 
 Progress: [█████████░] 93% (phases 1-3 complete, phase 4 shelved, phases 5-9 plan 01 complete)
 
@@ -174,6 +174,7 @@ Recent decisions affecting current work:
 | 3 | Add synthetic mode diagnostic visualizations (3D GT comparison, camera overlays, error distribution, markdown report) | 2026-02-23 | b3a4dd7 | [3-add-synthetic-mode-diagnostic-visualizat](./quick/3-add-synthetic-mode-diagnostic-visualizat/) |
 | 4 | Add drift dynamics + sinusoidal/compound spine shapes + diverse fish configs | 2026-02-23 | 58385c1 | [4-add-per-frame-position-drift-and-heading](./quick/4-add-per-frame-position-drift-and-heading/) |
 | 5 | Investigate spline folding: numerical evidence that K=7 allows 150-degree fold with zero penalty; 6 ranked recommendations | 2026-02-23 | cedbbe1 | [5-improve-3d-spline-constraints-investigat](./quick/5-improve-3d-spline-constraints-investigat/) |
+| 6 | Synthetic data generation system: multi-fish trajectory generator, refractive detection projection, scenario presets | 2026-02-24 | 4c3c604 | [6-create-synthetic-data-generation-system-](./quick/6-create-synthetic-data-generation-system-/) |
 
 ### Blockers/Concerns
 

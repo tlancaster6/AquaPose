@@ -161,6 +161,7 @@ Recent decisions affecting current work:
 - **Consolidate scripts into CLI workflow** (tooling) — scripts/ now cleaned to 5 production scripts (build_training_data.py, eval_yolo_vs_mog2.py, organize_yolo_dataset.py, sample_yolo_frames.py, train_yolo.py)
 - **Integrate full-frame exclusion masks from AquaMVS** (calibration) — load optional per-camera masks to filter out invalid regions before detection/segmentation/triangulation
 - **Add Phase 7 and Phase 8 to roadmap** via /gsd:add-phase
+- **Add YOLO-OBB support** (segmentation) — train OBB model for oriented bounding boxes, update detector and crop utilities
 
 ### Quick Tasks Completed
 

@@ -167,14 +167,14 @@ Recent decisions affecting current work:
 
 ### Quick Tasks Completed
 
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 1 | Fix triangulation bugs: NaN contamination, coupled thresholds, greedy orientation | 2026-02-23 | 4d3d07e | [1-fix-triangulation-bugs-nan-contamination](./quick/1-fix-triangulation-bugs-nan-contamination/) |
-| 2 | Add synthetic data module (FishConfig, MidlineSet generation, GT Midline3D, --synthetic flag) | 2026-02-23 | b9dd734 | [2-add-synthetic-data-module-as-drop-in-rep](./quick/2-add-synthetic-data-module-as-drop-in-rep/) |
-| 3 | Add synthetic mode diagnostic visualizations (3D GT comparison, camera overlays, error distribution, markdown report) | 2026-02-23 | b3a4dd7 | [3-add-synthetic-mode-diagnostic-visualizat](./quick/3-add-synthetic-mode-diagnostic-visualizat/) |
-| 4 | Add drift dynamics + sinusoidal/compound spine shapes + diverse fish configs | 2026-02-23 | 58385c1 | [4-add-per-frame-position-drift-and-heading](./quick/4-add-per-frame-position-drift-and-heading/) |
-| 5 | Investigate spline folding: numerical evidence that K=7 allows 150-degree fold with zero penalty; 6 ranked recommendations | 2026-02-23 | cedbbe1 | [5-improve-3d-spline-constraints-investigat](./quick/5-improve-3d-spline-constraints-investigat/) |
-| 6 | Synthetic data generation system: multi-fish trajectory generator, refractive detection projection, scenario presets | 2026-02-24 | 4c3c604 | [6-create-synthetic-data-generation-system-](./quick/6-create-synthetic-data-generation-system-/) |
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
+| 1 | Fix triangulation bugs: NaN contamination, coupled thresholds, greedy orientation | 2026-02-23 | 4d3d07e | | [1-fix-triangulation-bugs-nan-contamination](./quick/1-fix-triangulation-bugs-nan-contamination/) |
+| 2 | Add synthetic data module (FishConfig, MidlineSet generation, GT Midline3D, --synthetic flag) | 2026-02-23 | b9dd734 | | [2-add-synthetic-data-module-as-drop-in-rep](./quick/2-add-synthetic-data-module-as-drop-in-rep/) |
+| 3 | Add synthetic mode diagnostic visualizations (3D GT comparison, camera overlays, error distribution, markdown report) | 2026-02-23 | b3a4dd7 | | [3-add-synthetic-mode-diagnostic-visualizat](./quick/3-add-synthetic-mode-diagnostic-visualizat/) |
+| 4 | Add drift dynamics + sinusoidal/compound spine shapes + diverse fish configs | 2026-02-23 | 58385c1 | | [4-add-per-frame-position-drift-and-heading](./quick/4-add-per-frame-position-drift-and-heading/) |
+| 5 | Investigate spline folding: numerical evidence that K=7 allows 150-degree fold with zero penalty; 6 ranked recommendations | 2026-02-23 | cedbbe1 | | [5-improve-3d-spline-constraints-investigat](./quick/5-improve-3d-spline-constraints-investigat/) |
+| 6 | Synthetic data generation system: multi-fish trajectory generator, refractive detection projection, scenario presets | 2026-02-24 | 4c3c604 | Verified | [6-create-synthetic-data-generation-system-](./quick/6-create-synthetic-data-generation-system-/) |
 
 ### Blockers/Concerns
 

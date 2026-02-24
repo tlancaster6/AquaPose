@@ -10,8 +10,10 @@ Usage:
     python scripts/diagnose_tracking.py --scenario crossing_paths --difficulty 0.7
     python scripts/diagnose_tracking.py --scenario tight_schooling --n-fish 7
     python scripts/diagnose_tracking.py --scenario track_fragmentation --miss-rate 0.4
+    python scripts/diagnose_tracking.py --scenario all
     python scripts/diagnose_tracking.py --output-dir output/tracking_diagnostic
     python scripts/diagnose_tracking.py --n-cameras 4
+    python scripts/diagnose_tracking.py --calibration path/to/calibration.json
 """
 
 from __future__ import annotations
@@ -64,6 +66,26 @@ class TrackingMetrics:
     mostly_lost: int = 0
     n_confirmed_tracks: int = 0
     per_fish_tracked_fraction: dict[int, float] = field(default_factory=dict)
+
+
+@dataclass
+class ScenarioResult:
+    """Result from running a single scenario end-to-end."""
+
+    name: str
+    metrics: TrackingMetrics
+    n_frames: int
+    timing: dict[str, float]
+    output_dir: Path
+
+
+# All scenario names (order used by --scenario all)
+_ALL_SCENARIOS = [
+    "crossing_paths",
+    "track_fragmentation",
+    "tight_schooling",
+    "startle_response",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -542,6 +564,225 @@ def vis_id_timeline(
     plt.close("all")
 
 
+def vis_tracking_video(
+    gt_states: np.ndarray,
+    tracker_positions_per_frame: list[dict[int, np.ndarray]],
+    gt_matching_per_frame: list[dict[int, int | None]],
+    output_path: Path,
+    *,
+    fps: int = 15,
+    resolution: tuple[int, int] = (800, 800),
+) -> None:
+    """Render a bird's-eye XY video of tracked vs GT fish centroids.
+
+    Draws GT positions as open circles and tracker centroids as filled circles,
+    colored by ID, with fading trails, match lines, and a running metrics HUD.
+
+    Args:
+        gt_states: GT XYZ positions, shape (n_frames, n_fish, 3).
+        tracker_positions_per_frame: Per-frame dict of track_fish_id -> (3,) array.
+        gt_matching_per_frame: Per-frame dict of track_fish_id -> gt_fish_id|None.
+        output_path: Output .mp4 path.
+        fps: Video frame rate.
+        resolution: (width, height) in pixels.
+    """
+    import cv2
+
+    from aquapose.visualization.overlay import FISH_COLORS
+
+    n_frames, n_fish, _ = gt_states.shape
+    width, height = resolution
+    trail_len = 10
+
+    # ------------------------------------------------------------------
+    # Compute XY bounding box from all GT positions (with 10% margin)
+    # ------------------------------------------------------------------
+    all_xy = gt_states[:, :, :2].reshape(-1, 2)
+    xy_min = all_xy.min(axis=0)
+    xy_max = all_xy.max(axis=0)
+    span = xy_max - xy_min
+    margin = span * 0.1
+    xy_min -= margin
+    xy_max += margin
+    span = xy_max - xy_min
+
+    # Avoid division by zero for degenerate cases
+    span = np.maximum(span, 1e-6)
+
+    def world_to_px(xy: np.ndarray) -> tuple[int, int]:
+        """Convert world XY to pixel coords."""
+        u = int((xy[0] - xy_min[0]) / span[0] * (width - 1))
+        v = int((1.0 - (xy[1] - xy_min[1]) / span[1]) * (height - 1))
+        return (u, v)
+
+    # ------------------------------------------------------------------
+    # Set up video writer
+    # ------------------------------------------------------------------
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+    if not writer.isOpened():
+        print(f"  [WARN] Could not open video writer for {output_path}")
+        return
+
+    # ------------------------------------------------------------------
+    # Incremental metrics accumulators
+    # ------------------------------------------------------------------
+    cum_tp = 0
+    cum_fp = 0
+    cum_fn = 0
+    cum_id_switches = 0
+    # Track previous GT assignment per track_id for ID switch detection
+    prev_gt_assignment: dict[int, int] = {}
+
+    # Trail histories
+    gt_trails: list[list[tuple[int, int]]] = [[] for _ in range(n_fish)]
+    track_trails: dict[int, list[tuple[int, int]]] = {}
+
+    try:
+        for fi in range(n_frames):
+            frame = np.zeros((height, width, 3), dtype=np.uint8)
+
+            # Tank boundary rectangle (gray)
+            tl = world_to_px(xy_min)
+            br = world_to_px(xy_max)
+            cv2.rectangle(frame, tl, br, (80, 80, 80), 1)
+
+            # ----------------------------------------------------------
+            # GT trails and positions
+            # ----------------------------------------------------------
+            for fish_idx in range(n_fish):
+                color = FISH_COLORS[fish_idx % len(FISH_COLORS)]
+                pt = world_to_px(gt_states[fi, fish_idx, :2])
+                gt_trails[fish_idx].append(pt)
+                if len(gt_trails[fish_idx]) > trail_len:
+                    gt_trails[fish_idx] = gt_trails[fish_idx][-trail_len:]
+
+                # Draw trail
+                trail = gt_trails[fish_idx]
+                for k in range(len(trail) - 1):
+                    age = len(trail) - 1 - k
+                    fade = 1.0 - age / trail_len
+                    c = tuple(int(ch * fade) for ch in color)
+                    thickness = max(1, int(2 * fade))
+                    cv2.line(frame, trail[k], trail[k + 1], c, thickness)
+
+                # Open circle for GT
+                cv2.circle(frame, pt, 4, color, 1)
+
+            # ----------------------------------------------------------
+            # Tracker trails and positions
+            # ----------------------------------------------------------
+            frame_tracks = tracker_positions_per_frame[fi]
+            active_track_ids = set()
+            for track_id, pos in frame_tracks.items():
+                active_track_ids.add(track_id)
+                color = FISH_COLORS[track_id % len(FISH_COLORS)]
+                pt = world_to_px(pos[:2])
+
+                if track_id not in track_trails:
+                    track_trails[track_id] = []
+                track_trails[track_id].append(pt)
+                if len(track_trails[track_id]) > trail_len:
+                    track_trails[track_id] = track_trails[track_id][-trail_len:]
+
+                # Draw trail
+                trail = track_trails[track_id]
+                for k in range(len(trail) - 1):
+                    age = len(trail) - 1 - k
+                    fade = 1.0 - age / trail_len
+                    c = tuple(int(ch * fade) for ch in color)
+                    thickness = max(1, int(3 * fade))
+                    cv2.line(frame, trail[k], trail[k + 1], c, thickness)
+
+                # Filled circle for tracker
+                cv2.circle(frame, pt, 8, color, -1)
+
+                # ID label
+                cv2.putText(
+                    frame,
+                    str(track_id),
+                    (pt[0] + 10, pt[1] - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.4,
+                    (255, 255, 255),
+                    1,
+                )
+
+            # ----------------------------------------------------------
+            # Match lines (GT <-> tracker)
+            # ----------------------------------------------------------
+            matching = gt_matching_per_frame[fi]
+            for track_id, gt_id in matching.items():
+                if gt_id is None:
+                    continue
+                if track_id not in frame_tracks:
+                    continue
+                tracker_pt = world_to_px(frame_tracks[track_id][:2])
+                gt_pt = world_to_px(gt_states[fi, gt_id, :2])
+                cv2.line(frame, tracker_pt, gt_pt, (100, 100, 100), 1)
+
+            # ----------------------------------------------------------
+            # Incremental metrics
+            # ----------------------------------------------------------
+            frame_tp = 0
+            frame_fp = 0
+            matched_gt_ids: set[int] = set()
+            for track_id, gt_id in matching.items():
+                if gt_id is not None:
+                    frame_tp += 1
+                    matched_gt_ids.add(gt_id)
+                    # ID switch detection
+                    if (
+                        track_id in prev_gt_assignment
+                        and prev_gt_assignment[track_id] != gt_id
+                    ):
+                        cum_id_switches += 1
+                    prev_gt_assignment[track_id] = gt_id
+                else:
+                    frame_fp += 1
+            frame_fn = n_fish - len(matched_gt_ids)
+
+            cum_tp += frame_tp
+            cum_fp += frame_fp
+            cum_fn += frame_fn
+
+            total_gt_so_far = n_fish * (fi + 1)
+            mota = 1.0 - (cum_fn + cum_fp + cum_id_switches) / max(1, total_gt_so_far)
+
+            # ----------------------------------------------------------
+            # HUD overlay
+            # ----------------------------------------------------------
+            hud_lines = [
+                f"Frame: {fi + 1} / {n_frames}",
+                f"MOTA:  {mota:.3f}",
+                f"Active tracks: {len(active_track_ids)}",
+                f"ID switches: {cum_id_switches}",
+                f"FP: {cum_fp}  FN: {cum_fn}",
+            ]
+
+            # Semi-transparent dark background
+            hud_h = 18 * len(hud_lines) + 10
+            hud_w = 200
+            overlay = frame.copy()
+            cv2.rectangle(overlay, (5, 5), (5 + hud_w, 5 + hud_h), (0, 0, 0), -1)
+            cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
+
+            for idx, line in enumerate(hud_lines):
+                cv2.putText(
+                    frame,
+                    line,
+                    (10, 22 + idx * 18),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45,
+                    (220, 220, 220),
+                    1,
+                )
+
+            writer.write(frame)
+    finally:
+        writer.release()
+
+
 def vis_metrics_barchart(
     metrics: TrackingMetrics,
     n_frames: int,
@@ -706,6 +947,7 @@ def write_tracking_report(
         "| `detection_overlay.png` | Camera grid with GT/detection overlay (sample frame) |",
         "| `id_timeline.png` | Per-GT-fish ID assignment timeline |",
         "| `metrics_barchart.png` | Bar chart of key metrics |",
+        "| `tracking_video.mp4` | Bird's-eye XY video of GT vs tracked centroids |",
         "",
         "## Timing",
         "",
@@ -741,9 +983,10 @@ def parse_args() -> argparse.Namespace:
             "track_fragmentation",
             "tight_schooling",
             "startle_response",
+            "all",
         ],
         default="crossing_paths",
-        help="Scenario preset to run (default: crossing_paths)",
+        help="Scenario preset to run, or 'all' to run every scenario (default: crossing_paths)",
     )
     parser.add_argument(
         "--difficulty",
@@ -784,14 +1027,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--min-hits",
         type=int,
-        default=3,
-        help="FishTracker min_hits (default: 3)",
+        default=None,
+        help="FishTracker min_hits (default: FishTracker default)",
     )
     parser.add_argument(
         "--min-cameras-birth",
         type=int,
-        default=2,
-        help="FishTracker min_cameras_birth (default: 2)",
+        default=None,
+        help="FishTracker min_cameras_birth (default: FishTracker default)",
     )
     parser.add_argument(
         "--expected-count",
@@ -799,7 +1042,66 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="FishTracker expected fish count (default: derived from scenario)",
     )
+    parser.add_argument(
+        "--calibration",
+        type=Path,
+        default=Path("C:/Users/tucke/Desktop/Aqua/AquaPose/calibration.json"),
+        help="Path to calibration.json (if exists, uses real rig; otherwise fabricated)",
+    )
     return parser.parse_args()
+
+
+# ---------------------------------------------------------------------------
+# Camera rig construction
+# ---------------------------------------------------------------------------
+
+_SKIP_CAMERA_ID = "e3v8250"
+
+
+def _build_models(
+    args: argparse.Namespace,
+) -> tuple[dict, float | None]:
+    """Build camera models from real calibration or fabricated rig.
+
+    Args:
+        args: Parsed CLI arguments (needs ``calibration`` and ``n_cameras``).
+
+    Returns:
+        Tuple of (models dict, real_water_z or None if fabricated).
+    """
+    from aquapose.calibration.projection import RefractiveProjectionModel
+
+    if args.calibration.exists():
+        print(f"Loading calibration from: {args.calibration}")
+        from aquapose.calibration.loader import (
+            compute_undistortion_maps,
+            load_calibration_data,
+        )
+
+        calib = load_calibration_data(args.calibration)
+        models: dict[str, RefractiveProjectionModel] = {}
+        for cam_id, cam_data in calib.cameras.items():
+            if cam_id == _SKIP_CAMERA_ID:
+                continue
+            maps = compute_undistortion_maps(cam_data)
+            models[cam_id] = RefractiveProjectionModel(
+                K=maps.K_new,
+                R=cam_data.R,
+                t=cam_data.t,
+                water_z=calib.water_z,
+                normal=calib.interface_normal,
+                n_air=calib.n_air,
+                n_water=calib.n_water,
+            )
+        print(f"  Using {len(models)} cameras from calibration.")
+        return models, calib.water_z
+    else:
+        from aquapose.synthetic.rig import build_fabricated_rig
+
+        n = args.n_cameras
+        models = build_fabricated_rig(n_cameras_x=n, n_cameras_y=n)
+        print(f"  Using fabricated {n}x{n} rig ({len(models)} cameras).")
+        return models, None
 
 
 # ---------------------------------------------------------------------------
@@ -807,59 +1109,60 @@ def parse_args() -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 
 
-def main() -> int:
-    """Run the tracking diagnostic and return exit code."""
-    args = parse_args()
-    output_dir = args.output_dir
+def run_scenario(
+    scenario_name: str,
+    args: argparse.Namespace,
+    output_dir: Path,
+    models: dict,
+    real_water_z: float | None,
+) -> ScenarioResult:
+    """Run a single scenario end-to-end and return the result.
+
+    Args:
+        scenario_name: Name of the scenario (must be in _SCENARIO_REGISTRY).
+        args: Parsed CLI arguments (used for tracker params, seed, etc.).
+        output_dir: Directory for this scenario's outputs.
+        models: Camera projection models (real or fabricated).
+        real_water_z: Water surface Z from real calibration, or None for fabricated.
+
+    Returns:
+        ScenarioResult with metrics, timing, and output path.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print("=== AquaPose Tracking Diagnostic ===\n")
-    print(f"Scenario:       {args.scenario}")
-    print(f"Output dir:     {output_dir}")
-    print()
-
     timing: dict[str, float] = {}
-    wall_start = time.perf_counter()
-
-    # -------------------------------------------------------------------
-    # Build fabricated camera rig
-    # -------------------------------------------------------------------
-    print(f"Building fabricated {args.n_cameras}x{args.n_cameras} camera rig...")
-    from aquapose.synthetic.rig import build_fabricated_rig
-
-    models = build_fabricated_rig(
-        n_cameras_x=args.n_cameras,
-        n_cameras_y=args.n_cameras,
-    )
-    print(f"  {len(models)} cameras created.\n")
 
     # -------------------------------------------------------------------
     # Build scenario kwargs
     # -------------------------------------------------------------------
     scenario_kwargs: dict[str, object] = {"seed": args.seed}
-    if args.scenario == "crossing_paths":
+    if scenario_name == "crossing_paths":
         scenario_kwargs["difficulty"] = args.difficulty
-    elif args.scenario == "track_fragmentation":
+    elif scenario_name == "track_fragmentation":
         scenario_kwargs["miss_rate"] = args.miss_rate
-    elif args.scenario == "tight_schooling":
+    elif scenario_name == "tight_schooling":
         scenario_kwargs["n_fish"] = args.n_fish
 
     # -------------------------------------------------------------------
     # Regenerate trajectory + dataset (needed for GT positions)
     # -------------------------------------------------------------------
-    print(f"Generating scenario '{args.scenario}'...")
+    print(f"Generating scenario '{scenario_name}'...")
     t0 = time.perf_counter()
 
     from aquapose.synthetic.detection import generate_detection_dataset
     from aquapose.synthetic.scenarios import _SCENARIO_REGISTRY
     from aquapose.synthetic.trajectory import generate_trajectories
 
-    if args.scenario not in _SCENARIO_REGISTRY:
-        print(f"ERROR: Unknown scenario '{args.scenario}'.")
-        return 1
+    if scenario_name not in _SCENARIO_REGISTRY:
+        msg = f"Unknown scenario '{scenario_name}'."
+        raise ValueError(msg)
 
-    scenario_fn = _SCENARIO_REGISTRY[args.scenario]
+    scenario_fn = _SCENARIO_REGISTRY[scenario_name]
     traj_cfg, noise_cfg = scenario_fn(**scenario_kwargs)  # type: ignore[call-arg, misc]
+
+    # Patch water_z for real calibration so fish spawn in the correct volume
+    if real_water_z is not None:
+        traj_cfg.tank.water_z = real_water_z
 
     trajectory = generate_trajectories(traj_cfg)
     dataset = generate_detection_dataset(trajectory, models, noise_config=noise_cfg)
@@ -882,11 +1185,12 @@ def main() -> int:
 
     from aquapose.tracking.tracker import FishTracker
 
-    tracker = FishTracker(
-        expected_count=expected_count,
-        min_hits=args.min_hits,
-        min_cameras_birth=args.min_cameras_birth,
-    )
+    tracker_kwargs: dict[str, object] = {"expected_count": expected_count}
+    if args.min_hits is not None:
+        tracker_kwargs["min_hits"] = args.min_hits
+    if args.min_cameras_birth is not None:
+        tracker_kwargs["min_cameras_birth"] = args.min_cameras_birth
+    tracker = FishTracker(**tracker_kwargs)  # type: ignore[arg-type]
 
     # Per-frame records
     tracker_positions_per_frame: list[dict[int, np.ndarray]] = []
@@ -969,16 +1273,16 @@ def main() -> int:
     fn = metrics.false_negatives
     fp = metrics.false_positives
 
-    if args.scenario == "crossing_paths":
+    if scenario_name == "crossing_paths":
         scenario_desc = f"crossing_paths (difficulty={args.difficulty})"
-    elif args.scenario == "track_fragmentation":
+    elif scenario_name == "track_fragmentation":
         scenario_desc = f"track_fragmentation (miss_rate={args.miss_rate})"
-    elif args.scenario == "tight_schooling":
+    elif scenario_name == "tight_schooling":
         scenario_desc = f"tight_schooling (n_fish={args.n_fish})"
-    elif args.scenario == "startle_response":
+    elif scenario_name == "startle_response":
         scenario_desc = "startle_response"
     else:
-        scenario_desc = args.scenario
+        scenario_desc = scenario_name
 
     print("=== Tracking Metrics Summary ===")
     print(f"Scenario:            {scenario_desc}")
@@ -1049,6 +1353,15 @@ def main() -> int:
                 output_path=output_dir / "metrics_barchart.png",
             ),
         ),
+        (
+            "tracking_video.mp4",
+            lambda: vis_tracking_video(
+                gt_states=gt_states_xyz,
+                tracker_positions_per_frame=tracker_positions_per_frame,
+                gt_matching_per_frame=gt_matching_per_frame,
+                output_path=output_dir / "tracking_video.mp4",
+            ),
+        ),
     ]
 
     t0 = time.perf_counter()
@@ -1063,6 +1376,9 @@ def main() -> int:
     # -------------------------------------------------------------------
     # Markdown report
     # -------------------------------------------------------------------
+    # For the report, temporarily set args.scenario to the actual scenario name
+    orig_scenario = args.scenario
+    args.scenario = scenario_name
     print("  Generating tracking_report.md...")
     try:
         write_tracking_report(
@@ -1075,18 +1391,130 @@ def main() -> int:
         )
     except Exception as exc:
         print(f"  [WARN] Failed to generate tracking_report.md: {exc}")
+    finally:
+        args.scenario = orig_scenario
 
-    # -------------------------------------------------------------------
+    return ScenarioResult(
+        name=scenario_name,
+        metrics=metrics,
+        n_frames=n_frames,
+        timing=timing,
+        output_dir=output_dir,
+    )
+
+
+def write_cross_scenario_summary(
+    results: list[ScenarioResult],
+    output_path: Path,
+) -> None:
+    """Write a cross-scenario markdown summary table.
+
+    Args:
+        results: List of ScenarioResult from each scenario run.
+        output_path: Output .md path.
+    """
+    lines = [
+        "# Cross-Scenario Tracking Summary",
+        "",
+        "| Scenario | Frames | MOTA | ID Switches | Fragmentation | FP "
+        "| Mostly Tracked | Mostly Lost | Mean Purity |",
+        "|----------|--------|------|-------------|---------------|----"
+        "|----------------|-------------|-------------|",
+    ]
+
+    for r in results:
+        m = r.metrics
+        n_fish = len(m.per_fish_tracked_fraction) or "?"
+        lines.append(
+            f"| {r.name} | {r.n_frames} | {m.mota:.4f} | {m.id_switches} "
+            f"| {m.fragmentation} | {m.false_positives} "
+            f"| {m.mostly_tracked}/{n_fish} | {m.mostly_lost}/{n_fish} "
+            f"| {m.mean_track_purity:.4f} |"
+        )
+
+    lines += [
+        "",
+        "## Per-Scenario Reports",
+        "",
+    ]
+
+    for r in results:
+        rel_path = f"{r.name}/tracking_report.md"
+        lines.append(f"- [{r.name}]({rel_path})")
+
+    lines.append("")
+    output_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def main() -> int:
+    """Run the tracking diagnostic and return exit code."""
+    args = parse_args()
+    base_output_dir = args.output_dir
+    base_output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build camera rig once (shared across all scenarios)
+    models, real_water_z = _build_models(args)
+    print()
+
+    wall_start = time.perf_counter()
+
+    if args.scenario == "all":
+        # Run every registered scenario
+        print("=== AquaPose Tracking Diagnostic (ALL SCENARIOS) ===\n")
+        print(f"Output dir:     {base_output_dir}")
+        print(f"Scenarios:      {', '.join(_ALL_SCENARIOS)}")
+        print()
+
+        results: list[ScenarioResult] = []
+        for scenario_name in _ALL_SCENARIOS:
+            print(f"\n{'=' * 60}")
+            print(f"  SCENARIO: {scenario_name}")
+            print(f"{'=' * 60}\n")
+
+            scenario_output_dir = base_output_dir / scenario_name
+            result = run_scenario(
+                scenario_name, args, scenario_output_dir, models, real_water_z
+            )
+            results.append(result)
+
+        # Write cross-scenario summary
+        summary_path = base_output_dir / "summary.md"
+        print("\n=== Writing Cross-Scenario Summary ===")
+        try:
+            write_cross_scenario_summary(results, summary_path)
+            print(f"  Written to: {summary_path}")
+        except Exception as exc:
+            print(f"  [WARN] Failed to write summary: {exc}")
+
+        # Final timing
+        wall_elapsed = time.perf_counter() - wall_start
+        print()
+        print("=== Overall Timing ===")
+        for r in results:
+            scenario_total = sum(r.timing.values())
+            print(f"  {r.name:<25} {scenario_total:.2f}s")
+        print(f"  {'Total wall time':<25} {wall_elapsed:.2f}s")
+        print()
+        print(f"Output written to: {base_output_dir}")
+        return 0
+
+    # Single scenario (unchanged behavior)
+    print("=== AquaPose Tracking Diagnostic ===\n")
+    print(f"Scenario:       {args.scenario}")
+    print(f"Output dir:     {base_output_dir}")
+    print()
+
+    result = run_scenario(args.scenario, args, base_output_dir, models, real_water_z)
+
     # Final timing summary
-    # -------------------------------------------------------------------
     wall_elapsed = time.perf_counter() - wall_start
     print()
     print("=== Timing Summary ===")
-    for stage, elapsed in timing.items():
+    for stage, elapsed in result.timing.items():
         print(f"  {stage:<25} {elapsed:.2f}s")
     print(f"  {'Total wall time':<25} {wall_elapsed:.2f}s")
     print()
-    print(f"Output written to: {output_dir}")
+    print(f"Output written to: {base_output_dir}")
     return 0
 
 

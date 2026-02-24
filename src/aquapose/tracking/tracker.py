@@ -465,6 +465,7 @@ class FishTracker:
                 expected_count=self.expected_count,
                 reprojection_threshold=self.reprojection_threshold,
                 min_cameras=self.min_cameras_birth,
+                seed_points=self.get_seed_points(),
             )
 
             # TRACK-04: collect dead IDs for recycling
@@ -477,10 +478,10 @@ class FishTracker:
 
             for birth in births:
                 # Pre-birth proximity check: reject if too close to an
-                # existing confirmed track (prevents ghost duplicates).
+                # existing non-dead track (prevents ghost duplicates).
                 too_close = False
                 for t in self.tracks:
-                    if t.is_confirmed and len(t.positions) > 0:
+                    if not t.is_dead and len(t.positions) > 0:
                         dist = float(
                             np.linalg.norm(birth.centroid_3d - list(t.positions)[-1])
                         )

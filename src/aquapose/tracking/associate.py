@@ -848,6 +848,7 @@ def discover_births(
     reprojection_threshold: float = 15.0,
     min_cameras: int = 2,
     n_iter: int = 200,
+    seed_points: list[np.ndarray] | None = None,
 ) -> list[AssociationResult]:
     """Run RANSAC on unclaimed detections to discover new fish.
 
@@ -863,6 +864,8 @@ def discover_births(
         reprojection_threshold: Pixel threshold for RANSAC.
         min_cameras: Minimum cameras for a valid birth.
         n_iter: RANSAC iterations.
+        seed_points: Optional 3D centroid priors (e.g. from existing tracks)
+            to guide the RANSAC prior-guided pass.
 
     Returns:
         List of AssociationResult for newly discovered fish.
@@ -889,6 +892,7 @@ def discover_births(
         n_iter=n_iter,
         reprojection_threshold=reprojection_threshold,
         min_cameras=min_cameras,
+        seed_points=seed_points,
     )
 
     # Remap camera_detections indices from filtered-list space back to

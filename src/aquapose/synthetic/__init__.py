@@ -24,6 +24,13 @@ from aquapose.synthetic.fish import (
     project_fish_to_midline2d,
 )
 from aquapose.synthetic.rig import build_fabricated_rig
+from aquapose.synthetic.scenarios import (
+    crossing_paths,
+    generate_scenario,
+    startle_response,
+    tight_schooling,
+    track_fragmentation,
+)
 from aquapose.synthetic.stubs import (
     generate_synthetic_detections,
     generate_synthetic_tracks,
@@ -49,13 +56,18 @@ __all__ = [
     "TrajectoryConfig",
     "TrajectoryResult",
     "build_fabricated_rig",
+    "crossing_paths",
     "generate_detection_dataset",
     "generate_fish_3d",
     "generate_fish_half_widths",
+    "generate_scenario",
     "generate_synthetic_detections",
     "generate_synthetic_midline_sets",
     "generate_synthetic_tracks",
     "generate_trajectories",
     "make_ground_truth_midline3d",
     "project_fish_to_midline2d",
+    "startle_response",
+    "tight_schooling",
+    "track_fragmentation",
 ]

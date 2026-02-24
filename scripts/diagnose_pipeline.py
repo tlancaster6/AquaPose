@@ -201,9 +201,17 @@ def _print_ground_truth_comparison(
             ):
                 continue
 
-            # Compute mean distance between control points (in metres)
-            diff = recon_midline.control_points - gt_midline.control_points
-            dist_per_ctrl = np.linalg.norm(diff, axis=1)  # shape (SPLINE_N_CTRL,)
+            # Compute mean distance between control points (orientation-invariant)
+            fwd_errors = np.linalg.norm(
+                recon_midline.control_points - gt_midline.control_points, axis=1
+            )
+            rev_errors = np.linalg.norm(
+                recon_midline.control_points[::-1] - gt_midline.control_points,
+                axis=1,
+            )
+            dist_per_ctrl = (
+                rev_errors if rev_errors.mean() < fwd_errors.mean() else fwd_errors
+            )
             mean_dist_m = float(np.mean(dist_per_ctrl))
             mean_dist_mm = mean_dist_m * 1000.0
 
@@ -274,6 +282,7 @@ def _run_synthetic(args: argparse.Namespace) -> int:
     )
     from aquapose.visualization.diagnostics import (
         vis_arclength_histogram,
+        vis_optimizer_progression,
         vis_residual_heatmap,
         vis_synthetic_3d_comparison,
         vis_synthetic_camera_overlays,
@@ -325,22 +334,33 @@ def _run_synthetic(args: argparse.Namespace) -> int:
     # Build fish configs — diverse shapes to expose failure modes
     # -----------------------------------------------------------------------
     # Each fish gets a unique combination of curvature, heading, sinusoidal
-    # amplitude, and drift. The pattern cycles through shape archetypes:
-    #   0: straight
-    #   1: gentle arc (C-shape)
-    #   2: sinusoidal S-curve
-    #   3: tight arc
-    #   4: sinusoidal + arc (compound)
-    #   5: opposite-direction arc
-    #   6+: repeats with offset heading
+    # amplitude, and drift. The pattern cycles through shape archetypes.
+    # Sinusoidal amplitudes are ~15-25% of body length for clear visibility.
     _SHAPE_PRESETS: list[dict[str, float]] = [
+        # 0: straight — baseline
         {"curvature": 0.0, "sinusoidal_amplitude": 0.0, "sinusoidal_periods": 1.0},
+        # 1: gentle arc (C-shape)
         {"curvature": 10.0, "sinusoidal_amplitude": 0.0, "sinusoidal_periods": 1.0},
-        {"curvature": 0.0, "sinusoidal_amplitude": 0.006, "sinusoidal_periods": 1.0},
+        # 2: S-curve — full sine period, large amplitude
+        {"curvature": 0.0, "sinusoidal_amplitude": 0.015, "sinusoidal_periods": 1.0},
+        # 3: tight arc
         {"curvature": 25.0, "sinusoidal_amplitude": 0.0, "sinusoidal_periods": 1.0},
-        {"curvature": 8.0, "sinusoidal_amplitude": 0.004, "sinusoidal_periods": 1.0},
+        # 4: compound arc + S-wave
+        {"curvature": 8.0, "sinusoidal_amplitude": 0.012, "sinusoidal_periods": 1.0},
+        # 5: reverse arc
         {"curvature": -15.0, "sinusoidal_amplitude": 0.0, "sinusoidal_periods": 1.0},
-        {"curvature": 0.0, "sinusoidal_amplitude": 0.005, "sinusoidal_periods": 0.5},
+        # 6: C-curve via half-period sine (one-sided bend)
+        {"curvature": 0.0, "sinusoidal_amplitude": 0.015, "sinusoidal_periods": 0.5},
+        # 7: gentle S-curve (smaller amplitude)
+        {"curvature": 0.0, "sinusoidal_amplitude": 0.010, "sinusoidal_periods": 1.0},
+        # 8: double-S (two full sine periods)
+        {"curvature": 0.0, "sinusoidal_amplitude": 0.012, "sinusoidal_periods": 2.0},
+        # 9: reverse tight arc
+        {"curvature": -25.0, "sinusoidal_amplitude": 0.0, "sinusoidal_periods": 1.0},
+        # 10: compound reverse arc + S-wave
+        {"curvature": -10.0, "sinusoidal_amplitude": 0.010, "sinusoidal_periods": 1.0},
+        # 11: very tight arc (near biomechanical limit)
+        {"curvature": 35.0, "sinusoidal_amplitude": 0.0, "sinusoidal_periods": 1.0},
     ]
 
     fish_configs: list[FishConfig] = []
@@ -448,7 +468,21 @@ def _run_synthetic(args: argparse.Namespace) -> int:
     # -----------------------------------------------------------------------
     print("\n=== Generating Diagnostic Visualizations ===")
 
+    # Optimizer progression visualization (curve method only, frame 0)
+    if args.method == "curve" and optimizer.snapshots:
+        vis_funcs_syn_progression = [
+            (
+                "optimizer_progression.png",
+                lambda: vis_optimizer_progression(
+                    optimizer.snapshots, models, diag_dir / "optimizer_progression.png"
+                ),
+            ),
+        ]
+    else:
+        vis_funcs_syn_progression = []
+
     vis_funcs_syn = [
+        *vis_funcs_syn_progression,
         (
             "3d_animation",
             lambda: render_3d_animation(midlines_3d, diag_dir / "3d_animation"),
@@ -561,6 +595,7 @@ def _run_real(args: argparse.Namespace) -> int:
         vis_confidence_histogram,
         vis_detection_grid,
         vis_midline_extraction_montage,
+        vis_optimizer_progression,
         vis_per_camera_spline_overlays,
         vis_residual_heatmap,
         vis_skip_reason_pie,
@@ -825,6 +860,19 @@ def _run_real(args: argparse.Namespace) -> int:
                 ),
             ),
         ]
+
+        # Optimizer progression visualization (curve method only, frame 0)
+        if args.method == "curve" and optimizer.snapshots:
+            vis_funcs.append(
+                (
+                    "optimizer_progression.png",
+                    lambda: vis_optimizer_progression(
+                        optimizer.snapshots,
+                        models,
+                        diag_dir / "optimizer_progression.png",
+                    ),
+                )
+            )
 
         for name, func in vis_funcs:
             try:

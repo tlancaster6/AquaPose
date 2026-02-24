@@ -23,6 +23,7 @@ from aquapose.visualization.overlay import FISH_COLORS, draw_midline_overlay
 
 if TYPE_CHECKING:
     from aquapose.calibration.projection import RefractiveProjectionModel
+    from aquapose.reconstruction.curve_optimizer import OptimizerSnapshot
     from aquapose.reconstruction.triangulation import Midline3D, MidlineSet
     from aquapose.segmentation.crop import CropRegion
     from aquapose.segmentation.detector import Detection
@@ -57,6 +58,32 @@ class TrackSnapshot:
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
+
+def _orientation_invariant_ctrl_error(
+    recon_ctrl: np.ndarray,
+    gt_ctrl: np.ndarray,
+) -> np.ndarray:
+    """Compute per-control-point errors invariant to head-tail flip.
+
+    PCA orientation is unsigned, so the optimizer may converge with the
+    spline reversed relative to GT. Since the knot vector is symmetric,
+    reversing control points correctly reverses the spline direction.
+    This function computes errors for both orderings and returns whichever
+    has lower mean error.
+
+    Args:
+        recon_ctrl: Reconstructed control points, shape (K, 3).
+        gt_ctrl: Ground-truth control points, shape (K, 3).
+
+    Returns:
+        Per-control-point error array, shape (K,), in metres.
+    """
+    fwd_errors = np.linalg.norm(recon_ctrl - gt_ctrl, axis=1)
+    rev_errors = np.linalg.norm(recon_ctrl[::-1] - gt_ctrl, axis=1)
+    if rev_errors.mean() < fwd_errors.mean():
+        return rev_errors
+    return fwd_errors
 
 
 # ---------------------------------------------------------------------------
@@ -855,17 +882,10 @@ def _annotate_label(
     font = cv2.FONT_HERSHEY_SIMPLEX
     scale = 0.5
     thickness = 1
-    (tw, th), baseline = cv2.getTextSize(text, font, scale, thickness)
+    (tw, th), _baseline = cv2.getTextSize(text, font, scale, thickness)
     x, y = position
     x = max(0, min(x, frame.shape[1] - tw - 4))
     y = max(th + 4, min(y, frame.shape[0] - 4))
-    cv2.rectangle(
-        frame,
-        (x - 2, y - th - 4),
-        (x + tw + 2, y + baseline + 2),
-        (0, 0, 0),
-        cv2.FILLED,
-    )
     cv2.putText(frame, text, (x, y), font, scale, color, thickness, cv2.LINE_AA)
 
 
@@ -1447,11 +1467,10 @@ def vis_synthetic_3d_comparison(
                 label=f"Recon Fish {fish_id}",
             )
 
-            # Compute mean control-point error in mm
+            # Compute mean control-point error in mm (orientation-invariant)
             mean_err_mm = float(
-                np.linalg.norm(
-                    recon_midline.control_points - gt_midline.control_points,
-                    axis=1,
+                _orientation_invariant_ctrl_error(
+                    recon_midline.control_points, gt_midline.control_points
                 ).mean()
                 * 1000.0
             )
@@ -1547,8 +1566,8 @@ def vis_synthetic_camera_overlays(
             )
             gt_pts_3d = gt_spline(t_eval).astype(np.float32)
             gt_px, gt_valid = model.project(torch.from_numpy(gt_pts_3d))
-            gt_px_np = gt_px.numpy()
-            gt_valid_np = gt_valid.numpy()
+            gt_px_np = gt_px.cpu().numpy()
+            gt_valid_np = gt_valid.cpu().numpy()
 
             # Draw GT as dashed green (alternate segments)
             gt_color = (0, 200, 0)
@@ -1572,8 +1591,8 @@ def vis_synthetic_camera_overlays(
                 )
                 recon_pts_3d = recon_spline(t_eval).astype(np.float32)
                 recon_px, recon_valid = model.project(torch.from_numpy(recon_pts_3d))
-                recon_px_np = recon_px.numpy()
-                recon_valid_np = recon_valid.numpy()
+                recon_px_np = recon_px.cpu().numpy()
+                recon_valid_np = recon_valid.cpu().numpy()
 
                 # Draw solid colored polyline for reconstructed
                 recon_screen = np.array(
@@ -1672,9 +1691,8 @@ def vis_synthetic_error_distribution(
                 continue
             recon_midline = recon_frame[fish_id]
             errors = (
-                np.linalg.norm(
-                    recon_midline.control_points - gt_midline.control_points,
-                    axis=1,
+                _orientation_invariant_ctrl_error(
+                    recon_midline.control_points, gt_midline.control_points
                 )
                 * 1000.0
             )  # mm, shape (7,)
@@ -1813,8 +1831,8 @@ def write_synthetic_report(
             if fish_id not in recon_frame:
                 continue
             recon_midline = recon_frame[fish_id]
-            cp_errors_m = np.linalg.norm(
-                recon_midline.control_points - gt_midline.control_points, axis=1
+            cp_errors_m = _orientation_invariant_ctrl_error(
+                recon_midline.control_points, gt_midline.control_points
             )
             for err in cp_errors_m.tolist():
                 fish_ctrl_errors.setdefault(fish_id, []).append(err * 1000.0)
@@ -1937,3 +1955,249 @@ def write_synthetic_report(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("\n".join(lines), encoding="utf-8")
     logger.info("Synthetic diagnostic report written to %s", output_path)
+
+
+# ---------------------------------------------------------------------------
+# Optimizer Progression Visualization
+# ---------------------------------------------------------------------------
+
+
+def _project_ctrl_to_2d(
+    ctrl_pts: np.ndarray,
+    model: RefractiveProjectionModel,
+    n_eval: int = 50,
+) -> np.ndarray:
+    """Build a BSpline from control points, evaluate, and reproject to 2D.
+
+    Constructs clamped uniform cubic knots matching the formula used by
+    ``curve_optimizer._build_basis_matrix``, evaluates the spline at
+    ``n_eval`` uniform parameter values, and reprojects via ``model.project()``.
+
+    Args:
+        ctrl_pts: Control points, shape (K, 3), float64 or float32.
+        model: Refractive projection model for the target camera.
+        n_eval: Number of dense evaluation points along the spline.
+
+    Returns:
+        Valid projected 2D points, shape (M, 2), float32. M <= n_eval
+        after filtering invalid projections and NaNs.
+    """
+    import scipy.interpolate
+    import torch
+
+    degree = 3
+    n_ctrl = ctrl_pts.shape[0]
+    n_interior = n_ctrl - degree - 1
+    if n_interior > 0:
+        interior = np.linspace(0.0, 1.0, n_interior + 2)[1:-1]
+    else:
+        interior = np.array([], dtype=np.float64)
+
+    knots = np.concatenate([np.zeros(degree + 1), interior, np.ones(degree + 1)])
+
+    spl = scipy.interpolate.BSpline(
+        knots, ctrl_pts.astype(np.float64), degree, extrapolate=False
+    )
+    t_eval = np.linspace(0.0, 1.0, n_eval)
+    t_eval = np.clip(t_eval, knots[degree], knots[-(degree + 1)])
+    pts_3d = spl(t_eval).astype(np.float32)  # (n_eval, 3)
+
+    pts_torch = torch.from_numpy(pts_3d)
+    proj_px, valid = model.project(pts_torch)
+    proj_np = proj_px.cpu().numpy()
+    valid_np = valid.cpu().numpy()
+
+    # Filter invalid and NaN
+    mask = valid_np & ~np.isnan(proj_np).any(axis=1)
+    return proj_np[mask]
+
+
+def vis_optimizer_progression(
+    snapshots: list[OptimizerSnapshot],
+    models: dict[str, RefractiveProjectionModel],
+    output_path: Path,
+    panel_size: tuple[int, int] = (300, 300),
+    padding_px: int = 40,
+) -> None:
+    """Render a progression grid showing optimizer stages for each fish.
+
+    Creates a single PNG with one row per fish (5 panels per row):
+    1. 2D Midline — raw skeleton observation points
+    2. Cold Start — straight-line initialization projected to 2D
+    3. Post-Coarse — after K=4 optimization, labeled with loss
+    4. Post-Fine — after K=7 optimization, labeled with loss
+    5. Overlay — final spline + original 2D midline together
+
+    Each row uses the camera with the most observation points for that fish.
+    All panels in a row share the same crop/zoom for spatial consistency.
+
+    Args:
+        snapshots: List of OptimizerSnapshot from CurveOptimizer (frame 0).
+        models: Per-camera refractive projection models.
+        output_path: Output PNG path.
+        panel_size: (height, width) of each panel in pixels.
+        padding_px: Padding around the union bounding box in pixels.
+    """
+    if not snapshots:
+        logger.warning("vis_optimizer_progression: no snapshots")
+        return
+
+    panel_h, panel_w = panel_size
+    n_panels = 5
+    panel_titles = ["2D Midline", "Cold Start", "Post-Coarse", "Post-Fine", "Overlay"]
+
+    rows: list[np.ndarray] = []
+
+    for snap in snapshots:
+        if snap.best_cam_id not in models:
+            logger.warning(
+                "vis_optimizer_progression: camera %s not in models, skipping fish %d",
+                snap.best_cam_id,
+                snap.fish_id,
+            )
+            continue
+
+        model = models[snap.best_cam_id]
+
+        # Project all 3 sets of control points to 2D
+        cold_2d = _project_ctrl_to_2d(snap.cold_start_ctrl, model)
+        coarse_2d = _project_ctrl_to_2d(snap.post_coarse_ctrl, model)
+        fine_2d = _project_ctrl_to_2d(snap.post_fine_ctrl, model)
+        obs_2d = snap.obs_2d  # already (N, 2)
+
+        # Compute union bounding box across all point sets
+        all_pts = [obs_2d]
+        for pts in [cold_2d, coarse_2d, fine_2d]:
+            if len(pts) > 0:
+                all_pts.append(pts)
+        combined = np.concatenate(all_pts, axis=0)
+        x_min, y_min = combined.min(axis=0) - padding_px
+        x_max, y_max = combined.max(axis=0) + padding_px
+
+        # Compute affine transform: map [x_min, x_max] x [y_min, y_max] -> panel
+        x_range = max(x_max - x_min, 1.0)
+        y_range = max(y_max - y_min, 1.0)
+        # Preserve aspect ratio
+        scale = min(panel_w / x_range, panel_h / y_range)
+        offset_x = (panel_w - x_range * scale) / 2.0
+        offset_y = (panel_h - y_range * scale) / 2.0
+
+        def to_panel(
+            pts: np.ndarray,
+            _x_min: float = x_min,
+            _y_min: float = y_min,
+            _scale: float = scale,
+            _offset_x: float = offset_x,
+            _offset_y: float = offset_y,
+        ) -> np.ndarray:
+            """Transform pixel coordinates to panel coordinates."""
+            shifted = pts - np.array([[_x_min, _y_min]])
+            scaled = shifted * _scale
+            return scaled + np.array([[_offset_x, _offset_y]])
+
+        # Draw each panel
+        panels: list[np.ndarray] = []
+
+        # Colors (BGR)
+        obs_color = (0, 200, 200)  # yellow-ish
+        cold_color = (200, 100, 0)  # blue-ish
+        coarse_color = (0, 180, 0)  # green
+        fine_color = (0, 100, 255)  # orange-red
+        overlay_obs_color = (0, 200, 200)
+        overlay_fine_color = (0, 100, 255)
+
+        # Panel 1: 2D Midline (observations)
+        canvas = np.full((panel_h, panel_w, 3), 32, dtype=np.uint8)
+        obs_panel = to_panel(obs_2d).astype(np.int32)
+        for pt in obs_panel:
+            cv2.circle(canvas, (int(pt[0]), int(pt[1])), 3, obs_color, -1)
+        if len(obs_panel) >= 2:
+            cv2.polylines(canvas, [obs_panel.reshape(-1, 1, 2)], False, obs_color, 1)
+        panels.append(canvas)
+
+        # Panel 2: Cold Start
+        canvas = np.full((panel_h, panel_w, 3), 32, dtype=np.uint8)
+        if len(cold_2d) >= 2:
+            cold_panel = to_panel(cold_2d).astype(np.int32)
+            cv2.polylines(canvas, [cold_panel.reshape(-1, 1, 2)], False, cold_color, 2)
+        _annotate_label(
+            canvas, f"loss={snap.cold_start_loss:.1f}", (5, panel_h - 15), cold_color
+        )
+        panels.append(canvas)
+
+        # Panel 3: Post-Coarse
+        canvas = np.full((panel_h, panel_w, 3), 32, dtype=np.uint8)
+        if len(coarse_2d) >= 2:
+            coarse_panel = to_panel(coarse_2d).astype(np.int32)
+            cv2.polylines(
+                canvas, [coarse_panel.reshape(-1, 1, 2)], False, coarse_color, 2
+            )
+        _annotate_label(
+            canvas, f"loss={snap.coarse_loss:.1f}", (5, panel_h - 15), coarse_color
+        )
+        panels.append(canvas)
+
+        # Panel 4: Post-Fine
+        canvas = np.full((panel_h, panel_w, 3), 32, dtype=np.uint8)
+        if len(fine_2d) >= 2:
+            fine_panel = to_panel(fine_2d).astype(np.int32)
+            cv2.polylines(canvas, [fine_panel.reshape(-1, 1, 2)], False, fine_color, 2)
+        _annotate_label(
+            canvas, f"loss={snap.fine_loss:.1f}", (5, panel_h - 15), fine_color
+        )
+        panels.append(canvas)
+
+        # Panel 5: Overlay (fine + observations)
+        canvas = np.full((panel_h, panel_w, 3), 32, dtype=np.uint8)
+        obs_panel = to_panel(obs_2d).astype(np.int32)
+        for pt in obs_panel:
+            cv2.circle(canvas, (int(pt[0]), int(pt[1])), 2, overlay_obs_color, -1)
+        if len(fine_2d) >= 2:
+            fine_panel = to_panel(fine_2d).astype(np.int32)
+            cv2.polylines(
+                canvas, [fine_panel.reshape(-1, 1, 2)], False, overlay_fine_color, 2
+            )
+        panels.append(canvas)
+
+        # Add titles to each panel
+        for i, panel in enumerate(panels):
+            cv2.putText(
+                panel,
+                panel_titles[i],
+                (5, 18),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (220, 220, 220),
+                1,
+                cv2.LINE_AA,
+            )
+
+        # Add fish label to the first panel
+        cv2.putText(
+            panels[0],
+            f"Fish {snap.fish_id} ({snap.best_cam_id})",
+            (5, panel_h - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.4,
+            (180, 180, 180),
+            1,
+            cv2.LINE_AA,
+        )
+
+        row = np.hstack(panels)
+        rows.append(row)
+
+    if not rows:
+        logger.warning("vis_optimizer_progression: no valid rows to render")
+        return
+
+    grid = np.vstack(rows)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(output_path), grid)
+    logger.info(
+        "Optimizer progression (%d fish, %dx%d) saved to %s",
+        len(rows),
+        n_panels,
+        len(rows),
+        output_path,
+    )

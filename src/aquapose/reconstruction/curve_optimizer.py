@@ -19,7 +19,7 @@ import numpy as np
 import scipy.interpolate
 import torch
 
-from aquapose.calibration.projection import RefractiveProjectionModel
+from aquapose.calibration.projection import RefractiveProjectionModel, triangulate_rays
 from aquapose.reconstruction.triangulation import (
     N_SAMPLE_POINTS,
     SPLINE_K,
@@ -44,6 +44,37 @@ _MAX_BEND_ANGLE_DEG_DEFAULT: float = 30.0
 # Coarse and fine control point counts
 _N_COARSE_CTRL: int = 4
 _N_FINE_CTRL: int = SPLINE_N_CTRL  # 7, matches Midline3D contract
+
+
+@dataclass
+class OptimizerSnapshot:
+    """Snapshot of optimizer state for a single fish at frame 0.
+
+    Captured during ``optimize_midlines`` for the first frame with valid fish to
+    enable progression visualizations (cold-start → coarse → fine).
+
+    Attributes:
+        fish_id: Globally unique fish identifier.
+        best_cam_id: Camera ID with the most observation points for this fish.
+        obs_2d: Observed 2D skeleton points in the best camera, shape (N, 2).
+        cold_start_ctrl: Cold-start control points, shape (K_coarse, 3).
+        cold_start_loss: Per-fish data loss at cold-start initialization (pixels).
+        post_coarse_ctrl: Control points after coarse optimization, shape (K_coarse, 3).
+        coarse_loss: Per-fish data loss after coarse stage (pixels).
+        post_fine_ctrl: Control points after fine optimization, shape (K_fine, 3).
+        fine_loss: Per-fish data loss after fine stage (pixels).
+    """
+
+    fish_id: int
+    best_cam_id: str
+    obs_2d: np.ndarray
+    cold_start_ctrl: np.ndarray
+    cold_start_loss: float
+    post_coarse_ctrl: np.ndarray
+    coarse_loss: float
+    post_fine_ctrl: np.ndarray
+    fine_loss: float
+
 
 # ---------------------------------------------------------------------------
 # B-spline basis cache
@@ -141,6 +172,17 @@ class CurveOptimizerConfig:
             The length penalty is zero within [nominal*(1-tol), nominal*(1+tol)].
         lambda_length: Weight for arc-length penalty.
         lambda_curvature: Weight for per-joint curvature penalty.
+        lambda_chord_arc: Weight for chord-to-arc-length ratio penalty. Penalizes
+            splines that fold back on themselves. Only activates when chord/arc
+            drops below ``chord_arc_threshold`` (dead zone for normal curvature).
+        chord_arc_threshold: Chord-to-arc ratio below which the penalty activates.
+            Default 0.75 (~90-degree total bend). Ratios above this are penalty-free.
+        lambda_z_variance: Weight for Z-variance penalty. Penalizes depth
+            spread of the spline around its per-fish mean Z. Fish bodies are
+            approximately planar in depth; without this the optimizer wobbles
+            in Z (chamfer is Z-insensitive), causing apparent hooks in 2D
+            refractive projections. Default 5000 (in metres^-2 units, high
+            because Z-variance is O(1e-3) for ±40mm wobble).
         lambda_smoothness: Weight for second-difference smoothness penalty.
         max_bend_angle_deg: Maximum allowable bend angle (degrees) between
             consecutive control-point triplets. Default 30.0 from fish biomechanics.
@@ -157,12 +199,25 @@ class CurveOptimizerConfig:
         convergence_patience: Steps with delta < convergence_delta before freeze.
         warm_start_loss_ratio: If warm-start loss / prev_loss > this ratio, fall
             back to cold start for that fish. Default 2.0.
+        max_depth: Maximum depth below water surface (metres) for triangulation
+            seed validation. When set, triangulated points deeper than
+            water_z + max_depth are rejected. None means no upper bound.
+        tri_seed: Whether to attempt triangulation-seeded cold start. When
+            True, runs ``triangulate_midlines`` for cold-start fish and uses
+            the result (if valid) as the initial control points. Disabled by
+            default because the triangulation pipeline rarely succeeds and a
+            single bad seed can poison the shared L-BFGS Hessian, corrupting
+            all fish in the coarse stage. The simple cold-start (straight
+            fish at estimated centroid) is more reliable in practice.
     """
 
     nominal_length_m: float = 0.085
     length_tolerance: float = 0.30
     lambda_length: float = 10.0
     lambda_curvature: float = 5.0
+    lambda_chord_arc: float = 50.0
+    chord_arc_threshold: float = 0.75
+    lambda_z_variance: float = 5000.0
     lambda_smoothness: float = 1.0
     max_bend_angle_deg: float = _MAX_BEND_ANGLE_DEG_DEFAULT
     n_coarse_ctrl: int = _N_COARSE_CTRL
@@ -175,6 +230,8 @@ class CurveOptimizerConfig:
     convergence_delta: float = 0.5
     convergence_patience: int = 3
     warm_start_loss_ratio: float = 2.0
+    max_depth: float | None = None
+    tri_seed: bool = False
     # Not directly used in loss but provided for downstream consumers
     _extra: dict = field(default_factory=dict, repr=False)
 
@@ -432,6 +489,76 @@ def _smoothness_penalty(ctrl_pts: torch.Tensor) -> torch.Tensor:
     return (second_diff**2).sum(dim=2).mean()
 
 
+def _z_variance_penalty(
+    ctrl_pts: torch.Tensor,
+    basis: torch.Tensor,
+) -> torch.Tensor:
+    """Penalize depth (Z) spread of the evaluated spline around its mean.
+
+    Fish bodies are approximately planar in Z — even during diving/surfacing,
+    depth variation along the body is small relative to body length.  The
+    optimizer's chamfer loss is insensitive to Z, so without this penalty
+    the spline wobbles in depth, causing apparent hooks/curls when projected
+    through the nonlinear refractive camera model.
+
+    Penalizes the variance of Z across evaluated spline points for each fish.
+    The mean Z is free to float (no penalty on depth itself), only the spread
+    around the mean is penalized.
+
+    Args:
+        ctrl_pts: Control points, shape (N_fish, K, 3).
+        basis: B-spline basis matrix, shape (n_eval, K).
+
+    Returns:
+        Scalar Z-variance penalty (in metres squared).
+    """
+    # Evaluate spline: (N_fish, n_eval, 3)
+    spline_pts = torch.einsum("ek,nkd->ned", basis, ctrl_pts)
+
+    z_vals = spline_pts[:, :, 2]  # (N_fish, n_eval)
+    z_var = z_vals.var(dim=1)  # (N_fish,)
+
+    return z_var.mean()
+
+
+def _chord_arc_penalty(
+    ctrl_pts: torch.Tensor,
+    basis: torch.Tensor,
+    config: CurveOptimizerConfig,
+) -> torch.Tensor:
+    """Penalize folded splines via chord-to-arc-length ratio.
+
+    Only activates when chord/arc drops below ``config.chord_arc_threshold``
+    (dead zone for normal swimming curvature). Penalty is quadratic in the
+    deficit below the threshold. Unlike the per-joint curvature penalty, this
+    metric cannot be gamed by distributing a fold across control points.
+
+    Args:
+        ctrl_pts: Control points, shape (N_fish, K, 3).
+        basis: B-spline basis matrix, shape (n_eval, K).
+        config: Optimizer configuration (for threshold).
+
+    Returns:
+        Scalar chord-arc penalty.
+    """
+    # Evaluate spline: (N_fish, n_eval, 3)
+    spline_pts = torch.einsum("ek,nkd->ned", basis, ctrl_pts)
+
+    # Chord: straight-line distance from head to tail
+    chord = torch.linalg.norm(
+        spline_pts[:, -1, :] - spline_pts[:, 0, :], dim=1
+    )  # (N_fish,)
+
+    # Arc: sum of segment lengths along the curve
+    diffs = spline_pts[:, 1:, :] - spline_pts[:, :-1, :]  # (N_fish, n_eval-1, 3)
+    arc = torch.linalg.norm(diffs, dim=2).sum(dim=1)  # (N_fish,)
+
+    ratio = chord / (arc + 1e-8)
+    # Dead zone: no penalty when ratio >= threshold
+    deficit = torch.clamp(config.chord_arc_threshold - ratio, min=0.0)
+    return (deficit**2).mean()
+
+
 # ---------------------------------------------------------------------------
 # Initialization helpers
 # ---------------------------------------------------------------------------
@@ -606,6 +733,8 @@ class CurveOptimizer:
         self.config = config or CurveOptimizerConfig()
         self._warm_starts: dict[int, torch.Tensor] = {}
         self._prev_losses: dict[int, float] = {}
+        self.snapshots: list[OptimizerSnapshot] = []
+        self._snapshot_frame: int | None = None  # first frame with valid fish
 
     def optimize_midlines(
         self,
@@ -620,6 +749,11 @@ class CurveOptimizer:
         Warm-starts from previous frame when available, with cold-start fallback
         if warm-start loss is anomalously high. Adaptive early stopping freezes
         converged fish during optimization.
+
+        After optimization, a consistency check ensures the spline direction
+        matches the previous frame's warm-start. If the dot product of the
+        current and previous spline directions is negative, the control points
+        are flipped to maintain frame-to-frame consistency.
 
         Args:
             midline_set: Nested dict mapping fish_id → camera_id → Midline2D.
@@ -672,6 +806,11 @@ class CurveOptimizer:
 
         n_fish = len(valid_fish_ids)
 
+        # Collect snapshots for the first frame with valid fish
+        if self._snapshot_frame is None:
+            self._snapshot_frame = frame_index
+            self.snapshots = []
+
         # Estimate reference orientations from reference camera (longest arc)
         ref_orientations: dict[int, torch.Tensor | None] = {}
         for idx, fid in enumerate(valid_fish_ids):
@@ -692,19 +831,26 @@ class CurveOptimizer:
 
         for idx, fid in enumerate(valid_fish_ids):
             if fid not in centroids:
-                # Estimate centroid from 2D observations: use water depth mid-range
                 cam_obs = midlines_per_fish[idx]
-                best_cam = max(cam_obs, key=lambda c: cam_obs[c].shape[0])
-                obs_2d = cam_obs[best_cam]  # (N, 2)
-                mean_2d = obs_2d.mean(dim=0)  # (2,)
-                model = models[best_cam]
-                # Approximate centroid by casting ray at estimated depth
-                water_z = model.water_z
-                depth_est = 0.5  # metres below water surface
-                pixel_batch = mean_2d.unsqueeze(0)  # (1, 2)
-                origin, direction = model.cast_ray(pixel_batch)
-                # 3D point at estimated depth
-                centroid_3d = origin[0] + depth_est * direction[0]
+                # Gather rays from all cameras observing this fish
+                all_origins = []
+                all_directions = []
+                for cam_id, obs_2d in cam_obs.items():
+                    mean_2d = obs_2d.mean(dim=0)  # (2,)
+                    origin, direction = models[cam_id].cast_ray(mean_2d.unsqueeze(0))
+                    all_origins.append(origin[0])
+                    all_directions.append(direction[0])
+
+                if len(all_origins) >= 2:
+                    # Multi-camera ray intersection
+                    origins_t = torch.stack(all_origins)  # (N_cams, 3)
+                    dirs_t = torch.stack(all_directions)  # (N_cams, 3)
+                    centroid_3d = triangulate_rays(origins_t, dirs_t)
+                else:
+                    # Fallback: single camera, cast ray at estimated depth
+                    origin, direction = all_origins[0], all_directions[0]
+                    depth_est = 0.5  # metres below water surface
+                    centroid_3d = origin + depth_est * direction
                 centroids[fid] = centroid_3d.detach()
 
         # ---- Triangulation-seeded cold start ----
@@ -716,13 +862,16 @@ class CurveOptimizer:
         fish_needing_cold_start = [
             fid for fid in valid_fish_ids if fid not in self._warm_starts
         ]
-        if fish_needing_cold_start:
+        if fish_needing_cold_start and cfg.tri_seed:
             try:
                 # triangulate_midlines is numpy/scipy-based — move models to CPU
                 for model in models.values():
                     model.to("cpu")
                 tri_results = triangulate_midlines(
-                    midline_set, models, frame_index=frame_index
+                    midline_set,
+                    models,
+                    frame_index=frame_index,
+                    max_depth=cfg.max_depth,
                 )
                 for model in models.values():
                     model.to(device)
@@ -785,6 +934,55 @@ class CurveOptimizer:
                     exc_info=True,
                 )
 
+        # ---- Validate tri-seeds by initial loss ----
+        # A bad tri-seed can poison the shared L-BFGS Hessian in the coarse
+        # stage, corrupting ALL fish.  Evaluate each tri-seeded fish's initial
+        # data loss and reject seeds that are significantly worse than a
+        # cold-start initialization would produce.
+        tri_seeded_fids = [
+            fid for fid in valid_fish_ids if init_type.get(fid) == "tri-seed"
+        ]
+        if tri_seeded_fids:
+            _MAX_SEED_LOSS = 100.0  # max acceptable initial chamfer (pixels)
+            n_coarse_check = cfg.n_coarse_ctrl
+            basis_check = get_basis(cfg.n_eval_points, n_coarse_check, device)
+            reverted = []
+            with torch.no_grad():
+                for fid in tri_seeded_fids:
+                    idx = valid_fish_ids.index(fid)
+                    # Build seed control points
+                    seed_ctrl = _init_ctrl_pts(
+                        [fid],
+                        centroids,
+                        self._warm_starts,
+                        n_coarse_check,
+                        cfg,
+                        ref_orientations,
+                        device,
+                    )  # (1, K, 3)
+                    seed_loss = _data_loss(
+                        seed_ctrl, basis_check, [midlines_per_fish[idx]], models, cfg
+                    ).item()
+                    if seed_loss > _MAX_SEED_LOSS:
+                        logger.info(
+                            "Frame %d fish %d: tri-seed rejected by loss check "
+                            "(loss=%.1f > %.1f); falling back to cold start",
+                            frame_index,
+                            fid,
+                            seed_loss,
+                            _MAX_SEED_LOSS,
+                        )
+                        del self._warm_starts[fid]
+                        init_type[fid] = "cold"
+                        reverted.append(fid)
+            if reverted:
+                logger.info(
+                    "Frame %d: reverted %d tri-seeds with high initial loss: %s",
+                    frame_index,
+                    len(reverted),
+                    reverted,
+                )
+
         # ---- Stage 1: Coarse optimization (K=n_coarse_ctrl) ----
         n_coarse = cfg.n_coarse_ctrl
         coarse_basis = get_basis(cfg.n_eval_points, n_coarse, device)
@@ -799,6 +997,19 @@ class CurveOptimizer:
             device,
         )
         coarse_ctrl = coarse_init.clone().requires_grad_(True)
+
+        # Snapshot: capture cold-start control points and per-fish losses
+        if frame_index == self._snapshot_frame:
+            _snap_cold_start = coarse_init.detach().cpu().numpy().copy()
+            _snap_cold_losses: list[float] = []
+            with torch.no_grad():
+                for idx in range(n_fish):
+                    single_ctrl = coarse_init[idx : idx + 1]
+                    single_obs = [midlines_per_fish[idx]]
+                    fish_loss = _data_loss(
+                        single_ctrl, coarse_basis, single_obs, models, cfg
+                    ).item()
+                    _snap_cold_losses.append(fish_loss)
 
         # Per-fish convergence tracking (frozen_coarse used in closure below)
         frozen_coarse = torch.zeros(n_fish, dtype=torch.bool, device=device)
@@ -820,11 +1031,15 @@ class CurveOptimizer:
             len_l = _length_penalty(coarse_ctrl, coarse_basis, cfg)
             curv_l = _curvature_penalty(coarse_ctrl, cfg)
             smooth_l = _smoothness_penalty(coarse_ctrl)
+            chord_arc_l = _chord_arc_penalty(coarse_ctrl, coarse_basis, cfg)
+            z_var_l = _z_variance_penalty(coarse_ctrl, coarse_basis)
 
             total = (
                 data_l
                 + cfg.lambda_length * len_l
                 + cfg.lambda_curvature * curv_l
+                + cfg.lambda_chord_arc * chord_arc_l
+                + cfg.lambda_z_variance * z_var_l
                 + cfg.lambda_smoothness * smooth_l
             )
             total.backward()
@@ -853,6 +1068,19 @@ class CurveOptimizer:
         logger.info(
             "Frame %d: coarse stage done, loss=%.4f", frame_index, coarse_loss_val
         )
+
+        # Snapshot: capture post-coarse control points and per-fish losses
+        if frame_index == self._snapshot_frame:
+            _snap_post_coarse = coarse_ctrl.detach().cpu().numpy().copy()
+            _snap_coarse_losses: list[float] = []
+            with torch.no_grad():
+                for idx in range(n_fish):
+                    single_ctrl = coarse_ctrl[idx : idx + 1]
+                    single_obs = [midlines_per_fish[idx]]
+                    fish_loss = _data_loss(
+                        single_ctrl, coarse_basis, single_obs, models, cfg
+                    ).item()
+                    _snap_coarse_losses.append(fish_loss)
 
         # ---- Stage 2: Fine optimization (K=n_fine_ctrl) ----
         n_fine = cfg.n_fine_ctrl
@@ -924,11 +1152,15 @@ class CurveOptimizer:
             len_l = _length_penalty(fine_ctrl, fine_basis, cfg)
             curv_l = _curvature_penalty(fine_ctrl, cfg)
             smooth_l = _smoothness_penalty(fine_ctrl)
+            chord_arc_l = _chord_arc_penalty(fine_ctrl, fine_basis, cfg)
+            z_var_l = _z_variance_penalty(fine_ctrl, fine_basis)
 
             total = (
                 data_l
                 + cfg.lambda_length * len_l
                 + cfg.lambda_curvature * curv_l
+                + cfg.lambda_chord_arc * chord_arc_l
+                + cfg.lambda_z_variance * z_var_l
                 + cfg.lambda_smoothness * smooth_l
             )
             total.backward()
@@ -1024,6 +1256,26 @@ class CurveOptimizer:
             n_converged,
             n_fish,
         )
+
+        # ---- Snapshot: assemble per-fish OptimizerSnapshot (first valid frame) ----
+        if frame_index == self._snapshot_frame:
+            _snap_post_fine = fine_ctrl.detach().cpu().numpy().copy()
+            for idx, fid in enumerate(valid_fish_ids):
+                cam_obs = midlines_per_fish[idx]
+                best_cam = max(cam_obs, key=lambda c: cam_obs[c].shape[0])
+                self.snapshots.append(
+                    OptimizerSnapshot(
+                        fish_id=fid,
+                        best_cam_id=best_cam,
+                        obs_2d=cam_obs[best_cam].cpu().numpy().copy(),
+                        cold_start_ctrl=_snap_cold_start[idx],
+                        cold_start_loss=_snap_cold_losses[idx],
+                        post_coarse_ctrl=_snap_post_coarse[idx],
+                        coarse_loss=_snap_coarse_losses[idx],
+                        post_fine_ctrl=_snap_post_fine[idx],
+                        fine_loss=final_per_fish_losses[idx],
+                    )
+                )
 
         # ---- Build output Midline3D structs ----
         results: dict[int, Midline3D] = {}
@@ -1130,8 +1382,20 @@ class CurveOptimizer:
             )
             results[fid] = midline_3d
 
-            # Store warm-start for next frame
-            self._warm_starts[fid] = fine_ctrl[idx].detach().clone().cpu()
+            # Store warm-start for next frame, with consistency flip check
+            ws_ctrl = fine_ctrl[idx].detach().clone().cpu()
+            if fid in self._warm_starts:
+                prev_dir = self._warm_starts[fid][-1] - self._warm_starts[fid][0]
+                curr_dir = ws_ctrl[-1] - ws_ctrl[0]
+                if torch.dot(curr_dir, prev_dir) < 0:
+                    ws_ctrl = ws_ctrl.flip(0)
+                    logger.debug(
+                        "Frame %d fish %d: flipped warm-start "
+                        "(spline direction reversed vs previous frame)",
+                        frame_index,
+                        fid,
+                    )
+            self._warm_starts[fid] = ws_ctrl
             self._prev_losses[fid] = final_per_fish_losses[idx]
 
         return results

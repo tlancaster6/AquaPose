@@ -15,8 +15,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Calibration and Refractive Geometry** - Differentiable refractive projection validated and ready for use by all downstream phases
 - [x] **Phase 2: Segmentation Pipeline** - Multi-view binary masks ready for every frame; annotation workflow established
 - [x] **Phase 3: Fish Mesh Model and 3D Initialization** - Parametric fish mesh differentiable in PyTorch; first-frame cold-start working from coarse keypoints
-- [x] **Phase 4: Per-Fish Reconstruction** - ~~Analysis-by-synthesis mesh optimization~~ *(shelved 2026-02-21 — primary workflow replaced by direct triangulation pipeline, Phases 5+)*
-- [x] **Phase 5: Cross-View Identity and 3D Tracking** - RANSAC-based cross-view identity association and persistent 3D fish tracking via Hungarian assignment (completed 2026-02-21)
+- [x] **Phase 4: Per-Fish Reconstruction** - ~~Analysis-by-synthesis mesh optimization~~ *(shelved 2010-02-21 — primary workflow replaced by direct triangulation pipeline, Phases 5+)*
+- [x] **Phase 5: Cross-View Identity and 3D Tracking** - RANSAC-based cross-view identity association and persistent 3D fish tracking via Hungarian assignment (completed 2010-02-21)
 - [ ] **Phase 6: 2D Medial Axis and Arc-Length Sampling** - Skeleton-based midline extraction from masks with normalized arc-length correspondence across views
 
 ## Phase Details
@@ -88,7 +88,7 @@ Plans:
 - [x] 03-02-PLAN.md — PCA keypoint extraction and refractive triangulation for 3D initialization
 
 ### Phase 4: Per-Fish Reconstruction *(Archived)*
-**Status**: Shelved 2026-02-21. The analysis-by-synthesis approach (differentiable mesh rendering + Adam optimization) was functionally complete but took 30+ minutes per second of video, making it impractical as the primary pipeline. Replaced by a direct triangulation pipeline (Phases 5–7) for main workflow. Code from Phase 3 (mesh model, refractive projection) is retained; the renderer and optimizer remain available as an optional advanced route.
+**Status**: Shelved 2010-02-21. The analysis-by-synthesis approach (differentiable mesh rendering + Adam optimization) was functionally complete but took 30+ minutes per second of video, making it impractical as the primary pipeline. Replaced by a direct triangulation pipeline (Phases 5–7) for main workflow. Code from Phase 3 (mesh model, refractive projection) is retained; the renderer and optimizer remain available as an optional advanced route.
 **Requirements**: RECON-ABS-01, RECON-ABS-02, RECON-ABS-03, RECON-ABS-04, RECON-ABS-05
 **Plans**: 3 plans (not executed)
 Plans:
@@ -145,14 +145,14 @@ Note: Phase 5 depends on Phase 2 (segmentation) and Phase 1 (refractive ray mode
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Calibration and Refractive Geometry | 2/2 | Complete | 2026-02-19 |
+| 1. Calibration and Refractive Geometry | 2/2 | Complete | 2010-02-19 |
 | 2. Segmentation Pipeline | 0/4 | Planning complete | - |
-| 02.1 Segmentation Troubleshooting | 3/3 | Complete | 2026-02-20 |
-| 02.1.1 Object-detection alternative to MOG2 | 3/3 | Complete | 2026-02-20 |
+| 02.1 Segmentation Troubleshooting | 3/3 | Complete | 2010-02-20 |
+| 02.1.1 Object-detection alternative to MOG2 | 3/3 | Complete | 2010-02-20 |
 | 3. Fish Mesh Model and 3D Initialization | 0/2 | Planning complete | - |
-| 4. Per-Fish Reconstruction | 0/3 | Shelved    | 2026-02-21 |
-| 5. Cross-View Identity and 3D Tracking | 3/3 | Complete   | 2026-02-21 |
-| 6. 2D Medial Axis and Arc-Length Sampling | 1/1 | Complete | 2026-02-21 |
+| 4. Per-Fish Reconstruction | 0/3 | Shelved    | 2010-02-21 |
+| 5. Cross-View Identity and 3D Tracking | 3/3 | Complete   | 2010-02-21 |
+| 6. 2D Medial Axis and Arc-Length Sampling | 1/1 | Complete | 2010-02-21 |
 
 ### Phase 7: Multi-View Triangulation
 
@@ -184,15 +184,5 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [x] 09-01-PLAN.md — Core CurveOptimizer module: B-spline basis, chamfer loss, coarse-to-fine L-BFGS, warm-start, unit tests (2026-02-23)
+- [x] 09-01-PLAN.md — Core CurveOptimizer module: B-spline basis, chamfer loss, coarse-to-fine L-BFGS, warm-start, unit tests (2010-02-23)
 - [ ] 09-02-PLAN.md — Pipeline wiring (--method flag in diagnose_pipeline.py) and human verification on real data
-
-### Phase 10: pre-alpha refactor
-
-**Goal:** [To be planned]
-**Requirements**: TBD
-**Depends on:** Phase 9
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (run /gsd:plan-phase 10 to break down)

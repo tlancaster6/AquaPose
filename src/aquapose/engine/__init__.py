@@ -28,6 +28,7 @@ from aquapose.engine.events import (
     StageStart,
 )
 from aquapose.engine.observers import EventBus, Observer
+from aquapose.engine.pipeline import PosePipeline
 from aquapose.engine.stages import PipelineContext, Stage
 
 __all__ = [
@@ -41,6 +42,7 @@ __all__ = [
     "PipelineContext",
     "PipelineFailed",
     "PipelineStart",
+    "PosePipeline",
     "SegmentationConfig",
     "Stage",
     "StageComplete",

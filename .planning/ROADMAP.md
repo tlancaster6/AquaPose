@@ -51,13 +51,13 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
   3. Firing a lifecycle event delivers it synchronously to all subscribed observers
   4. A frozen config object can be constructed from defaults, overridden by YAML, then overridden by CLI kwargs, and raises on post-freeze mutation
   5. The full serialized run config is written as the first artifact when PosePipeline.run() is called
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 13-01: Stage Protocol, PipelineContext, and import boundary
-- [ ] 13-02: Config dataclass hierarchy with YAML and CLI override support
-- [ ] 13-03: Event system and Observer protocol
-- [ ] 13-04: PosePipeline orchestrator skeleton
+- [ ] 13-01-PLAN.md — Stage Protocol, PipelineContext, and import boundary (wave 1)
+- [ ] 13-02-PLAN.md — Config dataclass hierarchy with YAML and CLI override support (wave 1)
+- [ ] 13-03-PLAN.md — Event system and Observer protocol (wave 1)
+- [ ] 13-04-PLAN.md — PosePipeline orchestrator skeleton (wave 2)
 
 ### Phase 14: Golden Data and Verification Framework
 **Goal**: Frozen reference outputs from the v1.0 pipeline exist on disk as a committed snapshot, and an interface test harness can assert that a Stage produces correct output from a given context

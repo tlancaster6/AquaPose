@@ -22,6 +22,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import gzip
 import logging
 import random
 import sys
@@ -285,9 +286,10 @@ def main(argv: list[str] | None = None) -> int:
         elapsed,
     )
 
-    seg_path = args.output_dir / "golden_segmentation.pt"
-    torch.save(masks_per_frame, seg_path)
-    logger.info("Saved golden_segmentation.pt (%d bytes)", seg_path.stat().st_size)
+    seg_path = args.output_dir / "golden_segmentation.pt.gz"
+    with gzip.open(seg_path, "wb", compresslevel=6) as f:
+        torch.save(masks_per_frame, f)
+    logger.info("Saved golden_segmentation.pt.gz (%d bytes)", seg_path.stat().st_size)
 
     # ===================================================================
     # Stage 3: Tracking
@@ -387,10 +389,8 @@ def main(argv: list[str] | None = None) -> int:
     # ===================================================================
     # Summary
     # ===================================================================
-    total_bytes = sum(
-        p.stat().st_size
-        for p in [det_path, seg_path, trk_path, mid_path, tri_path, meta_path]
-    )
+    all_paths = [det_path, seg_path, trk_path, mid_path, tri_path, meta_path]
+    total_bytes = sum(p.stat().st_size for p in all_paths)
     logger.info(
         "Golden data generation complete. Total size: %.1f MB. Files in: %s",
         total_bytes / (1024 * 1024),

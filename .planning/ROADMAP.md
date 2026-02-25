@@ -3,6 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 1-9 (shipped 2026-02-25)
+- 🚧 **v2.0 Alpha** — Phases 13-18 (in progress)
 
 ## Phases
 
@@ -27,6 +28,120 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 
 </details>
 
+### 🚧 v2.0 Alpha (In Progress)
+
+**Milestone Goal:** Transform AquaPose from a script-driven scientific pipeline into an event-driven scientific computation engine with strict architectural layering, verified for numerical equivalence with v1.0.
+
+- [ ] **Phase 13: Engine Core** - Stage Protocol, PipelineContext, events, observer base, config, orchestrator, import boundary
+- [ ] **Phase 14: Golden Data and Verification Framework** - Generate frozen reference outputs from v1.0, define interface test harness
+- [ ] **Phase 15: Stage Migrations** - Port all 7 computation stages as pure Stage implementors
+- [ ] **Phase 16: Numerical Verification and Legacy Cleanup** - Regression tests against golden data, archive legacy scripts
+- [ ] **Phase 17: Observers** - Timing, HDF5 export, 2D reprojection, 3D animation, diagnostic observers
+- [ ] **Phase 18: CLI and Execution Modes** - `aquapose run` entrypoint, production/diagnostic/synthetic/benchmark modes
+
+## Phase Details
+
+### Phase 13: Engine Core
+**Goal**: The architectural skeleton exists — protocol interfaces, typed context, event system, observer base, config hierarchy, pipeline orchestrator, and enforced import boundary — ready for stages to be plugged in
+**Depends on**: Nothing (first phase of v2.0)
+**Requirements**: ENG-01, ENG-02, ENG-03, ENG-04, ENG-05, ENG-06, ENG-07, ENG-08
+**Success Criteria** (what must be TRUE):
+  1. A class can implement Stage Protocol via structural typing and be recognized without inheriting a base class
+  2. PipelineContext accumulates typed fields set by each stage with no implicit shared state
+  3. Firing a lifecycle event delivers it synchronously to all subscribed observers
+  4. A frozen config object can be constructed from defaults, overridden by YAML, then overridden by CLI kwargs, and raises on post-freeze mutation
+  5. The full serialized run config is written as the first artifact when PosePipeline.run() is called
+**Plans**: TBD
+
+Plans:
+- [ ] 13-01: Stage Protocol, PipelineContext, and import boundary
+- [ ] 13-02: Config dataclass hierarchy with YAML and CLI override support
+- [ ] 13-03: Event system and Observer protocol
+- [ ] 13-04: PosePipeline orchestrator skeleton
+
+### Phase 14: Golden Data and Verification Framework
+**Goal**: Frozen reference outputs from the v1.0 pipeline exist on disk as a committed snapshot, and an interface test harness can assert that a Stage produces correct output from a given context
+**Depends on**: Phase 13
+**Requirements**: VER-01, VER-02
+**Success Criteria** (what must be TRUE):
+  1. Running the v1.0 pipeline on a fixed clip produces outputs that are committed as golden data in a standalone commit
+  2. A test can instantiate any Stage, call stage.run(context), and assert output fields in PipelineContext
+  3. The golden data generation script is deterministic — re-running on the same clip produces bit-identical outputs
+**Plans**: TBD
+
+Plans:
+- [ ] 14-01: Golden data generation script and committed snapshot
+- [ ] 14-02: Interface test harness for Stage.run(context) correctness
+
+### Phase 15: Stage Migrations
+**Goal**: All 7 computation stages exist as pure Stage implementors with no side effects, wired into PosePipeline and producing context fields that downstream stages consume
+**Depends on**: Phase 14
+**Requirements**: STG-01, STG-02, STG-03, STG-04, STG-05, STG-06, STG-07
+**Success Criteria** (what must be TRUE):
+  1. Detection stage can be swapped between YOLO and MOG2 backends via config with no code change
+  2. Each stage accepts only PipelineContext as input and writes only PipelineContext fields — no filesystem reads/writes inside stage logic
+  3. PosePipeline.run() on a real clip completes all 7 stages without error
+  4. Interface tests pass for each of the 7 stages individually
+**Plans**: TBD
+
+Plans:
+- [ ] 15-01: Detection stage (YOLO/MOG2)
+- [ ] 15-02: Segmentation stage (U-Net inference)
+- [ ] 15-03: Midline extraction stage (skeletonization + BFS pruning)
+- [ ] 15-04: Cross-view association stage (RANSAC centroid clustering)
+- [ ] 15-05: Triangulation stage (RANSAC + view-angle weighting + B-spline fitting)
+- [ ] 15-06: Tracking stage (Hungarian 3D with population constraint)
+- [ ] 15-07: Curve optimizer stage (correspondence-free B-spline via chamfer distance)
+
+### Phase 16: Numerical Verification and Legacy Cleanup
+**Goal**: The migrated pipeline is confirmed numerically equivalent to v1.0 on real data, and all legacy scripts are archived and removed from active paths
+**Depends on**: Phase 15
+**Requirements**: VER-03, VER-04
+**Success Criteria** (what must be TRUE):
+  1. Regression tests run the new pipeline on the golden-data clip and confirm outputs match golden data within accepted tolerance (or document known intentional bug fixes)
+  2. All legacy pipeline scripts have been moved to scripts/legacy/ and are no longer on any active import path
+  3. The test suite passes with no references to the old script-based execution path
+**Plans**: TBD
+
+Plans:
+- [ ] 16-01: Numerical regression tests against golden data
+- [ ] 16-02: Legacy script archival and removal
+
+### Phase 17: Observers
+**Goal**: All diagnostic, export, and visualization side effects are implemented as Observers that subscribe to pipeline events and produce their outputs independently of stage logic
+**Depends on**: Phase 16
+**Requirements**: OBS-01, OBS-02, OBS-03, OBS-04, OBS-05
+**Success Criteria** (what must be TRUE):
+  1. Attaching the timing observer to a run produces a per-stage and total timing report without modifying any stage code
+  2. Attaching the HDF5 export observer writes spline control points and metadata to disk after the pipeline completes
+  3. Attaching the diagnostic observer captures intermediate stage outputs in memory without any stage being aware
+  4. Removing all observers from a run produces identical numerical outputs (observers are purely additive side effects)
+**Plans**: TBD
+
+Plans:
+- [ ] 17-01: Timing observer
+- [ ] 17-02: HDF5 export observer
+- [ ] 17-03: 2D reprojection overlay visualization observer
+- [ ] 17-04: 3D midline animation visualization observer
+- [ ] 17-05: Diagnostic observer
+
+### Phase 18: CLI and Execution Modes
+**Goal**: `aquapose run` is a working CLI entrypoint that accepts a config path and mode flag, assembles the correct observer set, and runs the pipeline — with no pipeline logic living in the CLI layer
+**Depends on**: Phase 17
+**Requirements**: CLI-01, CLI-02, CLI-03, CLI-04, CLI-05
+**Success Criteria** (what must be TRUE):
+  1. `aquapose run --config path.yaml` runs the full pipeline on a real clip and exits 0
+  2. `aquapose run --mode diagnostic` activates the diagnostic observer and produces extra artifacts without any code change to stages or core observers
+  3. `aquapose run --mode synthetic` runs the pipeline using injected synthetic data via a stage adapter, not a pipeline bypass
+  4. `aquapose run --mode benchmark` runs with timing observer only and reports total and per-stage time
+  5. The CLI layer contains no reconstruction logic — it only parses args, builds config, assembles observers, and calls PosePipeline.run()
+**Plans**: TBD
+
+Plans:
+- [ ] 18-01: CLI entrypoint and production mode
+- [ ] 18-02: Diagnostic and benchmark modes
+- [ ] 18-03: Synthetic mode via stage adapter
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -43,3 +158,9 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 | 7. Multi-View Triangulation | v1.0 | 1/1 | Complete | 2026-02-22 |
 | 8. End-to-End Integration Testing | v1.0 | 2/3 | Complete | 2026-02-23 |
 | 9. Curve-Based Optimization | v1.0 | 2/2 | Complete | 2026-02-25 |
+| 13. Engine Core | v2.0 | 0/4 | Not started | - |
+| 14. Golden Data and Verification Framework | v2.0 | 0/2 | Not started | - |
+| 15. Stage Migrations | v2.0 | 0/7 | Not started | - |
+| 16. Numerical Verification and Legacy Cleanup | v2.0 | 0/2 | Not started | - |
+| 17. Observers | v2.0 | 0/5 | Not started | - |
+| 18. CLI and Execution Modes | v2.0 | 0/3 | Not started | - |

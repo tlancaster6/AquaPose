@@ -13,6 +13,7 @@ from aquapose.segmentation.detector import Detection
 
 from .associate import (
     AssociationResult,
+    UnclaimedInfo,
     claim_detections_for_tracks,
     discover_births,
 )
@@ -61,6 +62,9 @@ DEFAULT_DEDUP_WINDOW: int = 10
 
 DEFAULT_DEDUP_COVISIBILITY_THRESHOLD: float = 0.2
 """Maximum camera co-visibility ratio to consider tracks duplicates."""
+
+DEFAULT_VELOCITY_WINDOW: int = 5
+"""Number of recent frame-to-frame deltas to average for velocity smoothing."""
 
 
 class TrackState(enum.Enum):
@@ -111,7 +115,15 @@ class FishTrack:
         fish_id: Globally unique identifier for this fish track.
         positions: Ring buffer of the 2 most recent 3D centroids (shape (3,)
             each). Used for constant-velocity prediction.
-        velocity: Explicit velocity vector, shape (3,).
+        velocity: Explicit velocity vector, shape (3,). Set to the windowed
+            mean of recent frame-to-frame deltas by ``update_from_claim``.
+        velocity_history: Ring buffer of recent frame-to-frame position deltas
+            (shape (3,) each). Length capped at ``velocity_window``. Used to
+            compute a smoothed velocity estimate that is more robust to noisy
+            3D triangulated positions.
+        velocity_window: Number of recent deltas to average for velocity
+            smoothing (default ``DEFAULT_VELOCITY_WINDOW``). Setting this to 1
+            reproduces the legacy single-frame delta behaviour.
         age: Total number of frames since this track was created.
         frames_since_update: Frames elapsed since the last successful match.
         state: Current lifecycle state.
@@ -132,6 +144,8 @@ class FishTrack:
     fish_id: int
     positions: deque[np.ndarray] = field(default_factory=lambda: deque(maxlen=2))
     velocity: np.ndarray = field(default_factory=lambda: np.zeros(3, dtype=np.float32))
+    velocity_window: int = DEFAULT_VELOCITY_WINDOW
+    velocity_history: deque[np.ndarray] = field(init=False, repr=False)
     age: int = 0
     frames_since_update: int = 0
     state: TrackState = TrackState.PROBATIONARY
@@ -148,6 +162,10 @@ class FishTrack:
     confidence: float = 1.0
     n_cameras: int = 0
     _coasting_prediction: np.ndarray | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        """Initialize fields that depend on other field values."""
+        self.velocity_history = deque(maxlen=self.velocity_window)
 
     @property
     def is_confirmed(self) -> bool:
@@ -199,12 +217,19 @@ class FishTrack:
             reprojection_residual: Mean reprojection residual (pixels).
             n_cameras: Number of cameras contributing.
         """
-        # Compute velocity from position delta
+        # Compute velocity from position delta using windowed smoothing.
+        # Append the raw frame delta to the ring buffer and set velocity to
+        # the mean of all deltas in the buffer (up to velocity_window frames).
         if len(self.positions) > 0:
             prev = list(self.positions)[-1]
-            self.velocity = centroid_3d - prev
+            delta = (centroid_3d - prev).astype(np.float32)
+            self.velocity_history.append(delta)
+            self.velocity = np.mean(list(self.velocity_history), axis=0).astype(
+                np.float32
+            )
         else:
             self.velocity = np.zeros(3, dtype=np.float32)
+            self.velocity_history.clear()
 
         self.positions.append(centroid_3d.copy())
         self.frames_since_update = 0
@@ -344,6 +369,10 @@ class FishTracker:
         birth_interval: Frames between periodic birth RANSAC.
         residual_reject_factor: Reject claim if residual > mean * this.
         velocity_damping: Per-frame velocity damping during coasting.
+        velocity_window: Number of recent frame-to-frame deltas to average
+            for velocity smoothing (default ``DEFAULT_VELOCITY_WINDOW``).
+            Setting this to 1 reproduces the legacy single-frame delta
+            behaviour.
         dedup_distance: 3D proximity threshold (metres) for confirmed-track
             deduplication (covisibility-based dedup).
         birth_proximity_distance: 3D proximity threshold (metres) for
@@ -367,6 +396,7 @@ class FishTracker:
         birth_interval: int = DEFAULT_BIRTH_INTERVAL,
         residual_reject_factor: float = DEFAULT_RESIDUAL_REJECT_FACTOR,
         velocity_damping: float = DEFAULT_VELOCITY_DAMPING,
+        velocity_window: int = DEFAULT_VELOCITY_WINDOW,
         dedup_distance: float = DEFAULT_DEDUP_DISTANCE,
         birth_proximity_distance: float = DEFAULT_BIRTH_PROXIMITY_DISTANCE,
         dedup_window: int = DEFAULT_DEDUP_WINDOW,
@@ -380,6 +410,7 @@ class FishTracker:
         self.birth_interval = birth_interval
         self.residual_reject_factor = residual_reject_factor
         self.velocity_damping = velocity_damping
+        self.velocity_window = velocity_window
         self.dedup_distance = dedup_distance
         self.birth_proximity_distance = birth_proximity_distance
         self.dedup_window = dedup_window
@@ -419,7 +450,7 @@ class FishTracker:
         # ----------------------------------------------------------
         non_dead = [t for t in self.tracks if not t.is_dead]
         claimed_track_ids: set[int] = set()
-        unclaimed_indices: dict[str, list[int]] = {}
+        unclaimed_info = UnclaimedInfo(indices={}, min_claim_distance={})
 
         if non_dead and any(len(dets) > 0 for dets in detections_per_camera.values()):
             predicted_positions: dict[int, np.ndarray] = {}
@@ -431,7 +462,7 @@ class FishTracker:
                     0 if t.state in (TrackState.CONFIRMED, TrackState.COASTING) else 1
                 )
 
-            claims, unclaimed_indices = claim_detections_for_tracks(
+            claims, unclaimed_info = claim_detections_for_tracks(
                 predicted_positions=predicted_positions,
                 track_priorities=track_priorities,
                 detections_per_camera=detections_per_camera,
@@ -485,12 +516,19 @@ class FishTracker:
             # No tracks or no detections — all tracks missed
             for t in non_dead:
                 t.mark_missed()
-            # All detections are unclaimed
-            unclaimed_indices = {
+            # All detections are unclaimed (no tracks → infinite distance)
+            unclaimed_idx = {
                 cam: list(range(len(dets)))
                 for cam, dets in detections_per_camera.items()
                 if len(dets) > 0
             }
+            unclaimed_min_dist = {
+                cam: {i: float("inf") for i in indices}
+                for cam, indices in unclaimed_idx.items()
+            }
+            unclaimed_info = UnclaimedInfo(
+                indices=unclaimed_idx, min_claim_distance=unclaimed_min_dist
+            )
 
         # ----------------------------------------------------------
         # Phase 1.5: Deduplicate confirmed tracks (disabled for testing)
@@ -506,7 +544,7 @@ class FishTracker:
         # being tracked as probationary. non_dead_count correctly reflects
         # how many fish are already accounted for.
         non_dead_count = len([t for t in self.tracks if not t.is_dead])
-        total_unclaimed = sum(len(v) for v in unclaimed_indices.values())
+        total_unclaimed = sum(len(v) for v in unclaimed_info.indices.values())
 
         should_birth = (
             self.frame_count == 0
@@ -516,13 +554,14 @@ class FishTracker:
 
         if should_birth and total_unclaimed > 0:
             births = discover_births(
-                unclaimed_indices=unclaimed_indices,
+                unclaimed_indices=unclaimed_info.indices,
                 detections_per_camera=detections_per_camera,
                 models=models,
                 expected_count=self.expected_count,
                 reprojection_threshold=self.reprojection_threshold,
                 min_cameras=self.min_cameras_birth,
                 seed_points=self.get_seed_points(),
+                near_claim_distances=unclaimed_info.min_claim_distance,
             )
 
             # TRACK-04: collect dead IDs for recycling
@@ -677,6 +716,7 @@ class FishTracker:
             min_hits=self.min_hits,
             max_age=self.max_age,
             velocity_damping=self.velocity_damping,
+            velocity_window=self.velocity_window,
         )
         track.update_from_claim(
             centroid_3d=association.centroid_3d,

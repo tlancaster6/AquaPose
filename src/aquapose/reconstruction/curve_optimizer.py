@@ -214,6 +214,10 @@ class CurveOptimizerConfig:
         alm_tol: Constraint satisfaction tolerance (metres/radians). If no
             constraint exceeds this, the outer loop terminates early.
             Default 0.001.
+        use_alm: Whether to use Augmented Lagrangian Method for constraint
+            enforcement. When False (default), uses penalty-based constraints
+            which are faster but less strict. When True, wraps optimization
+            in ALM outer loop for hard constraint satisfaction.
         max_depth: Maximum depth below water surface (metres) for triangulation
             seed validation. When set, triangulated points deeper than
             water_z + max_depth are rejected. None means no upper bound.
@@ -250,6 +254,7 @@ class CurveOptimizerConfig:
     alm_rho_factor: float = 2.0
     alm_rho_max: float = 1000.0
     alm_tol: float = 0.001
+    use_alm: bool = False
     max_depth: float | None = None
     tri_seed: bool = False
     # Not directly used in loss but provided for downstream consumers
@@ -1114,6 +1119,8 @@ class CurveOptimizer:
         # "reference-sized" violation.  Lambdas then express pixel-equivalent
         # importance rather than compensating for unit mismatches.
         _nom2 = cfg.nominal_length_m**2  # m² — smoothness, z-var normalization
+        _bend2 = (cfg.max_bend_angle_deg * np.pi / 180.0) ** 2  # rad² — curvature
+        _cat2 = cfg.chord_arc_threshold**2  # — chord-arc ratio
 
         # Snapshot: capture cold-start control points and per-fish losses
         if frame_index == self._snapshot_frame:
@@ -1128,21 +1135,100 @@ class CurveOptimizer:
                     ).item()
                     _snap_cold_losses.append(fish_loss)
 
-        # ---- Stage 1: Coarse optimization with ALM constraint enforcement ----
-        n_coarse_constraints = 2 + (n_coarse - 2) + 1
-        coarse_lambdas = torch.zeros(n_fish, n_coarse_constraints, device=device)
-        coarse_rho = cfg.alm_rho_init
+        # ---- Stage 1: Coarse optimization ----
         frozen_coarse = torch.zeros(n_fish, dtype=torch.bool, device=device)
 
-        logger.info(
-            "Frame %d: coarse stage (%d fish, ALM outer=%d, L-BFGS inner=%d)...",
-            frame_index,
-            n_fish,
-            cfg.alm_outer_iters,
-            cfg.lbfgs_max_iter_coarse,
-        )
+        if cfg.use_alm:
+            # ALM constraint enforcement (outer loop around L-BFGS)
+            n_coarse_constraints = 2 + (n_coarse - 2) + 1
+            coarse_lambdas = torch.zeros(n_fish, n_coarse_constraints, device=device)
+            coarse_rho = cfg.alm_rho_init
 
-        for alm_iter in range(cfg.alm_outer_iters):
+            logger.info(
+                "Frame %d: coarse stage (%d fish, ALM outer=%d, L-BFGS inner=%d)...",
+                frame_index,
+                n_fish,
+                cfg.alm_outer_iters,
+                cfg.lbfgs_max_iter_coarse,
+            )
+
+            for alm_iter in range(cfg.alm_outer_iters):
+                optimizer_coarse = torch.optim.LBFGS(
+                    [coarse_ctrl],
+                    lr=cfg.lbfgs_lr,
+                    max_iter=cfg.lbfgs_max_iter_coarse,
+                    history_size=cfg.lbfgs_history_size,
+                    line_search_fn="strong_wolfe",
+                )
+
+                # Snapshot lambdas/rho for closure (avoid stale captures)
+                _alm_lambdas_c = coarse_lambdas.detach()
+                _alm_rho_c = coarse_rho
+
+                def closure_coarse_alm(
+                    _opt: torch.optim.LBFGS = optimizer_coarse,
+                    _lam: torch.Tensor = _alm_lambdas_c,
+                    _rho: float = _alm_rho_c,
+                ) -> torch.Tensor:
+                    _opt.zero_grad()
+
+                    data_l = _data_loss(
+                        coarse_ctrl,
+                        coarse_basis,
+                        midlines_per_fish,
+                        models,
+                        cfg,
+                    )
+                    smooth_l = _smoothness_penalty(coarse_ctrl)
+                    z_var_l = _z_variance_penalty(coarse_ctrl, coarse_basis)
+
+                    violations = _constraint_violations(coarse_ctrl, coarse_basis, cfg)
+                    alm_l = _alm_penalty(violations, _lam, _rho)
+
+                    total = (
+                        data_l
+                        + cfg.lambda_smoothness * (smooth_l / _nom2)
+                        + cfg.lambda_z_variance * (z_var_l / _nom2)
+                        + alm_l
+                    )
+                    total.backward()
+
+                    if coarse_ctrl.grad is not None and frozen_coarse.any():
+                        coarse_ctrl.grad[frozen_coarse] = 0.0
+
+                    return total
+
+                optimizer_coarse.step(closure_coarse_alm)
+
+                # Update multipliers
+                with torch.no_grad():
+                    violations = _constraint_violations(coarse_ctrl, coarse_basis, cfg)
+                    coarse_lambdas = torch.clamp(
+                        coarse_lambdas + coarse_rho * violations, min=0.0
+                    )
+                    max_viol = violations.clamp(min=0.0).max().item()
+
+                if max_viol < cfg.alm_tol:
+                    logger.debug(
+                        "Frame %d: coarse ALM converged at outer iter %d "
+                        "(max violation=%.4f)",
+                        frame_index,
+                        alm_iter,
+                        max_viol,
+                    )
+                    break
+
+                coarse_rho = min(coarse_rho * cfg.alm_rho_factor, cfg.alm_rho_max)
+        else:
+            # Penalty-based constraint enforcement (single L-BFGS pass)
+            logger.info(
+                "Frame %d: coarse stage (%d fish, penalty-based, "
+                "L-BFGS max_iter=%d)...",
+                frame_index,
+                n_fish,
+                cfg.lbfgs_max_iter_coarse,
+            )
+
             optimizer_coarse = torch.optim.LBFGS(
                 [coarse_ctrl],
                 lr=cfg.lbfgs_lr,
@@ -1151,31 +1237,31 @@ class CurveOptimizer:
                 line_search_fn="strong_wolfe",
             )
 
-            # Snapshot lambdas/rho for closure (avoid stale captures)
-            _alm_lambdas_c = coarse_lambdas.detach()
-            _alm_rho_c = coarse_rho
-
-            def closure_coarse(
+            def closure_coarse_penalty(
                 _opt: torch.optim.LBFGS = optimizer_coarse,
-                _lam: torch.Tensor = _alm_lambdas_c,
-                _rho: float = _alm_rho_c,
             ) -> torch.Tensor:
                 _opt.zero_grad()
 
                 data_l = _data_loss(
-                    coarse_ctrl, coarse_basis, midlines_per_fish, models, cfg
+                    coarse_ctrl,
+                    coarse_basis,
+                    midlines_per_fish,
+                    models,
+                    cfg,
                 )
                 smooth_l = _smoothness_penalty(coarse_ctrl)
                 z_var_l = _z_variance_penalty(coarse_ctrl, coarse_basis)
-
-                violations = _constraint_violations(coarse_ctrl, coarse_basis, cfg)
-                alm_l = _alm_penalty(violations, _lam, _rho)
+                len_l = _length_penalty(coarse_ctrl, coarse_basis, cfg)
+                curv_l = _curvature_penalty(coarse_ctrl, cfg)
+                ca_l = _chord_arc_penalty(coarse_ctrl, coarse_basis, cfg)
 
                 total = (
                     data_l
                     + cfg.lambda_smoothness * (smooth_l / _nom2)
                     + cfg.lambda_z_variance * (z_var_l / _nom2)
-                    + alm_l
+                    + cfg.lambda_length * (len_l / _nom2)
+                    + cfg.lambda_curvature * (curv_l / _bend2)
+                    + cfg.lambda_chord_arc * (ca_l / _cat2)
                 )
                 total.backward()
 
@@ -1184,27 +1270,7 @@ class CurveOptimizer:
 
                 return total
 
-            optimizer_coarse.step(closure_coarse)
-
-            # Update multipliers
-            with torch.no_grad():
-                violations = _constraint_violations(coarse_ctrl, coarse_basis, cfg)
-                coarse_lambdas = torch.clamp(
-                    coarse_lambdas + coarse_rho * violations, min=0.0
-                )
-                max_viol = violations.clamp(min=0.0).max().item()
-
-            if max_viol < cfg.alm_tol:
-                logger.debug(
-                    "Frame %d: coarse ALM converged at outer iter %d "
-                    "(max violation=%.4f)",
-                    frame_index,
-                    alm_iter,
-                    max_viol,
-                )
-                break
-
-            coarse_rho = min(coarse_rho * cfg.alm_rho_factor, cfg.alm_rho_max)
+            optimizer_coarse.step(closure_coarse_penalty)
 
         with torch.no_grad():
             data_l = _data_loss(
@@ -1273,27 +1339,160 @@ class CurveOptimizer:
                             )
                             fine_init[idx] = cold
 
-        # ---- Stage 2: Fine optimization with ALM constraint enforcement ----
+        # ---- Stage 2: Fine optimization ----
         fine_ctrl = fine_init.clone().requires_grad_(True)
-
-        n_fine_constraints = 2 + (n_fine - 2) + 1
-        fine_lambdas = torch.zeros(n_fish, n_fine_constraints, device=device)
-        fine_rho = cfg.alm_rho_init
 
         final_per_fish_losses: list[float] = [float("inf")] * n_fish
         prev_losses_fine: list[float] = [float("inf")] * n_fish
         patience_counters_fine: list[int] = [0] * n_fish
         fine_frozen_mask = torch.zeros(n_fish, dtype=torch.bool, device=device)
 
-        logger.info(
-            "Frame %d: fine stage (ALM outer=%d, L-BFGS inner=%d)...",
-            frame_index,
-            cfg.alm_outer_iters,
-            cfg.lbfgs_max_iter_fine,
-        )
+        if cfg.use_alm:
+            # ALM constraint enforcement (outer loop around L-BFGS)
+            n_fine_constraints = 2 + (n_fine - 2) + 1
+            fine_lambdas = torch.zeros(n_fish, n_fine_constraints, device=device)
+            fine_rho = cfg.alm_rho_init
 
-        for alm_iter in range(cfg.alm_outer_iters):
-            # Fresh L-BFGS per outer iteration (Hessian reset)
+            logger.info(
+                "Frame %d: fine stage (ALM outer=%d, L-BFGS inner=%d)...",
+                frame_index,
+                cfg.alm_outer_iters,
+                cfg.lbfgs_max_iter_fine,
+            )
+
+            for alm_iter in range(cfg.alm_outer_iters):
+                # Fresh L-BFGS per outer iteration (Hessian reset)
+                optimizer_fine = torch.optim.LBFGS(
+                    [fine_ctrl],
+                    lr=cfg.lbfgs_lr,
+                    max_iter=1,
+                    history_size=cfg.lbfgs_history_size,
+                    line_search_fn="strong_wolfe",
+                )
+
+                _alm_lambdas_f = fine_lambdas.detach()
+                _alm_rho_f = fine_rho
+
+                def closure_fine_alm(
+                    _opt: torch.optim.LBFGS = optimizer_fine,
+                    _lam: torch.Tensor = _alm_lambdas_f,
+                    _rho: float = _alm_rho_f,
+                ) -> torch.Tensor:
+                    _opt.zero_grad()
+
+                    data_l = _data_loss(
+                        fine_ctrl, fine_basis, midlines_per_fish, models, cfg
+                    )
+                    smooth_l = _smoothness_penalty(fine_ctrl)
+                    z_var_l = _z_variance_penalty(fine_ctrl, fine_basis)
+
+                    violations = _constraint_violations(fine_ctrl, fine_basis, cfg)
+                    alm_l = _alm_penalty(violations, _lam, _rho)
+
+                    total = (
+                        data_l
+                        + cfg.lambda_smoothness * (smooth_l / _nom2)
+                        + cfg.lambda_z_variance * (z_var_l / _nom2)
+                        + alm_l
+                    )
+                    total.backward()
+
+                    if fine_ctrl.grad is not None and fine_frozen_mask.any():
+                        fine_ctrl.grad[fine_frozen_mask] = 0.0
+
+                    return total
+
+                # Inner L-BFGS loop with per-fish adaptive stopping
+                for step in range(cfg.lbfgs_max_iter_fine):
+                    if fine_frozen_mask.all():
+                        break
+
+                    optimizer_fine.step(closure_fine_alm)
+
+                    with torch.no_grad():
+                        for idx in range(n_fish):
+                            if fine_frozen_mask[idx]:
+                                continue
+                            single_ctrl = fine_ctrl[idx : idx + 1]
+                            single_obs = [midlines_per_fish[idx]]
+                            fish_loss = _data_loss(
+                                single_ctrl,
+                                fine_basis,
+                                single_obs,
+                                models,
+                                cfg,
+                            ).item()
+                            final_per_fish_losses[idx] = fish_loss
+
+                            delta = abs(prev_losses_fine[idx] - fish_loss)
+                            if delta < cfg.convergence_delta:
+                                patience_counters_fine[idx] += 1
+                                if (
+                                    patience_counters_fine[idx]
+                                    >= cfg.convergence_patience
+                                ):
+                                    fine_frozen_mask[idx] = True
+                                    logger.debug(
+                                        "Frame %d fish %d converged at "
+                                        "step %d (ALM iter %d, loss=%.4f)",
+                                        frame_index,
+                                        valid_fish_ids[idx],
+                                        step,
+                                        alm_iter,
+                                        fish_loss,
+                                    )
+                            else:
+                                patience_counters_fine[idx] = 0
+
+                            prev_losses_fine[idx] = fish_loss
+
+                    if alm_iter == 0 and step == 0:
+                        for idx, fid in enumerate(valid_fish_ids):
+                            logger.info(
+                                "Frame %d fish %d [%s]: fine step 0 loss=%.1f",
+                                frame_index,
+                                fid,
+                                init_type[fid],
+                                final_per_fish_losses[idx],
+                            )
+
+                # Update ALM multipliers
+                with torch.no_grad():
+                    violations = _constraint_violations(fine_ctrl, fine_basis, cfg)
+                    fine_lambdas = torch.clamp(
+                        fine_lambdas + fine_rho * violations, min=0.0
+                    )
+                    max_viol = violations.clamp(min=0.0).max().item()
+
+                logger.debug(
+                    "Frame %d: fine ALM iter %d, max violation=%.4f, rho=%.1f",
+                    frame_index,
+                    alm_iter,
+                    max_viol,
+                    fine_rho,
+                )
+
+                if max_viol < cfg.alm_tol:
+                    logger.debug(
+                        "Frame %d: fine ALM converged at outer iter %d",
+                        frame_index,
+                        alm_iter,
+                    )
+                    break
+
+                # Increase penalty and unfreeze for next outer iteration
+                fine_rho = min(fine_rho * cfg.alm_rho_factor, cfg.alm_rho_max)
+                fine_frozen_mask.zero_()
+                prev_losses_fine = [float("inf")] * n_fish
+                patience_counters_fine = [0] * n_fish
+        else:
+            # Penalty-based constraint enforcement with per-fish stopping
+            logger.info(
+                "Frame %d: fine stage (penalty-based, L-BFGS max_iter=%d)...",
+                frame_index,
+                cfg.lbfgs_max_iter_fine,
+            )
+
             optimizer_fine = torch.optim.LBFGS(
                 [fine_ctrl],
                 lr=cfg.lbfgs_lr,
@@ -1302,13 +1501,8 @@ class CurveOptimizer:
                 line_search_fn="strong_wolfe",
             )
 
-            _alm_lambdas_f = fine_lambdas.detach()
-            _alm_rho_f = fine_rho
-
-            def closure_fine(
+            def closure_fine_penalty(
                 _opt: torch.optim.LBFGS = optimizer_fine,
-                _lam: torch.Tensor = _alm_lambdas_f,
-                _rho: float = _alm_rho_f,
             ) -> torch.Tensor:
                 _opt.zero_grad()
 
@@ -1317,15 +1511,17 @@ class CurveOptimizer:
                 )
                 smooth_l = _smoothness_penalty(fine_ctrl)
                 z_var_l = _z_variance_penalty(fine_ctrl, fine_basis)
-
-                violations = _constraint_violations(fine_ctrl, fine_basis, cfg)
-                alm_l = _alm_penalty(violations, _lam, _rho)
+                len_l = _length_penalty(fine_ctrl, fine_basis, cfg)
+                curv_l = _curvature_penalty(fine_ctrl, cfg)
+                ca_l = _chord_arc_penalty(fine_ctrl, fine_basis, cfg)
 
                 total = (
                     data_l
                     + cfg.lambda_smoothness * (smooth_l / _nom2)
                     + cfg.lambda_z_variance * (z_var_l / _nom2)
-                    + alm_l
+                    + cfg.lambda_length * (len_l / _nom2)
+                    + cfg.lambda_curvature * (curv_l / _bend2)
+                    + cfg.lambda_chord_arc * (ca_l / _cat2)
                 )
                 total.backward()
 
@@ -1334,12 +1530,11 @@ class CurveOptimizer:
 
                 return total
 
-            # Inner L-BFGS loop with per-fish adaptive stopping
             for step in range(cfg.lbfgs_max_iter_fine):
                 if fine_frozen_mask.all():
                     break
 
-                optimizer_fine.step(closure_fine)
+                optimizer_fine.step(closure_fine_penalty)
 
                 with torch.no_grad():
                     for idx in range(n_fish):
@@ -1358,12 +1553,10 @@ class CurveOptimizer:
                             if patience_counters_fine[idx] >= cfg.convergence_patience:
                                 fine_frozen_mask[idx] = True
                                 logger.debug(
-                                    "Frame %d fish %d converged at step %d "
-                                    "(ALM iter %d, loss=%.4f)",
+                                    "Frame %d fish %d converged at step %d (loss=%.4f)",
                                     frame_index,
                                     valid_fish_ids[idx],
                                     step,
-                                    alm_iter,
                                     fish_loss,
                                 )
                         else:
@@ -1371,7 +1564,7 @@ class CurveOptimizer:
 
                         prev_losses_fine[idx] = fish_loss
 
-                if alm_iter == 0 and step == 0:
+                if step == 0:
                     for idx, fid in enumerate(valid_fish_ids):
                         logger.info(
                             "Frame %d fish %d [%s]: fine step 0 loss=%.1f",
@@ -1380,36 +1573,6 @@ class CurveOptimizer:
                             init_type[fid],
                             final_per_fish_losses[idx],
                         )
-
-            # Update ALM multipliers
-            with torch.no_grad():
-                violations = _constraint_violations(fine_ctrl, fine_basis, cfg)
-                fine_lambdas = torch.clamp(
-                    fine_lambdas + fine_rho * violations, min=0.0
-                )
-                max_viol = violations.clamp(min=0.0).max().item()
-
-            logger.debug(
-                "Frame %d: fine ALM iter %d, max violation=%.4f, rho=%.1f",
-                frame_index,
-                alm_iter,
-                max_viol,
-                fine_rho,
-            )
-
-            if max_viol < cfg.alm_tol:
-                logger.debug(
-                    "Frame %d: fine ALM converged at outer iter %d",
-                    frame_index,
-                    alm_iter,
-                )
-                break
-
-            # Increase penalty and unfreeze fish for next outer iteration
-            fine_rho = min(fine_rho * cfg.alm_rho_factor, cfg.alm_rho_max)
-            fine_frozen_mask.zero_()
-            prev_losses_fine = [float("inf")] * n_fish
-            patience_counters_fine = [0] * n_fish
 
         n_converged = int(fine_frozen_mask.sum().item())
         logger.info(

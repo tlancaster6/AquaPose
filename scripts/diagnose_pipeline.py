@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 import time
@@ -237,6 +238,328 @@ def _print_ground_truth_comparison(
     print(f"\n  Overall mean control-point error: {overall_mean:.2f} mm")
 
 
+# ---------------------------------------------------------------------------
+# Raw data serialization helpers
+# ---------------------------------------------------------------------------
+
+
+def _save_metadata(
+    raw_dir: Path,
+    args: argparse.Namespace,
+    stage_timing: dict[str, float],
+    n_cameras: int,
+) -> None:
+    """Save run metadata as JSON."""
+    meta = {
+        "method": args.method,
+        "stop_frame": args.stop_frame,
+        "n_cameras": n_cameras,
+        "synthetic": args.synthetic,
+        "stage_timing": stage_timing,
+    }
+    if args.synthetic:
+        meta["n_fish"] = args.n_fish
+        meta["n_synthetic_cameras"] = args.n_synthetic_cameras
+    else:
+        meta["video_dir"] = str(args.video_dir)
+        meta["calibration"] = str(args.calibration)
+    (raw_dir / "metadata.json").write_text(json.dumps(meta, indent=2))
+
+
+def _save_models(
+    raw_dir: Path,
+    models: dict[str, object],
+) -> None:
+    """Save camera projection parameters as npz."""
+    arrays: dict[str, np.ndarray] = {}
+    scalars: dict[str, object] = {}
+    for cam_id, model in models.items():
+        arrays[f"K_{cam_id}"] = model.K.cpu().numpy()
+        arrays[f"R_{cam_id}"] = model.R.cpu().numpy()
+        arrays[f"t_{cam_id}"] = model.t.cpu().numpy()
+        arrays[f"normal_{cam_id}"] = model.normal.cpu().numpy()
+        # Scalars are the same across cameras; just grab from last
+        scalars["water_z"] = float(model.water_z)
+        scalars["n_air"] = float(model.n_air)
+        scalars["n_water"] = float(model.n_water)
+    # Store camera list and scalars as small arrays
+    arrays["camera_ids"] = np.array(sorted(models.keys()))
+    arrays["water_z"] = np.array([scalars["water_z"]])
+    arrays["n_air"] = np.array([scalars["n_air"]])
+    arrays["n_water"] = np.array([scalars["n_water"]])
+    np.savez_compressed(raw_dir / "models.npz", **arrays)
+
+
+def _save_video_frames(
+    raw_dir: Path,
+    video_set: object,
+    n_frames: int,
+    cam_ids: list[str],
+) -> None:
+    """Save undistorted video frames as one compressed npz per camera."""
+    frames_dir = raw_dir / "video_frames"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    # Collect all frames first, grouped by camera
+    cam_frames: dict[str, dict[str, np.ndarray]] = {c: {} for c in cam_ids}
+    for frame_idx in range(n_frames):
+        frame_dict = video_set.read_frame(frame_idx)
+        for cam_id in cam_ids:
+            if cam_id in frame_dict:
+                cam_frames[cam_id][f"frame_{frame_idx:04d}"] = frame_dict[cam_id]
+    for cam_id, frames in cam_frames.items():
+        if frames:
+            np.savez_compressed(frames_dir / f"{cam_id}.npz", **frames)
+
+
+def _save_detections(
+    raw_dir: Path,
+    detections_per_frame: list[dict[str, list]],
+) -> None:
+    """Save detection scalars as JSON and mask arrays as compressed npz."""
+    # JSON for scalars (bbox, area, confidence)
+    json_data: list[dict[str, list[dict]]] = []
+    mask_dir = raw_dir / "detection_masks"
+    mask_dir.mkdir(parents=True, exist_ok=True)
+
+    for frame_idx, frame_dets in enumerate(detections_per_frame):
+        frame_json: dict[str, list[dict]] = {}
+        for cam_id, dets in frame_dets.items():
+            cam_json: list[dict] = []
+            mask_arrays: dict[str, np.ndarray] = {}
+            for det_idx, det in enumerate(dets):
+                cam_json.append(
+                    {
+                        "bbox": list(det.bbox),
+                        "area": det.area,
+                        "confidence": det.confidence,
+                    }
+                )
+                if det.mask is not None:
+                    mask_arrays[f"mask_{det_idx}"] = det.mask
+            frame_json[cam_id] = cam_json
+            if mask_arrays:
+                np.savez_compressed(
+                    mask_dir / f"frame_{frame_idx:04d}_{cam_id}.npz",
+                    **mask_arrays,
+                )
+        json_data.append(frame_json)
+
+    (raw_dir / "detections.json").write_text(json.dumps(json_data, indent=1))
+
+
+def _save_segmentation_masks(
+    raw_dir: Path,
+    masks_per_frame: list[dict[str, list]],
+) -> None:
+    """Save post-segmentation mask+crop pairs as compressed npz."""
+    seg_dir = raw_dir / "segmentation_masks"
+    seg_dir.mkdir(parents=True, exist_ok=True)
+
+    for frame_idx, frame_masks in enumerate(masks_per_frame):
+        for cam_id, mask_crop_list in frame_masks.items():
+            arrays: dict[str, np.ndarray] = {}
+            crop_data: list[dict] = []
+            for i, (mask, crop) in enumerate(mask_crop_list):
+                arrays[f"mask_{i}"] = mask
+                crop_data.append(
+                    {
+                        "x1": crop.x1,
+                        "y1": crop.y1,
+                        "x2": crop.x2,
+                        "y2": crop.y2,
+                        "frame_h": crop.frame_h,
+                        "frame_w": crop.frame_w,
+                    }
+                )
+            if arrays:
+                np.savez_compressed(
+                    seg_dir / f"frame_{frame_idx:04d}_{cam_id}.npz",
+                    **arrays,
+                )
+                # Store crop metadata as companion JSON
+                crop_path = seg_dir / f"frame_{frame_idx:04d}_{cam_id}_crops.json"
+                crop_path.write_text(json.dumps(crop_data))
+
+
+def _save_track_snapshots(
+    raw_dir: Path,
+    snapshots_per_frame: list[list],
+) -> None:
+    """Save per-frame TrackSnapshot data as JSON."""
+    json_data: list[list[dict]] = []
+    for frame_snapshots in snapshots_per_frame:
+        frame_json: list[dict] = []
+        for snap in frame_snapshots:
+            frame_json.append(
+                {
+                    "fish_id": snap.fish_id,
+                    "position": snap.position.tolist(),
+                    "state": snap.state.value,
+                    "camera_detections": snap.camera_detections,
+                }
+            )
+        json_data.append(frame_json)
+    (raw_dir / "track_snapshots.json").write_text(json.dumps(json_data, indent=1))
+
+
+def _save_tracks(
+    raw_dir: Path,
+    tracks_per_frame: list[list],
+) -> None:
+    """Save per-frame confirmed track data as JSON."""
+    json_data: list[list[dict]] = []
+    for frame_tracks in tracks_per_frame:
+        frame_json: list[dict] = []
+        for track in frame_tracks:
+            frame_json.append(
+                {
+                    "fish_id": track.fish_id,
+                    "state": track.state.value,
+                    "camera_detections": track.camera_detections,
+                    "bboxes": {cam: list(bb) for cam, bb in track.bboxes.items()},
+                    "position": list(track.positions)[-1].tolist()
+                    if track.positions
+                    else None,
+                    "n_cameras": track.n_cameras,
+                    "confidence": track.confidence,
+                }
+            )
+        json_data.append(frame_json)
+    (raw_dir / "tracks.json").write_text(json.dumps(json_data, indent=1))
+
+
+def _save_midlines_2d(
+    raw_dir: Path,
+    midline_sets: list[dict[int, dict[str, object]]],
+) -> None:
+    """Save 2D midline points/half_widths as compressed npz."""
+    arrays: dict[str, np.ndarray] = {}
+    meta: list[dict] = []
+    for frame_idx, frame_set in enumerate(midline_sets):
+        for fish_id, cam_dict in frame_set.items():
+            for cam_id, m2d in cam_dict.items():
+                key = f"pts_{frame_idx}_{fish_id}_{cam_id}"
+                arrays[key] = m2d.points
+                arrays[f"hw_{frame_idx}_{fish_id}_{cam_id}"] = m2d.half_widths
+                meta.append(
+                    {
+                        "frame": frame_idx,
+                        "fish_id": fish_id,
+                        "camera_id": cam_id,
+                        "is_head_to_tail": m2d.is_head_to_tail,
+                    }
+                )
+    np.savez_compressed(raw_dir / "midlines_2d.npz", **arrays)
+    (raw_dir / "midlines_2d_meta.json").write_text(json.dumps(meta, indent=1))
+
+
+def _save_midlines_3d(
+    raw_dir: Path,
+    midlines_3d: list[dict[int, object]],
+) -> None:
+    """Save 3D midline data as compressed npz + companion JSON."""
+    from aquapose.reconstruction.triangulation import Midline3D
+
+    arrays: dict[str, np.ndarray] = {}
+    meta: list[dict] = []
+    for frame_idx, frame_dict in enumerate(midlines_3d):
+        for fish_id, m3d in frame_dict.items():
+            if not isinstance(m3d, Midline3D):
+                continue
+            prefix = f"{frame_idx}_{fish_id}"
+            arrays[f"ctrl_{prefix}"] = m3d.control_points
+            arrays[f"knots_{prefix}"] = m3d.knots
+            arrays[f"hw_{prefix}"] = m3d.half_widths
+            meta.append(
+                {
+                    "frame": frame_idx,
+                    "fish_id": fish_id,
+                    "arc_length": m3d.arc_length,
+                    "mean_residual": m3d.mean_residual,
+                    "max_residual": m3d.max_residual,
+                    "n_cameras": m3d.n_cameras,
+                    "degree": m3d.degree,
+                    "is_low_confidence": m3d.is_low_confidence,
+                    "per_camera_residuals": m3d.per_camera_residuals,
+                }
+            )
+    np.savez_compressed(raw_dir / "midlines_3d.npz", **arrays)
+    (raw_dir / "midlines_3d_meta.json").write_text(json.dumps(meta, indent=1))
+
+
+def _save_ground_truths(
+    raw_dir: Path,
+    ground_truths: list[dict[int, object]],
+) -> None:
+    """Save ground truth midlines (same format as midlines_3d)."""
+    from aquapose.reconstruction.triangulation import Midline3D
+
+    arrays: dict[str, np.ndarray] = {}
+    meta: list[dict] = []
+    for frame_idx, frame_dict in enumerate(ground_truths):
+        for fish_id, m3d in frame_dict.items():
+            if not isinstance(m3d, Midline3D):
+                continue
+            prefix = f"{frame_idx}_{fish_id}"
+            arrays[f"ctrl_{prefix}"] = m3d.control_points
+            arrays[f"knots_{prefix}"] = m3d.knots
+            arrays[f"hw_{prefix}"] = m3d.half_widths
+            meta.append(
+                {
+                    "frame": frame_idx,
+                    "fish_id": fish_id,
+                    "arc_length": m3d.arc_length,
+                    "mean_residual": m3d.mean_residual,
+                    "max_residual": m3d.max_residual,
+                    "n_cameras": m3d.n_cameras,
+                    "degree": m3d.degree,
+                }
+            )
+    np.savez_compressed(raw_dir / "ground_truths.npz", **arrays)
+    (raw_dir / "ground_truths_meta.json").write_text(json.dumps(meta, indent=1))
+
+
+def _save_fish_configs(
+    raw_dir: Path,
+    fish_configs: list,
+) -> None:
+    """Save FishConfig parameters as JSON."""
+    from dataclasses import asdict
+
+    configs = [asdict(fc) for fc in fish_configs]
+    # Convert tuples to lists for JSON
+    for cfg in configs:
+        cfg["position"] = list(cfg["position"])
+        cfg["velocity"] = list(cfg["velocity"])
+    (raw_dir / "fish_configs.json").write_text(json.dumps(configs, indent=2))
+
+
+def _save_optimizer_snapshots(
+    raw_dir: Path,
+    snapshots: list,
+) -> None:
+    """Save OptimizerSnapshot arrays as compressed npz."""
+    arrays: dict[str, np.ndarray] = {}
+    meta: list[dict] = []
+    for i, snap in enumerate(snapshots):
+        arrays[f"obs_2d_{i}"] = snap.obs_2d
+        arrays[f"cold_start_ctrl_{i}"] = snap.cold_start_ctrl
+        arrays[f"post_coarse_ctrl_{i}"] = snap.post_coarse_ctrl
+        arrays[f"post_fine_ctrl_{i}"] = snap.post_fine_ctrl
+        meta.append(
+            {
+                "index": i,
+                "fish_id": snap.fish_id,
+                "best_cam_id": snap.best_cam_id,
+                "cold_start_loss": snap.cold_start_loss,
+                "coarse_loss": snap.coarse_loss,
+                "fine_loss": snap.fine_loss,
+            }
+        )
+    np.savez_compressed(raw_dir / "optimizer_snapshots.npz", **arrays)
+    (raw_dir / "optimizer_snapshots_meta.json").write_text(json.dumps(meta, indent=2))
+
+
 def main() -> int:
     """Run pipeline stages directly and generate all diagnostic visualizations."""
     args = parse_args()
@@ -453,6 +776,22 @@ def _run_synthetic(args: argparse.Namespace) -> int:
     stage_timing["hdf5_write"] = time.perf_counter() - t0
 
     # -----------------------------------------------------------------------
+    # Save raw data for figure reproduction
+    # -----------------------------------------------------------------------
+    print("Saving raw data...")
+    t0 = time.perf_counter()
+    raw_dir = output_dir / "raw_data"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    _save_models(raw_dir, models)
+    _save_midlines_3d(raw_dir, midlines_3d)
+    _save_ground_truths(raw_dir, ground_truths)
+    _save_fish_configs(raw_dir, fish_configs)
+    if args.method == "curve" and optimizer.snapshots:
+        _save_optimizer_snapshots(raw_dir, optimizer.snapshots)
+    _save_metadata(raw_dir, args, stage_timing, n_cameras=len(models))
+    stage_timing["raw_data_save"] = time.perf_counter() - t0
+
+    # -----------------------------------------------------------------------
     # Timing summary
     # -----------------------------------------------------------------------
     print("\n=== Stage Timing Summary ===")
@@ -557,6 +896,7 @@ def _run_synthetic(args: argparse.Namespace) -> int:
         logger.exception("Failed to generate synthetic_report.md")
 
     print(f"\nDiagnostics written to: {diag_dir}")
+    print(f"Raw data written to: {raw_dir}")
     print(f"HDF5 output: {h5_path}")
     return 0
 
@@ -774,6 +1114,24 @@ def _run_real(args: argparse.Namespace) -> int:
     stage_timing["hdf5_write"] = time.perf_counter() - t0
 
     # -----------------------------------------------------------------------
+    # Save raw data for figure reproduction
+    # -----------------------------------------------------------------------
+    print("Saving raw data...")
+    t0 = time.perf_counter()
+    raw_dir = output_dir / "raw_data"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    _save_models(raw_dir, models)
+    _save_detections(raw_dir, detections_per_frame)
+    _save_segmentation_masks(raw_dir, masks_per_frame)
+    _save_track_snapshots(raw_dir, snapshots_per_frame)
+    _save_tracks(raw_dir, tracks_per_frame)
+    _save_midlines_2d(raw_dir, midline_sets)
+    _save_midlines_3d(raw_dir, midlines_3d)
+    if args.method == "curve" and optimizer.snapshots:
+        _save_optimizer_snapshots(raw_dir, optimizer.snapshots)
+    stage_timing["raw_data_save"] = time.perf_counter() - t0
+
+    # -----------------------------------------------------------------------
     # Timing summary
     # -----------------------------------------------------------------------
     print("\n=== Stage Timing Summary ===")
@@ -790,6 +1148,15 @@ def _run_real(args: argparse.Namespace) -> int:
     print("\n=== Generating Diagnostic Visualizations ===")
 
     with VideoSet(video_paths, undistortion=undist_maps) as vis_video_set:
+        # Save video frames inside VideoSet context
+        print("  Saving video frames...")
+        try:
+            _save_video_frames(
+                raw_dir, vis_video_set, args.stop_frame, list(models.keys())
+            )
+        except Exception as exc:
+            print(f"  [WARN] Failed to save video frames: {exc}")
+            logger.exception("Failed to save video frames")
         vis_funcs = [
             (
                 "detection_grid.png",
@@ -901,7 +1268,11 @@ def _run_real(args: argparse.Namespace) -> int:
         print(f"  [WARN] Failed to generate report.md: {exc}")
         logger.exception("Failed to generate report.md")
 
+    # Save metadata last (includes final timing)
+    _save_metadata(raw_dir, args, stage_timing, n_cameras=len(models))
+
     print(f"\nDiagnostics written to: {diag_dir}")
+    print(f"Raw data written to: {raw_dir}")
     print(f"HDF5 output: {h5_path}")
     return 0
 

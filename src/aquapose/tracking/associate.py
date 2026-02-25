@@ -73,6 +73,27 @@ class FrameAssociations:
 
 
 @dataclass
+class UnclaimedInfo:
+    """Unclaimed detection metadata from track claiming.
+
+    Carries both the unclaimed detection indices and the minimum pixel
+    distance each unclaimed detection had to any track's projection.
+    This allows downstream birth RANSAC to penalise near-claimed
+    detections that almost belonged to an existing track.
+
+    Attributes:
+        indices: Mapping from camera_id to list of unclaimed detection
+            indices (same semantics as the old unclaimed_indices dict).
+        min_claim_distance: Mapping from camera_id to {det_idx: closest
+            pixel distance to any track projection}. Detections far from
+            all tracks have ``inf``.
+    """
+
+    indices: dict[str, list[int]]
+    min_claim_distance: dict[str, dict[int, float]]
+
+
+@dataclass
 class ClaimResult:
     """Result of a track claiming detections across cameras.
 
@@ -203,6 +224,14 @@ def _cast_rays_for_detections(
     return origins, directions, centroids_uv
 
 
+# Pixel margin above reprojection_threshold within which a detection is
+# considered "near-claimed" by an existing track.  Detections whose minimum
+# distance to any track projection is between reprojection_threshold and
+# reprojection_threshold + NEAR_CLAIM_MARGIN are borderline — they almost
+# belonged to a track but fell just outside the claiming radius.
+_NEAR_CLAIM_MARGIN: float = 10.0
+
+
 def _score_candidate(
     candidate_3d: torch.Tensor,
     camera_ids: list[str],
@@ -210,12 +239,18 @@ def _score_candidate(
     models: dict[str, RefractiveProjectionModel],
     assigned_mask: dict[str, set[int]],
     reprojection_threshold: float,
+    near_claim_distances: dict[str, dict[int, float]] | None = None,
 ) -> tuple[list[tuple[str, int]], float]:
     """Score a candidate 3D centroid by counting inlier detections.
 
     Projects the candidate into each camera and counts detections whose
     centroid is within reprojection_threshold pixels. Only considers
     unassigned detections.
+
+    When ``near_claim_distances`` is provided, inliers that were close to
+    being claimed by an existing track have their residuals inflated.  This
+    penalises ghost candidates whose inlier sets consist of borderline
+    detections from different real fish.
 
     Args:
         candidate_3d: Candidate 3D centroid, shape (3,).
@@ -226,6 +261,10 @@ def _score_candidate(
         assigned_mask: Dict mapping camera_id to set of already-assigned
             detection indices.
         reprojection_threshold: Max pixel distance to count as inlier.
+        near_claim_distances: Optional mapping from camera_id to
+            {det_idx: min_px_distance_to_nearest_track}. When present,
+            detections within ``reprojection_threshold + _NEAR_CLAIM_MARGIN``
+            of a track receive a residual penalty.
 
     Returns:
         inliers: List of (camera_id, detection_index) tuples that are inliers.
@@ -235,6 +274,8 @@ def _score_candidate(
     inliers: list[tuple[str, int]] = []
     residuals: list[float] = []
     pt = candidate_3d.unsqueeze(0)  # (1, 3)
+
+    near_claim_limit = reprojection_threshold + _NEAR_CLAIM_MARGIN
 
     with torch.no_grad():
         for cam_id in camera_ids:
@@ -260,7 +301,20 @@ def _score_candidate(
                     best_idx = det_idx
             if best_idx >= 0:
                 inliers.append((cam_id, best_idx))
-                residuals.append(best_dist)
+                residual = best_dist
+
+                # Near-claim penalty: inflate residual for detections that
+                # were close to being claimed by an existing track.
+                if near_claim_distances is not None:
+                    cam_distances = near_claim_distances.get(cam_id)
+                    if cam_distances is not None and best_idx in cam_distances:
+                        claim_dist = cam_distances[best_idx]
+                        if claim_dist < near_claim_limit:
+                            # Closer to a track → higher penalty
+                            penalty = near_claim_limit - claim_dist
+                            residual += penalty
+
+                residuals.append(residual)
 
     mean_residual = float(np.mean(residuals)) if residuals else 0.0
     return inliers, mean_residual
@@ -405,6 +459,7 @@ def ransac_centroid_cluster(
     min_cameras: int = 2,
     seed_points: list[np.ndarray] | None = None,
     frame_index: int = 0,
+    near_claim_distances: dict[str, dict[int, float]] | None = None,
 ) -> FrameAssociations:
     """Associate detections across cameras to physical fish via RANSAC.
 
@@ -440,6 +495,10 @@ def ransac_centroid_cluster(
             previous frame. Each array has shape (3,). Used for prior-guided
             seeding to improve temporal consistency.
         frame_index: Frame index for bookkeeping (default 0).
+        near_claim_distances: Optional mapping from camera_id to
+            {det_idx: min_px_distance_to_nearest_track}. Passed through to
+            ``_score_candidate`` to penalise near-claimed inliers during
+            birth discovery.
 
     Returns:
         FrameAssociations with one AssociationResult per identified fish,
@@ -473,6 +532,12 @@ def ransac_centroid_cluster(
     # Candidates found: list of (inliers, mean_residual, candidate_3d)
     accepted_candidates: list[tuple[list[tuple[str, int]], float, torch.Tensor]] = []
 
+    # Mean-residual quality gate: reject candidates whose penalised mean
+    # residual exceeds this limit.  Ghost candidates built from near-claimed
+    # detections will have inflated residuals that exceed this gate even if
+    # they have enough inlier cameras.
+    max_mean_residual = reprojection_threshold * 0.8
+
     # --- Prior-guided pass ---
     if seed_points is not None:
         for seed in seed_points:
@@ -486,6 +551,7 @@ def ransac_centroid_cluster(
                 models,
                 assigned_mask,
                 reprojection_threshold,
+                near_claim_distances=near_claim_distances,
             )
             if len(inliers) >= min_cameras:
                 # Tentatively mark as assigned (will be confirmed in greedy step)
@@ -555,7 +621,14 @@ def ransac_centroid_cluster(
             models,
             _empty_mask,
             reprojection_threshold,
+            near_claim_distances=near_claim_distances,
         )
+
+        # Quality gate: reject candidates whose (potentially penalised)
+        # mean residual is too high — ghosts built from near-claimed
+        # detections will have inflated residuals.
+        if mean_residual > max_mean_residual:
+            continue
 
         if len(inliers) >= min_cameras:
             # Re-triangulate using ALL inlier rays (not just the 2-camera
@@ -678,7 +751,7 @@ def claim_detections_for_tracks(
     detections_per_camera: dict[str, list[Detection]],
     models: dict[str, RefractiveProjectionModel],
     reprojection_threshold: float = 15.0,
-) -> tuple[list[ClaimResult], dict[str, list[int]]]:
+) -> tuple[list[ClaimResult], UnclaimedInfo]:
     """Let existing tracks claim detections via reprojection proximity.
 
     For each track, projects its predicted 3D position into each camera and
@@ -696,18 +769,22 @@ def claim_detections_for_tracks(
         reprojection_threshold: Max pixel distance for a claim.
 
     Returns:
-        Tuple of (claims, unclaimed_indices):
+        Tuple of (claims, unclaimed_info):
         - claims: List of ClaimResult, one per track that claimed detections.
-        - unclaimed_indices: Dict mapping camera_id to list of unclaimed
-          detection indices.
+        - unclaimed_info: UnclaimedInfo with unclaimed indices and per-detection
+          minimum pixel distance to the nearest track projection.
     """
     if not predicted_positions or not detections_per_camera:
-        unclaimed = {
+        unclaimed_idx = {
             cam: list(range(len(dets)))
             for cam, dets in detections_per_camera.items()
             if len(dets) > 0
         }
-        return [], unclaimed
+        # No tracks → all detections are infinitely far from any track.
+        min_dist: dict[str, dict[int, float]] = {}
+        for cam, indices in unclaimed_idx.items():
+            min_dist[cam] = {i: float("inf") for i in indices}
+        return [], UnclaimedInfo(indices=unclaimed_idx, min_claim_distance=min_dist)
 
     # Precompute mask centroids per camera
     centroids_uv_per_camera: dict[str, list[tuple[float, float]]] = {}
@@ -725,6 +802,10 @@ def claim_detections_for_tracks(
     # Build candidate assignments: (pixel_distance, priority, track_id, cam_id, det_idx)
     candidates: list[tuple[float, int, int, str, int]] = []
 
+    # Track minimum pixel distance from each detection to ANY track projection.
+    # Used to inform birth RANSAC about near-claimed detections.
+    min_dist_per_det: dict[str, dict[int, float]] = {}
+
     for track_id, pred_3d in predicted_positions.items():
         pt = torch.tensor(pred_3d, dtype=torch.float32).unsqueeze(0)  # (1, 3)
         priority = track_priorities.get(track_id, 1)
@@ -740,8 +821,12 @@ def claim_detections_for_tracks(
                 proj_u = projected[0, 0].item()
                 proj_v = projected[0, 1].item()
 
+                cam_dists = min_dist_per_det.setdefault(cam_id, {})
                 for det_idx, (u, v) in enumerate(centroids):
                     dist = ((u - proj_u) ** 2 + (v - proj_v) ** 2) ** 0.5
+                    # Record minimum distance to any track
+                    if dist < cam_dists.get(det_idx, float("inf")):
+                        cam_dists[det_idx] = dist
                     if dist < reprojection_threshold:
                         candidates.append((dist, priority, track_id, cam_id, det_idx))
 
@@ -918,8 +1003,9 @@ def claim_detections_for_tracks(
                 )
             )
 
-    # Build unclaimed indices
+    # Build unclaimed indices and per-detection minimum claim distance
     unclaimed_indices: dict[str, list[int]] = {}
+    unclaimed_min_dist: dict[str, dict[int, float]] = {}
     for cam_id, dets in detections_per_camera.items():
         if not dets:
             continue
@@ -927,8 +1013,15 @@ def claim_detections_for_tracks(
         unclaimed = [i for i in range(len(dets)) if i not in taken]
         if unclaimed:
             unclaimed_indices[cam_id] = unclaimed
+            cam_dists = min_dist_per_det.get(cam_id, {})
+            unclaimed_min_dist[cam_id] = {
+                i: cam_dists.get(i, float("inf")) for i in unclaimed
+            }
 
-    return claims, unclaimed_indices
+    return claims, UnclaimedInfo(
+        indices=unclaimed_indices,
+        min_claim_distance=unclaimed_min_dist,
+    )
 
 
 def discover_births(
@@ -940,6 +1033,7 @@ def discover_births(
     min_cameras: int = 2,
     n_iter: int = 200,
     seed_points: list[np.ndarray] | None = None,
+    near_claim_distances: dict[str, dict[int, float]] | None = None,
 ) -> list[AssociationResult]:
     """Run RANSAC on unclaimed detections to discover new fish.
 
@@ -957,6 +1051,9 @@ def discover_births(
         n_iter: RANSAC iterations.
         seed_points: Optional 3D centroid priors (e.g. from existing tracks)
             to guide the RANSAC prior-guided pass.
+        near_claim_distances: Optional mapping from camera_id to
+            {original_det_idx: min_px_distance_to_nearest_track}. Indices
+            are remapped to filtered-list space before forwarding to RANSAC.
 
     Returns:
         List of AssociationResult for newly discovered fish.
@@ -976,6 +1073,21 @@ def discover_births(
     if not filtered_dets:
         return []
 
+    # Remap near_claim_distances from original-index space to filtered-index
+    # space so RANSAC sees contiguous 0..N-1 indices.
+    remapped_ncd: dict[str, dict[int, float]] | None = None
+    if near_claim_distances is not None:
+        remapped_ncd = {}
+        for cam_id, indices in unclaimed_indices.items():
+            cam_dists = near_claim_distances.get(cam_id)
+            if cam_dists is None:
+                continue
+            remapped_ncd[cam_id] = {
+                filtered_idx: cam_dists[orig_idx]
+                for filtered_idx, orig_idx in enumerate(indices)
+                if orig_idx in cam_dists
+            }
+
     result = ransac_centroid_cluster(
         detections_per_camera=filtered_dets,
         models=models,
@@ -984,6 +1096,7 @@ def discover_births(
         reprojection_threshold=reprojection_threshold,
         min_cameras=min_cameras,
         seed_points=seed_points,
+        near_claim_distances=remapped_ncd,
     )
 
     # Remap camera_detections indices from filtered-list space back to

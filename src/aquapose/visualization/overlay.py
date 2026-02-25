@@ -91,7 +91,7 @@ def draw_midline_overlay(
     pts_3d = spline(u_vals).astype(np.float32)  # shape (n_eval, 3)
 
     # Project all points to 2D
-    pts_tensor = torch.from_numpy(pts_3d)  # (n_eval, 3)
+    pts_tensor = torch.from_numpy(pts_3d).to(model.C.device)  # (n_eval, 3)
     pixels, valid = model.project(pts_tensor)  # (n_eval, 2), (n_eval,)
     pixels_np = pixels.detach().cpu().numpy()  # (n_eval, 2)
     valid_np = valid.detach().cpu().numpy()  # (n_eval,)

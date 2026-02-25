@@ -26,6 +26,54 @@ from aquapose.visualization.overlay import FISH_COLORS
 
 logger = logging.getLogger(__name__)
 
+
+def _robust_bounds(
+    combined: np.ndarray,
+    percentile_lo: float = 2.0,
+    percentile_hi: float = 98.0,
+) -> tuple[np.ndarray, float] | None:
+    """Compute robust axis bounds, filtering NaN/Inf and using percentiles.
+
+    Args:
+        combined: Array of shape (N, 3) with all points.
+        percentile_lo: Lower percentile for outlier rejection.
+        percentile_hi: Upper percentile for outlier rejection.
+
+    Returns:
+        Tuple of (centers, max_range) or None if no valid data.
+    """
+    # Filter out NaN and Inf rows
+    finite_mask = np.all(np.isfinite(combined), axis=1)
+    n_bad = int(np.sum(~finite_mask))
+    if n_bad > 0:
+        logger.warning(
+            "Axis bounds: ignored %d NaN/Inf points out of %d total",
+            n_bad,
+            len(combined),
+        )
+    valid = combined[finite_mask]
+    if len(valid) == 0:
+        return None
+
+    lo = np.percentile(valid, percentile_lo, axis=0)
+    hi = np.percentile(valid, percentile_hi, axis=0)
+
+    # Warn if outliers were clipped
+    n_outliers = int(np.sum(np.any(valid < lo, axis=1) | np.any(valid > hi, axis=1)))
+    if n_outliers > 0:
+        logger.warning(
+            "Axis bounds: %d outlier points outside [%.1f, %.1f] percentile range",
+            n_outliers,
+            percentile_lo,
+            percentile_hi,
+        )
+
+    ranges = hi - lo
+    max_range = float(ranges.max())
+    centers = (lo + hi) / 2.0
+    return centers, max_range
+
+
 # Convert BGR to RGB float tuples for matplotlib
 _FISH_COLORS_RGB: list[tuple[float, float, float]] = [
     (b / 255.0, g / 255.0, r / 255.0) for (b, g, r) in FISH_COLORS
@@ -93,16 +141,14 @@ def plot_3d_frame(
     # Equal aspect ratio approximation for 3D axes
     if all_pts:
         combined = np.vstack(all_pts)
-        lo = np.percentile(combined, 2, axis=0)
-        hi = np.percentile(combined, 98, axis=0)
-        ranges = hi - lo
-        max_range = float(ranges.max())
-        if max_range > 0:
-            centers = (lo + hi) / 2.0
-            for set_lim, center in zip(
-                [ax.set_xlim, ax.set_ylim, ax.set_zlim], centers, strict=True
-            ):
-                set_lim(center - max_range / 2.0, center + max_range / 2.0)
+        bounds = _robust_bounds(combined)
+        if bounds is not None:
+            centers, max_range = bounds
+            if max_range > 0:
+                for set_lim, center in zip(
+                    [ax.set_xlim, ax.set_ylim, ax.set_zlim], centers, strict=True
+                ):
+                    set_lim(center - max_range / 2.0, center + max_range / 2.0)
 
     return fig
 
@@ -162,13 +208,13 @@ def render_3d_animation(
         return
 
     combined = np.vstack(all_pts)
-    # Use 2nd/98th percentile bounds to ignore outlier reconstructions
-    lo = np.percentile(combined, 2, axis=0)
-    hi = np.percentile(combined, 98, axis=0)
-    ranges = hi - lo
-    max_range = float(ranges.max())
+    bounds = _robust_bounds(combined)
+    if bounds is None:
+        logger.warning("render_3d_animation: no finite midline points")
+        plt.close(fig)
+        return
+    centers, max_range = bounds
     pad = max(max_range * 0.1, 0.01)
-    centers = (lo + hi) / 2.0
     half = max_range / 2.0 + pad
 
     # Precompute centroids for trail rendering

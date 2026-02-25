@@ -155,6 +155,7 @@ Recent decisions affecting current work:
 - Phase 7 added: Multi-View Triangulation
 - Phase 8 added: End-to-end integration testing and benchmarking
 - Phase 9 added: Curve-based optimization as a replacement for triangulation
+- Phase 10 added: pre-alpha refactor
 
 ### Pending Todos
 

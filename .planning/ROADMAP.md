@@ -186,3 +186,13 @@ Plans:
 Plans:
 - [x] 09-01-PLAN.md — Core CurveOptimizer module: B-spline basis, chamfer loss, coarse-to-fine L-BFGS, warm-start, unit tests (2026-02-23)
 - [ ] 09-02-PLAN.md — Pipeline wiring (--method flag in diagnose_pipeline.py) and human verification on real data
+
+### Phase 10: pre-alpha refactor
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 9
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 10 to break down)

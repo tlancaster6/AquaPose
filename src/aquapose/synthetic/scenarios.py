@@ -20,6 +20,7 @@ from aquapose.synthetic.detection import (
     generate_detection_dataset,
 )
 from aquapose.synthetic.trajectory import (
+    InitialFishState,
     MotionConfig,
     SchoolingConfig,
     TankConfig,
@@ -44,30 +45,66 @@ def _register(name: str):
 @_register("crossing_paths")
 def crossing_paths(
     difficulty: float = 0.5,
+    n_frames: int | None = None,
     seed: int = 42,
 ) -> tuple[TrajectoryConfig, NoiseConfig]:
-    """Two fish on approximately crossing trajectories.
+    """Two fish on crossing trajectories that intersect near the tank centre.
 
     Tests the tracker's ability to maintain correct IDs when two fish
-    trajectories intersect. Fish start on opposite sides of the tank and
-    swim toward each other. Higher difficulty reduces the crossing angle,
-    making the proximity event more ambiguous.
+    trajectories cross. Higher difficulty means a shallower crossing
+    angle (more ambiguous — nearly parallel velocities).
 
-    The heading-based random walk will naturally deviate from the initial
-    heading over time. To keep fish approximately on their initial paths,
-    ``sigma_heading`` is set to a low value (0.01). The crossing geometry
-    is approximate, not scripted — adequate for tracker evaluation.
+    The crossing half-angle is derived from ``difficulty``:
+    - difficulty=0 → 90° crossing (head-on, easy — opposite velocities)
+    - difficulty=1 → near-parallel paths (~5° crossing, hard — similar
+      velocities, slow approach and divergence)
+
+    Both fish start on the same side of the tank (negative X), offset
+    vertically, and swim toward positive X with a slight inward
+    convergence that brings them together near the centre.
 
     Args:
-        difficulty: Crossing ambiguity level in [0, 1]. 0 = 90-degree
-            crossing (easy to track), 1 = near-head-on collision (hard).
-            Default 0.5.
+        difficulty: Crossing ambiguity level in [0, 1]. 0 = head-on
+            (easy to track), 1 = near-parallel (hard). Default 0.5.
+        n_frames: Override number of frames. If None, uses
+            ``duration_seconds * fps`` (default 300 frames).
         seed: Random seed for determinism.
 
     Returns:
         Tuple of (TrajectoryConfig, NoiseConfig).
     """
+    import math
+
     difficulty = float(max(0.0, min(1.0, difficulty)))
+
+    tank = TankConfig(radius=1.0, depth=1.0, water_z=0.75)
+
+    # Half-angle between each fish's velocity and the shared travel axis.
+    # difficulty=0 → 45° half-angle (90° crossing — head-on, easy)
+    # difficulty=1 → 2.5° half-angle (5° crossing — near-parallel, hard)
+    half_angle = math.radians(45.0 - 42.5 * difficulty)
+
+    # Both fish start on the left side of the tank, offset above/below
+    # the centreline. Lateral offset is set so paths cross near x=0
+    # given the convergence angle.
+    #
+    # With travel distance ~0.7m to centre at speed 0.15 m/s, the lateral
+    # offset = 0.7 * tan(half_angle) keeps the crossing near the middle.
+    spawn_x = -0.7
+    lateral_offset = 0.7 * math.tan(half_angle)
+    mid_z = tank.water_z + tank.depth / 2.0
+
+    pos_a = (spawn_x, lateral_offset, mid_z)
+    pos_b = (spawn_x, -lateral_offset, mid_z)
+
+    # Fish A angles slightly downward (-half_angle), B slightly upward
+    heading_a = -half_angle  # toward positive X, converging downward
+    heading_b = half_angle  # toward positive X, converging upward
+
+    initial_states = [
+        InitialFishState(position=pos_a, heading_xy=heading_a, speed=0.15),
+        InitialFishState(position=pos_b, heading_xy=heading_b, speed=0.15),
+    ]
 
     # Use low heading noise so fish roughly follow their initial direction
     motion = MotionConfig(
@@ -77,14 +114,18 @@ def crossing_paths(
         s_max=0.4,
     )
 
+    fps = 30.0
+    duration = n_frames / fps if n_frames is not None else 10.0
     cfg = TrajectoryConfig(
         n_fish=2,
-        duration_seconds=10.0,
-        fps=30.0,
+        duration_seconds=duration,
+        fps=fps,
         random_seed=seed,
         motion=motion,
         schooling=SchoolingConfig.independent(),
-        tank=TankConfig(radius=1.0, depth=1.0, water_z=0.75),
+        tank=tank,
+        initial_states=initial_states,
+        collision_avoidance=False,
     )
 
     noise = NoiseConfig()
@@ -95,6 +136,7 @@ def crossing_paths(
 @_register("track_fragmentation")
 def track_fragmentation(
     miss_rate: float = 0.25,
+    n_frames: int | None = None,
     seed: int = 42,
 ) -> tuple[TrajectoryConfig, NoiseConfig]:
     """Two well-separated fish with an elevated miss rate.
@@ -111,11 +153,15 @@ def track_fragmentation(
     Args:
         miss_rate: Probability that each valid detection is missed per
             camera per frame. Default 0.25.
+        n_frames: Override number of frames. If None, uses
+            ``duration_seconds * fps`` (default 450 frames).
         seed: Random seed for determinism.
 
     Returns:
         Tuple of (TrajectoryConfig, NoiseConfig).
     """
+    fps = 30.0
+    duration = n_frames / fps if n_frames is not None else 15.0
     motion = MotionConfig(
         s_preferred=0.05,
         s_min=0.01,
@@ -125,8 +171,8 @@ def track_fragmentation(
 
     cfg = TrajectoryConfig(
         n_fish=2,
-        duration_seconds=15.0,
-        fps=30.0,
+        duration_seconds=duration,
+        fps=fps,
         random_seed=seed,
         motion=motion,
         schooling=SchoolingConfig.independent(),
@@ -144,6 +190,7 @@ def track_fragmentation(
 @_register("tight_schooling")
 def tight_schooling(
     n_fish: int = 5,
+    n_frames: int | None = None,
     seed: int = 42,
 ) -> tuple[TrajectoryConfig, NoiseConfig]:
     """Fish schooling tightly to test ID maintenance under close proximity.
@@ -153,21 +200,47 @@ def tight_schooling(
     strong cohesion and alignment, causing fish to cluster and frequently
     swap spatial positions.
 
+    Fish are initialised in a compact cluster (within the 0.4m cohesion
+    radius) near the tank centre so the schooling forces engage
+    immediately.
+
     Args:
         n_fish: Number of fish in the school. Default 5.
+        n_frames: Override number of frames. If None, uses
+            ``duration_seconds * fps`` (default 300 frames).
         seed: Random seed for determinism.
 
     Returns:
         Tuple of (TrajectoryConfig, NoiseConfig).
     """
+    import math
+
+    tank = TankConfig(radius=1.0, depth=1.0, water_z=0.75)
+    mid_z = tank.water_z + tank.depth / 2.0
+
+    # Place fish in a ring of radius 0.15m around the tank centre,
+    # evenly spaced, all heading in the +X direction.
+    cluster_r = 0.15
+    initial_states = []
+    for i in range(n_fish):
+        angle = 2.0 * math.pi * i / n_fish
+        x = cluster_r * math.cos(angle)
+        y = cluster_r * math.sin(angle)
+        initial_states.append(
+            InitialFishState(position=(x, y, mid_z), heading_xy=0.0, speed=0.1)
+        )
+
+    fps = 30.0
+    duration = n_frames / fps if n_frames is not None else 10.0
     cfg = TrajectoryConfig(
         n_fish=n_fish,
-        duration_seconds=10.0,
-        fps=30.0,
+        duration_seconds=duration,
+        fps=fps,
         random_seed=seed,
         motion=MotionConfig(s_preferred=0.1),
         schooling=SchoolingConfig.tight_school(),
-        tank=TankConfig(radius=1.0, depth=1.0, water_z=0.75),
+        tank=tank,
+        initial_states=initial_states,
     )
 
     noise = NoiseConfig()
@@ -177,6 +250,7 @@ def tight_schooling(
 
 @_register("startle_response")
 def startle_response(
+    n_frames: int | None = None,
     seed: int = 42,
 ) -> tuple[TrajectoryConfig, NoiseConfig]:
     """Baseline steady-swimming configuration for startle response study.
@@ -194,6 +268,8 @@ def startle_response(
     externally.
 
     Args:
+        n_frames: Override number of frames. If None, uses
+            ``duration_seconds * fps`` (default 300 frames).
         seed: Random seed for determinism.
 
     Returns:
@@ -207,10 +283,12 @@ def startle_response(
         sigma_pitch=0.002,
     )
 
+    fps = 30.0
+    duration = n_frames / fps if n_frames is not None else 10.0
     cfg = TrajectoryConfig(
         n_fish=2,
-        duration_seconds=10.0,
-        fps=30.0,
+        duration_seconds=duration,
+        fps=fps,
         random_seed=seed,
         motion=motion,
         schooling=SchoolingConfig.independent(),

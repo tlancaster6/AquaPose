@@ -43,6 +43,10 @@ tests/
 └── e2e/            # End-to-end pipeline tests
 ```
 
+## Common Pitfalls
+
+- **CUDA tensors → numpy**: Always use `.cpu().numpy()`, never bare `.numpy()`. Projection and model functions may return CUDA tensors.
+
 ## Domain Conventions
 
 - **Refractive projection**: 3D-to-pixel through Snell's law at air-water interface (flat surface, no glass)

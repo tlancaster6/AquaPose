@@ -130,6 +130,23 @@ class TankConfig:
 
 
 @dataclass
+class InitialFishState:
+    """Explicit initial state for a single fish.
+
+    Attributes:
+        position: 3D world position (x, y, z) in metres.
+        heading_xy: Horizontal heading angle in radians.
+        heading_z: Vertical heading (pitch) angle in radians.
+        speed: Initial swimming speed in m/s.
+    """
+
+    position: tuple[float, float, float]
+    heading_xy: float
+    heading_z: float = 0.0
+    speed: float = 0.1
+
+
+@dataclass
 class TrajectoryConfig:
     """Full configuration for a multi-fish trajectory simulation.
 
@@ -141,6 +158,12 @@ class TrajectoryConfig:
         motion: Motion model parameters.
         schooling: Social force parameters.
         tank: Tank geometry parameters.
+        initial_states: Optional explicit initial states for each fish.
+            If provided, must have exactly ``n_fish`` entries. Overrides
+            random initialisation from ``_init_positions``.
+        collision_avoidance: Whether to apply pairwise collision avoidance
+            steering. Default True. Set to False for scenarios that
+            intentionally require fish to cross paths.
     """
 
     n_fish: int = 3
@@ -150,6 +173,8 @@ class TrajectoryConfig:
     motion: MotionConfig = field(default_factory=MotionConfig)
     schooling: SchoolingConfig = field(default_factory=SchoolingConfig.independent)
     tank: TankConfig = field(default_factory=TankConfig)
+    initial_states: list[InitialFishState] | None = None
+    collision_avoidance: bool = True
 
 
 @dataclass
@@ -411,10 +436,28 @@ def generate_trajectories(config: TrajectoryConfig) -> TrajectoryResult:
     n_frames = round(config.duration_seconds * config.fps)
     dt = 1.0 / config.fps
 
-    positions, heading_xy, heading_z, speeds = _init_positions(config.n_fish, tank, rng)
-
-    # Update speed means to s_preferred
-    speeds[:] = motion.s_preferred
+    if config.initial_states is not None:
+        if len(config.initial_states) != config.n_fish:
+            msg = (
+                f"initial_states has {len(config.initial_states)} entries "
+                f"but n_fish is {config.n_fish}"
+            )
+            raise ValueError(msg)
+        positions = np.array(
+            [s.position for s in config.initial_states], dtype=np.float64
+        )
+        heading_xy = np.array(
+            [s.heading_xy for s in config.initial_states], dtype=np.float64
+        )
+        heading_z = np.array(
+            [s.heading_z for s in config.initial_states], dtype=np.float64
+        )
+        speeds = np.array([s.speed for s in config.initial_states], dtype=np.float64)
+    else:
+        positions, heading_xy, heading_z, speeds = _init_positions(
+            config.n_fish, tank, rng
+        )
+        speeds[:] = motion.s_preferred
 
     states = np.zeros((n_frames, config.n_fish, 7), dtype=np.float32)
 
@@ -430,7 +473,11 @@ def generate_trajectories(config: TrajectoryConfig) -> TrajectoryResult:
 
         # --- Compute forces ---
         boundary = _boundary_force(positions, tank, heading_xy)
-        collision = _collision_force(positions, heading_xy)
+        collision = (
+            _collision_force(positions, heading_xy)
+            if config.collision_avoidance
+            else np.zeros(config.n_fish, dtype=np.float64)
+        )
         social = _schooling_forces(positions, heading_xy, schooling)
 
         # --- Update headings ---

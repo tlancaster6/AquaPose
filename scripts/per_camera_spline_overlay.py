@@ -1,18 +1,19 @@
-"""Per-camera spline overlay diagnostic for 3D triangulation debugging.
+"""Per-camera spline overlay diagnostic for 3D reconstruction debugging.
 
 Runs the full 5-stage pipeline for 30 frames, then generates per-camera
-overlay images at frame 29 showing:
+overlay images at a target frame showing:
   - Undistorted camera frame as background
   - 2D midline points (from midline extraction) as colored dots
   - 3D spline reprojections as colored polylines with width indicators
   - Per-fish annotation: fish_id, residual, arc_length
 
-If the 2D dots land on the fish but the 3D lines don't, the triangulation
+If the 2D dots land on the fish but the 3D lines don't, the reconstruction
 is broken. If both miss, it's a calibration or coordinate-space issue.
 
 Usage:
     python scripts/per_camera_spline_overlay.py
     python scripts/per_camera_spline_overlay.py --stop-frame 60 --target-frame 59
+    python scripts/per_camera_spline_overlay.py --method curve
 """
 
 from __future__ import annotations
@@ -31,7 +32,9 @@ import numpy as np
 # ---------------------------------------------------------------------------
 DEFAULT_VIDEO_DIR = Path("C:/Users/tucke/Desktop/Aqua/AquaPose/videos/core_videos")
 DEFAULT_CALIBRATION = Path("C:/Users/tucke/Desktop/Aqua/AquaPose/calibration.json")
-DEFAULT_UNET_WEIGHTS = Path("C:/Users/tucke/Desktop/Aqua/AquaPose/unet/best_model.pth")
+DEFAULT_UNET_WEIGHTS = Path(
+    "C:/Users/tucke/Desktop/Aqua/AquaPose/unet/run2/best_model.pth"
+)
 DEFAULT_YOLO_WEIGHTS = Path(
     "C:/Users/tucke/Desktop/Aqua/AquaPose/yolo/train_v2/weights/best.pt"
 )
@@ -90,6 +93,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_TARGET_FRAME,
         help="Frame index to generate overlays for (default: 29)",
+    )
+    parser.add_argument(
+        "--method",
+        choices=["triangulation", "curve"],
+        default="triangulation",
+        help="Reconstruction method: triangulation (current) or curve (new optimizer)",
     )
     return parser.parse_args()
 
@@ -183,7 +192,7 @@ def main() -> int:
     # -----------------------------------------------------------------------
     # Imports (heavy, deferred)
     # -----------------------------------------------------------------------
-    import scipy.interpolate as _scipy_interp
+    import scipy.interpolate
     import torch
 
     from aquapose.calibration.loader import (
@@ -198,18 +207,6 @@ def main() -> int:
         run_segmentation,
     )
     from aquapose.reconstruction.midline import MidlineExtractor
-    from aquapose.reconstruction.triangulation import (
-        DEFAULT_INLIER_THRESHOLD,
-        MIN_BODY_POINTS,
-        N_SAMPLE_POINTS,
-        SPLINE_K,
-        SPLINE_KNOTS,
-        Midline3D,
-        _align_midline_orientations,
-        _fit_spline,
-        _pixel_half_width_to_metres,
-        _triangulate_body_point,
-    )
     from aquapose.segmentation.model import UNetSegmentor
     from aquapose.tracking.tracker import FishTracker
     from aquapose.visualization.overlay import FISH_COLORS, draw_midline_overlay
@@ -312,140 +309,31 @@ def main() -> int:
     )
 
     # -----------------------------------------------------------------------
-    # Stage 5: Triangulation (same logic as diagnose_pipeline.py)
+    # Stage 5: Reconstruction (triangulation or curve optimizer)
     # -----------------------------------------------------------------------
-    print("  Stage 5: Triangulation...")
-    midlines_3d: list[dict[int, Midline3D]] = []
+    print(f"  Stage 5: Reconstruction ({args.method})...")
+    midlines_3d: list[dict[int, object]] = []
 
-    for frame_idx, midline_set in enumerate(midline_sets):
-        results: dict[int, Midline3D] = {}
-        for fish_id, cam_midlines in midline_set.items():
-            cam_midlines = _align_midline_orientations(
-                cam_midlines, models, DEFAULT_INLIER_THRESHOLD
+    if args.method == "curve":
+        from aquapose.reconstruction.curve_optimizer import (
+            CurveOptimizer,
+            CurveOptimizerConfig,
+        )
+
+        optimizer = CurveOptimizer(config=CurveOptimizerConfig(max_depth=2.0))
+        for frame_idx, midline_set in enumerate(midline_sets):
+            results = optimizer.optimize_midlines(
+                midline_set, models, frame_index=frame_idx
             )
+            midlines_3d.append(results)
+    else:
+        from aquapose.reconstruction.triangulation import triangulate_midlines
 
-            valid_indices: list[int] = []
-            pts_3d_list: list[np.ndarray] = []
-            per_point_residuals: list[float] = []
-            per_point_n_cams: list[int] = []
-            per_point_inlier_ids: list[list[str]] = []
-            per_point_hw_px: list[float] = []
-            per_point_depths: list[float] = []
-
-            for i in range(N_SAMPLE_POINTS):
-                pixels: dict[str, torch.Tensor] = {}
-                hw_px_list: list[float] = []
-                for cam_id, midline in cam_midlines.items():
-                    if cam_id not in models:
-                        continue
-                    pixels[cam_id] = torch.from_numpy(midline.points[i]).float()
-                    hw_px_list.append(float(midline.half_widths[i]))
-
-                result = _triangulate_body_point(
-                    pixels, models, DEFAULT_INLIER_THRESHOLD
-                )
-                if result is None:
-                    continue
-
-                pt3d, inlier_ids, mean_res = result
-                pt3d_np = pt3d.detach().cpu().numpy().astype(np.float64)
-
-                valid_indices.append(i)
-                pts_3d_list.append(pt3d_np)
-                per_point_residuals.append(mean_res)
-                per_point_n_cams.append(len(inlier_ids))
-                per_point_inlier_ids.append(inlier_ids)
-
-                avg_hw_px = float(np.mean(hw_px_list)) if hw_px_list else 0.0
-                per_point_hw_px.append(avg_hw_px)
-
-                water_z = next(iter(models.values())).water_z
-                depth_m = max(0.0, float(pt3d_np[2]) - water_z)
-                per_point_depths.append(depth_m)
-
-            if len(valid_indices) < MIN_BODY_POINTS:
-                continue
-
-            u_param = np.array(
-                [i / (N_SAMPLE_POINTS - 1) for i in valid_indices], dtype=np.float64
+        for frame_idx, midline_set in enumerate(midline_sets):
+            frame_results = triangulate_midlines(
+                midline_set, models, frame_index=frame_idx, max_depth=0.5
             )
-            pts_3d_arr = np.stack(pts_3d_list, axis=0)
-
-            spline_result = _fit_spline(u_param, pts_3d_arr)
-            if spline_result is None:
-                continue
-
-            control_points, arc_length = spline_result
-
-            # Half-width conversion
-            hw_metres_valid: list[float] = []
-            for hw_px, depth_m, inlier_ids in zip(
-                per_point_hw_px, per_point_depths, per_point_inlier_ids, strict=True
-            ):
-                if inlier_ids:
-                    cam_model = models[inlier_ids[0]]
-                    focal_px = float(
-                        (cam_model.K[0, 0].item() + cam_model.K[1, 1].item()) / 2.0
-                    )
-                else:
-                    focal_px = next(iter(models.values())).K[0, 0].item()
-                hw_m = _pixel_half_width_to_metres(hw_px, depth_m, focal_px)
-                hw_metres_valid.append(hw_m)
-
-            hw_metres_all = np.zeros(N_SAMPLE_POINTS, dtype=np.float32)
-            if len(valid_indices) >= 2:
-                fill_bounds = (hw_metres_valid[0], hw_metres_valid[-1])
-                interp = _scipy_interp.interp1d(
-                    u_param,
-                    np.array(hw_metres_valid, dtype=np.float64),
-                    kind="linear",
-                    bounds_error=False,
-                    fill_value=fill_bounds,  # type: ignore[arg-type]
-                )
-                u_all = np.linspace(0.0, 1.0, N_SAMPLE_POINTS)
-                hw_metres_all = interp(u_all).astype(np.float32)
-            elif len(valid_indices) == 1:
-                hw_metres_all[:] = hw_metres_valid[0]
-
-            # Spline-based residuals
-            _spline_obj = _scipy_interp.BSpline(
-                SPLINE_KNOTS, control_points.astype(np.float64), SPLINE_K
-            )
-            _u_sample = np.linspace(0.0, 1.0, N_SAMPLE_POINTS)
-            _spline_pts_3d = torch.from_numpy(_spline_obj(_u_sample).astype(np.float32))
-            _all_res: list[float] = []
-            _active_cams = [c for c in cam_midlines if c in models]
-            for _cid in _active_cams:
-                _proj_px, _valid = models[_cid].project(_spline_pts_3d)
-                _proj_np = _proj_px.detach().cpu().numpy()
-                _valid_np = _valid.detach().cpu().numpy()
-                _obs = cam_midlines[_cid].points
-                for _j in range(N_SAMPLE_POINTS):
-                    if _valid_np[_j] and not np.any(np.isnan(_proj_np[_j])):
-                        _all_res.append(float(np.linalg.norm(_proj_np[_j] - _obs[_j])))
-            mean_residual = float(np.mean(_all_res)) if _all_res else 0.0
-            max_residual_val = float(np.max(_all_res)) if _all_res else 0.0
-
-            min_n_cams = min(per_point_n_cams) if per_point_n_cams else 0
-            n_weak = sum(1 for nc in per_point_n_cams if nc < 3)
-            is_low_confidence = n_weak > 0.2 * len(per_point_n_cams)
-
-            midline_3d = Midline3D(
-                fish_id=fish_id,
-                frame_index=frame_idx,
-                control_points=control_points,
-                knots=SPLINE_KNOTS.astype(np.float32),
-                degree=SPLINE_K,
-                arc_length=arc_length,
-                half_widths=hw_metres_all,
-                n_cameras=min_n_cams,
-                mean_residual=mean_residual,
-                max_residual=max_residual_val,
-                is_low_confidence=is_low_confidence,
-            )
-            results[fish_id] = midline_3d
-
-        midlines_3d.append(results)
+            midlines_3d.append(frame_results)
 
     elapsed = time.perf_counter() - t0
     print(f"Pipeline complete in {elapsed:.1f}s")
@@ -509,7 +397,7 @@ def main() -> int:
 
             # Annotate with fish_id, residual, arc_length near the spline head
             # Project the first control point to find label position
-            spline = _scipy_interp.BSpline(
+            spline = scipy.interpolate.BSpline(
                 m3d.knots.astype(np.float64),
                 m3d.control_points.astype(np.float64),
                 m3d.degree,
@@ -537,7 +425,7 @@ def main() -> int:
         # --- Camera label ---
         cv2.putText(
             frame,
-            f"Camera: {cam_id}  Frame: {target}",
+            f"Camera: {cam_id}  Frame: {target}  Method: {args.method}",
             (10, 30),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.8,

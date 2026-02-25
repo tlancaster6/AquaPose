@@ -36,6 +36,7 @@ from aquapose.synthetic.stubs import (
     generate_synthetic_tracks,
 )
 from aquapose.synthetic.trajectory import (
+    InitialFishState,
     MotionConfig,
     SchoolingConfig,
     TankConfig,
@@ -47,6 +48,7 @@ from aquapose.synthetic.trajectory import (
 __all__ = [
     "DetectionGenConfig",
     "FishConfig",
+    "InitialFishState",
     "MotionConfig",
     "NoiseConfig",
     "SchoolingConfig",

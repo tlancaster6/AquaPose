@@ -212,6 +212,10 @@ def generate_detection_dataset(
                 u_true = float(pixels_np[fish_idx, 0])
                 v_true = float(pixels_np[fish_idx, 1])
 
+                # Skip fish whose centroid projects outside image bounds
+                if u_true < 0 or u_true >= img_w or v_true < 0 or v_true >= img_h:
+                    continue
+
                 # Velocity-dependent miss rate
                 speed = float(frame_speeds[fish_idx])
                 speed_norm = speed / (noise_config.speed_threshold + 1e-12)

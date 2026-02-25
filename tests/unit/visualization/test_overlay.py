@@ -68,6 +68,8 @@ def _make_model(n_eval: int, pixels: np.ndarray | None = None) -> MagicMock:
     K[1, 1] = 500.0  # fy
     model.K = K
     model.water_z = 0.0
+    # Camera center (used for .to(model.C.device) in overlay code)
+    model.C = torch.tensor([0.0, 0.0, 0.0], dtype=torch.float32)
 
     # project() returns (pixels_tensor, valid_mask)
     px_tensor = torch.from_numpy(pixels)

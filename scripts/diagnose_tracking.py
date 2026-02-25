@@ -24,7 +24,10 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from aquapose.calibration.projection import RefractiveProjectionModel
 
 import numpy as np
 
@@ -79,13 +82,25 @@ class ScenarioResult:
     output_dir: Path
 
 
-# All scenario names (order used by --scenario all)
-_ALL_SCENARIOS = [
-    "crossing_paths",
+# All scenario names (order used by --scenario all).
+# Entries can be plain strings or (name, extra_kwargs) tuples for variants.
+_ALL_SCENARIOS: list[str | tuple[str, dict[str, object]]] = [
+    ("crossing_paths", {"difficulty": 0.0}),
+    ("crossing_paths", {"difficulty": 0.5}),
+    ("crossing_paths", {"difficulty": 1.0}),
     "track_fragmentation",
     "tight_schooling",
     "startle_response",
 ]
+
+
+def _unpack_scenario_entry(
+    entry: str | tuple[str, dict[str, object]],
+) -> tuple[str, dict[str, object]]:
+    """Unpack a scenario list entry into (name, extra_kwargs)."""
+    if isinstance(entry, str):
+        return entry, {}
+    return entry[0], entry[1]
 
 
 # ---------------------------------------------------------------------------
@@ -316,6 +331,65 @@ def compute_tracking_metrics(
     metrics.per_fish_tracked_fraction = per_fish_tracked_fraction
 
     return metrics
+
+
+# ---------------------------------------------------------------------------
+# CSV export
+# ---------------------------------------------------------------------------
+
+
+def _export_trajectories_csv(
+    gt_states: np.ndarray,
+    tracker_positions_per_frame: list[dict[int, np.ndarray]],
+    fps: float,
+    output_dir: Path,
+) -> None:
+    """Export GT and tracked 3D trajectories as CSV files.
+
+    Args:
+        gt_states: shape (n_frames, n_fish, 3) — GT XYZ positions.
+        tracker_positions_per_frame: Per-frame dict of track_id -> (3,) array.
+        fps: Frames per second (used to compute timestamp column).
+        output_dir: Directory to write CSV files into.
+    """
+    import csv
+
+    n_frames, n_fish, _ = gt_states.shape
+
+    # --- GT trajectories ---
+    gt_path = output_dir / "gt_trajectories.csv"
+    with open(gt_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["frame", "time_s", "fish_id", "x", "y", "z"])
+        for fi in range(n_frames):
+            t = fi / fps
+            for fish_idx in range(n_fish):
+                x, y, z = gt_states[fi, fish_idx]
+                writer.writerow(
+                    [fi, f"{t:.4f}", fish_idx, f"{x:.6f}", f"{y:.6f}", f"{z:.6f}"]
+                )
+
+    # --- Tracked trajectories ---
+    tracked_path = output_dir / "tracked_trajectories.csv"
+    with open(tracked_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["frame", "time_s", "track_id", "x", "y", "z"])
+        for fi, frame_positions in enumerate(tracker_positions_per_frame):
+            t = fi / fps
+            for track_id in sorted(frame_positions):
+                pos = frame_positions[track_id]
+                writer.writerow(
+                    [
+                        fi,
+                        f"{t:.4f}",
+                        track_id,
+                        f"{pos[0]:.6f}",
+                        f"{pos[1]:.6f}",
+                        f"{pos[2]:.6f}",
+                    ]
+                )
+
+    print(f"  Exported {gt_path.name} and {tracked_path.name}")
 
 
 # ---------------------------------------------------------------------------
@@ -564,6 +638,76 @@ def vis_id_timeline(
     plt.close("all")
 
 
+def _compute_detection_spread(
+    dataset_frames: list,
+    models: dict[str, RefractiveProjectionModel],
+    gt_states: np.ndarray,
+) -> list[dict[int, tuple[np.ndarray, np.ndarray]]]:
+    """Back-project per-camera detection centroids to world XY bounding boxes.
+
+    For each frame and each fish, collects the true pixel centroids from all
+    cameras where the fish was detected, back-projects them via cast_ray to
+    world XY at the fish's known Z depth, and returns the axis-aligned
+    bounding box of those world points.
+
+    Args:
+        dataset_frames: List of SyntheticFrame objects.
+        models: Per-camera refractive projection models.
+        gt_states: GT positions, shape (n_frames, n_fish, 3).
+
+    Returns:
+        List (per frame) of dicts mapping fish_id to (xy_min, xy_max) arrays.
+    """
+    import torch
+
+    result: list[dict[int, tuple[np.ndarray, np.ndarray]]] = []
+
+    for fi, syn_frame in enumerate(dataset_frames):
+        frame_spread: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+
+        # Collect detected pixel centroids per fish across cameras
+        fish_pixels: dict[int, list[tuple[str, float, float]]] = {}
+        for cam_id, gt_entries in syn_frame.ground_truth.items():
+            for entry in gt_entries:
+                if entry.was_detected:
+                    fish_pixels.setdefault(entry.fish_id, []).append(
+                        (cam_id, entry.true_centroid_px[0], entry.true_centroid_px[1])
+                    )
+
+        # Back-project to world XY at fish's known Z
+        for fish_idx, cam_pixels in fish_pixels.items():
+            if fish_idx >= gt_states.shape[1]:
+                continue
+            fish_z = float(gt_states[fi, fish_idx, 2])
+            world_xys: list[np.ndarray] = []
+
+            for cam_id, u, v in cam_pixels:
+                if cam_id not in models:
+                    continue
+                model = models[cam_id]
+                px = torch.tensor([[u, v]], dtype=torch.float32)
+                with torch.no_grad():
+                    origins, directions = model.cast_ray(px)
+                origin = origins[0].numpy()
+                direction = directions[0].numpy()
+                dir_z = float(direction[2])
+                if abs(dir_z) < 1e-6:
+                    continue
+                t = (fish_z - float(origin[2])) / dir_z
+                if t <= 0:
+                    continue
+                world_pt = origin + t * direction
+                world_xys.append(world_pt[:2])
+
+            if len(world_xys) >= 2:
+                xy_arr = np.array(world_xys)
+                frame_spread[fish_idx] = (xy_arr.min(axis=0), xy_arr.max(axis=0))
+
+        result.append(frame_spread)
+
+    return result
+
+
 def vis_tracking_video(
     gt_states: np.ndarray,
     tracker_positions_per_frame: list[dict[int, np.ndarray]],
@@ -572,6 +716,10 @@ def vis_tracking_video(
     *,
     fps: int = 15,
     resolution: tuple[int, int] = (800, 800),
+    tank_center: tuple[float, float] | None = None,
+    tank_radius: float | None = None,
+    detection_spread: list[dict[int, tuple[np.ndarray, np.ndarray]]] | None = None,
+    tracker_ncameras_per_frame: list[dict[int, int]] | None = None,
 ) -> None:
     """Render a bird's-eye XY video of tracked vs GT fish centroids.
 
@@ -585,6 +733,13 @@ def vis_tracking_video(
         output_path: Output .mp4 path.
         fps: Video frame rate.
         resolution: (width, height) in pixels.
+        tank_center: (x, y) world-frame centre of the cylindrical tank.
+        tank_radius: Radius of the cylindrical tank in metres.
+        detection_spread: Per-frame dict mapping fish_id to (xy_min, xy_max)
+            bounding box in world XY, computed from back-projected detection
+            centroids across cameras. Drawn as a rectangle around GT centroids.
+        tracker_ncameras_per_frame: Per-frame dict mapping track_fish_id to
+            the number of cameras observing that track. Shown in the ID label.
     """
     import cv2
 
@@ -595,11 +750,18 @@ def vis_tracking_video(
     trail_len = 10
 
     # ------------------------------------------------------------------
-    # Compute XY bounding box from all GT positions (with 10% margin)
+    # Compute XY bounding box from GT positions + tank extents (with margin)
     # ------------------------------------------------------------------
     all_xy = gt_states[:, :, :2].reshape(-1, 2)
     xy_min = all_xy.min(axis=0)
     xy_max = all_xy.max(axis=0)
+
+    # Expand to include the full tank circle so it's never clipped
+    if tank_center is not None and tank_radius is not None:
+        tc = np.array(tank_center)
+        xy_min = np.minimum(xy_min, tc - tank_radius)
+        xy_max = np.maximum(xy_max, tc + tank_radius)
+
     span = xy_max - xy_min
     margin = span * 0.1
     xy_min -= margin
@@ -642,10 +804,21 @@ def vis_tracking_video(
         for fi in range(n_frames):
             frame = np.zeros((height, width, 3), dtype=np.uint8)
 
-            # Tank boundary rectangle (gray)
-            tl = world_to_px(xy_min)
-            br = world_to_px(xy_max)
-            cv2.rectangle(frame, tl, br, (80, 80, 80), 1)
+            # Tank boundary
+            if tank_center is not None and tank_radius is not None:
+                # Cylindrical tank → circle in bird's-eye view
+                cx, cy = world_to_px(np.array(tank_center))
+                # Compute pixel radius from world radius
+                edge_pt = world_to_px(
+                    np.array([tank_center[0] + tank_radius, tank_center[1]])
+                )
+                r_px = abs(edge_pt[0] - cx)
+                cv2.circle(frame, (cx, cy), r_px, (80, 80, 80), 1)
+            else:
+                # Fallback: bounding-box rectangle
+                tl = world_to_px(xy_min)
+                br = world_to_px(xy_max)
+                cv2.rectangle(frame, tl, br, (80, 80, 80), 1)
 
             # ----------------------------------------------------------
             # GT trails and positions
@@ -668,6 +841,13 @@ def vis_tracking_video(
 
                 # Open circle for GT
                 cv2.circle(frame, pt, 4, color, 1)
+
+                # Detection spread bounding box
+                if detection_spread is not None and fish_idx in detection_spread[fi]:
+                    xy_lo, xy_hi = detection_spread[fi][fish_idx]
+                    box_tl = world_to_px(np.array([xy_lo[0], xy_hi[1]]))
+                    box_br = world_to_px(np.array([xy_hi[0], xy_lo[1]]))
+                    cv2.rectangle(frame, box_tl, box_br, color, 1)
 
             # ----------------------------------------------------------
             # Tracker trails and positions
@@ -697,10 +877,15 @@ def vis_tracking_video(
                 # Filled circle for tracker
                 cv2.circle(frame, pt, 8, color, -1)
 
-                # ID label
+                # ID label with camera count
+                ncams = ""
+                if tracker_ncameras_per_frame is not None:
+                    n = tracker_ncameras_per_frame[fi].get(track_id)
+                    if n is not None:
+                        ncams = f"/{n}c"
                 cv2.putText(
                     frame,
-                    str(track_id),
+                    f"{track_id}{ncams}",
                     (pt[0] + 10, pt[1] - 5),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.4,
@@ -899,6 +1084,9 @@ def write_tracking_report(
     elif args.scenario == "tight_schooling":
         lines.append(f"| N fish | {args.n_fish} |")
 
+    if args.n_frames is not None:
+        lines.append(f"| N frames (override) | {args.n_frames} |")
+
     lines += [
         f"| Seed | {args.seed} |",
         f"| Cameras | {n_cameras} (fabricated {args.n_cameras}x{args.n_cameras} grid) |",
@@ -1007,6 +1195,12 @@ def parse_args() -> argparse.Namespace:
         help="Number of fish for tight_schooling scenario (default: 5)",
     )
     parser.add_argument(
+        "--n-frames",
+        type=int,
+        default=None,
+        help="Override number of frames for any scenario (default: use scenario duration)",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -1033,7 +1227,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--min-cameras-birth",
         type=int,
-        default=None,
+        default=3,
         help="FishTracker min_cameras_birth (default: FishTracker default)",
     )
     parser.add_argument(
@@ -1041,6 +1235,18 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="FishTracker expected fish count (default: derived from scenario)",
+    )
+    parser.add_argument(
+        "--max-age",
+        type=int,
+        default=None,
+        help="FishTracker max_age in frames (default: FishTracker default)",
+    )
+    parser.add_argument(
+        "--birth-proximity",
+        type=float,
+        default=None,
+        help="FishTracker birth_proximity_distance in metres (default: FishTracker default)",
     )
     parser.add_argument(
         "--calibration",
@@ -1115,6 +1321,7 @@ def run_scenario(
     output_dir: Path,
     models: dict,
     real_water_z: float | None,
+    extra_kwargs: dict[str, object] | None = None,
 ) -> ScenarioResult:
     """Run a single scenario end-to-end and return the result.
 
@@ -1124,6 +1331,8 @@ def run_scenario(
         output_dir: Directory for this scenario's outputs.
         models: Camera projection models (real or fabricated).
         real_water_z: Water surface Z from real calibration, or None for fabricated.
+        extra_kwargs: Additional scenario kwargs that override CLI defaults
+            (used by the "all" runner for difficulty variants, etc.).
 
     Returns:
         ScenarioResult with metrics, timing, and output path.
@@ -1136,12 +1345,18 @@ def run_scenario(
     # Build scenario kwargs
     # -------------------------------------------------------------------
     scenario_kwargs: dict[str, object] = {"seed": args.seed}
+    if args.n_frames is not None:
+        scenario_kwargs["n_frames"] = args.n_frames
     if scenario_name == "crossing_paths":
         scenario_kwargs["difficulty"] = args.difficulty
     elif scenario_name == "track_fragmentation":
         scenario_kwargs["miss_rate"] = args.miss_rate
     elif scenario_name == "tight_schooling":
         scenario_kwargs["n_fish"] = args.n_fish
+
+    # Override with any extra kwargs (e.g., difficulty variants in "all" mode)
+    if extra_kwargs:
+        scenario_kwargs.update(extra_kwargs)
 
     # -------------------------------------------------------------------
     # Regenerate trajectory + dataset (needed for GT positions)
@@ -1160,30 +1375,29 @@ def run_scenario(
     scenario_fn = _SCENARIO_REGISTRY[scenario_name]
     traj_cfg, noise_cfg = scenario_fn(**scenario_kwargs)  # type: ignore[call-arg, misc]
 
-    # Patch tank geometry for real calibration.
+    # Patch water_z for real calibration.
     #
-    # When using the real 12-camera aquarium rig, the camera coverage zone
-    # does not fill the full tank cylinder centred at (0, 0).  The viable
-    # zone (>= 3 cameras in image bounds at nominal fish depth) has:
-    #   - XY range: approximately X in [-0.8, 0.8], Y in [-0.7, 0.8]
-    #   - Centroid: approximately (-0.06, 0.15) — offset from world origin
-    #
-    # Without patching, the TankConfig defaults (radius=1.0, centre=(0,0))
-    # allow fish to spawn at positions outside camera coverage (e.g. Y < -0.7).
-    # Such fish are undetectable by RANSAC (projections outside image bounds),
-    # causing repeated birth/death cycles and inflated confirmed track counts.
-    #
-    # Fix: shift the tank centre to the coverage zone centroid and reduce the
-    # radius so fish remain within the well-covered region.
-    _REAL_CAL_TANK_CENTER_X: float = -0.06
-    _REAL_CAL_TANK_CENTER_Y: float = 0.15
-    _REAL_CAL_TANK_RADIUS: float = 0.60  # conservative: keep fish in Y [-0.45, 0.75]
-
+    # The physical tank is always 1m radius — only water_z differs between
+    # the fabricated rig and the real calibration.  Tank centre is kept at
+    # the scenario default (0, 0); fish that wander outside camera coverage
+    # are simply not tracked, which is realistic behaviour.
     if real_water_z is not None:
         traj_cfg.tank.water_z = real_water_z
-        traj_cfg.tank.center_x = _REAL_CAL_TANK_CENTER_X
-        traj_cfg.tank.center_y = _REAL_CAL_TANK_CENTER_Y
-        traj_cfg.tank.radius = _REAL_CAL_TANK_RADIUS
+
+        # Shift initial_states Z to match the real water depth midpoint.
+        if traj_cfg.initial_states is not None:
+            from aquapose.synthetic.trajectory import InitialFishState
+
+            new_cz = real_water_z + traj_cfg.tank.depth / 2.0
+            traj_cfg.initial_states = [
+                InitialFishState(
+                    position=(s.position[0], s.position[1], new_cz),
+                    heading_xy=s.heading_xy,
+                    heading_z=s.heading_z,
+                    speed=s.speed,
+                )
+                for s in traj_cfg.initial_states
+            ]
 
     trajectory = generate_trajectories(traj_cfg)
     dataset = generate_detection_dataset(trajectory, models, noise_config=noise_cfg)
@@ -1211,10 +1425,15 @@ def run_scenario(
         tracker_kwargs["min_hits"] = args.min_hits
     if args.min_cameras_birth is not None:
         tracker_kwargs["min_cameras_birth"] = args.min_cameras_birth
+    if args.max_age is not None:
+        tracker_kwargs["max_age"] = args.max_age
+    if args.birth_proximity is not None:
+        tracker_kwargs["birth_proximity_distance"] = args.birth_proximity
     tracker = FishTracker(**tracker_kwargs)  # type: ignore[arg-type]
 
     # Per-frame records
     tracker_positions_per_frame: list[dict[int, np.ndarray]] = []
+    tracker_ncameras_per_frame: list[dict[int, int]] = []
     gt_positions_per_frame: list[np.ndarray] = []
     gt_fish_ids_per_frame: list[list[int]] = []
     gt_matching_per_frame: list[dict[int, int | None]] = []
@@ -1223,7 +1442,18 @@ def run_scenario(
 
     frame_timings: list[float] = []
 
-    for frame in dataset.frames:
+    progress_interval = max(1, n_frames // 10)
+    for fi_loop, frame in enumerate(dataset.frames):
+        if fi_loop % progress_interval == 0 or fi_loop == n_frames - 1:
+            pct = 100 * (fi_loop + 1) / n_frames
+            n_tracks = (
+                len(tracker_positions_per_frame[-1])
+                if tracker_positions_per_frame
+                else 0
+            )
+            print(
+                f"  Frame {fi_loop + 1}/{n_frames} ({pct:.0f}%) — {n_tracks} active tracks"
+            )
         frame_t0 = time.perf_counter()
         confirmed = tracker.update(
             frame.detections_per_camera,
@@ -1232,14 +1462,17 @@ def run_scenario(
         )
         frame_timings.append(time.perf_counter() - frame_t0)
 
-        # Extract confirmed track positions
+        # Extract confirmed track positions and camera counts
         frame_track_positions: dict[int, np.ndarray] = {}
+        frame_track_ncams: dict[int, int] = {}
         for track in confirmed:
             if len(track.positions) > 0:
                 frame_track_positions[track.fish_id] = np.array(
                     list(track.positions)[-1], dtype=np.float32
                 )
+                frame_track_ncams[track.fish_id] = track.n_cameras
         tracker_positions_per_frame.append(frame_track_positions)
+        tracker_ncameras_per_frame.append(frame_track_ncams)
 
         # Extract GT positions for this frame from trajectory
         gt_state = trajectory.states[frame.frame_index]  # (n_fish, 7)
@@ -1381,6 +1614,12 @@ def run_scenario(
                 tracker_positions_per_frame=tracker_positions_per_frame,
                 gt_matching_per_frame=gt_matching_per_frame,
                 output_path=output_dir / "tracking_video.mp4",
+                tank_center=(traj_cfg.tank.center_x, traj_cfg.tank.center_y),
+                tank_radius=traj_cfg.tank.radius,
+                detection_spread=_compute_detection_spread(
+                    dataset.frames, models, gt_states_xyz
+                ),
+                tracker_ncameras_per_frame=tracker_ncameras_per_frame,
             ),
         ),
     ]
@@ -1393,6 +1632,13 @@ def run_scenario(
         except Exception as exc:
             print(f"  [WARN] Failed to generate {name}: {exc}")
     timing["visualizations"] = time.perf_counter() - t0
+
+    # -------------------------------------------------------------------
+    # CSV export of 3D trajectories
+    # -------------------------------------------------------------------
+    _export_trajectories_csv(
+        gt_states_xyz, tracker_positions_per_frame, trajectory.fps, output_dir
+    )
 
     # -------------------------------------------------------------------
     # Markdown report
@@ -1480,22 +1726,47 @@ def main() -> int:
     wall_start = time.perf_counter()
 
     if args.scenario == "all":
-        # Run every registered scenario
+        # Run every registered scenario (including crossing at multiple difficulties)
+        scenario_labels = []
+        for entry in _ALL_SCENARIOS:
+            name, kw = _unpack_scenario_entry(entry)
+            if kw:
+                detail = ", ".join(f"{k}={v}" for k, v in kw.items())
+                scenario_labels.append(f"{name}({detail})")
+            else:
+                scenario_labels.append(name)
+
         print("=== AquaPose Tracking Diagnostic (ALL SCENARIOS) ===\n")
         print(f"Output dir:     {base_output_dir}")
-        print(f"Scenarios:      {', '.join(_ALL_SCENARIOS)}")
+        print(f"Scenarios:      {', '.join(scenario_labels)}")
         print()
 
         results: list[ScenarioResult] = []
-        for scenario_name in _ALL_SCENARIOS:
+        for entry in _ALL_SCENARIOS:
+            scenario_name, extra_kwargs = _unpack_scenario_entry(entry)
+
+            # Build a display label and output subdir for variants
+            if extra_kwargs:
+                suffix = "_".join(f"{k}{v}" for k, v in extra_kwargs.items())
+                display_name = f"{scenario_name}_{suffix}"
+            else:
+                display_name = scenario_name
+
             print(f"\n{'=' * 60}")
-            print(f"  SCENARIO: {scenario_name}")
+            print(f"  SCENARIO: {display_name}")
             print(f"{'=' * 60}\n")
 
-            scenario_output_dir = base_output_dir / scenario_name
+            scenario_output_dir = base_output_dir / display_name
             result = run_scenario(
-                scenario_name, args, scenario_output_dir, models, real_water_z
+                scenario_name,
+                args,
+                scenario_output_dir,
+                models,
+                real_water_z,
+                extra_kwargs=extra_kwargs or None,
             )
+            # Override result name for the summary table
+            result.name = display_name
             results.append(result)
 
         # Write cross-scenario summary

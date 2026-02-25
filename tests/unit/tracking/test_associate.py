@@ -661,7 +661,7 @@ class TestClaimDetectionsForTracks:
         )
 
         assert len(claims) == 1
-        total_unclaimed = sum(len(v) for v in unclaimed.values())
+        total_unclaimed = sum(len(v) for v in unclaimed.indices.values())
         assert total_unclaimed > 0, "Fish 1's detections should be unclaimed"
 
     def test_priority_ordering(

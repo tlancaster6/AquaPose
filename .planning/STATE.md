@@ -176,6 +176,7 @@ Recent decisions affecting current work:
 | 5 | Investigate spline folding: numerical evidence that K=7 allows 150-degree fold with zero penalty; 6 ranked recommendations | 2026-02-23 | cedbbe1 | | [5-improve-3d-spline-constraints-investigat](./quick/5-improve-3d-spline-constraints-investigat/) |
 | 6 | Synthetic data generation system: multi-fish trajectory generator, refractive detection projection, scenario presets | 2026-02-24 | 4c3c604 | Verified | [6-create-synthetic-data-generation-system-](./quick/6-create-synthetic-data-generation-system-/) |
 | 7 | FishTracker diagnostic: CLEAR MOT metrics, GT matching, 4 visualizations, 5 smoke tests | 2026-02-24 | 84a80ca | Verified | [7-cross-view-identity-and-3d-tracking-diag](./quick/7-cross-view-identity-and-3d-tracking-diag/) |
+| 8 | Windowed velocity smoothing: velocity_history ring buffer (default N=5) in FishTrack, 5 new tests | 2026-02-24 | 0cf5295 | Verified | [8-windowed-velocity-smoothing-for-tracking](./quick/8-windowed-velocity-smoothing-for-tracking/) |
 
 ### Blockers/Concerns
 
@@ -187,5 +188,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-24
-Stopped at: Completed quick-7 (cross-view-identity-and-3d-tracking-diag)
+Stopped at: Completed quick-8 (windowed-velocity-smoothing-for-tracking)
 Next action: Implement spline folding fixes from quick-5 report — priority: chord-arc penalty + increase lambda_curvature. Then continue Phase 09 Plan 02 (integration/validation against real data).

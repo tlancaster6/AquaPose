@@ -41,7 +41,14 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ### Active
 
-(Fresh for next milestone — define via `/gsd:new-milestone`)
+- [ ] Event-driven pipeline architecture (3-layer: Core Computation → PosePipeline → Observers)
+- [ ] Stage Protocol interface with strongly typed PipelineContext
+- [ ] Frozen dataclass configuration system with YAML + CLI overrides
+- [ ] Structured lifecycle event system
+- [ ] Observer-based diagnostics, timing, visualization, and export
+- [ ] CLI entrypoint (`aquapose run`) as thin wrapper over PosePipeline
+- [ ] Clean-room stage migrations preserving numerical equivalence
+- [ ] Execution modes via configuration (production, diagnostic, synthetic, benchmark)
 
 ### Out of Scope
 
@@ -54,6 +61,20 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - Voxel carving initialization fallback — epipolar consensus is sufficient
 - Mobile or web interface — CLI/script-based pipeline
 - Offline mode / edge deployment — lab workstation only
+
+## Current Milestone: v2.0 Alpha
+
+**Goal:** Transform AquaPose from a script-driven scientific pipeline into an event-driven scientific computation engine with strict architectural layering.
+
+**Target features:**
+- Stage Protocol interface + strongly typed PipelineContext
+- Frozen dataclass config system (defaults → YAML → CLI → freeze)
+- Structured lifecycle events + observer system
+- Clean-room migration of all computation stages
+- Observer-based diagnostics, timing, visualization, HDF5 export
+- CLI entrypoint: `aquapose run --mode diagnostic --config path.yaml`
+- Execution modes (production/diagnostic/synthetic/benchmark) via config, not branching
+- Numerical equivalence with v1.0 pipeline verified via golden data
 
 ## Context
 
@@ -107,4 +128,4 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Population-constrained tracking | 9 fish always; dead tracks recycled to unmatched observations | ✓ Good |
 
 ---
-*Last updated: 2026-02-25 after v1.0 milestone*
+*Last updated: 2026-02-25 after v2.0 milestone start*

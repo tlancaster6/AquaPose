@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Alpha
 status: unknown
-last_updated: "2026-02-25T21:45:28.558Z"
+last_updated: "2026-02-25T22:47:00Z"
 progress:
   total_phases: 2
   completed_phases: 1
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 14 of 18 (Golden Data and Verification Framework)
-Plan: 1 of 2 in current phase — CHECKPOINT (awaiting user execution of generate_golden_data.py)
-Status: In Progress
-Last activity: 2026-02-25 — Completed 14-01 Task 1 (golden data generation script); checkpoint at Task 2
+Plan: 2 of 2 in current phase — COMPLETE
+Status: Phase 14 Complete
+Last activity: 2026-02-25 — Completed 14-02 (golden regression harness, 9 @slow tests passing)
 
-Progress: [██░░░░░░░░] 18%
+Progress: [███░░░░░░░] 25%
 
 ## Performance Metrics
 
@@ -52,6 +52,11 @@ Progress: [██░░░░░░░░] 18%
 
 Decisions are logged in PROJECT.md Key Decisions table.
 Key decisions entering v2.0:
+Phase 14-02 decisions:
+- CropRegion has x1/y1/x2/y2 fields (not x/y/width/height as plan described) — tests written to actual API
+- FishTrack uses positions deque (not centroid_3d) — tests assert positions[-1].shape == (3,)
+- Low-confidence triangulations exempted from tank-bounds check — RANSAC degenerate outputs expected in v1.0
+
 Phase 14-01 decisions:
 - Seeds set before pipeline imports (not just before stage calls) — covers CUDA init triggered by imports
 - Each stage output saved as separate .pt file (not bundled) — allows individual stage comparisons
@@ -90,5 +95,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: 14-01-PLAN.md checkpoint (Task 2 — human must run generate_golden_data.py and commit .pt files)
+Stopped at: Completed 14-02-PLAN.md (both tasks complete, Phase 14 done)
 Resume file: None

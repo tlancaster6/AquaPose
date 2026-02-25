@@ -33,7 +33,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 **Milestone Goal:** Transform AquaPose from a script-driven scientific pipeline into an event-driven scientific computation engine with strict architectural layering, verified for numerical equivalence with v1.0.
 
 - [x] **Phase 13: Engine Core** - Stage Protocol, PipelineContext, events, observer base, config, orchestrator, import boundary (completed 2026-02-25)
-- [ ] **Phase 14: Golden Data and Verification Framework** - Generate frozen reference outputs from v1.0, define interface test harness
+- [x] **Phase 14: Golden Data and Verification Framework** - Generate frozen reference outputs from v1.0, define interface test harness (completed 2026-02-25)
 - [ ] **Phase 15: Stage Migrations** - Port all 7 computation stages as pure Stage implementors
 - [ ] **Phase 16: Numerical Verification and Legacy Cleanup** - Regression tests against golden data, archive legacy scripts
 - [ ] **Phase 17: Observers** - Timing, HDF5 export, 2D reprojection, 3D animation, diagnostic observers
@@ -159,7 +159,7 @@ Plans:
 | 8. End-to-End Integration Testing | v1.0 | 2/3 | Complete | 2026-02-23 |
 | 9. Curve-Based Optimization | v1.0 | 2/2 | Complete | 2026-02-25 |
 | 13. Engine Core | 4/4 | Complete    | 2026-02-25 | - |
-| 14. Golden Data and Verification Framework | 1/2 | In Progress|  | - |
+| 14. Golden Data and Verification Framework | 2/2 | Complete   | 2026-02-25 | - |
 | 15. Stage Migrations | v2.0 | 0/7 | Not started | - |
 | 16. Numerical Verification and Legacy Cleanup | v2.0 | 0/2 | Not started | - |
 | 17. Observers | v2.0 | 0/5 | Not started | - |

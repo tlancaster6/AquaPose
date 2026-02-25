@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-02-21)
 Phase: 09-curve-based-optimization-as-a-replacement-for-triangulation
 Plan: 01 complete
 Status: curve_optimizer.py implemented, 21 unit tests passing. Ready for Phase 9 Plan 02 (integration/validation against real data).
-Last activity: 2026-02-24 - Completed quick-7: FishTracker diagnostic with CLEAR MOT metrics and 4 visualizations
+Last activity: 2026-02-25 - Completed quick-8: Windowed velocity smoothing for tracking priors
 Stopped at: Completed quick-6-PLAN.md
 
 Progress: [█████████░] 93% (phases 1-3 complete, phase 4 shelved, phases 5-9 plan 01 complete)

@@ -8,7 +8,7 @@ progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 4
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # Project State
@@ -23,9 +23,9 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 13 of 18 (Engine Core)
-Plan: 3 of 4 in current phase (plans 01 and 02 complete)
+Plan: 4 of 4 in current phase (plans 01, 02, and 03 complete)
 Status: Active
-Last activity: 2026-02-25 — Completed 13-02 (config hierarchy)
+Last activity: 2026-02-25 — Completed 13-03 (event system and observer protocol)
 
 Progress: [█░░░░░░░░░] 9%
 
@@ -64,6 +64,9 @@ Phase 13 decisions:
 - Config frozen dataclasses: stage-specific configs composed into PipelineConfig
 - load_config() CLI overrides accept both dot-notation strings and nested dicts
 - output_dir expanded via Path.expanduser() at load time
+- Observer uses structural typing (Protocol) not ABC — any class with on_event satisfies it
+- EventBus walks __mro__ for dispatch — subscribing to Event base receives all subtypes
+- Fault-tolerant dispatch logs warnings but never re-raises — pipeline determinism preserved
 
 ### Pending Todos
 
@@ -76,5 +79,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 13-02 (config hierarchy) — ready for 13-03 (events)
+Stopped at: Completed 13-03 (event system and observer protocol) — ready for 13-04 (PosePipeline orchestrator)
 Resume file: None

@@ -8,7 +8,7 @@ progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 13 of 18 (Engine Core)
-Plan: 4 of 4 in current phase (plans 01, 02, and 03 complete)
-Status: Active
-Last activity: 2026-02-25 — Completed 13-03 (event system and observer protocol)
+Plan: 4 of 4 in current phase — ALL COMPLETE
+Status: Phase Complete
+Last activity: 2026-02-25 — Completed 13-04 (PosePipeline orchestrator)
 
-Progress: [█░░░░░░░░░] 9%
+Progress: [██░░░░░░░░] 18%
 
 ## Performance Metrics
 
@@ -40,10 +40,11 @@ Progress: [█░░░░░░░░░] 9%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 13-engine-core | 2 | ~10 min | ~5 min |
+| 13-engine-core | 4 | ~20 min | ~5 min |
 
-**Recent Trend:** Active — 2 plans completed in Phase 13
+**Recent Trend:** Active — Phase 13 complete (4 plans)
 | Phase 13-engine-core P01 | 6 | 2 tasks | 4 files |
+| Phase 13-engine-core P04 | 4 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,9 @@ Phase 13 decisions:
 - Observer uses structural typing (Protocol) not ABC — any class with on_event satisfies it
 - EventBus walks __mro__ for dispatch — subscribing to Event base receives all subtypes
 - Fault-tolerant dispatch logs warnings but never re-raises — pipeline determinism preserved
+- PosePipeline writes config.yaml before PipelineStart event — config artifact is truly first
+- Stage timing keyed by type(stage).__name__ — class name as natural stage identifier
+- Observers subscribe to Event base type in constructor — simplest all-events API
 
 ### Pending Todos
 
@@ -79,5 +83,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 13-03 (event system and observer protocol) — ready for 13-04 (PosePipeline orchestrator)
+Stopped at: Completed 13-04 (PosePipeline orchestrator) — Phase 13 complete
 Resume file: None

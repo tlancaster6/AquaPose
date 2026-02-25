@@ -14,9 +14,9 @@ Requirements for the pre-alpha clean-room refactor. Each maps to roadmap phases.
 - [x] **ENG-03**: Event system with typed dataclasses (pipeline lifecycle, stage lifecycle, frame-level, domain events)
 - [x] **ENG-04**: Observer protocol — subscribe to specific event types, synchronous dispatch
 - [x] **ENG-05**: Frozen dataclass config hierarchy (defaults → YAML → CLI overrides → freeze)
-- [ ] **ENG-06**: PosePipeline orchestrator wires stages, emits events, coordinates observers
+- [x] **ENG-06**: PosePipeline orchestrator wires stages, emits events, coordinates observers
 - [x] **ENG-07**: Import boundary enforced: engine/ imports computation modules, never reverse
-- [ ] **ENG-08**: Full serialized config logged as first artifact of every run
+- [x] **ENG-08**: Full serialized config logged as first artifact of every run
 
 ### Stage Migrations
 
@@ -83,9 +83,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ENG-03 | Phase 13 | Complete |
 | ENG-04 | Phase 13 | Complete |
 | ENG-05 | Phase 13 | Complete |
-| ENG-06 | Phase 13 | Pending |
+| ENG-06 | Phase 13 | Complete |
 | ENG-07 | Phase 13 | Complete |
-| ENG-08 | Phase 13 | Pending |
+| ENG-08 | Phase 13 | Complete |
 | VER-01 | Phase 14 | Pending |
 | VER-02 | Phase 14 | Pending |
 | STG-01 | Phase 15 | Pending |

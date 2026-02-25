@@ -9,13 +9,13 @@ Requirements for the pre-alpha clean-room refactor. Each maps to roadmap phases.
 
 ### Engine Infrastructure
 
-- [ ] **ENG-01**: Stage Protocol defined via `typing.Protocol` with structural typing
-- [ ] **ENG-02**: PipelineContext dataclass accumulates typed results across stages
+- [x] **ENG-01**: Stage Protocol defined via `typing.Protocol` with structural typing
+- [x] **ENG-02**: PipelineContext dataclass accumulates typed results across stages
 - [ ] **ENG-03**: Event system with typed dataclasses (pipeline lifecycle, stage lifecycle, frame-level, domain events)
 - [ ] **ENG-04**: Observer protocol — subscribe to specific event types, synchronous dispatch
 - [x] **ENG-05**: Frozen dataclass config hierarchy (defaults → YAML → CLI overrides → freeze)
 - [ ] **ENG-06**: PosePipeline orchestrator wires stages, emits events, coordinates observers
-- [ ] **ENG-07**: Import boundary enforced: engine/ imports computation modules, never reverse
+- [x] **ENG-07**: Import boundary enforced: engine/ imports computation modules, never reverse
 - [ ] **ENG-08**: Full serialized config logged as first artifact of every run
 
 ### Stage Migrations
@@ -78,13 +78,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ENG-01 | Phase 13 | Pending |
-| ENG-02 | Phase 13 | Pending |
+| ENG-01 | Phase 13 | Complete |
+| ENG-02 | Phase 13 | Complete |
 | ENG-03 | Phase 13 | Pending |
 | ENG-04 | Phase 13 | Pending |
 | ENG-05 | Phase 13 | Complete |
 | ENG-06 | Phase 13 | Pending |
-| ENG-07 | Phase 13 | Pending |
+| ENG-07 | Phase 13 | Complete |
 | ENG-08 | Phase 13 | Pending |
 | VER-01 | Phase 14 | Pending |
 | VER-02 | Phase 14 | Pending |

@@ -8,7 +8,7 @@ import torch
 
 from aquapose.calibration.projection import RefractiveProjectionModel
 from aquapose.segmentation.detector import Detection
-from aquapose.tracking import FishTrack, FishTracker
+from aquapose.tracking import FishTrack, FishTracker, UnclaimedInfo
 from aquapose.tracking.tracker import TrackHealth, TrackState
 
 # ---------------------------------------------------------------------------
@@ -376,6 +376,133 @@ def test_coasting_velocity_damping() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Tests for windowed velocity smoothing
+# ---------------------------------------------------------------------------
+
+
+def _update_track(track: FishTrack, position: np.ndarray) -> None:
+    """Helper: call update_from_claim with a 3D position."""
+    track.update_from_claim(
+        centroid_3d=position,
+        camera_detections={"cam_a": 0, "cam_b": 0},
+        reprojection_residual=2.0,
+        n_cameras=2,
+    )
+
+
+def test_windowed_velocity_smoothing_averages_deltas() -> None:
+    """Velocity is the mean of last N frame-to-frame deltas."""
+    track = FishTrack(fish_id=0, velocity_window=3)
+
+    # Feed 4 positions: [0,0,0], [1,0,0], [2,0,0], [5,0,0]
+    # Deltas: [1,0,0], [1,0,0], [3,0,0] — window of 3 holds all three.
+    # Mean = [5/3, 0, 0]
+    positions = [
+        np.array([0.0, 0.0, 0.0], dtype=np.float32),
+        np.array([1.0, 0.0, 0.0], dtype=np.float32),
+        np.array([2.0, 0.0, 0.0], dtype=np.float32),
+        np.array([5.0, 0.0, 0.0], dtype=np.float32),
+    ]
+    for pos in positions:
+        _update_track(track, pos)
+
+    expected_velocity = np.array([5.0 / 3.0, 0.0, 0.0], dtype=np.float32)
+    np.testing.assert_allclose(track.velocity, expected_velocity, atol=1e-5)
+
+
+def test_windowed_velocity_window_1_matches_raw_delta() -> None:
+    """velocity_window=1 reproduces old single-frame delta behaviour."""
+    track = FishTrack(fish_id=0, velocity_window=1)
+
+    positions = [
+        np.array([0.0, 0.0, 0.0], dtype=np.float32),
+        np.array([1.0, 0.0, 0.0], dtype=np.float32),
+        np.array([2.0, 0.0, 0.0], dtype=np.float32),
+        np.array([5.0, 0.0, 0.0], dtype=np.float32),
+    ]
+    for pos in positions:
+        _update_track(track, pos)
+
+    # Last delta only: [5,0,0] - [2,0,0] = [3,0,0]
+    np.testing.assert_allclose(track.velocity, [3.0, 0.0, 0.0], atol=1e-5)
+
+
+def test_windowed_velocity_single_view_does_not_update_history() -> None:
+    """update_position_only does not append to velocity_history."""
+    track = FishTrack(fish_id=0, velocity_window=3)
+
+    # Full update: [0,0,0] -> [1,0,0], delta=[1,0,0], history length=1
+    _update_track(track, np.array([0.0, 0.0, 0.0], dtype=np.float32))
+    _update_track(track, np.array([1.0, 0.0, 0.0], dtype=np.float32))
+
+    velocity_before = track.velocity.copy()
+    assert len(track.velocity_history) == 1
+
+    # Single-view update should freeze velocity and NOT append to history
+    track.update_position_only(
+        centroid_3d=np.array([2.0, 0.0, 0.0], dtype=np.float32),
+        camera_detections={"cam_a": 0},
+        reprojection_residual=2.0,
+        n_cameras=1,
+    )
+
+    np.testing.assert_allclose(track.velocity, velocity_before, atol=1e-5)
+    assert len(track.velocity_history) == 1, (
+        f"velocity_history should still have 1 entry, got {len(track.velocity_history)}"
+    )
+
+
+def test_windowed_velocity_prediction_uses_smoothed() -> None:
+    """predict() uses the smoothed velocity, not the last raw delta."""
+    track = FishTrack(fish_id=0, velocity_window=3)
+
+    # Feed 4 positions: [0,0,1], [0.1,0,1], [0.2,0,1], [0.5,0,1]
+    # Deltas: [0.1,0,0], [0.1,0,0], [0.3,0,0]. Mean = [1/6, 0, 0]
+    positions = [
+        np.array([0.0, 0.0, 1.0], dtype=np.float32),
+        np.array([0.1, 0.0, 1.0], dtype=np.float32),
+        np.array([0.2, 0.0, 1.0], dtype=np.float32),
+        np.array([0.5, 0.0, 1.0], dtype=np.float32),
+    ]
+    for pos in positions:
+        _update_track(track, pos)
+
+    smoothed_vel = (0.1 + 0.1 + 0.3) / 3.0  # = 1/6
+    last_pos = np.array([0.5, 0.0, 1.0], dtype=np.float32)
+    expected_prediction = last_pos + np.array(
+        [smoothed_vel, 0.0, 0.0], dtype=np.float32
+    )
+    np.testing.assert_allclose(track.predict(), expected_prediction, atol=1e-5)
+
+
+def test_windowed_velocity_coasting_uses_smoothed() -> None:
+    """Coasting advances by the smoothed velocity, not the last raw delta."""
+    track = FishTrack(fish_id=0, velocity_window=3, velocity_damping=1.0)
+
+    # Feed 4 positions to populate the history
+    positions = [
+        np.array([0.0, 0.0, 0.0], dtype=np.float32),
+        np.array([1.0, 0.0, 0.0], dtype=np.float32),
+        np.array([2.0, 0.0, 0.0], dtype=np.float32),
+        np.array([5.0, 0.0, 0.0], dtype=np.float32),
+    ]
+    for pos in positions:
+        _update_track(track, pos)
+
+    # Promote to CONFIRMED so mark_missed transitions to COASTING
+    track.state = TrackState.CONFIRMED
+
+    smoothed_vel = np.array([5.0 / 3.0, 0.0, 0.0], dtype=np.float32)
+    last_pos = np.array([5.0, 0.0, 0.0], dtype=np.float32)
+
+    # First mark_missed: CONFIRMED -> COASTING; prediction seeded at last_pos + vel*1.0
+    track.mark_missed()
+    assert track.state == TrackState.COASTING
+    expected = last_pos + smoothed_vel  # damping=1.0, no decay
+    np.testing.assert_allclose(track.predict(), expected, atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
 # Test 10: Probationary short leash
 # ---------------------------------------------------------------------------
 
@@ -647,4 +774,73 @@ def test_coasting_prediction_tracks_fish() -> None:
     assert error_mm < 5.0, (
         f"Coasting prediction error {error_mm:.1f}mm is too large. "
         f"Predicted: {predicted}, true: {true_pos_after_7}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test: Near-claim penalty suppresses ghost births
+# ---------------------------------------------------------------------------
+
+
+def test_near_claim_penalty_suppresses_ghost(
+    models: dict[str, RefractiveProjectionModel],
+) -> None:
+    """Ghost candidate from near-claimed detections is suppressed by residual penalty.
+
+    Setup: two established tracks (fish A and B) each claim their detections.
+    A borderline-unclaimed detection (just outside the 15px threshold) from
+    each fish is left unclaimed.  Without the near-claim penalty, RANSAC
+    could triangulate these two borderline detections into a phantom 3D
+    position.  With the penalty, the inflated mean residual causes the ghost
+    to fail the quality gate or lose to real candidates.
+    """
+    tracker = FishTracker(
+        min_hits=1,
+        max_age=7,
+        expected_count=9,
+        min_cameras_birth=2,
+        reprojection_threshold=15.0,
+    )
+
+    # Two fish well separated (~30 cm apart)
+    pos_a = np.array([-0.15, 0.0, 1.5], dtype=np.float32)
+    pos_b = np.array([0.15, 0.0, 1.5], dtype=np.float32)
+
+    # Establish tracks over several frames
+    for f in range(5):
+        dets = _project_to_detections([pos_a, pos_b], models)
+        tracker.update(dets, models, frame_index=f)
+
+    confirmed = [t for t in tracker.get_all_tracks() if t.is_confirmed]
+    assert len(confirmed) == 2, f"Expected 2 confirmed tracks, got {len(confirmed)}"
+
+    # Now check that claim_detections_for_tracks returns UnclaimedInfo
+    # with min_claim_distance populated.
+    from aquapose.tracking.associate import claim_detections_for_tracks
+
+    predicted_positions = {t.fish_id: t.predict() for t in confirmed}
+    track_priorities = {t.fish_id: 0 for t in confirmed}
+    dets = _project_to_detections([pos_a, pos_b], models)
+
+    _claims, unclaimed_info = claim_detections_for_tracks(
+        predicted_positions=predicted_positions,
+        track_priorities=track_priorities,
+        detections_per_camera=dets,
+        models=models,
+        reprojection_threshold=15.0,
+    )
+
+    # Verify return type is UnclaimedInfo
+    assert isinstance(unclaimed_info, UnclaimedInfo)
+    assert isinstance(unclaimed_info.indices, dict)
+    assert isinstance(unclaimed_info.min_claim_distance, dict)
+
+    # Run the full tracker update one more time to verify no ghost births
+    # appear — the count should stay at 2 confirmed tracks.
+    dets = _project_to_detections([pos_a, pos_b], models)
+    tracker.update(dets, models, frame_index=5)
+
+    final_confirmed = [t for t in tracker.get_all_tracks() if t.is_confirmed]
+    assert len(final_confirmed) == 2, (
+        f"Expected 2 confirmed tracks (no ghost births), got {len(final_confirmed)}"
     )

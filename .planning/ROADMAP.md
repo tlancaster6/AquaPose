@@ -158,7 +158,7 @@ Plans:
 | 7. Multi-View Triangulation | v1.0 | 1/1 | Complete | 2026-02-22 |
 | 8. End-to-End Integration Testing | v1.0 | 2/3 | Complete | 2026-02-23 |
 | 9. Curve-Based Optimization | v1.0 | 2/2 | Complete | 2026-02-25 |
-| 13. Engine Core | 4/4 | Complete   | 2026-02-25 | - |
+| 13. Engine Core | 4/4 | Complete    | 2026-02-25 | - |
 | 14. Golden Data and Verification Framework | v2.0 | 0/2 | Not started | - |
 | 15. Stage Migrations | v2.0 | 0/7 | Not started | - |
 | 16. Numerical Verification and Legacy Cleanup | v2.0 | 0/2 | Not started | - |

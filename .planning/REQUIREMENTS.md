@@ -46,7 +46,7 @@ Requirements for the pre-alpha clean-room refactor. Each maps to roadmap phases.
 
 ### Verification
 
-- [ ] **VER-01**: Golden data generated as standalone commit before stage migrations
+- [x] **VER-01**: Golden data generated as standalone commit before stage migrations
 - [ ] **VER-02**: Each ported stage verified with interface tests (stage.run(context) correctness)
 - [ ] **VER-03**: Numerical regression tests against golden data — pass means equivalent or improved results (bug fixes during port are expected)
 - [ ] **VER-04**: Legacy scripts archived to scripts/legacy/ then removed
@@ -86,7 +86,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ENG-06 | Phase 13 | Complete |
 | ENG-07 | Phase 13 | Complete |
 | ENG-08 | Phase 13 | Complete |
-| VER-01 | Phase 14 | Pending |
+| VER-01 | Phase 14 | Complete |
 | VER-02 | Phase 14 | Pending |
 | STG-01 | Phase 15 | Pending |
 | STG-02 | Phase 15 | Pending |

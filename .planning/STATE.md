@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-25)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 13 — Engine Core (Stage Protocol, events, config, orchestrator)
+**Current focus:** Phase 14 — Golden Data and Verification Framework
 
 ## Current Position
 
-Phase: 13 of 18 (Engine Core)
-Plan: 4 of 4 in current phase — ALL COMPLETE
-Status: Phase Complete
-Last activity: 2026-02-25 — Completed 13-04 (PosePipeline orchestrator)
+Phase: 14 of 18 (Golden Data and Verification Framework)
+Plan: 1 of 2 in current phase — CHECKPOINT (awaiting user execution of generate_golden_data.py)
+Status: In Progress
+Last activity: 2026-02-25 — Completed 14-01 Task 1 (golden data generation script); checkpoint at Task 2
 
 Progress: [██░░░░░░░░] 18%
 
@@ -51,6 +51,13 @@ Progress: [██░░░░░░░░] 18%
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
+Key decisions entering v2.0:
+Phase 14-01 decisions:
+- Seeds set before pipeline imports (not just before stage calls) — covers CUDA init triggered by imports
+- Each stage output saved as separate .pt file (not bundled) — allows individual stage comparisons
+- metadata.pt records generation environment — required to interpret tolerance differences across GPUs
+- Camera e3v8250 excluded in script to match orchestrator.py behavior exactly
+
 Key decisions entering v2.0:
 
 - Build order: ENG infrastructure → golden data → stage migrations → verification → observers → CLI
@@ -83,5 +90,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 13-04 (PosePipeline orchestrator) — Phase 13 complete
+Stopped at: 14-01-PLAN.md checkpoint (Task 2 — human must run generate_golden_data.py and commit .pt files)
 Resume file: None

@@ -67,11 +67,11 @@ Plans:
   1. Running the v1.0 pipeline on a fixed clip produces outputs that are committed as golden data in a standalone commit
   2. A test can instantiate any Stage, call stage.run(context), and assert output fields in PipelineContext
   3. The golden data generation script is deterministic — re-running on the same clip produces bit-identical outputs
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 14-01: Golden data generation script and committed snapshot
-- [ ] 14-02: Interface test harness for Stage.run(context) correctness
+- [ ] 14-01-PLAN.md — Golden data generation script and committed snapshot (wave 1)
+- [ ] 14-02-PLAN.md — Interface test harness for stage output correctness (wave 2)
 
 ### Phase 15: Stage Migrations
 **Goal**: All 7 computation stages exist as pure Stage implementors with no side effects, wired into PosePipeline and producing context fields that downstream stages consume

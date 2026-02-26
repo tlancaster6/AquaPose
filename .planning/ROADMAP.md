@@ -170,6 +170,6 @@ Plans:
 | 13. Engine Core | 4/4 | Complete    | 2026-02-25 | - |
 | 14. Golden Data and Verification Framework | 2/2 | Complete    | 2026-02-25 | - |
 | 15. Stage Migrations | 5/5 | Complete    | 2026-02-26 | - |
-| 16. Numerical Verification and Legacy Cleanup | 2/2 | Complete   | 2026-02-26 | - |
+| 16. Numerical Verification and Legacy Cleanup | 2/2 | Complete    | 2026-02-26 | - |
 | 17. Observers | v2.0 | 0/5 | Not started | - |
 | 18. CLI and Execution Modes | v2.0 | 0/3 | Not started | - |

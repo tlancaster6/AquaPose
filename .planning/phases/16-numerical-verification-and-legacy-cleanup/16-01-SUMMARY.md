@@ -136,6 +136,20 @@ None — no external service configuration required.
 - To run regression tests on real data: `hatch run test-regression`
 - To regenerate golden data with new PosePipeline: run `scripts/generate_golden_data.py` (same CLI as before)
 
+## Self-Check: PASSED
+
+- FOUND: tests/regression/__init__.py
+- FOUND: tests/regression/conftest.py
+- FOUND: tests/regression/test_per_stage_regression.py
+- FOUND: tests/regression/test_end_to_end_regression.py
+- FOUND: scripts/generate_golden_data.py
+- FOUND: .planning/phases/16-numerical-verification-and-legacy-cleanup/16-01-SUMMARY.md
+- FOUND commit 1e887e6 (Task 1: regression infrastructure)
+- FOUND commit e03d219 (Task 2: e2e test + golden data generator)
+- All 7 regression tests collected by pytest
+- hatch run lint: All checks passed
+- hatch run test: 506 passed, 29 deselected (regression tests excluded)
+
 ---
 *Phase: 16-numerical-verification-and-legacy-cleanup*
 *Completed: 2026-02-26*

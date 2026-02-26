@@ -8,7 +8,7 @@ progress:
   total_phases: 10
   completed_phases: 7
   total_plans: 27
-  completed_plans: 24
+  completed_plans: 25
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 
 ## Current Position
 
-Phase: 17 of 18 (Observers) — COMPLETE
-Plan: 5 of 5 in current phase — COMPLETE
-Status: Phase 17 Complete — All 5 observers implemented (TimingObserver, HDF5ExportObserver, Overlay2DObserver, Animation3DObserver, DiagnosticObserver), 536 tests passing
-Last activity: 2026-02-26 - Completed quick task 9: Add init-config CLI command to generate a default template YAML config file
+Phase: 19 of 21 (Alpha Refactor Audit) — IN PROGRESS
+Plan: 1 of 4 in current phase — COMPLETE
+Status: Phase 19-01 Complete — Import boundary checker and pre-commit hook implemented; 7 IB-003 violations cataloged
+Last activity: 2026-02-26 - Completed Phase 19 Plan 01: Import boundary checker with pre-commit hook
 
-Progress: [██████░░░░] 60%
+Progress: [███████░░░] 70%
 
 ## Performance Metrics
 
@@ -147,6 +147,8 @@ Phase 13 decisions:
 - [Phase 19-alpha-refactor-audit]: Item 5 Open/Warning: skip_camera_id missing from PipelineConfig and build_stages() — 10 hardcoded occurrences, low-effort Phase 20 fix
 - [Phase 19-alpha-refactor-audit]: Items 3+6 Accepted: MidlineSet bridge pattern and CurveOptimizer statefulness are intentional design
 - [Phase 19-alpha-refactor-audit]: Items 4+7 Resolved: ReconstructionConfig thresholds and AssociationConfig fields completed as planned in Phase 15
+- [Phase 19-01]: IB-003 violations in core/ stage files cataloged (not fixed) -- 7 TYPE_CHECKING backdoors importing aquapose.engine.stages in all 5 stage.py files + core/synthetic.py
+- [Phase 19-01]: SR-002 (observer core imports) is warning not error -- some legitimate core imports may be needed by observers; IB-004 applies to legacy computation dirs
 
 ### Pending Todos
 
@@ -165,5 +167,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed quick task 9 (init-config CLI subcommand, 23 CLI tests pass)
+Stopped at: Completed Phase 19-01 (import boundary checker + pre-commit hook, 7 IB-003 violations cataloged)
 Resume file: None

@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 19 of 21 (Alpha Refactor Audit) — IN PROGRESS
-Plan: 2 of 4 in current phase — COMPLETE
-Status: Phase 19-02 Complete — Smoke test runner (tools/smoke_test.py) and pytest wrapper (tests/e2e/test_smoke.py) implemented; synthetic mode test passes in 6.56s
-Last activity: 2026-02-26 - Completed Phase 19 Plan 02: Smoke test script and pytest wrapper
+Plan: 3 of 4 in current phase — COMPLETE
+Status: Phase 19-03 Complete — 19-AUDIT.md produced: 19 findings (1 Critical root cause / 7 IB-003 violations, 7 Warnings, 10 Info), DoD gate 7 PASS / 2 FAIL, all 7 codebase health categories covered
+Last activity: 2026-02-26 - Completed Phase 19 Plan 03: Comprehensive audit report
 
-Progress: [███████░░░] 70%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
@@ -149,6 +149,10 @@ Phase 13 decisions:
 - [Phase 19-alpha-refactor-audit]: Items 4+7 Resolved: ReconstructionConfig thresholds and AssociationConfig fields completed as planned in Phase 15
 - [Phase 19-01]: IB-003 violations in core/ stage files cataloged (not fixed) -- 7 TYPE_CHECKING backdoors importing aquapose.engine.stages in all 5 stage.py files + core/synthetic.py
 - [Phase 19-01]: SR-002 (observer core imports) is warning not error -- some legitimate core imports may be needed by observers; IB-004 applies to legacy computation dirs
+- [Phase 19-03]: DoD gate FAIL on 2 criteria: IB-003 (7 TYPE_CHECKING backdoors in core/ stage files) and CLI 244 LOC (observer builder belongs in engine); both are Phase 20 targets
+- [Phase 19-03]: Regression tests all SKIPPED (not FAILED) -- infrastructure correct, video data at different path than expected; not a code defect
+- [Phase 19-03]: Legacy src/aquapose/pipeline/ module not yet archived -- active importable module, classified Warning AUD-008 for Phase 20 cleanup
+- [Phase 19-03]: 0 TODO/FIXME/HACK comments found in src/ and tests/ -- codebase clean of outstanding annotations
 
 ### Pending Todos
 
@@ -167,5 +171,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed Phase 19-02 (smoke test script + pytest wrapper, test_synthetic_mode passes in 6.56s)
+Stopped at: Completed Phase 19-03 (19-AUDIT.md: 19 findings, DoD 7 PASS / 2 FAIL, remediation summary for Phase 20)
 Resume file: None

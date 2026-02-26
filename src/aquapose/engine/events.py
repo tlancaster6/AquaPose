@@ -60,11 +60,15 @@ class PipelineComplete(Event):
     Attributes:
         run_id: Unique identifier for this pipeline run.
         elapsed_seconds: Wall-clock time for the entire pipeline run.
+        context: The final PipelineContext. Typed as ``object`` to maintain
+            the engine import boundary (ENG-07). Observers that need context
+            data cast this to the appropriate type.
         timestamp: Unix timestamp at event construction.
     """
 
     run_id: str = ""
     elapsed_seconds: float = 0.0
+    context: object = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)

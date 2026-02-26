@@ -176,6 +176,7 @@ class PosePipeline:
             PipelineComplete(
                 run_id=self._config.run_id,
                 elapsed_seconds=total_elapsed,
+                context=context,
             )
         )
 

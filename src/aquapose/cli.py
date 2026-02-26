@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import dataclasses
 import sys
 from pathlib import Path
 from typing import Any
 
 import click
+import yaml
 
 from aquapose.engine import (
     Animation3DObserver,
@@ -18,7 +20,6 @@ from aquapose.engine import (
     PosePipeline,
     TimingObserver,
     load_config,
-    serialize_config,
 )
 from aquapose.engine.observers import Observer
 from aquapose.engine.pipeline import build_stages
@@ -136,8 +137,8 @@ def cli() -> None:
     type=click.Choice(
         ["production", "diagnostic", "benchmark", "synthetic"], case_sensitive=False
     ),
-    default="production",
-    help="Execution mode preset.",
+    default=None,
+    help="Execution mode preset (default: from config, or production).",
 )
 @click.option(
     "--set",
@@ -158,7 +159,7 @@ def cli() -> None:
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Verbose output.")
 def run(
     config: str,
-    mode: str,
+    mode: str | None,
     overrides: tuple[str, ...],
     extra_observers: tuple[str, ...],
     verbose: bool,
@@ -172,25 +173,29 @@ def run(
             continue
         cli_overrides[key] = value
 
-    # 2. Inject mode into overrides
-    cli_overrides["mode"] = mode
+    # 2. Inject mode into overrides only if explicitly provided via CLI
+    if mode is not None:
+        cli_overrides["mode"] = mode
 
     # 3. Load config
     pipeline_config = load_config(yaml_path=config, cli_overrides=cli_overrides)
 
-    # 4. Build stages
+    # 4. Resolve effective mode (CLI > YAML > default)
+    effective_mode = pipeline_config.mode
+
+    # 5. Build stages
     stages = build_stages(pipeline_config)
 
-    # 5. Assemble observers
+    # 6. Assemble observers
     observers = _build_observers(
         config=pipeline_config,
-        mode=mode,
+        mode=effective_mode,
         verbose=verbose,
         total_stages=len(stages),
         extra_observers=extra_observers,
     )
 
-    # 6. Create and run pipeline
+    # 7. Create and run pipeline
     pipeline = PosePipeline(
         stages=stages,
         config=pipeline_config,
@@ -226,7 +231,10 @@ def init_config(output: str, force: bool) -> None:
             f"'{output}' already exists. Use --force to overwrite."
         )
     config = PipelineConfig()
-    yaml_content = serialize_config(config)
+    data = dataclasses.asdict(config)
+    for key in ("run_id", "output_dir"):
+        data.pop(key, None)
+    yaml_content = yaml.dump(data, default_flow_style=False, sort_keys=True)
     output_path.write_text(yaml_content)
     click.echo(f"Config written to {output}")
 

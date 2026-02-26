@@ -29,12 +29,20 @@ def mock_pipeline(tmp_path: Path):
     mock_config.calibration_path = str(tmp_path / "cal.json")
     mock_config.mode = "production"
 
+    def _load_config_side_effect(**kwargs: object) -> MagicMock:
+        cli_overrides = kwargs.get("cli_overrides", {})
+        if isinstance(cli_overrides, dict) and "mode" in cli_overrides:
+            mock_config.mode = cli_overrides["mode"]
+        return mock_config
+
     mock_stages = [MagicMock() for _ in range(5)]
     mock_pipeline_instance = MagicMock()
     mock_pipeline_instance.run.return_value = MagicMock()
 
     with (
-        patch("aquapose.cli.load_config", return_value=mock_config) as mock_lc,
+        patch(
+            "aquapose.cli.load_config", side_effect=_load_config_side_effect
+        ) as mock_lc,
         patch("aquapose.cli.build_stages", return_value=mock_stages) as mock_bs,
         patch(
             "aquapose.cli.PosePipeline", return_value=mock_pipeline_instance
@@ -111,10 +119,11 @@ class TestCLIExecution:
         )
         if isinstance(cli_overrides, dict):
             pass  # cli_overrides checked via load_config kwargs
-        # Verify mode is "production" in the overrides
+        # When --mode is not passed, mode should NOT be injected into overrides
+        # (defers to YAML config value or PipelineConfig default of "production")
         lc_kwargs = mock_pipeline["load_config"].call_args
         overrides = lc_kwargs.kwargs.get("cli_overrides", {})
-        assert overrides.get("mode") == "production"
+        assert "mode" not in overrides
 
     def test_mode_diagnostic_passed_to_config(
         self,

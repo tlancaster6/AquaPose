@@ -48,6 +48,10 @@ Progress: [███░░░░░░░] 25%
 
 ## Accumulated Context
 
+### Roadmap Evolution
+
+- Phase 14.1 inserted after Phase 14: Fix Critical Mismatch Between Old and Proposed Pipeline Structures (URGENT)
+
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.

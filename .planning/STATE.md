@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-25)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 14 — Golden Data and Verification Framework
+**Current focus:** Phase 14.1 — Fix Critical Mismatch Between Old and Proposed Pipeline Structures
 
 ## Current Position
 
-Phase: 14 of 18 (Golden Data and Verification Framework)
-Plan: 2 of 2 in current phase — COMPLETE
-Status: Phase 14 Complete
-Last activity: 2026-02-25 — Completed 14-02 (golden regression harness, 9 @slow tests passing)
+Phase: 14.1 of 18 (Fix Critical Mismatch Between Old and Proposed Pipeline Structures)
+Plan: 1 of 2 in current phase — COMPLETE
+Status: Phase 14.1 In Progress
+Last activity: 2026-02-26 — Completed 14.1-01 (planning docs updated to 5-stage model, inbox cleaned)
 
 Progress: [███░░░░░░░] 25%
 
@@ -51,11 +51,18 @@ Progress: [███░░░░░░░] 25%
 ### Roadmap Evolution
 
 - Phase 14.1 inserted after Phase 14: Fix Critical Mismatch Between Old and Proposed Pipeline Structures (URGENT)
+- Phase 15 plan count corrected from 7 to 5 plans (5-stage canonical pipeline model)
 
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
 Key decisions entering v2.0:
+Phase 14.1-01 decisions:
+- 5 canonical stages replace 7: Detection, Midline (segment-then-extract), Association, Tracking, Reconstruction — matches guidebook Section 6
+- Midline stage subsumes U-Net/SAM segmentation + skeletonization+BFS as single segment-then-extract backend (not separate stages)
+- Reconstruction stage subsumes RANSAC triangulation + B-spline fitting; curve optimizer is planned second backend within same stage
+- STG requirements reduced from 7 (STG-01..07) to 5 (STG-01..05); total v2.0 requirement count drops from 24 to 22
+
 Phase 14-02 decisions:
 - CropRegion has x1/y1/x2/y2 fields (not x/y/width/height as plan described) — tests written to actual API
 - FishTrack uses positions deque (not centroid_3d) — tests assert positions[-1].shape == (3,)
@@ -98,6 +105,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-25
-Stopped at: Completed 14-02-PLAN.md (both tasks complete, Phase 14 done)
+Last session: 2026-02-26
+Stopped at: Completed 14.1-01-PLAN.md (planning docs aligned to 5-stage model, inbox cleaned)
 Resume file: None

@@ -78,7 +78,7 @@ Plans:
 **Goal:** Align all active planning documents and Phase 13/14 code to the guidebook's canonical 5-stage pipeline model (Detection, Midline, Association, Tracking, Reconstruction). The guidebook is the single source of truth. This phase does NOT port any stages — it corrects the planning foundation so Phase 15 starts from a consistent, accurate model.
 **Requirements**: None (correction phase — updates existing requirements)
 **Depends on:** Phase 14
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 14.1-01-PLAN.md — Update planning documents (ROADMAP, REQUIREMENTS) and delete redundant inbox files (wave 1)

@@ -110,6 +110,7 @@ class Overlay2DObserver:
         # Load calibration and build per-camera projection models.
         from aquapose.calibration.loader import load_calibration_data
         from aquapose.calibration.projection import RefractiveProjectionModel
+        from aquapose.io.video import VideoSet
 
         calib_data = load_calibration_data(str(self._calibration_path))
         models: dict[str, RefractiveProjectionModel] = {}
@@ -126,10 +127,10 @@ class Overlay2DObserver:
                     n_water=calib_data.n_water,
                 )
 
-        # Open video captures for each camera.
+        # Resolve video paths for each camera.
         # Supports both exact "{cam_id}.mp4" and prefix-match "{cam_id}-*.mp4"
         # (e.g. timestamped filenames like "e3v829d-20260218T145915-150429.mp4").
-        captures: dict[str, cv2.VideoCapture] = {}
+        camera_map: dict[str, Path] = {}
         for cam_id in camera_ids:
             video_path = self._video_dir / f"{cam_id}.mp4"
             if not video_path.exists():
@@ -138,128 +139,122 @@ class Overlay2DObserver:
                     video_path = matches[0]
                 else:
                     continue
-            captures[cam_id] = cv2.VideoCapture(str(video_path))
+            camera_map[cam_id] = video_path
 
-        if not captures:
+        if not camera_map:
             logger.warning("No video files found in %s", self._video_dir)
             return
-
-        # Get frame dimensions from first capture.
-        first_cap = next(iter(captures.values()))
-        frame_w = int(first_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        frame_h = int(first_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
         n_frames = len(midlines_3d)
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Set up video writers.
-        mosaic_writer = None
-        per_cam_writers: dict[str, cv2.VideoWriter] = {}
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        # Use VideoSet for synchronized, undistorted frame reading.
+        with VideoSet(camera_map, undistortion=calib_data) as video_set:
+            # Frame dimensions from calibration (undistortion preserves size).
+            first_cam = calib_data.cameras[next(iter(camera_map))]
+            frame_w, frame_h = first_cam.image_size
 
-        # Compute scaled output dimensions.
-        out_w = int(frame_w * self._scale)
-        out_h = int(frame_h * self._scale)
+            # Set up video writers.
+            mosaic_writer = None
+            per_cam_writers: dict[str, cv2.VideoWriter] = {}
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 
-        if self._mosaic:
-            mosaic_h, mosaic_w = self._mosaic_dims(len(camera_ids), out_w, out_h)
-            mosaic_path = self._output_dir / "overlay_mosaic.mp4"
-            mosaic_writer = cv2.VideoWriter(
-                str(mosaic_path), fourcc, self._fps, (mosaic_w, mosaic_h)
-            )
+            # Compute scaled output dimensions.
+            out_w = int(frame_w * self._scale)
+            out_h = int(frame_h * self._scale)
 
-        if self._per_camera:
-            for cam_id in camera_ids:
-                if cam_id in captures:
+            if self._mosaic:
+                mosaic_h, mosaic_w = self._mosaic_dims(len(camera_ids), out_w, out_h)
+                mosaic_path = self._output_dir / "overlay_mosaic.mp4"
+                mosaic_writer = cv2.VideoWriter(
+                    str(mosaic_path), fourcc, self._fps, (mosaic_w, mosaic_h)
+                )
+
+            if self._per_camera:
+                for cam_id in camera_map:
                     cam_path = self._output_dir / f"overlay_{cam_id}.mp4"
                     per_cam_writers[cam_id] = cv2.VideoWriter(
                         str(cam_path), fourcc, self._fps, (out_w, out_h)
                     )
 
-        try:
-            for frame_idx in range(n_frames):
-                frames: dict[str, np.ndarray] = {}
-                for cam_id, cap in captures.items():
-                    ret, frame = cap.read()
-                    if not ret:
-                        frames[cam_id] = np.zeros((frame_h, frame_w, 3), dtype=np.uint8)
-                    else:
-                        frames[cam_id] = frame
+            try:
+                for frame_idx, frames in video_set:
+                    if frame_idx >= n_frames:
+                        break
 
-                # Draw reprojected 3D midlines.
-                frame_midlines = midlines_3d[frame_idx]
-                if isinstance(frame_midlines, dict):
-                    for _fish_id, spline in frame_midlines.items():
-                        for cam_id in camera_ids:
-                            if cam_id not in frames or cam_id not in models:
-                                continue
-                            pts_2d = self._reproject_3d_midline(
-                                spline, cam_id, models[cam_id]
-                            )
-                            if pts_2d is not None:
-                                self._draw_midline(
-                                    frames[cam_id],
-                                    pts_2d,
-                                    self._reprojected_color,
+                    # Draw reprojected 3D midlines.
+                    frame_midlines = midlines_3d[frame_idx]
+                    if isinstance(frame_midlines, dict):
+                        for _fish_id, spline in frame_midlines.items():
+                            for cam_id in camera_ids:
+                                if cam_id not in frames or cam_id not in models:
+                                    continue
+                                pts_2d = self._reproject_3d_midline(
+                                    spline, cam_id, models[cam_id]
                                 )
+                                if pts_2d is not None:
+                                    self._draw_midline(
+                                        frames[cam_id],
+                                        pts_2d,
+                                        self._reprojected_color,
+                                    )
 
-                # Draw original 2D midlines.
-                if annotated_detections is not None and frame_idx < len(
-                    annotated_detections
-                ):
-                    frame_dets = annotated_detections[frame_idx]
-                    if isinstance(frame_dets, dict):
-                        for cam_id, dets in frame_dets.items():
-                            if cam_id not in frames:
-                                continue
-                            for det in dets:
-                                midline = getattr(det, "midline", None)
-                                if midline is not None:
-                                    pts = getattr(midline, "points", None)
-                                    if pts is not None:
-                                        pts_arr = np.asarray(pts, dtype=np.float32)
-                                        self._draw_midline(
-                                            frames[cam_id],
-                                            pts_arr,
-                                            self._midline_2d_color,
-                                        )
-                                if self._show_bbox:
-                                    bbox = getattr(det, "bbox", None)
-                                    if bbox is not None:
-                                        fish_id_label = (
-                                            getattr(det, "fish_id", None)
-                                            if self._show_fish_id
-                                            else None
-                                        )
-                                        self._draw_bbox(
-                                            frames[cam_id],
-                                            bbox,
-                                            self._midline_2d_color,
-                                            fish_id=fish_id_label,
-                                        )
+                    # Draw original 2D midlines.
+                    if annotated_detections is not None and frame_idx < len(
+                        annotated_detections
+                    ):
+                        frame_dets = annotated_detections[frame_idx]
+                        if isinstance(frame_dets, dict):
+                            for cam_id, dets in frame_dets.items():
+                                if cam_id not in frames:
+                                    continue
+                                for det in dets:
+                                    midline = getattr(det, "midline", None)
+                                    if midline is not None:
+                                        pts = getattr(midline, "points", None)
+                                        if pts is not None:
+                                            pts_arr = np.asarray(pts, dtype=np.float32)
+                                            self._draw_midline(
+                                                frames[cam_id],
+                                                pts_arr,
+                                                self._midline_2d_color,
+                                            )
+                                    if self._show_bbox:
+                                        bbox = getattr(det, "bbox", None)
+                                        if bbox is not None:
+                                            fish_id_label = (
+                                                getattr(det, "fish_id", None)
+                                                if self._show_fish_id
+                                                else None
+                                            )
+                                            self._draw_bbox(
+                                                frames[cam_id],
+                                                bbox,
+                                                self._midline_2d_color,
+                                                fish_id=fish_id_label,
+                                            )
 
-                # Scale frames down for output.
-                if self._scale != 1.0:
-                    frames = {
-                        cid: cv2.resize(f, (out_w, out_h)) for cid, f in frames.items()
-                    }
+                    # Scale frames down for output.
+                    if self._scale != 1.0:
+                        frames = {
+                            cid: cv2.resize(f, (out_w, out_h))
+                            for cid, f in frames.items()
+                        }
 
-                # Write mosaic.
+                    # Write mosaic.
+                    if mosaic_writer is not None:
+                        mosaic_frame = self._build_mosaic(frames, camera_ids)
+                        mosaic_writer.write(mosaic_frame)
+
+                    # Write per-camera.
+                    for cam_id, writer in per_cam_writers.items():
+                        if cam_id in frames:
+                            writer.write(frames[cam_id])
+            finally:
                 if mosaic_writer is not None:
-                    mosaic_frame = self._build_mosaic(frames, camera_ids)
-                    mosaic_writer.write(mosaic_frame)
-
-                # Write per-camera.
-                for cam_id, writer in per_cam_writers.items():
-                    if cam_id in frames:
-                        writer.write(frames[cam_id])
-        finally:
-            if mosaic_writer is not None:
-                mosaic_writer.release()
-            for writer in per_cam_writers.values():
-                writer.release()
-            for cap in captures.values():
-                cap.release()
+                    mosaic_writer.release()
+                for writer in per_cam_writers.values():
+                    writer.release()
 
         logger.info("Overlay videos written to %s", self._output_dir)
 

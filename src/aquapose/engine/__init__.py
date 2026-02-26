@@ -31,6 +31,7 @@ from aquapose.engine.events import (
 from aquapose.engine.observers import EventBus, Observer
 from aquapose.engine.pipeline import PosePipeline
 from aquapose.engine.stages import PipelineContext, Stage
+from aquapose.engine.timing import TimingObserver
 
 __all__ = [
     "AssociationConfig",
@@ -50,6 +51,7 @@ __all__ = [
     "Stage",
     "StageComplete",
     "StageStart",
+    "TimingObserver",
     "TrackingConfig",
     "load_config",
     "serialize_config",

@@ -8,7 +8,7 @@ import torch
 
 from aquapose.calibration.projection import RefractiveProjectionModel
 from aquapose.segmentation.detector import Detection
-from aquapose.tracking import FishTrack, FishTracker, UnclaimedInfo
+from aquapose.tracking import FishTrack, FishTracker
 from aquapose.tracking.tracker import TrackHealth, TrackState
 
 # ---------------------------------------------------------------------------
@@ -774,73 +774,4 @@ def test_coasting_prediction_tracks_fish() -> None:
     assert error_mm < 5.0, (
         f"Coasting prediction error {error_mm:.1f}mm is too large. "
         f"Predicted: {predicted}, true: {true_pos_after_7}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Test: Near-claim penalty suppresses ghost births
-# ---------------------------------------------------------------------------
-
-
-def test_near_claim_penalty_suppresses_ghost(
-    models: dict[str, RefractiveProjectionModel],
-) -> None:
-    """Ghost candidate from near-claimed detections is suppressed by residual penalty.
-
-    Setup: two established tracks (fish A and B) each claim their detections.
-    A borderline-unclaimed detection (just outside the 15px threshold) from
-    each fish is left unclaimed.  Without the near-claim penalty, RANSAC
-    could triangulate these two borderline detections into a phantom 3D
-    position.  With the penalty, the inflated mean residual causes the ghost
-    to fail the quality gate or lose to real candidates.
-    """
-    tracker = FishTracker(
-        min_hits=1,
-        max_age=7,
-        expected_count=9,
-        min_cameras_birth=2,
-        reprojection_threshold=15.0,
-    )
-
-    # Two fish well separated (~30 cm apart)
-    pos_a = np.array([-0.15, 0.0, 1.5], dtype=np.float32)
-    pos_b = np.array([0.15, 0.0, 1.5], dtype=np.float32)
-
-    # Establish tracks over several frames
-    for f in range(5):
-        dets = _project_to_detections([pos_a, pos_b], models)
-        tracker.update(dets, models, frame_index=f)
-
-    confirmed = [t for t in tracker.get_all_tracks() if t.is_confirmed]
-    assert len(confirmed) == 2, f"Expected 2 confirmed tracks, got {len(confirmed)}"
-
-    # Now check that claim_detections_for_tracks returns UnclaimedInfo
-    # with min_claim_distance populated.
-    from aquapose.tracking.associate import claim_detections_for_tracks
-
-    predicted_positions = {t.fish_id: t.predict() for t in confirmed}
-    track_priorities = {t.fish_id: 0 for t in confirmed}
-    dets = _project_to_detections([pos_a, pos_b], models)
-
-    _claims, unclaimed_info = claim_detections_for_tracks(
-        predicted_positions=predicted_positions,
-        track_priorities=track_priorities,
-        detections_per_camera=dets,
-        models=models,
-        reprojection_threshold=15.0,
-    )
-
-    # Verify return type is UnclaimedInfo
-    assert isinstance(unclaimed_info, UnclaimedInfo)
-    assert isinstance(unclaimed_info.indices, dict)
-    assert isinstance(unclaimed_info.min_claim_distance, dict)
-
-    # Run the full tracker update one more time to verify no ghost births
-    # appear — the count should stay at 2 confirmed tracks.
-    dets = _project_to_detections([pos_a, pos_b], models)
-    tracker.update(dets, models, frame_index=5)
-
-    final_confirmed = [t for t in tracker.get_all_tracks() if t.is_confirmed]
-    assert len(final_confirmed) == 2, (
-        f"Expected 2 confirmed tracks (no ghost births), got {len(final_confirmed)}"
     )

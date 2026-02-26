@@ -450,7 +450,7 @@ class FishTracker:
         # ----------------------------------------------------------
         non_dead = [t for t in self.tracks if not t.is_dead]
         claimed_track_ids: set[int] = set()
-        unclaimed_info = UnclaimedInfo(indices={}, min_claim_distance={})
+        unclaimed_info = UnclaimedInfo(indices={})
 
         if non_dead and any(len(dets) > 0 for dets in detections_per_camera.values()):
             predicted_positions: dict[int, np.ndarray] = {}
@@ -516,19 +516,13 @@ class FishTracker:
             # No tracks or no detections — all tracks missed
             for t in non_dead:
                 t.mark_missed()
-            # All detections are unclaimed (no tracks → infinite distance)
+            # All detections are unclaimed
             unclaimed_idx = {
                 cam: list(range(len(dets)))
                 for cam, dets in detections_per_camera.items()
                 if len(dets) > 0
             }
-            unclaimed_min_dist = {
-                cam: {i: float("inf") for i in indices}
-                for cam, indices in unclaimed_idx.items()
-            }
-            unclaimed_info = UnclaimedInfo(
-                indices=unclaimed_idx, min_claim_distance=unclaimed_min_dist
-            )
+            unclaimed_info = UnclaimedInfo(indices=unclaimed_idx)
 
         # ----------------------------------------------------------
         # Phase 1.5: Deduplicate confirmed tracks (disabled for testing)
@@ -561,7 +555,6 @@ class FishTracker:
                 reprojection_threshold=self.reprojection_threshold,
                 min_cameras=self.min_cameras_birth,
                 seed_points=self.get_seed_points(),
-                near_claim_distances=unclaimed_info.min_claim_distance,
             )
 
             # TRACK-04: collect dead IDs for recycling

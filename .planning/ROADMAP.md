@@ -37,7 +37,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] **Phase 15: Stage Migrations** - Port all 5 computation stages as pure Stage implementors (completed 2026-02-26)
 - [x] **Phase 16: Numerical Verification and Legacy Cleanup** - Regression tests against golden data, archive legacy scripts (completed 2026-02-26)
 - [x] **Phase 17: Observers** - Timing, HDF5 export, 2D reprojection, 3D animation, diagnostic observers (completed 2026-02-26)
-- [ ] **Phase 18: CLI and Execution Modes** - `aquapose run` entrypoint, production/diagnostic/synthetic/benchmark modes
+- [x] **Phase 18: CLI and Execution Modes** - `aquapose run` entrypoint, production/diagnostic/synthetic/benchmark modes (completed 2026-02-26)
 
 ## Phase Details
 
@@ -172,4 +172,4 @@ Plans:
 | 15. Stage Migrations | 5/5 | Complete    | 2026-02-26 | - |
 | 16. Numerical Verification and Legacy Cleanup | 2/2 | Complete    | 2026-02-26 | - |
 | 17. Observers | 5/5 | Complete    | 2026-02-26 | - |
-| 18. CLI and Execution Modes | v2.0 | 0/3 | Not started | - |
+| 18. CLI and Execution Modes | v2.0 | Complete    | 2026-02-26 | - |

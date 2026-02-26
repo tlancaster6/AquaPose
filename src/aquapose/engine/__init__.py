@@ -20,6 +20,7 @@ from aquapose.engine.config import (
     load_config,
     serialize_config,
 )
+from aquapose.engine.console_observer import ConsoleObserver
 from aquapose.engine.diagnostic_observer import DiagnosticObserver, StageSnapshot
 from aquapose.engine.events import (
     Event,
@@ -40,6 +41,7 @@ from aquapose.engine.timing import TimingObserver
 __all__ = [
     "Animation3DObserver",
     "AssociationConfig",
+    "ConsoleObserver",
     "DetectionConfig",
     "DiagnosticObserver",
     "Event",

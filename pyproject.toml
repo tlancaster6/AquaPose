@@ -36,6 +36,7 @@ dependencies = [
     "pycocotools>=2.0",
     "ultralytics>=8.0",
     "plotly>=5.18",
+    "click>=8.1",
 ]
 
 # pytorch3d must be installed separately (not on PyPI stable):
@@ -54,9 +55,8 @@ Documentation = "https://aquapose.readthedocs.io"
 Repository = "https://github.com/tlancaster6/aquapose"
 Issues = "https://github.com/tlancaster6/aquapose/issues"
 
-# Uncomment to add a CLI entry point:
-# [project.scripts]
-# aquapose = "aquapose.cli:main"
+[project.scripts]
+aquapose = "aquapose.cli:main"
 
 [tool.hatch.build.targets.sdist]
 exclude = [".planning/", ".claude/", ".hooks/"]

@@ -35,6 +35,7 @@ class Overlay2DObserver:
         show_bbox: If True, draw bounding boxes around detections.
         show_fish_id: If True, draw fish ID text near detection centroids.
         fps: Output video frame rate.
+        scale: Output scale factor (e.g. 0.5 for half resolution).
         reprojected_color: BGR color for reprojected 3D midlines.
         midline_2d_color: BGR color for original 2D midlines.
 
@@ -60,6 +61,7 @@ class Overlay2DObserver:
         show_bbox: bool = False,
         show_fish_id: bool = False,
         fps: float = 30.0,
+        scale: float = 0.5,
         reprojected_color: tuple[int, int, int] = _DEFAULT_REPROJECTED_COLOR,
         midline_2d_color: tuple[int, int, int] = _DEFAULT_MIDLINE_2D_COLOR,
     ) -> None:
@@ -71,6 +73,7 @@ class Overlay2DObserver:
         self._show_bbox = show_bbox
         self._show_fish_id = show_fish_id
         self._fps = fps
+        self._scale = scale
         self._reprojected_color = reprojected_color
         self._midline_2d_color = midline_2d_color
 
@@ -154,8 +157,12 @@ class Overlay2DObserver:
         per_cam_writers: dict[str, cv2.VideoWriter] = {}
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 
+        # Compute scaled output dimensions.
+        out_w = int(frame_w * self._scale)
+        out_h = int(frame_h * self._scale)
+
         if self._mosaic:
-            mosaic_h, mosaic_w = self._mosaic_dims(len(camera_ids), frame_w, frame_h)
+            mosaic_h, mosaic_w = self._mosaic_dims(len(camera_ids), out_w, out_h)
             mosaic_path = self._output_dir / "overlay_mosaic.mp4"
             mosaic_writer = cv2.VideoWriter(
                 str(mosaic_path), fourcc, self._fps, (mosaic_w, mosaic_h)
@@ -166,7 +173,7 @@ class Overlay2DObserver:
                 if cam_id in captures:
                     cam_path = self._output_dir / f"overlay_{cam_id}.mp4"
                     per_cam_writers[cam_id] = cv2.VideoWriter(
-                        str(cam_path), fourcc, self._fps, (frame_w, frame_h)
+                        str(cam_path), fourcc, self._fps, (out_w, out_h)
                     )
 
         try:
@@ -230,6 +237,12 @@ class Overlay2DObserver:
                                             self._midline_2d_color,
                                             fish_id=fish_id_label,
                                         )
+
+                # Scale frames down for output.
+                if self._scale != 1.0:
+                    frames = {
+                        cid: cv2.resize(f, (out_w, out_h)) for cid, f in frames.items()
+                    }
 
                 # Write mosaic.
                 if mosaic_writer is not None:

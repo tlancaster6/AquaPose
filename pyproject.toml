@@ -35,6 +35,7 @@ dependencies = [
     "aquacal",
     "pycocotools>=2.0",
     "ultralytics>=8.0",
+    "plotly>=5.18",
 ]
 
 # pytorch3d must be installed separately (not on PyPI stable):

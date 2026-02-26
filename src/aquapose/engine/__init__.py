@@ -9,6 +9,7 @@ computation modules must NEVER import from engine/. This is enforced at all
 levels with no TYPE_CHECKING exceptions.
 """
 
+from aquapose.engine.animation_observer import Animation3DObserver
 from aquapose.engine.config import (
     AssociationConfig,
     DetectionConfig,
@@ -37,6 +38,7 @@ from aquapose.engine.stages import PipelineContext, Stage
 from aquapose.engine.timing import TimingObserver
 
 __all__ = [
+    "Animation3DObserver",
     "AssociationConfig",
     "DetectionConfig",
     "DiagnosticObserver",

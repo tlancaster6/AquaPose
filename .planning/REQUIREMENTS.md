@@ -20,13 +20,11 @@ Requirements for the pre-alpha clean-room refactor. Each maps to roadmap phases.
 
 ### Stage Migrations
 
-- [ ] **STG-01**: Detection stage ported (YOLO/MOG2) — pure computation, no side effects
-- [ ] **STG-02**: Segmentation stage ported (U-Net inference) — pure computation, no side effects
-- [ ] **STG-03**: Midline extraction stage ported (skeletonization + BFS pruning)
-- [ ] **STG-04**: Cross-view association stage ported (RANSAC centroid clustering)
-- [ ] **STG-05**: Triangulation stage ported (RANSAC + view-angle weighting + B-spline fitting)
-- [ ] **STG-06**: Tracking stage ported (Hungarian 3D tracking with population constraint)
-- [ ] **STG-07**: Curve optimizer stage ported (correspondence-free B-spline via chamfer distance)
+- [ ] **STG-01**: Detection stage ported (model-based backend: YOLO/MOG2) — pure computation, no side effects
+- [ ] **STG-02**: Midline stage ported (segment-then-extract backend: U-Net/SAM segmentation + skeletonization + BFS pruning) — pure computation, no side effects
+- [ ] **STG-03**: Cross-view association stage ported (RANSAC centroid clustering) — pure computation, no side effects
+- [ ] **STG-04**: Tracking stage ported (Hungarian 3D tracking with population constraint) — pure computation, no side effects
+- [ ] **STG-05**: Reconstruction stage ported (triangulation backend: RANSAC + view-angle weighting + B-spline fitting; curve optimizer backend planned) — pure computation, no side effects
 
 ### Observers
 
@@ -93,8 +91,6 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STG-03 | Phase 15 | Pending |
 | STG-04 | Phase 15 | Pending |
 | STG-05 | Phase 15 | Pending |
-| STG-06 | Phase 15 | Pending |
-| STG-07 | Phase 15 | Pending |
 | VER-03 | Phase 16 | Pending |
 | VER-04 | Phase 16 | Pending |
 | OBS-01 | Phase 17 | Pending |
@@ -109,8 +105,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CLI-05 | Phase 18 | Pending |
 
 **Coverage:**
-- v2.0 requirements: 24 total
-- Mapped to phases: 24
+- v2.0 requirements: 22 total
+- Mapped to phases: 22
 - Unmapped: 0 ✓
 
 ---

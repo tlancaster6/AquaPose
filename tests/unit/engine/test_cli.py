@@ -321,6 +321,55 @@ class TestBenchmarkMode:
         assert HDF5ExportObserver in types
 
 
+class TestInitConfig:
+    """Tests for the init-config subcommand."""
+
+    def test_init_config_creates_default_file(
+        self, runner: click.testing.CliRunner
+    ) -> None:
+        with runner.isolated_filesystem():
+            result = runner.invoke(cli, ["init-config"])
+            assert result.exit_code == 0
+            config_path = Path("aquapose.yaml")
+            assert config_path.exists()
+            content = config_path.read_text()
+            assert "detection" in content
+            assert "midline" in content
+            assert "association" in content
+            assert "tracking" in content
+            assert "reconstruction" in content
+
+    def test_init_config_custom_output(self, runner: click.testing.CliRunner) -> None:
+        with runner.isolated_filesystem():
+            result = runner.invoke(cli, ["init-config", "-o", "custom.yaml"])
+            assert result.exit_code == 0
+            assert Path("custom.yaml").exists()
+
+    def test_init_config_refuses_overwrite(
+        self, runner: click.testing.CliRunner
+    ) -> None:
+        with runner.isolated_filesystem():
+            Path("aquapose.yaml").write_text("original: content\n")
+            result = runner.invoke(cli, ["init-config"])
+            assert result.exit_code != 0
+            assert Path("aquapose.yaml").read_text() == "original: content\n"
+
+    def test_init_config_force_overwrites(
+        self, runner: click.testing.CliRunner
+    ) -> None:
+        with runner.isolated_filesystem():
+            Path("aquapose.yaml").write_text("original: content\n")
+            result = runner.invoke(cli, ["init-config", "--force"])
+            assert result.exit_code == 0
+            content = Path("aquapose.yaml").read_text()
+            assert "detection" in content
+
+    def test_init_config_help(self, runner: click.testing.CliRunner) -> None:
+        result = runner.invoke(cli, ["init-config", "--help"])
+        assert result.exit_code == 0
+        assert "--output" in result.output
+
+
 class TestSyntheticMode:
     """Tests for --mode synthetic CLI behavior."""
 

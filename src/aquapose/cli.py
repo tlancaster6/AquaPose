@@ -18,6 +18,7 @@ from aquapose.engine import (
     PosePipeline,
     TimingObserver,
     load_config,
+    serialize_config,
 )
 from aquapose.engine.observers import Observer
 from aquapose.engine.pipeline import build_stages
@@ -201,6 +202,33 @@ def run(
     except Exception as exc:
         sys.stderr.write(f"Error: {exc}\n")
         sys.exit(1)
+
+
+@cli.command("init-config")
+@click.option(
+    "--output",
+    "-o",
+    default="aquapose.yaml",
+    type=click.Path(),
+    help="Output file path (default: aquapose.yaml).",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help="Overwrite existing file.",
+)
+def init_config(output: str, force: bool) -> None:
+    """Generate a default template YAML config file with all pipeline defaults."""
+    output_path = Path(output)
+    if output_path.exists() and not force:
+        raise click.ClickException(
+            f"'{output}' already exists. Use --force to overwrite."
+        )
+    config = PipelineConfig()
+    yaml_content = serialize_config(config)
+    output_path.write_text(yaml_content)
+    click.echo(f"Config written to {output}")
 
 
 def main() -> None:

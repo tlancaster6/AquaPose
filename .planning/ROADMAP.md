@@ -100,7 +100,7 @@ Plans:
 - [x] 15-02-PLAN.md — Midline stage (segment-then-extract backend: U-Net/SAM + skeletonization + BFS pruning) (wave 2)
 - [x] 15-03-PLAN.md — Cross-view association stage (RANSAC centroid clustering) (wave 3)
 - [x] 15-04-PLAN.md — Tracking stage (Hungarian 3D with population constraint) (wave 4)
-- [ ] 15-05-PLAN.md — Reconstruction stage (triangulation backend: RANSAC + view-angle weighting + B-spline fitting) (wave 5)
+- [x] 15-05-PLAN.md — Reconstruction stage (triangulation backend: RANSAC + view-angle weighting + B-spline fitting) (wave 5)
 
 ### Phase 16: Numerical Verification and Legacy Cleanup
 **Goal**: The migrated pipeline is confirmed numerically equivalent to v1.0 on real data, and all legacy scripts are archived and removed from active paths
@@ -170,6 +170,6 @@ Plans:
 | 13. Engine Core | 4/4 | Complete    | 2026-02-25 | - |
 | 14. Golden Data and Verification Framework | 2/2 | Complete    | 2026-02-25 | - |
 | 15. Stage Migrations | 5/5 | Complete    | 2026-02-26 | - |
-| 16. Numerical Verification and Legacy Cleanup | v2.0 | 0/2 | Not started | - |
+| 16. Numerical Verification and Legacy Cleanup | 1/2 | In Progress|  | - |
 | 17. Observers | v2.0 | 0/5 | Not started | - |
 | 18. CLI and Execution Modes | v2.0 | 0/3 | Not started | - |

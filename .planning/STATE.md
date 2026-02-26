@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-25)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 15 — Stage Migrations (5-stage pipeline)
+**Current focus:** Phase 16 — Numerical Verification and Legacy Cleanup
 
 ## Current Position
 
-Phase: 15 of 18 (Stage Migrations) — COMPLETE
-Plan: 5 of 5 in current phase — COMPLETE
-Status: Phase 15 Complete — All 5 stage migrations done
-Last activity: 2026-02-26 — Completed 15-05 (ReconstructionStage in core/reconstruction/, build_stages() factory, all 5 stages wired)
+Phase: 16 of 18 (Numerical Verification and Legacy Cleanup) — IN PROGRESS
+Plan: 1 of 2 in current phase — COMPLETE
+Status: Phase 16 Plan 1 Complete — Regression test suite and golden data generator updated
+Last activity: 2026-02-26 — Completed 16-01 (tests/regression/ package, 7 regression tests, generate_golden_data.py updated to PosePipeline)
 
-Progress: [█████░░░░░] 50%
+Progress: [█████░░░░░] 55%
 
 ## Performance Metrics
 
@@ -58,6 +58,13 @@ Progress: [█████░░░░░] 50%
 
 Decisions are logged in PROJECT.md Key Decisions table.
 Key decisions entering v2.0:
+
+Phase 16-01 decisions:
+- Midline regression test marked xfail(strict=False): v1.0 golden midlines keyed by fish_id post-tracking, new pipeline extracts midlines pre-tracking — direct comparison requires golden data regeneration with PosePipeline
+- pipeline_context fixture is session-scoped: runs full pipeline exactly once and shares PipelineContext across all 7 regression tests
+- test_pipeline_determinism runs pipeline twice with same seed and asserts np.array_equal (atol=0) — validates guidebook reproducibility contract
+- generate_golden_data.py masks extraction: AnnotatedDetection.mask + .crop_region reformatted to legacy tuple format for golden_segmentation.pt.gz backward compat
+
 Phase 15-05 decisions:
 - TriangulationBackend is stateless (delegates to triangulate_midlines()); CurveOptimizerBackend is stateful — single CurveOptimizer persists across frames for warm-starting
 - MidlineSet assembly bridges Stage 2 + Stage 4: FishTrack.camera_detections (cam_id→det_idx) used to look up annotated_detections[frame][cam][idx].midline
@@ -141,5 +148,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 15-05-PLAN.md (ReconstructionStage in core/reconstruction/, build_stages() factory, all 5 stages wired, Phase 15 complete)
+Stopped at: Completed 16-01-PLAN.md (tests/regression/ package with 7 regression tests, generate_golden_data.py updated to PosePipeline)
 Resume file: None

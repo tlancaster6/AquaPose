@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 15 of 18 (Stage Migrations)
-Plan: 2 of 5 in current phase — COMPLETE
-Status: Phase 15 Plan 02 Complete
-Last activity: 2026-02-26 — Completed 15-02 (MidlineStage created in core/midline/)
+Plan: 3 of 5 in current phase — COMPLETE
+Status: Phase 15 Plan 03 Complete
+Last activity: 2026-02-26 — Completed 15-03 (AssociationStage created in core/association/)
 
-Progress: [████░░░░░░] 32%
+Progress: [████░░░░░░] 35%
 
 ## Performance Metrics
 
@@ -58,6 +58,13 @@ Progress: [████░░░░░░] 32%
 
 Decisions are logged in PROJECT.md Key Decisions table.
 Key decisions entering v2.0:
+Phase 15-03 decisions:
+- AssociationBundle uses fish_idx (per-frame 0-indexed) not fish_id — persistent IDs assigned by Tracking (Stage 4)
+- RansacCentroidBackend delegates to existing discover_births() — port behavior, not rewrite
+- ALL detections are unclaimed at Stage 3 — tracking has not yet run; v1.0 discover_births only saw unclaimed remainder
+- AssociationStage reads annotated_detections preferentially over detections — unwraps AnnotatedDetection to get Detection for RANSAC
+- AssociationConfig gains expected_count, min_cameras, reprojection_threshold — no longer empty placeholder
+
 Phase 15-02 decisions:
 - MidlineStage extracts midlines for ALL detections (not just tracked fish) — tracking has not run yet; fish_id=-1 placeholder used
 - segment_then_extract backend directly calls private helpers from reconstruction.midline — avoids reimplementing the midline pipeline
@@ -122,5 +129,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 15-02-PLAN.md (MidlineStage created in core/midline/, all tests pass)
+Stopped at: Completed 15-03-PLAN.md (AssociationStage created in core/association/, all 9 tests pass)
 Resume file: None

@@ -13,16 +13,19 @@ from pathlib import Path
 import pytest
 
 # ---------------------------------------------------------------------------
-# Load diagnose_tracking module via importlib (it's in scripts/, not a package)
+# Load diagnose_tracking module via importlib (archived to scripts/legacy/)
 # ---------------------------------------------------------------------------
 
 _SCRIPT_PATH = (
-    Path(__file__).parent.parent.parent.parent / "scripts" / "diagnose_tracking.py"
+    Path(__file__).parent.parent.parent.parent
+    / "scripts"
+    / "legacy"
+    / "diagnose_tracking.py"
 )
 
 
 def _load_module() -> object:
-    """Load diagnose_tracking.py as a module via importlib."""
+    """Load diagnose_tracking.py as a module via importlib from scripts/legacy/."""
     spec = importlib.util.spec_from_file_location(
         "diagnose_tracking", str(_SCRIPT_PATH)
     )

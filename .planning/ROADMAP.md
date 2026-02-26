@@ -36,7 +36,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] **Phase 14: Golden Data and Verification Framework** - Generate frozen reference outputs from v1.0, define interface test harness (completed 2026-02-25)
 - [x] **Phase 15: Stage Migrations** - Port all 5 computation stages as pure Stage implementors (completed 2026-02-26)
 - [x] **Phase 16: Numerical Verification and Legacy Cleanup** - Regression tests against golden data, archive legacy scripts (completed 2026-02-26)
-- [ ] **Phase 17: Observers** - Timing, HDF5 export, 2D reprojection, 3D animation, diagnostic observers
+- [x] **Phase 17: Observers** - Timing, HDF5 export, 2D reprojection, 3D animation, diagnostic observers (completed 2026-02-26)
 - [ ] **Phase 18: CLI and Execution Modes** - `aquapose run` entrypoint, production/diagnostic/synthetic/benchmark modes
 
 ## Phase Details
@@ -113,8 +113,8 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 16-01: Numerical regression tests against golden data
-- [ ] 16-02: Legacy script archival and removal
+- [x] 16-01: Numerical regression tests against golden data
+- [x] 16-02: Legacy script archival and removal
 
 ### Phase 17: Observers
 **Goal**: All diagnostic, export, and visualization side effects are implemented as Observers that subscribe to pipeline events and produce their outputs independently of stage logic
@@ -171,5 +171,5 @@ Plans:
 | 14. Golden Data and Verification Framework | 2/2 | Complete    | 2026-02-25 | - |
 | 15. Stage Migrations | 5/5 | Complete    | 2026-02-26 | - |
 | 16. Numerical Verification and Legacy Cleanup | 2/2 | Complete    | 2026-02-26 | - |
-| 17. Observers | v2.0 | 0/5 | Not started | - |
+| 17. Observers | 5/5 | Complete    | 2026-02-26 | - |
 | 18. CLI and Execution Modes | v2.0 | 0/3 | Not started | - |

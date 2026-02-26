@@ -28,11 +28,11 @@ Requirements for the pre-alpha clean-room refactor. Each maps to roadmap phases.
 
 ### Observers
 
-- [ ] **OBS-01**: Timing observer records per-stage and total execution time
-- [ ] **OBS-02**: HDF5 export observer writes spline control points and metadata
-- [ ] **OBS-03**: 2D reprojection overlay visualization observer
-- [ ] **OBS-04**: 3D midline animation visualization observer
-- [ ] **OBS-05**: Diagnostic observer captures intermediate data per stage
+- [x] **OBS-01**: Timing observer records per-stage and total execution time
+- [x] **OBS-02**: HDF5 export observer writes spline control points and metadata
+- [x] **OBS-03**: 2D reprojection overlay visualization observer
+- [x] **OBS-04**: 3D midline animation visualization observer
+- [x] **OBS-05**: Diagnostic observer captures intermediate data per stage
 
 ### CLI & Modes
 
@@ -93,11 +93,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STG-05 | Phase 15 | Complete |
 | VER-03 | Phase 16 | Complete |
 | VER-04 | Phase 16 | Complete |
-| OBS-01 | Phase 17 | Pending |
-| OBS-02 | Phase 17 | Pending |
-| OBS-03 | Phase 17 | Pending |
-| OBS-04 | Phase 17 | Pending |
-| OBS-05 | Phase 17 | Pending |
+| OBS-01 | Phase 17 | Complete |
+| OBS-02 | Phase 17 | Complete |
+| OBS-03 | Phase 17 | Complete |
+| OBS-04 | Phase 17 | Complete |
+| OBS-05 | Phase 17 | Complete |
 | CLI-01 | Phase 18 | Pending |
 | CLI-02 | Phase 18 | Pending |
 | CLI-03 | Phase 18 | Pending |

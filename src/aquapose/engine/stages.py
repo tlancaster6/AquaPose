@@ -68,9 +68,10 @@ class PipelineContext:
             Detection carries midline data.
             Type: ``list[dict[str, list[Detection]]]``
         associated_bundles: Stage 3 (Association) output. Cross-camera matched detection
-            groups per fish, per frame. Each entry is a list of bundles (one per fish),
-            where each bundle groups detections from multiple cameras.
-            Type: ``list[list]``
+            groups per fish, per frame. Each entry is a list of AssociationBundle objects
+            (one per identified fish), where each bundle groups detections from multiple
+            cameras and provides a triangulated 3D centroid.
+            Type: ``list[list[AssociationBundle]]``
         tracks: Stage 4 (Tracking) output. Per-frame confirmed fish track objects with
             persistent fish IDs and lifecycle state.
             Type: ``list[list[FishTrack]]``

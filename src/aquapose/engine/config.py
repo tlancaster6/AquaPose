@@ -79,9 +79,19 @@ class MidlineConfig:
 class AssociationConfig:
     """Config for the Association stage (Stage 3).
 
-    Placeholder — extended in future plans as cross-camera matching parameters
-    are determined.
+    Attributes:
+        expected_count: Expected number of fish; used as the RANSAC stopping
+            criterion for centroid clustering.
+        min_cameras: Minimum cameras required for a valid multi-view bundle.
+            Bundles with fewer contributing cameras are discarded.
+        reprojection_threshold: Maximum pixel reprojection error for RANSAC
+            inliers. Detections within this distance of the projected 3D
+            centroid are considered associated.
     """
+
+    expected_count: int = 9
+    min_cameras: int = 3
+    reprojection_threshold: float = 15.0
 
 
 @dataclass(frozen=True)

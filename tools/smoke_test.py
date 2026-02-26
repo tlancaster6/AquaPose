@@ -220,10 +220,23 @@ class SmokeTestRunner:
         out_dir = self._output_base / output_subdir
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        # Locate the `aquapose` console-script entry point next to sys.executable.
+        # Falls back to `python -c "from aquapose.cli import main; main()"` if not found.
+        aquapose_script = Path(sys.executable).parent / "aquapose"
+        if sys.platform == "win32":
+            aquapose_script = aquapose_script.with_suffix(".exe")
+        if aquapose_script.exists():
+            invoke: list[str] = [str(aquapose_script)]
+        else:
+            # Fallback: import and call main() from within Python
+            invoke = [
+                sys.executable,
+                "-c",
+                "from aquapose.cli import main; main()",
+            ]
+
         cmd = [
-            sys.executable,
-            "-m",
-            "aquapose",
+            *invoke,
             "run",
             "--config",
             str(config_path),

@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Stage Migrations
 status: active
-last_updated: "2026-02-26T00:56:30.000Z"
+last_updated: "2026-02-26T01:35:00.000Z"
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 9
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 
 ## Current Position
 
-Phase: 15 of 18 (Stage Migrations)
-Plan: 4 of 5 in current phase — COMPLETE
-Status: Phase 15 Plan 04 Complete
-Last activity: 2026-02-26 — Completed 15-04 (TrackingStage created in core/tracking/, Hungarian backend wrapping FishTracker)
+Phase: 15 of 18 (Stage Migrations) — COMPLETE
+Plan: 5 of 5 in current phase — COMPLETE
+Status: Phase 15 Complete — All 5 stage migrations done
+Last activity: 2026-02-26 — Completed 15-05 (ReconstructionStage in core/reconstruction/, build_stages() factory, all 5 stages wired)
 
-Progress: [████░░░░░░] 38%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -58,6 +58,13 @@ Progress: [████░░░░░░] 38%
 
 Decisions are logged in PROJECT.md Key Decisions table.
 Key decisions entering v2.0:
+Phase 15-05 decisions:
+- TriangulationBackend is stateless (delegates to triangulate_midlines()); CurveOptimizerBackend is stateful — single CurveOptimizer persists across frames for warm-starting
+- MidlineSet assembly bridges Stage 2 + Stage 4: FishTrack.camera_detections (cam_id→det_idx) used to look up annotated_detections[frame][cam][idx].midline
+- build_stages(config) factory lives in engine/pipeline.py alongside PosePipeline — orchestration logic belongs in engine/, not core/
+- ReconstructionConfig extended with inlier_threshold, snap_threshold, max_depth extracted from v1.0 hardcoded defaults
+- Coasting fish (empty camera_detections) skipped during reconstruction — matches v1.0 behavior
+
 Phase 15-04 decisions:
 - TrackingStage reads context.detections (Stage 1 raw output) NOT context.associated_bundles — FishTracker.update() re-derives cross-camera association internally for v1.0 equivalence; Stage 3 output is a data product for future backends/observers only
 - HungarianBackend wraps existing FishTracker with no reimplementation — stateful tracker constructed once at stage init, persists across all frames
@@ -134,5 +141,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 15-04-PLAN.md (TrackingStage created in core/tracking/, HungarianBackend wrapping FishTracker, 9 tests pass)
+Stopped at: Completed 15-05-PLAN.md (ReconstructionStage in core/reconstruction/, build_stages() factory, all 5 stages wired, Phase 15 complete)
 Resume file: None

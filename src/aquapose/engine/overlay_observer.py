@@ -124,11 +124,18 @@ class Overlay2DObserver:
                 )
 
         # Open video captures for each camera.
+        # Supports both exact "{cam_id}.mp4" and prefix-match "{cam_id}-*.mp4"
+        # (e.g. timestamped filenames like "e3v829d-20260218T145915-150429.mp4").
         captures: dict[str, cv2.VideoCapture] = {}
         for cam_id in camera_ids:
             video_path = self._video_dir / f"{cam_id}.mp4"
-            if video_path.exists():
-                captures[cam_id] = cv2.VideoCapture(str(video_path))
+            if not video_path.exists():
+                matches = sorted(self._video_dir.glob(f"{cam_id}-*.mp4"))
+                if matches:
+                    video_path = matches[0]
+                else:
+                    continue
+            captures[cam_id] = cv2.VideoCapture(str(video_path))
 
         if not captures:
             logger.warning("No video files found in %s", self._video_dir)

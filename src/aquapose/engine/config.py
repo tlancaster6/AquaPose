@@ -28,11 +28,17 @@ class DetectionConfig:
 
     Attributes:
         detector_kind: Detector backend to use (e.g. "yolo", "mog2").
+        model_path: Path to detector weights file (required for YOLO).
+            ``None`` means no path configured (caller must supply via
+            ``detector_kwargs`` or construct the stage directly).
+        device: Device to run inference on (e.g. ``"cuda"``, ``"cpu"``).
         stop_frame: If set, stop processing after this frame index.
         extra: Catch-all dict for detector-specific kwargs not covered above.
     """
 
     detector_kind: str = "yolo"
+    model_path: str | None = None
+    device: str = "cuda"
     stop_frame: int | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 

@@ -100,9 +100,25 @@ class TrackingConfig:
 
     Attributes:
         max_fish: Maximum number of fish identities to track simultaneously.
+            Alias for expected_count — used to gate population constraint logic.
+        min_hits: Consecutive frames required to confirm a new track.
+        max_age: Grace period (frames) before a confirmed track is deleted.
+        reprojection_threshold: Maximum pixel distance for track claiming.
+        birth_interval: Frames between periodic birth RANSAC attempts.
+        min_cameras_birth: Minimum cameras required to birth a new track.
+        velocity_damping: Per-frame velocity damping factor during coasting.
+        velocity_window: Number of recent frame-to-frame deltas to average
+            for velocity smoothing.
     """
 
     max_fish: int = 9
+    min_hits: int = 5
+    max_age: int = 7
+    reprojection_threshold: float = 15.0
+    birth_interval: int = 30
+    min_cameras_birth: int = 3
+    velocity_damping: float = 0.8
+    velocity_window: int = 5
 
 
 @dataclass(frozen=True)

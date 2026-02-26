@@ -32,6 +32,9 @@ class YOLOBackend:
         conf_threshold: Minimum confidence score to keep a detection.
         iou_threshold: IoU threshold for non-max suppression.
         padding_fraction: Fraction of bbox dimension to add as symmetric padding.
+        device: Device string (e.g. ``"cuda"``, ``"cpu"``). Accepted for
+            interface consistency with other backends but not used — YOLO
+            auto-selects the device.
 
     Raises:
         FileNotFoundError: If *model_path* does not point to an existing file.
@@ -43,6 +46,7 @@ class YOLOBackend:
         conf_threshold: float = 0.5,
         iou_threshold: float = 0.45,
         padding_fraction: float = 0.15,
+        device: str = "cuda",
     ) -> None:
         model_path = Path(model_path)
         if not model_path.exists():

@@ -2,6 +2,11 @@
 
 Fixtures are session-scoped for efficiency — golden data is read-only and
 expensive to load from disk.
+
+These fixtures load v1.0 pipeline outputs. The v1.0 pipeline had different
+stage boundaries than the new 5-stage model, but the data itself remains the
+golden reference for regression testing. See test_stage_harness.py module
+docstring for the full mapping between v1.0 outputs and new stage boundaries.
 """
 
 from __future__ import annotations

@@ -7,6 +7,23 @@ These tests serve as the regression safety net for Phase 15 stage migrations.
 When stages are ported to the new engine, the same structural assertions will
 be applied to the outputs of ported Stage.run() implementations.
 
+**Mapping between v1.0 golden data and the new 5-stage model:**
+
+v1.0 golden data was captured at 5 stage boundaries from the original pipeline.
+In the new 5-stage model these map as follows:
+
+- v1.0 detection     -> Stage 1 (Detection):     ``golden_detection.pt``
+- v1.0 segmentation  -> Stage 2 (Midline):        ``golden_segmentation.pt.gz``
+  (segmentation is now internal to the Midline stage's segment-then-extract backend)
+- v1.0 midline       -> Stage 2 (Midline):        ``golden_midline_extraction.pt``
+  (midline extraction is the primary output of the Midline stage)
+- v1.0 tracking      -> Stage 4 (Tracking):       ``golden_tracking.pt``
+- v1.0 triangulation -> Stage 5 (Reconstruction): ``golden_triangulation.pt``
+
+Note: Association (Stage 3) has no separate golden data file because cross-camera
+matching was internal to the tracker in v1.0. The new model extracts it as a
+distinct stage.
+
 All tests are marked @slow and skipped in normal CI runs. Run them with:
     hatch run test-all tests/golden/
 
@@ -84,6 +101,10 @@ def test_segmentation_structure(
 ) -> None:
     """Verify structural correctness of golden segmentation data.
 
+    In the new 5-stage model, segmentation is internal to the Midline stage
+    (Stage 2). This test validates the v1.0 golden mask data which will be
+    used to verify the segment-then-extract backend of the Midline stage.
+
     Asserts that masks is a list of per-frame dicts, and that each element
     is a (uint8 ndarray, CropRegion) tuple with expected attributes.
     """
@@ -144,6 +165,10 @@ def test_tracking_structure(
 ) -> None:
     """Verify structural correctness of golden tracking data.
 
+    In the new 5-stage model, tracking is Stage 4. Note: in v1.0, cross-camera
+    association was internal to the tracker. The new model extracts this as a
+    separate Association stage (Stage 3) with no corresponding golden data file.
+
     Asserts that tracks is a list of per-frame lists, and that FishTrack
     objects have expected attributes including fish_id and position history.
     """
@@ -192,6 +217,10 @@ def test_midline_extraction_structure(
     golden_metadata: dict,
 ) -> None:
     """Verify structural correctness of golden midline extraction data.
+
+    In the new 5-stage model, midline extraction is the primary output of the
+    Midline stage (Stage 2). This test validates the v1.0 golden midline data
+    which will be used as the acceptance bar for the ported Midline stage.
 
     Asserts that midline_sets is a list of per-frame dicts (MidlineSet), and
     that each Midline2D has a 'points' attribute with shape (N, 2).
@@ -250,6 +279,10 @@ def test_triangulation_structure(
     golden_metadata: dict,
 ) -> None:
     """Verify structural correctness of golden triangulation data.
+
+    In the new 5-stage model, triangulation is the Reconstruction stage (Stage 5).
+    This test validates the v1.0 golden triangulation data which will be used as
+    the numerical acceptance bar for the ported Reconstruction stage.
 
     Asserts that midlines_3d is a list of per-frame dicts mapping int (fish_id)
     to Midline3D objects with control_points of shape (K, 3).

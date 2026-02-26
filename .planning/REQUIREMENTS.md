@@ -20,7 +20,7 @@ Requirements for the pre-alpha clean-room refactor. Each maps to roadmap phases.
 
 ### Stage Migrations
 
-- [ ] **STG-01**: Detection stage ported (model-based backend: YOLO/MOG2) — pure computation, no side effects
+- [x] **STG-01**: Detection stage ported (model-based backend: YOLO/MOG2) — pure computation, no side effects
 - [ ] **STG-02**: Midline stage ported (segment-then-extract backend: U-Net/SAM segmentation + skeletonization + BFS pruning) — pure computation, no side effects
 - [ ] **STG-03**: Cross-view association stage ported (RANSAC centroid clustering) — pure computation, no side effects
 - [ ] **STG-04**: Tracking stage ported (Hungarian 3D tracking with population constraint) — pure computation, no side effects
@@ -86,7 +86,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ENG-08 | Phase 13 | Complete |
 | VER-01 | Phase 14 | Complete |
 | VER-02 | Phase 14 | Complete |
-| STG-01 | Phase 15 | Pending |
+| STG-01 | Phase 15 | Complete |
 | STG-02 | Phase 15 | Pending |
 | STG-03 | Phase 15 | Pending |
 | STG-04 | Phase 15 | Pending |

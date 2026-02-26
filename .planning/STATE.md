@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: Alpha
-status: unknown
-last_updated: "2026-02-26T00:26:16.702Z"
+milestone: v2.0
+milestone_name: Stage Migrations
+status: active
+last_updated: "2026-02-26T00:40:00.000Z"
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 9
+  completed_plans: 9
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-25)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 14.1 — Fix Critical Mismatch Between Old and Proposed Pipeline Structures
+**Current focus:** Phase 15 — Stage Migrations (5-stage pipeline)
 
 ## Current Position
 
-Phase: 14.1 of 18 (Fix Critical Mismatch Between Old and Proposed Pipeline Structures)
-Plan: 2 of 2 in current phase — COMPLETE
-Status: Phase 14.1 Complete
-Last activity: 2026-02-26 — Completed 14.1-02 (engine code and golden tests updated to 5-stage model)
+Phase: 15 of 18 (Stage Migrations)
+Plan: 1 of 5 in current phase — COMPLETE
+Status: Phase 15 Plan 01 Complete
+Last activity: 2026-02-26 — Completed 15-01 (DetectionStage created in core/detection/)
 
-Progress: [███░░░░░░░] 25%
+Progress: [████░░░░░░] 30%
 
 ## Performance Metrics
 
@@ -58,6 +58,12 @@ Progress: [███░░░░░░░] 25%
 
 Decisions are logged in PROJECT.md Key Decisions table.
 Key decisions entering v2.0:
+Phase 15-01 decisions:
+- DetectionStage uses TYPE_CHECKING guard for PipelineContext annotation — engine/ never imported at runtime (ENG-07)
+- Calibration loading deferred to __init__ via local imports — preserves fail-fast while avoiding circular imports
+- Backend registry returns YOLOBackend directly; MOG2 deferred to future plan per CONTEXT.md
+- DetectionConfig gains model_path and device fields for YOLO weight loading and GPU placement
+
 Phase 14.1-01 decisions:
 - 5 canonical stages replace 7: Detection, Midline (segment-then-extract), Association, Tracking, Reconstruction — matches guidebook Section 6
 - Midline stage subsumes U-Net/SAM segmentation + skeletonization+BFS as single segment-then-extract backend (not separate stages)
@@ -110,5 +116,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 14.1-02-PLAN.md (engine code and golden tests updated to 5-stage model, Phase 14.1 done)
+Stopped at: Completed 15-01-PLAN.md (DetectionStage created in core/detection/, all tests pass)
 Resume file: None

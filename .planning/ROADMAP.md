@@ -54,10 +54,10 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 **Plans**: 4 plans
 
 Plans:
-- [ ] 13-01-PLAN.md — Stage Protocol, PipelineContext, and import boundary (wave 1)
-- [ ] 13-02-PLAN.md — Config dataclass hierarchy with YAML and CLI override support (wave 1)
-- [ ] 13-03-PLAN.md — Event system and Observer protocol (wave 1)
-- [ ] 13-04-PLAN.md — PosePipeline orchestrator skeleton (wave 2)
+- [x] 13-01-PLAN.md — Stage Protocol, PipelineContext, and import boundary (wave 1)
+- [x] 13-02-PLAN.md — Config dataclass hierarchy with YAML and CLI override support (wave 1)
+- [x] 13-03-PLAN.md — Event system and Observer protocol (wave 1)
+- [x] 13-04-PLAN.md — PosePipeline orchestrator skeleton (wave 2)
 
 ### Phase 14: Golden Data and Verification Framework
 **Goal**: Frozen reference outputs from the v1.0 pipeline exist on disk as a committed snapshot, and an interface test harness can assert that a Stage produces correct output from a given context
@@ -70,8 +70,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 14-01-PLAN.md — Golden data generation script and committed snapshot (wave 1)
-- [ ] 14-02-PLAN.md — Interface test harness for stage output correctness (wave 2)
+- [x] 14-01-PLAN.md — Golden data generation script and committed snapshot (wave 1)
+- [x] 14-02-PLAN.md — Interface test harness for stage output correctness (wave 2)
 
 ### Phase 14.1: Fix Critical Mismatch Between Old and Proposed Pipeline Structures (INSERTED)
 
@@ -81,8 +81,8 @@ Plans:
 **Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 14.1-01-PLAN.md — Update planning documents (ROADMAP, REQUIREMENTS) and delete redundant inbox files (wave 1)
-- [ ] 14.1-02-PLAN.md — Update engine code (PipelineContext, config) and golden test harness to match 5-stage model (wave 1)
+- [x] 14.1-01-PLAN.md — Update planning documents (ROADMAP, REQUIREMENTS) and delete redundant inbox files (wave 1)
+- [x] 14.1-02-PLAN.md — Update engine code (PipelineContext, config) and golden test harness to match 5-stage model (wave 1)
 
 ### Phase 15: Stage Migrations
 **Goal**: All 5 computation stages exist as pure Stage implementors with no side effects, wired into PosePipeline and producing context fields that downstream stages consume
@@ -169,7 +169,7 @@ Plans:
 | 9. Curve-Based Optimization | v1.0 | 2/2 | Complete | 2026-02-25 |
 | 13. Engine Core | 4/4 | Complete    | 2026-02-25 | - |
 | 14. Golden Data and Verification Framework | 2/2 | Complete    | 2026-02-25 | - |
-| 15. Stage Migrations | v2.0 | 0/5 | Not started | - |
+| 15. Stage Migrations | 1/5 | In Progress|  | - |
 | 16. Numerical Verification and Legacy Cleanup | v2.0 | 0/2 | Not started | - |
 | 17. Observers | v2.0 | 0/5 | Not started | - |
 | 18. CLI and Execution Modes | v2.0 | 0/3 | Not started | - |

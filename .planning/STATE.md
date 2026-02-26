@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 15 of 18 (Stage Migrations)
-Plan: 1 of 5 in current phase — COMPLETE
-Status: Phase 15 Plan 01 Complete
-Last activity: 2026-02-26 — Completed 15-01 (DetectionStage created in core/detection/)
+Plan: 2 of 5 in current phase — COMPLETE
+Status: Phase 15 Plan 02 Complete
+Last activity: 2026-02-26 — Completed 15-02 (MidlineStage created in core/midline/)
 
-Progress: [████░░░░░░] 30%
+Progress: [████░░░░░░] 32%
 
 ## Performance Metrics
 
@@ -58,6 +58,12 @@ Progress: [████░░░░░░] 30%
 
 Decisions are logged in PROJECT.md Key Decisions table.
 Key decisions entering v2.0:
+Phase 15-02 decisions:
+- MidlineStage extracts midlines for ALL detections (not just tracked fish) — tracking has not run yet; fish_id=-1 placeholder used
+- segment_then_extract backend directly calls private helpers from reconstruction.midline — avoids reimplementing the midline pipeline
+- AnnotatedDetection wraps Detection + mask + CropRegion + Midline2D — clean wrapper rather than mutating Detection in place
+- MidlineConfig gains backend, n_points, min_area — all midline stage parameters in one frozen config
+
 Phase 15-01 decisions:
 - DetectionStage uses TYPE_CHECKING guard for PipelineContext annotation — engine/ never imported at runtime (ENG-07)
 - Calibration loading deferred to __init__ via local imports — preserves fail-fast while avoiding circular imports
@@ -116,5 +122,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 15-01-PLAN.md (DetectionStage created in core/detection/, all tests pass)
+Stopped at: Completed 15-02-PLAN.md (MidlineStage created in core/midline/, all tests pass)
 Resume file: None

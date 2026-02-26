@@ -179,7 +179,10 @@ class HungarianBackend:
         Returns:
             Dict mapping camera_id to RefractiveProjectionModel.
         """
-        from aquapose.calibration.loader import load_calibration_data
+        from aquapose.calibration.loader import (
+            compute_undistortion_maps,
+            load_calibration_data,
+        )
         from aquapose.calibration.projection import RefractiveProjectionModel
 
         calib = load_calibration_data(str(calibration_path))
@@ -187,10 +190,13 @@ class HungarianBackend:
         for cam_id, cam_data in calib.cameras.items():
             if cam_id == skip_camera_id:
                 continue
+            maps = compute_undistortion_maps(cam_data)
             models[cam_id] = RefractiveProjectionModel(
-                camera=cam_data,
+                K=maps.K_new,
+                R=cam_data.R,
+                t=cam_data.t,
                 water_z=calib.water_z,
-                interface_normal=calib.interface_normal,
+                normal=calib.interface_normal,
                 n_air=calib.n_air,
                 n_water=calib.n_water,
             )

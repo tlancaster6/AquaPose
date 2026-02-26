@@ -144,3 +144,15 @@ None — no external service configuration required.
 ---
 *Phase: 15-stage-migrations*
 *Completed: 2026-02-26*
+
+## Self-Check: PASSED
+
+- src/aquapose/core/reconstruction/__init__.py: FOUND
+- src/aquapose/core/reconstruction/stage.py: FOUND
+- src/aquapose/core/reconstruction/backends/triangulation.py: FOUND
+- src/aquapose/core/reconstruction/backends/curve_optimizer.py: FOUND
+- tests/unit/core/reconstruction/test_reconstruction_stage.py: FOUND
+- .planning/phases/15-stage-migrations/15-BUG-LEDGER.md: FOUND
+- Commit 392b6d2: FOUND
+- Commit 6b37aae: FOUND
+- Commit 57e6c12: FOUND

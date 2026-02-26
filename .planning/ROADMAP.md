@@ -35,7 +35,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] **Phase 13: Engine Core** - Stage Protocol, PipelineContext, events, observer base, config, orchestrator, import boundary (completed 2026-02-25)
 - [x] **Phase 14: Golden Data and Verification Framework** - Generate frozen reference outputs from v1.0, define interface test harness (completed 2026-02-25)
 - [x] **Phase 15: Stage Migrations** - Port all 5 computation stages as pure Stage implementors (completed 2026-02-26)
-- [ ] **Phase 16: Numerical Verification and Legacy Cleanup** - Regression tests against golden data, archive legacy scripts
+- [x] **Phase 16: Numerical Verification and Legacy Cleanup** - Regression tests against golden data, archive legacy scripts (completed 2026-02-26)
 - [ ] **Phase 17: Observers** - Timing, HDF5 export, 2D reprojection, 3D animation, diagnostic observers
 - [ ] **Phase 18: CLI and Execution Modes** - `aquapose run` entrypoint, production/diagnostic/synthetic/benchmark modes
 
@@ -170,6 +170,6 @@ Plans:
 | 13. Engine Core | 4/4 | Complete    | 2026-02-25 | - |
 | 14. Golden Data and Verification Framework | 2/2 | Complete    | 2026-02-25 | - |
 | 15. Stage Migrations | 5/5 | Complete    | 2026-02-26 | - |
-| 16. Numerical Verification and Legacy Cleanup | 1/2 | In Progress|  | - |
+| 16. Numerical Verification and Legacy Cleanup | 2/2 | Complete   | 2026-02-26 | - |
 | 17. Observers | v2.0 | 0/5 | Not started | - |
 | 18. CLI and Execution Modes | v2.0 | 0/3 | Not started | - |

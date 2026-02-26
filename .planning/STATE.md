@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Alpha
 status: unknown
-last_updated: "2026-02-26T02:47:30.282Z"
+last_updated: "2026-02-26T04:00:35.920Z"
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 13
-  completed_plans: 13
+  total_phases: 5
+  completed_phases: 5
+  total_plans: 15
+  completed_plans: 15
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 
 ## Current Position
 
-Phase: 16 of 18 (Numerical Verification and Legacy Cleanup) — IN PROGRESS
-Plan: 1 of 2 in current phase — COMPLETE
-Status: Phase 16 Plan 1 Complete — Regression test suite and golden data generator updated
-Last activity: 2026-02-26 — Completed 16-01 (tests/regression/ package, 7 regression tests, generate_golden_data.py updated to PosePipeline)
+Phase: 16 of 18 (Numerical Verification and Legacy Cleanup) — COMPLETE
+Plan: 2 of 2 in current phase — COMPLETE
+Status: Phase 16 Complete — Legacy scripts archived, import boundary clean, all tests passing
+Last activity: 2026-02-26 — Completed 16-02 (scripts/legacy/ archive, test_stages.py cleanup, 504 tests pass)
 
-Progress: [█████░░░░░] 55%
+Progress: [██████░░░░] 60%
 
 ## Performance Metrics
 
@@ -46,6 +46,7 @@ Progress: [█████░░░░░] 55%
 | Phase 13-engine-core P01 | 6 | 2 tasks | 4 files |
 | Phase 13-engine-core P04 | 4 | 2 tasks | 3 files |
 | Phase 14.1 P02 | 7 | 2 tasks | 7 files |
+| Phase 16-numerical-verification-and-legacy-cleanup P02 | 15 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -136,6 +137,8 @@ Phase 13 decisions:
 - [Phase 14.1-02]: load_config() accepts old YAML keys (segmentation/triangulation) and new keys (midline/reconstruction) for backward compat — new takes precedence
 - [Phase 14.1-02]: AssociationConfig is empty placeholder frozen dataclass — Stage 3 parameters unknown until Phase 15 designs the stage
 - [Phase 14.1-02]: ReconstructionConfig adds backend field (default triangulation) for future curve_optimizer support without breaking schema change
+- [Phase 16-02]: test_stages.py v1.0 functional tests replaced with importability check — regression suite in tests/regression/ covers the canonical PosePipeline execution path
+- [Phase 16-02]: diagnose_triangulation.py was untracked — copied and removed manually since git mv requires tracked files
 
 ### Pending Todos
 
@@ -148,5 +151,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 16-01-PLAN.md (tests/regression/ package with 7 regression tests, generate_golden_data.py updated to PosePipeline)
+Stopped at: Completed 16-02-PLAN.md (legacy scripts archived to scripts/legacy/, import boundary clean, 504 tests pass)
 Resume file: None

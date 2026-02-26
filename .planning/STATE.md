@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Alpha
 status: unknown
-last_updated: "2026-02-25T22:54:31.605Z"
+last_updated: "2026-02-26T00:22:13.525Z"
 progress:
-  total_phases: 3
-  completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
+  total_phases: 4
+  completed_phases: 3
+  total_plans: 8
+  completed_plans: 8
 ---
 
 # Project State
@@ -23,9 +23,9 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 14.1 of 18 (Fix Critical Mismatch Between Old and Proposed Pipeline Structures)
-Plan: 1 of 2 in current phase — COMPLETE
-Status: Phase 14.1 In Progress
-Last activity: 2026-02-26 — Completed 14.1-01 (planning docs updated to 5-stage model, inbox cleaned)
+Plan: 2 of 2 in current phase — COMPLETE
+Status: Phase 14.1 Complete
+Last activity: 2026-02-26 — Completed 14.1-02 (engine code and golden tests updated to 5-stage model)
 
 Progress: [███░░░░░░░] 25%
 
@@ -45,6 +45,7 @@ Progress: [███░░░░░░░] 25%
 **Recent Trend:** Active — Phase 13 complete (4 plans)
 | Phase 13-engine-core P01 | 6 | 2 tasks | 4 files |
 | Phase 13-engine-core P04 | 4 | 2 tasks | 3 files |
+| Phase 14.1 P02 | 7 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,9 @@ Phase 13 decisions:
 - PosePipeline writes config.yaml before PipelineStart event — config artifact is truly first
 - Stage timing keyed by type(stage).__name__ — class name as natural stage identifier
 - Observers subscribe to Event base type in constructor — simplest all-events API
+- [Phase 14.1-02]: load_config() accepts old YAML keys (segmentation/triangulation) and new keys (midline/reconstruction) for backward compat — new takes precedence
+- [Phase 14.1-02]: AssociationConfig is empty placeholder frozen dataclass — Stage 3 parameters unknown until Phase 15 designs the stage
+- [Phase 14.1-02]: ReconstructionConfig adds backend field (default triangulation) for future curve_optimizer support without breaking schema change
 
 ### Pending Todos
 
@@ -106,5 +110,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 14.1-01-PLAN.md (planning docs aligned to 5-stage model, inbox cleaned)
+Stopped at: Completed 14.1-02-PLAN.md (engine code and golden tests updated to 5-stage model, Phase 14.1 done)
 Resume file: None

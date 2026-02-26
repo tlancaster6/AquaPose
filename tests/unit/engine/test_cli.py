@@ -319,3 +319,50 @@ class TestBenchmarkMode:
         observers = pp_call.kwargs["observers"]
         types = [type(o) for o in observers]
         assert HDF5ExportObserver in types
+
+
+class TestSyntheticMode:
+    """Tests for --mode synthetic CLI behavior."""
+
+    def test_synthetic_mode_calls_build_stages(
+        self,
+        runner: click.testing.CliRunner,
+        tmp_path: Path,
+        mock_pipeline: dict,
+    ) -> None:
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("output_dir: /tmp/test\n")
+        runner.invoke(cli, ["run", "--config", str(config_file), "--mode", "synthetic"])
+        mock_pipeline["build_stages"].assert_called_once()
+
+    def test_synthetic_mode_uses_production_observers(
+        self,
+        runner: click.testing.CliRunner,
+        tmp_path: Path,
+        mock_pipeline: dict,
+    ) -> None:
+        from aquapose.engine import ConsoleObserver, HDF5ExportObserver, TimingObserver
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("output_dir: /tmp/test\n")
+        runner.invoke(cli, ["run", "--config", str(config_file), "--mode", "synthetic"])
+        pp_call = mock_pipeline["PosePipeline"].call_args
+        observers = pp_call.kwargs["observers"]
+        types = [type(o) for o in observers]
+        assert ConsoleObserver in types
+        assert TimingObserver in types
+        assert HDF5ExportObserver in types
+
+    def test_synthetic_mode_passes_mode_in_config(
+        self,
+        runner: click.testing.CliRunner,
+        tmp_path: Path,
+        mock_pipeline: dict,
+    ) -> None:
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("output_dir: /tmp/test\n")
+        runner.invoke(cli, ["run", "--config", str(config_file), "--mode", "synthetic"])
+        overrides = mock_pipeline["load_config"].call_args.kwargs.get(
+            "cli_overrides", {}
+        )
+        assert overrides.get("mode") == "synthetic"

@@ -122,6 +122,24 @@ class TrackingConfig:
 
 
 @dataclass(frozen=True)
+class SyntheticConfig:
+    """Config for synthetic data generation in synthetic mode.
+
+    Attributes:
+        fish_count: Number of synthetic fish to generate.
+        frame_count: Number of frames to simulate.
+        noise_std: Standard deviation of Gaussian noise added to 2D
+            projections (pixels). 0 = no noise.
+        seed: Random seed for reproducible generation.
+    """
+
+    fish_count: int = 3
+    frame_count: int = 30
+    noise_std: float = 0.0
+    seed: int = 42
+
+
+@dataclass(frozen=True)
 class ReconstructionConfig:
     """Config for the Reconstruction stage (Stage 5).
 
@@ -181,6 +199,7 @@ class PipelineConfig:
     reconstruction: ReconstructionConfig = dataclasses.field(
         default_factory=ReconstructionConfig
     )
+    synthetic: SyntheticConfig = dataclasses.field(default_factory=SyntheticConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +336,7 @@ def load_config(
     assoc_kwargs: dict[str, Any] = {}
     trk_kwargs: dict[str, Any] = {}
     rec_kwargs: dict[str, Any] = {}
+    syn_kwargs: dict[str, Any] = {}
     top_kwargs: dict[str, Any] = {}
 
     # --- layer 2: YAML overrides ------------------------------------------
@@ -346,6 +366,7 @@ def load_config(
         rec_kwargs = _merge_stage_config(
             rec_kwargs, yaml_nested.get("reconstruction", {})
         )
+        syn_kwargs = _merge_stage_config(syn_kwargs, yaml_nested.get("synthetic", {}))
         top_kwargs = _merge_stage_config(top_kwargs, yaml_nested.get("__top__", {}))
 
     # --- layer 3: CLI overrides -------------------------------------------
@@ -368,6 +389,7 @@ def load_config(
         rec_kwargs = _merge_stage_config(
             rec_kwargs, cli_nested.get("reconstruction", {})
         )
+        syn_kwargs = _merge_stage_config(syn_kwargs, cli_nested.get("synthetic", {}))
         top_kwargs = _merge_stage_config(top_kwargs, cli_nested.get("__top__", {}))
 
     # --- layer 4: resolve run_id and output_dir ---------------------------
@@ -385,6 +407,7 @@ def load_config(
         association=AssociationConfig(**assoc_kwargs),
         tracking=TrackingConfig(**trk_kwargs),
         reconstruction=ReconstructionConfig(**rec_kwargs),
+        synthetic=SyntheticConfig(**syn_kwargs),
         **top_kwargs,
     )
 

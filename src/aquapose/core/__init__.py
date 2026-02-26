@@ -15,6 +15,7 @@ from aquapose.core.association import AssociationStage
 from aquapose.core.detection import DetectionStage
 from aquapose.core.midline import MidlineStage
 from aquapose.core.reconstruction import ReconstructionStage
+from aquapose.core.synthetic import SyntheticDataStage
 from aquapose.core.tracking import TrackingStage
 
 __all__ = [
@@ -22,5 +23,6 @@ __all__ = [
     "DetectionStage",
     "MidlineStage",
     "ReconstructionStage",
+    "SyntheticDataStage",
     "TrackingStage",
 ]

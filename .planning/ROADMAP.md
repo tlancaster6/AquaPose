@@ -128,11 +128,11 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 17-01: Timing observer
-- [ ] 17-02: HDF5 export observer
-- [ ] 17-03: 2D reprojection overlay visualization observer
-- [ ] 17-04: 3D midline animation visualization observer
-- [ ] 17-05: Diagnostic observer
+- [x] 17-01: Timing observer
+- [x] 17-02: HDF5 export observer
+- [x] 17-03: 2D reprojection overlay visualization observer
+- [x] 17-04: 3D midline animation visualization observer
+- [x] 17-05: Diagnostic observer
 
 ### Phase 18: CLI and Execution Modes
 **Goal**: `aquapose run` is a working CLI entrypoint that accepts a config path and mode flag, assembles the correct observer set, and runs the pipeline — with no pipeline logic living in the CLI layer
@@ -147,9 +147,9 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 18-01: CLI entrypoint and production mode
-- [ ] 18-02: Diagnostic and benchmark modes
-- [ ] 18-03: Synthetic mode via stage adapter
+- [x] 18-01: CLI entrypoint and production mode
+- [x] 18-02: Diagnostic and benchmark modes
+- [x] 18-03: Synthetic mode via stage adapter
 
 ## Progress
 
@@ -173,3 +173,35 @@ Plans:
 | 16. Numerical Verification and Legacy Cleanup | 2/2 | Complete    | 2026-02-26 | - |
 | 17. Observers | 5/5 | Complete    | 2026-02-26 | - |
 | 18. CLI and Execution Modes | v2.0 | Complete    | 2026-02-26 | - |
+
+### Phase 19: Alpha Refactor Audit
+
+**Goal:** Verify the completed v2.0 Alpha refactor (Phases 13-18) faithfully implements the architectural vision in `alpha_refactor_guidebook.md`. Produce a structured audit report, reusable smoke test tooling, and automated import boundary enforcement. Catalog findings for Phase 20 remediation without fixing them.
+**Requirements**: AUDIT
+**Depends on:** Phase 18
+**Plans:** 3 plans
+
+Plans:
+- [ ] 19-01-PLAN.md — Import boundary checker and pre-commit hook (wave 1)
+- [ ] 19-02-PLAN.md — Reusable smoke test script and pytest integration (wave 1)
+- [ ] 19-03-PLAN.md — DoD gate check, codebase health audit, and 19-AUDIT.md report (wave 2)
+
+### Phase 20: Post-Refactor Loose Ends
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 19
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 20 to break down)
+
+### Phase 21: Retrospective, Prospective
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 20
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 21 to break down)

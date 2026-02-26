@@ -31,6 +31,7 @@ from aquapose.engine.events import (
 )
 from aquapose.engine.hdf5_observer import HDF5ExportObserver
 from aquapose.engine.observers import EventBus, Observer
+from aquapose.engine.overlay_observer import Overlay2DObserver
 from aquapose.engine.pipeline import PosePipeline
 from aquapose.engine.stages import PipelineContext, Stage
 from aquapose.engine.timing import TimingObserver
@@ -45,6 +46,7 @@ __all__ = [
     "HDF5ExportObserver",
     "MidlineConfig",
     "Observer",
+    "Overlay2DObserver",
     "PipelineComplete",
     "PipelineConfig",
     "PipelineContext",

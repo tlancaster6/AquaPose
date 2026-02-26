@@ -225,3 +225,97 @@ class TestCLIExecution:
         console_obs = [o for o in observers if isinstance(o, ConsoleObserver)]
         assert len(console_obs) >= 1
         assert console_obs[0]._verbose is True
+
+
+class TestDiagnosticMode:
+    """Tests for --mode diagnostic observer assembly."""
+
+    def test_diagnostic_mode_assembles_all_observers(
+        self,
+        runner: click.testing.CliRunner,
+        tmp_path: Path,
+        mock_pipeline: dict,
+    ) -> None:
+        from aquapose.engine import (
+            Animation3DObserver,
+            ConsoleObserver,
+            DiagnosticObserver,
+            HDF5ExportObserver,
+            Overlay2DObserver,
+            TimingObserver,
+        )
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("output_dir: /tmp/test\n")
+        runner.invoke(
+            cli, ["run", "--config", str(config_file), "--mode", "diagnostic"]
+        )
+        pp_call = mock_pipeline["PosePipeline"].call_args
+        observers = pp_call.kwargs["observers"]
+        types = [type(o) for o in observers]
+        assert ConsoleObserver in types
+        assert TimingObserver in types
+        assert HDF5ExportObserver in types
+        assert Overlay2DObserver in types
+        assert Animation3DObserver in types
+        assert DiagnosticObserver in types
+
+
+class TestBenchmarkMode:
+    """Tests for --mode benchmark observer assembly."""
+
+    def test_benchmark_mode_assembles_timing_only(
+        self,
+        runner: click.testing.CliRunner,
+        tmp_path: Path,
+        mock_pipeline: dict,
+    ) -> None:
+        from aquapose.engine import (
+            Animation3DObserver,
+            ConsoleObserver,
+            DiagnosticObserver,
+            HDF5ExportObserver,
+            Overlay2DObserver,
+            TimingObserver,
+        )
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("output_dir: /tmp/test\n")
+        runner.invoke(cli, ["run", "--config", str(config_file), "--mode", "benchmark"])
+        pp_call = mock_pipeline["PosePipeline"].call_args
+        observers = pp_call.kwargs["observers"]
+        types = [type(o) for o in observers]
+        assert ConsoleObserver in types
+        assert TimingObserver in types
+        # These should NOT be present in benchmark mode
+        assert HDF5ExportObserver not in types
+        assert Overlay2DObserver not in types
+        assert Animation3DObserver not in types
+        assert DiagnosticObserver not in types
+
+    def test_add_observer_augments_benchmark_mode(
+        self,
+        runner: click.testing.CliRunner,
+        tmp_path: Path,
+        mock_pipeline: dict,
+    ) -> None:
+        from aquapose.engine import HDF5ExportObserver
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("output_dir: /tmp/test\n")
+        runner.invoke(
+            cli,
+            [
+                "run",
+                "--config",
+                str(config_file),
+                "--mode",
+                "benchmark",
+                "--add-observer",
+                "hdf5",
+            ],
+        )
+        pp_call = mock_pipeline["PosePipeline"].call_args
+        observers = pp_call.kwargs["observers"]
+        types = [type(o) for o in observers]
+        assert HDF5ExportObserver in types

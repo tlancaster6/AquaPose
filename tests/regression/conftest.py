@@ -49,8 +49,12 @@ MID_ATOL: float = 1e-6
 TRK_ATOL: float = 1e-6
 """Absolute tolerance for tracking stage comparisons."""
 
-RECON_ATOL: float = 1e-3
-"""Absolute tolerance for reconstruction (3D control points) comparisons."""
+RECON_ATOL: float = 5e-3
+"""Absolute tolerance for reconstruction (3D control points) comparisons.
+
+Set to 5e-3 (~5mm) to accommodate CUDA non-determinism in
+torch.linalg.lstsq used by triangulate_rays(). Observed run-to-run
+jitter is ~1-2e-3 on the same GPU."""
 
 
 # ---------------------------------------------------------------------------

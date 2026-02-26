@@ -55,6 +55,7 @@ Progress: [██████░░░░] 60%
 - Phase 14.1 inserted after Phase 14: Fix Critical Mismatch Between Old and Proposed Pipeline Structures (URGENT)
 - Phase 15 plan count corrected from 7 to 5 plans (5-stage canonical pipeline model)
 - Phase 19 added: Alpha Refactor Audit
+- Phase 20 added: Post-Refactor Loose Ends
 
 ### Decisions
 

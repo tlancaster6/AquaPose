@@ -126,11 +126,23 @@ class ReconstructionConfig:
     """Config for the Reconstruction stage (Stage 5).
 
     Attributes:
-        backend: Reconstruction backend to use. Currently only "triangulation"
-            is supported; future plans will add "curve_optimizer".
+        backend: Reconstruction backend to use. ``"triangulation"`` (default)
+            uses RANSAC multi-view triangulation + B-spline fitting.
+            ``"curve_optimizer"`` uses correspondence-free 3D B-spline
+            optimization via chamfer distance.
+        inlier_threshold: Maximum reprojection error (pixels) for RANSAC
+            inlier classification during triangulation.
+        snap_threshold: Maximum pixel distance from the epipolar curve to
+            accept a correspondence during epipolar refinement.
+        max_depth: Maximum allowed fish depth below the water surface (metres).
+            When None (default), no upper depth bound is enforced. Set to the
+            physical tank depth to catch above-water outliers.
     """
 
     backend: str = "triangulation"
+    inlier_threshold: float = 50.0
+    snap_threshold: float = 20.0
+    max_depth: float | None = None
 
 
 # ---------------------------------------------------------------------------

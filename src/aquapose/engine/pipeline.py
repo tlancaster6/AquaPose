@@ -3,6 +3,10 @@
 PosePipeline wires together Stage instances, manages execution order, emits
 lifecycle events via EventBus, and writes the serialized config as the first
 artifact before any stage runs (ENG-06, ENG-08).
+
+The :func:`build_stages` factory is the canonical way to construct all 5 stages
+from a :class:`~aquapose.engine.config.PipelineConfig` and wire them into
+:class:`PosePipeline`.
 """
 
 from __future__ import annotations
@@ -176,3 +180,98 @@ class PosePipeline:
         )
 
         return context
+
+
+# ---------------------------------------------------------------------------
+# Stage factory
+# ---------------------------------------------------------------------------
+
+
+def build_stages(config: PipelineConfig) -> list[Stage]:
+    """Construct all 5 pipeline stages from a :class:`PipelineConfig`.
+
+    This factory is the canonical way to wire stages into :class:`PosePipeline`.
+    It imports all stage classes from ``aquapose.core`` (never the reverse) and
+    constructs each stage from its corresponding sub-config in *config*.
+
+    Example::
+
+        stages = build_stages(config)
+        pipeline = PosePipeline(stages=stages, config=config)
+        context = pipeline.run()
+
+    Args:
+        config: Frozen pipeline config providing calibration path, model paths,
+            backend selection, and all stage-specific parameters.
+
+    Returns:
+        Ordered list of 5 Stage instances:
+        [DetectionStage, MidlineStage, AssociationStage, TrackingStage,
+        ReconstructionStage].
+
+    Raises:
+        FileNotFoundError: If required paths in *config* do not exist.
+        ValueError: If any backend kind string is unrecognized.
+    """
+    from aquapose.core import (
+        AssociationStage,
+        DetectionStage,
+        MidlineStage,
+        ReconstructionStage,
+        TrackingStage,
+    )
+
+    detection_stage = DetectionStage(
+        video_dir=config.video_dir,
+        calibration_path=config.calibration_path,
+        detector_kind=config.detection.detector_kind,
+        stop_frame=config.detection.stop_frame,
+        model_path=config.detection.model_path,
+        device=config.detection.device,
+    )
+
+    midline_stage = MidlineStage(
+        video_dir=config.video_dir,
+        calibration_path=config.calibration_path,
+        weights_path=config.midline.weights_path,
+        confidence_threshold=config.midline.confidence_threshold,
+        backend=config.midline.backend,
+        device=config.detection.device,
+        n_points=config.midline.n_points,
+        min_area=config.midline.min_area,
+    )
+
+    association_stage = AssociationStage(
+        calibration_path=config.calibration_path,
+        expected_count=config.association.expected_count,
+        min_cameras=config.association.min_cameras,
+        reprojection_threshold=config.association.reprojection_threshold,
+    )
+
+    tracking_stage = TrackingStage(
+        calibration_path=config.calibration_path,
+        expected_count=config.tracking.max_fish,
+        min_hits=config.tracking.min_hits,
+        max_age=config.tracking.max_age,
+        reprojection_threshold=config.tracking.reprojection_threshold,
+        birth_interval=config.tracking.birth_interval,
+        min_cameras_birth=config.tracking.min_cameras_birth,
+        velocity_damping=config.tracking.velocity_damping,
+        velocity_window=config.tracking.velocity_window,
+    )
+
+    reconstruction_stage = ReconstructionStage(
+        calibration_path=config.calibration_path,
+        backend=config.reconstruction.backend,
+        inlier_threshold=config.reconstruction.inlier_threshold,
+        snap_threshold=config.reconstruction.snap_threshold,
+        max_depth=config.reconstruction.max_depth,
+    )
+
+    return [
+        detection_stage,
+        midline_stage,
+        association_stage,
+        tracking_stage,
+        reconstruction_stage,
+    ]

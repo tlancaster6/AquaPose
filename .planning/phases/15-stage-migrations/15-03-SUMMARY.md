@@ -118,3 +118,16 @@ None — no external service configuration required.
 - AssociationStage complete and tested; ready for Phase 15-04 (TrackingStage migration)
 - TrackingStage will consume associated_bundles produced by this stage
 - No blockers
+
+## Self-Check: PASSED
+
+Files verified present:
+- `src/aquapose/core/association/__init__.py` — FOUND
+- `src/aquapose/core/association/types.py` — FOUND
+- `src/aquapose/core/association/stage.py` — FOUND
+- `src/aquapose/core/association/backends/ransac_centroid.py` — FOUND
+- `tests/unit/core/association/test_association_stage.py` — FOUND
+
+Commits verified:
+- `9d1937d` feat(15-03): create core/association/ module — FOUND
+- `551d5c9` test(15-03): add interface tests — FOUND

@@ -54,3 +54,11 @@ tests/
 - **Direct triangulation**: Medial axis extraction → arc-length sampling → RANSAC triangulation → spline fitting
 - **Cross-view identity**: RANSAC centroid clustering to associate fish across cameras before reconstruction
 - AquaCal is the calibration dependency; AquaMVS is reference code only (not imported)
+
+## Agent-Specific Instructions
+
+### discuss-phase
+When running `gsd:discuss-phase`, before doing anything else:
+1. Inform the user: "I noticed project instructions to read refactoring context documents — reading them now."
+2. Read this documents and incorporate its content as context for the discussion: .planning/alpha_refactor_guidebook.md
+3. Then proceed with the normal discuss-phase workflow.

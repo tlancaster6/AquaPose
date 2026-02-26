@@ -96,10 +96,10 @@ Plans:
 **Plans**: 5 plans
 
 Plans:
-- [ ] 15-01-PLAN.md — Detection stage (model-based backend: YOLO/MOG2) (wave 1)
-- [ ] 15-02-PLAN.md — Midline stage (segment-then-extract backend: U-Net/SAM + skeletonization + BFS pruning) (wave 2)
-- [ ] 15-03-PLAN.md — Cross-view association stage (RANSAC centroid clustering) (wave 3)
-- [ ] 15-04-PLAN.md — Tracking stage (Hungarian 3D with population constraint) (wave 4)
+- [x] 15-01-PLAN.md — Detection stage (model-based backend: YOLO/MOG2) (wave 1)
+- [x] 15-02-PLAN.md — Midline stage (segment-then-extract backend: U-Net/SAM + skeletonization + BFS pruning) (wave 2)
+- [x] 15-03-PLAN.md — Cross-view association stage (RANSAC centroid clustering) (wave 3)
+- [x] 15-04-PLAN.md — Tracking stage (Hungarian 3D with population constraint) (wave 4)
 - [ ] 15-05-PLAN.md — Reconstruction stage (triangulation backend: RANSAC + view-angle weighting + B-spline fitting) (wave 5)
 
 ### Phase 16: Numerical Verification and Legacy Cleanup
@@ -169,7 +169,7 @@ Plans:
 | 9. Curve-Based Optimization | v1.0 | 2/2 | Complete | 2026-02-25 |
 | 13. Engine Core | 4/4 | Complete    | 2026-02-25 | - |
 | 14. Golden Data and Verification Framework | 2/2 | Complete    | 2026-02-25 | - |
-| 15. Stage Migrations | 3/5 | In Progress|  | - |
+| 15. Stage Migrations | 4/5 | In Progress|  | - |
 | 16. Numerical Verification and Legacy Cleanup | v2.0 | 0/2 | Not started | - |
 | 17. Observers | v2.0 | 0/5 | Not started | - |
 | 18. CLI and Execution Modes | v2.0 | 0/3 | Not started | - |

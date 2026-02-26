@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Stage Migrations
 status: active
-last_updated: "2026-02-26T00:40:00.000Z"
+last_updated: "2026-02-26T00:56:30.000Z"
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 9
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 15 of 18 (Stage Migrations)
-Plan: 3 of 5 in current phase — COMPLETE
-Status: Phase 15 Plan 03 Complete
-Last activity: 2026-02-26 — Completed 15-03 (AssociationStage created in core/association/)
+Plan: 4 of 5 in current phase — COMPLETE
+Status: Phase 15 Plan 04 Complete
+Last activity: 2026-02-26 — Completed 15-04 (TrackingStage created in core/tracking/, Hungarian backend wrapping FishTracker)
 
-Progress: [████░░░░░░] 35%
+Progress: [████░░░░░░] 38%
 
 ## Performance Metrics
 
@@ -58,6 +58,11 @@ Progress: [████░░░░░░] 35%
 
 Decisions are logged in PROJECT.md Key Decisions table.
 Key decisions entering v2.0:
+Phase 15-04 decisions:
+- TrackingStage reads context.detections (Stage 1 raw output) NOT context.associated_bundles — FishTracker.update() re-derives cross-camera association internally for v1.0 equivalence; Stage 3 output is a data product for future backends/observers only
+- HungarianBackend wraps existing FishTracker with no reimplementation — stateful tracker constructed once at stage init, persists across all frames
+- TrackingConfig extended with full tracker parameter set (min_hits, max_age, reprojection_threshold, birth_interval, min_cameras_birth, velocity_damping, velocity_window)
+
 Phase 15-03 decisions:
 - AssociationBundle uses fish_idx (per-frame 0-indexed) not fish_id — persistent IDs assigned by Tracking (Stage 4)
 - RansacCentroidBackend delegates to existing discover_births() — port behavior, not rewrite
@@ -129,5 +134,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 15-03-PLAN.md (AssociationStage created in core/association/, all 9 tests pass)
+Stopped at: Completed 15-04-PLAN.md (TrackingStage created in core/tracking/, HungarianBackend wrapping FishTracker, 9 tests pass)
 Resume file: None

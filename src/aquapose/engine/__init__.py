@@ -10,11 +10,12 @@ levels with no TYPE_CHECKING exceptions.
 """
 
 from aquapose.engine.config import (
+    AssociationConfig,
     DetectionConfig,
+    MidlineConfig,
     PipelineConfig,
-    SegmentationConfig,
+    ReconstructionConfig,
     TrackingConfig,
-    TriangulationConfig,
     load_config,
     serialize_config,
 )
@@ -32,10 +33,12 @@ from aquapose.engine.pipeline import PosePipeline
 from aquapose.engine.stages import PipelineContext, Stage
 
 __all__ = [
+    "AssociationConfig",
     "DetectionConfig",
     "Event",
     "EventBus",
     "FrameProcessed",
+    "MidlineConfig",
     "Observer",
     "PipelineComplete",
     "PipelineConfig",
@@ -43,12 +46,11 @@ __all__ = [
     "PipelineFailed",
     "PipelineStart",
     "PosePipeline",
-    "SegmentationConfig",
+    "ReconstructionConfig",
     "Stage",
     "StageComplete",
     "StageStart",
     "TrackingConfig",
-    "TriangulationConfig",
     "load_config",
     "serialize_config",
 ]

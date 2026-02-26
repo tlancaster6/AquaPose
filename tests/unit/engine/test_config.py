@@ -31,16 +31,19 @@ def test_load_config_defaults() -> None:
     assert config.video_dir == ""
     assert config.calibration_path == ""
 
-    # Detection stage defaults
+    # Detection stage defaults (Stage 1)
     assert config.detection.detector_kind == "yolo"
     assert config.detection.stop_frame is None
 
-    # Segmentation stage defaults
-    assert config.segmentation.confidence_threshold == 0.5
-    assert config.segmentation.weights_path is None
+    # Midline stage defaults (Stage 2)
+    assert config.midline.confidence_threshold == 0.5
+    assert config.midline.weights_path is None
 
-    # Tracking stage defaults
+    # Tracking stage defaults (Stage 4)
     assert config.tracking.max_fish == 9
+
+    # Reconstruction stage defaults (Stage 5)
+    assert config.reconstruction.backend == "triangulation"
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +73,7 @@ def test_load_config_yaml_override() -> None:
 
     # Non-overridden fields retain defaults
     assert config.detection.stop_frame is None
-    assert config.segmentation.confidence_threshold == 0.5
+    assert config.midline.confidence_threshold == 0.5
     assert config.mode == "production"
 
 
@@ -188,7 +191,8 @@ def test_serialize_config_roundtrip() -> None:
     assert parsed["mode"] == "production"
     assert parsed["detection"]["detector_kind"] == "yolo"
     assert parsed["tracking"]["max_fish"] == 9
-    assert parsed["segmentation"]["confidence_threshold"] == pytest.approx(0.5)
+    assert parsed["midline"]["confidence_threshold"] == pytest.approx(0.5)
+    assert parsed["reconstruction"]["backend"] == "triangulation"
 
 
 def test_serialize_config_is_string() -> None:

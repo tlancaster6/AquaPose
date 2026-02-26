@@ -61,10 +61,15 @@ def test_pipeline_context_defaults_none() -> None:
 
     assert ctx.frame_count is None
     assert ctx.camera_ids is None
+    # Stage 1 — Detection
     assert ctx.detections is None
-    assert ctx.masks is None
+    # Stage 2 — Midline
+    assert ctx.annotated_detections is None
+    # Stage 3 — Association
+    assert ctx.associated_bundles is None
+    # Stage 4 — Tracking
     assert ctx.tracks is None
-    assert ctx.midline_sets is None
+    # Stage 5 — Reconstruction
     assert ctx.midlines_3d is None
     # stage_timing should be an empty dict (not None)
     assert ctx.stage_timing == {}

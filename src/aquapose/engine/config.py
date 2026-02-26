@@ -44,12 +44,18 @@ class DetectionConfig:
 
 
 @dataclass(frozen=True)
-class SegmentationConfig:
-    """Config for the segmentation stage.
+class MidlineConfig:
+    """Config for the Midline stage (Stage 2).
+
+    The Midline stage uses a segment-then-extract backend: it runs U-Net
+    segmentation internally to produce binary masks, then extracts 15-point
+    2D midlines with half-widths from those masks. Both segmentation and
+    midline extraction are configured here.
 
     Attributes:
-        confidence_threshold: Minimum confidence for mask acceptance.
-        weights_path: Path to model weights file (None = use default/pretrained).
+        confidence_threshold: Minimum confidence for mask acceptance by the
+            segmentation backend.
+        weights_path: Path to U-Net model weights file (None = use default/pretrained).
     """
 
     confidence_threshold: float = 0.5
@@ -57,8 +63,17 @@ class SegmentationConfig:
 
 
 @dataclass(frozen=True)
+class AssociationConfig:
+    """Config for the Association stage (Stage 3).
+
+    Placeholder — extended in future plans as cross-camera matching parameters
+    are determined.
+    """
+
+
+@dataclass(frozen=True)
 class TrackingConfig:
-    """Config for the tracking stage.
+    """Config for the Tracking stage (Stage 4).
 
     Attributes:
         max_fish: Maximum number of fish identities to track simultaneously.
@@ -68,12 +83,15 @@ class TrackingConfig:
 
 
 @dataclass(frozen=True)
-class TriangulationConfig:
-    """Config for the triangulation stage.
+class ReconstructionConfig:
+    """Config for the Reconstruction stage (Stage 5).
 
-    Placeholder — extended in future plans as triangulation parameters are
-    determined.
+    Attributes:
+        backend: Reconstruction backend to use. Currently only "triangulation"
+            is supported; future plans will add "curve_optimizer".
     """
+
+    backend: str = "triangulation"
 
 
 # ---------------------------------------------------------------------------
@@ -91,10 +109,11 @@ class PipelineConfig:
         video_dir: Directory containing input video files.
         calibration_path: Path to the AquaCal calibration file.
         mode: Execution mode preset (production, diagnostic, synthetic, benchmark).
-        detection: Detection stage config.
-        segmentation: Segmentation stage config.
-        tracking: Tracking stage config.
-        triangulation: Triangulation stage config.
+        detection: Detection stage config (Stage 1).
+        midline: Midline stage config (Stage 2) — configures segment-then-extract backend.
+        association: Association stage config (Stage 3).
+        tracking: Tracking stage config (Stage 4).
+        reconstruction: Reconstruction stage config (Stage 5).
     """
 
     run_id: str = dataclasses.field(default="")
@@ -103,12 +122,13 @@ class PipelineConfig:
     calibration_path: str = ""
     mode: str = "production"
     detection: DetectionConfig = dataclasses.field(default_factory=DetectionConfig)
-    segmentation: SegmentationConfig = dataclasses.field(
-        default_factory=SegmentationConfig
+    midline: MidlineConfig = dataclasses.field(default_factory=MidlineConfig)
+    association: AssociationConfig = dataclasses.field(
+        default_factory=AssociationConfig
     )
     tracking: TrackingConfig = dataclasses.field(default_factory=TrackingConfig)
-    triangulation: TriangulationConfig = dataclasses.field(
-        default_factory=TriangulationConfig
+    reconstruction: ReconstructionConfig = dataclasses.field(
+        default_factory=ReconstructionConfig
     )
 
 
@@ -242,9 +262,10 @@ def load_config(
     """
     # --- layer 1: defaults ------------------------------------------------
     det_kwargs: dict[str, Any] = {}
-    seg_kwargs: dict[str, Any] = {}
+    mid_kwargs: dict[str, Any] = {}
+    assoc_kwargs: dict[str, Any] = {}
     trk_kwargs: dict[str, Any] = {}
-    tri_kwargs: dict[str, Any] = {}
+    rec_kwargs: dict[str, Any] = {}
     top_kwargs: dict[str, Any] = {}
 
     # --- layer 2: YAML overrides ------------------------------------------
@@ -258,12 +279,21 @@ def load_config(
         yaml_nested = _build_stage_dict_from_dotted(flat_yaml)
 
         det_kwargs = _merge_stage_config(det_kwargs, yaml_nested.get("detection", {}))
-        seg_kwargs = _merge_stage_config(
-            seg_kwargs, yaml_nested.get("segmentation", {})
+        # Accept old name ("segmentation") for backward compat; new name ("midline") takes precedence
+        mid_kwargs = _merge_stage_config(
+            mid_kwargs, yaml_nested.get("segmentation", {})
+        )
+        mid_kwargs = _merge_stage_config(mid_kwargs, yaml_nested.get("midline", {}))
+        assoc_kwargs = _merge_stage_config(
+            assoc_kwargs, yaml_nested.get("association", {})
         )
         trk_kwargs = _merge_stage_config(trk_kwargs, yaml_nested.get("tracking", {}))
-        tri_kwargs = _merge_stage_config(
-            tri_kwargs, yaml_nested.get("triangulation", {})
+        # Accept old name ("triangulation") for backward compat; new name ("reconstruction") takes precedence
+        rec_kwargs = _merge_stage_config(
+            rec_kwargs, yaml_nested.get("triangulation", {})
+        )
+        rec_kwargs = _merge_stage_config(
+            rec_kwargs, yaml_nested.get("reconstruction", {})
         )
         top_kwargs = _merge_stage_config(top_kwargs, yaml_nested.get("__top__", {}))
 
@@ -273,10 +303,19 @@ def load_config(
         cli_nested = _build_stage_dict_from_dotted(flat_cli)
 
         det_kwargs = _merge_stage_config(det_kwargs, cli_nested.get("detection", {}))
-        seg_kwargs = _merge_stage_config(seg_kwargs, cli_nested.get("segmentation", {}))
+        # Accept old name ("segmentation") for backward compat; new name ("midline") takes precedence
+        mid_kwargs = _merge_stage_config(mid_kwargs, cli_nested.get("segmentation", {}))
+        mid_kwargs = _merge_stage_config(mid_kwargs, cli_nested.get("midline", {}))
+        assoc_kwargs = _merge_stage_config(
+            assoc_kwargs, cli_nested.get("association", {})
+        )
         trk_kwargs = _merge_stage_config(trk_kwargs, cli_nested.get("tracking", {}))
-        tri_kwargs = _merge_stage_config(
-            tri_kwargs, cli_nested.get("triangulation", {})
+        # Accept old name ("triangulation") for backward compat; new name ("reconstruction") takes precedence
+        rec_kwargs = _merge_stage_config(
+            rec_kwargs, cli_nested.get("triangulation", {})
+        )
+        rec_kwargs = _merge_stage_config(
+            rec_kwargs, cli_nested.get("reconstruction", {})
         )
         top_kwargs = _merge_stage_config(top_kwargs, cli_nested.get("__top__", {}))
 
@@ -291,9 +330,10 @@ def load_config(
         run_id=resolved_run_id,
         output_dir=resolved_output_dir,
         detection=DetectionConfig(**det_kwargs),
-        segmentation=SegmentationConfig(**seg_kwargs),
+        midline=MidlineConfig(**mid_kwargs),
+        association=AssociationConfig(**assoc_kwargs),
         tracking=TrackingConfig(**trk_kwargs),
-        triangulation=TriangulationConfig(**tri_kwargs),
+        reconstruction=ReconstructionConfig(**rec_kwargs),
         **top_kwargs,
     )
 

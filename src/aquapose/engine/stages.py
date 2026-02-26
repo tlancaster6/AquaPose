@@ -39,7 +39,7 @@ class Stage(Protocol):
 
 @dataclass
 class PipelineContext:
-    """Typed accumulator for inter-stage data flow.
+    """Typed accumulator for inter-stage data flow in the 5-stage pipeline.
 
     Stages populate their output field(s) and return the context. Fields are
     None until the producing stage has run. Use :meth:`get` to retrieve a
@@ -48,34 +48,44 @@ class PipelineContext:
     Fields use generic stdlib types only to preserve the engine import
     boundary (ENG-07). Actual element types are documented below.
 
+    The 5-stage data flow is:
+    1. Detection  -> ``detections``
+    2. Midline    -> ``annotated_detections``
+    3. Association -> ``associated_bundles``
+    4. Tracking   -> ``tracks``
+    5. Reconstruction -> ``midlines_3d``
+
     Attributes:
-        frame_count: Number of frames processed. Set by the detection stage.
-        camera_ids: Active camera IDs. Set by the detection stage.
+        frame_count: Number of frames processed. Set by the Detection stage (Stage 1).
+        camera_ids: Active camera IDs. Set by the Detection stage (Stage 1).
             Type: ``list[str]``
-        detections: Per-frame detection results. Indexed by frame_idx.
-            Each entry is a dict mapping camera_id to list of Detection objects.
+        detections: Stage 1 (Detection) output. Per-frame per-camera detection results.
+            Indexed by frame_idx. Each entry is a dict mapping camera_id to list of
+            Detection objects.
             Type: ``list[dict[str, list[Detection]]]``
-        masks: Per-frame segmentation masks. Indexed by frame_idx.
-            Each entry is a dict mapping camera_id to list of (mask_uint8, CropRegion) tuples.
-            Type: ``list[dict[str, list[tuple[np.ndarray, CropRegion]]]]``
-        tracks: Per-frame tracking results. Indexed by frame_idx.
-            Each entry is a list of confirmed FishTrack objects.
+        annotated_detections: Stage 2 (Midline) output. Detections enriched with 15-point
+            2D midlines and half-widths. Same structure as ``detections`` but each
+            Detection carries midline data.
+            Type: ``list[dict[str, list[Detection]]]``
+        associated_bundles: Stage 3 (Association) output. Cross-camera matched detection
+            groups per fish, per frame. Each entry is a list of bundles (one per fish),
+            where each bundle groups detections from multiple cameras.
+            Type: ``list[list]``
+        tracks: Stage 4 (Tracking) output. Per-frame confirmed fish track objects with
+            persistent fish IDs and lifecycle state.
             Type: ``list[list[FishTrack]]``
-        midline_sets: Per-frame 2D midline sets. Indexed by frame_idx.
-            Each entry is a MidlineSet (dict[int, dict[str, Midline2D]]).
-            Type: ``list[MidlineSet]``
-        midlines_3d: Per-frame 3D midline results. Indexed by frame_idx.
-            Each entry maps fish_id to Midline3D.
-            Type: ``list[dict[int, Midline3D]]``
-        stage_timing: Wall-clock seconds per stage, keyed by stage name.
+        midlines_3d: Stage 5 (Reconstruction) output. Per-frame 3D midline results.
+            Each entry maps fish_id to a Spline3D (or Midline3D) object.
+            Type: ``list[dict[int, Spline3D]]``
+        stage_timing: Wall-clock seconds per stage, keyed by stage class name.
     """
 
     frame_count: int | None = None
     camera_ids: list[str] | None = None
     detections: list[dict[str, list]] | None = None
-    masks: list[dict[str, list]] | None = None
+    annotated_detections: list[dict[str, list]] | None = None
+    associated_bundles: list[list] | None = None
     tracks: list[list] | None = None
-    midline_sets: list | None = None
     midlines_3d: list[dict] | None = None
     stage_timing: dict[str, float] = field(default_factory=dict)
 

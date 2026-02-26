@@ -156,6 +156,7 @@ class PosePipeline:
                         stage_index=i,
                         elapsed_seconds=elapsed,
                         summary={},
+                        context=context,
                     )
                 )
 

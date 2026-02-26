@@ -19,6 +19,7 @@ from aquapose.engine.config import (
     load_config,
     serialize_config,
 )
+from aquapose.engine.diagnostic_observer import DiagnosticObserver, StageSnapshot
 from aquapose.engine.events import (
     Event,
     FrameProcessed,
@@ -37,6 +38,7 @@ from aquapose.engine.timing import TimingObserver
 __all__ = [
     "AssociationConfig",
     "DetectionConfig",
+    "DiagnosticObserver",
     "Event",
     "EventBus",
     "FrameProcessed",
@@ -52,6 +54,7 @@ __all__ = [
     "ReconstructionConfig",
     "Stage",
     "StageComplete",
+    "StageSnapshot",
     "StageStart",
     "TimingObserver",
     "TrackingConfig",

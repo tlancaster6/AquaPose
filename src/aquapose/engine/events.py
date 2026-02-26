@@ -116,6 +116,9 @@ class StageComplete(Event):
         elapsed_seconds: Wall-clock time for this stage.
         summary: Stage-specific metrics dict (e.g. ``{"detection_count": 42}``).
             Values are arbitrary objects; keys are short metric names.
+        context: The PipelineContext after this stage completes. Typed as
+            ``object`` to maintain ENG-07 import boundary. Observers that need
+            context data cast this to the appropriate type.
         timestamp: Unix timestamp at event construction.
     """
 
@@ -123,6 +126,7 @@ class StageComplete(Event):
     stage_index: int = 0
     elapsed_seconds: float = 0.0
     summary: dict[str, object] = field(default_factory=dict)
+    context: object = field(default=None, compare=False)
 
 
 # ---------------------------------------------------------------------------

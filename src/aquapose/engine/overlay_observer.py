@@ -104,12 +104,24 @@ class Overlay2DObserver:
             logger.warning("Missing required context fields for overlay generation")
             return
 
-        # Load calibration model.
+        # Load calibration and build per-camera projection models.
         from aquapose.calibration.loader import load_calibration_data
         from aquapose.calibration.projection import RefractiveProjectionModel
 
         calib_data = load_calibration_data(str(self._calibration_path))
-        model = RefractiveProjectionModel(calib_data)
+        models: dict[str, RefractiveProjectionModel] = {}
+        for cam_id in camera_ids:
+            if cam_id in calib_data.cameras:
+                cam = calib_data.cameras[cam_id]
+                models[cam_id] = RefractiveProjectionModel(
+                    K=cam.K,
+                    R=cam.R,
+                    t=cam.t,
+                    water_z=calib_data.water_z,
+                    normal=calib_data.interface_normal,
+                    n_air=calib_data.n_air,
+                    n_water=calib_data.n_water,
+                )
 
         # Open video captures for each camera.
         captures: dict[str, cv2.VideoCapture] = {}
@@ -165,9 +177,11 @@ class Overlay2DObserver:
                 if isinstance(frame_midlines, dict):
                     for _fish_id, spline in frame_midlines.items():
                         for cam_id in camera_ids:
-                            if cam_id not in frames:
+                            if cam_id not in frames or cam_id not in models:
                                 continue
-                            pts_2d = self._reproject_3d_midline(spline, cam_id, model)
+                            pts_2d = self._reproject_3d_midline(
+                                spline, cam_id, models[cam_id]
+                            )
                             if pts_2d is not None:
                                 self._draw_midline(
                                     frames[cam_id],
@@ -239,8 +253,8 @@ class Overlay2DObserver:
 
         Args:
             spline: Object with ``control_points`` array (7, 3).
-            cam_id: Camera identifier for projection.
-            model: RefractiveProjectionModel with ``project()`` method.
+            cam_id: Camera identifier (unused, model is already per-camera).
+            model: Per-camera RefractiveProjectionModel with ``project()`` method.
 
         Returns:
             2D pixel coordinates as (N, 2) array, or None on failure.
@@ -263,10 +277,18 @@ class Overlay2DObserver:
             import torch
 
             pts_tensor = torch.tensor(pts_3d, dtype=torch.float32)
-            pts_2d = model.project(cam_id, pts_tensor)  # type: ignore[union-attr]
-            if hasattr(pts_2d, "cpu"):
-                pts_2d = pts_2d.cpu().numpy()
-            return np.asarray(pts_2d, dtype=np.float32)
+            pixels, valid = model.project(pts_tensor)  # type: ignore[union-attr]
+            pixels_np = (
+                pixels.cpu().numpy() if hasattr(pixels, "cpu") else np.asarray(pixels)
+            )
+            valid_np = (
+                valid.cpu().numpy() if hasattr(valid, "cpu") else np.asarray(valid)
+            )
+            # Filter to valid projections only.
+            pixels_np = pixels_np[valid_np]
+            if len(pixels_np) < 2:
+                return None
+            return pixels_np.astype(np.float32)
         except Exception:
             return None
 

@@ -67,9 +67,9 @@ def test_reproject_returns_correct_shape() -> None:
     # Create mock model that returns 2D projections.
     import torch
 
-    def mock_project(cam_id: str, pts: torch.Tensor) -> torch.Tensor:
+    def mock_project(pts: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         n = pts.shape[0]
-        return torch.rand(n, 2)
+        return torch.rand(n, 2), torch.ones(n, dtype=torch.bool)
 
     model = MagicMock()
     model.project = mock_project

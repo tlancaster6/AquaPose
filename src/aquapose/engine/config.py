@@ -62,10 +62,17 @@ class MidlineConfig:
         confidence_threshold: Minimum confidence for mask acceptance by the
             segmentation backend.
         weights_path: Path to U-Net model weights file (None = use default/pretrained).
+        backend: Midline backend to use. Currently only "segment_then_extract"
+            is implemented; "direct_pose" is a planned stub.
+        n_points: Number of midline points to produce per detection.
+        min_area: Minimum mask area (pixels) required to attempt midline extraction.
     """
 
     confidence_threshold: float = 0.5
     weights_path: str | None = None
+    backend: str = "segment_then_extract"
+    n_points: int = 15
+    min_area: int = 300
 
 
 @dataclass(frozen=True)

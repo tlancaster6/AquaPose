@@ -179,12 +179,13 @@ Plans:
 **Goal:** Verify the completed v2.0 Alpha refactor (Phases 13-18) faithfully implements the architectural vision in `alpha_refactor_guidebook.md`. Produce a structured audit report, reusable smoke test tooling, and automated import boundary enforcement. Catalog findings for Phase 20 remediation without fixing them.
 **Requirements**: AUDIT
 **Depends on:** Phase 18
-**Plans:** 3 plans
+**Plans:** 1/4 plans executed
 
 Plans:
 - [ ] 19-01-PLAN.md — Import boundary checker and pre-commit hook (wave 1)
 - [ ] 19-02-PLAN.md — Reusable smoke test script and pytest integration (wave 1)
 - [ ] 19-03-PLAN.md — DoD gate check, codebase health audit, and 19-AUDIT.md report (wave 2)
+- [ ] 19-04-PLAN.md — Phase 15 bug ledger triage (wave 1)
 
 ### Phase 20: Post-Refactor Loose Ends
 

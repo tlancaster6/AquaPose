@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Alpha
 status: unknown
-last_updated: "2026-02-26T16:00:58.092Z"
+last_updated: "2026-02-26T23:00:25.948Z"
 progress:
-  total_phases: 7
+  total_phases: 10
   completed_phases: 7
-  total_plans: 23
-  completed_plans: 23
+  total_plans: 27
+  completed_plans: 24
 ---
 
 # Project State
@@ -47,6 +47,7 @@ Progress: [██████░░░░] 60%
 | Phase 13-engine-core P04 | 4 | 2 tasks | 3 files |
 | Phase 14.1 P02 | 7 | 2 tasks | 7 files |
 | Phase 16-numerical-verification-and-legacy-cleanup P02 | 15 | 2 tasks | 7 files |
+| Phase 19-alpha-refactor-audit P04 | 2 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -56,6 +57,7 @@ Progress: [██████░░░░] 60%
 - Phase 15 plan count corrected from 7 to 5 plans (5-stage canonical pipeline model)
 - Phase 19 added: Alpha Refactor Audit
 - Phase 20 added: Post-Refactor Loose Ends
+- Phase 21 added: Retrospective, Prospective
 
 ### Decisions
 
@@ -141,6 +143,10 @@ Phase 13 decisions:
 - [Phase 14.1-02]: ReconstructionConfig adds backend field (default triangulation) for future curve_optimizer support without breaking schema change
 - [Phase 16-02]: test_stages.py v1.0 functional tests replaced with importability check — regression suite in tests/regression/ covers the canonical PosePipeline execution path
 - [Phase 16-02]: diagnose_triangulation.py was untracked — copied and removed manually since git mv requires tracked files
+- [Phase 19-alpha-refactor-audit]: Items 1+2 Open/Warning: FishTracker monolithic association+tracking — remediate together with bundles-aware backend in Phase 20
+- [Phase 19-alpha-refactor-audit]: Item 5 Open/Warning: skip_camera_id missing from PipelineConfig and build_stages() — 10 hardcoded occurrences, low-effort Phase 20 fix
+- [Phase 19-alpha-refactor-audit]: Items 3+6 Accepted: MidlineSet bridge pattern and CurveOptimizer statefulness are intentional design
+- [Phase 19-alpha-refactor-audit]: Items 4+7 Resolved: ReconstructionConfig thresholds and AssociationConfig fields completed as planned in Phase 15
 
 ### Pending Todos
 

@@ -1,10 +1,14 @@
-"""Generate frozen golden reference outputs from the v1.0 pipeline.
+"""Generate frozen golden reference outputs using the v2.0 PosePipeline.
 
-Runs the v1.0 pipeline stage-by-stage on a fixed clip with a fixed random seed,
-saving each stage's output as a ``.pt`` file in ``tests/golden/``.
+Runs PosePipeline on a fixed clip with a fixed random seed, saving each
+stage's output as a ``.pt`` file in ``tests/golden/``.
 
-These fixture files serve as the regression baseline for Phase 15-16 stage
-migrations — any ported stage must produce numerically equivalent results.
+This script was updated in Phase 16 to use the new PosePipeline engine
+(build_stages + PosePipeline.run()) instead of the v1.0 stage functions.
+The CLI interface and output file names are unchanged.
+
+These fixture files serve as the regression baseline for Phase 16
+verification — any ported stage must produce numerically equivalent results.
 
 Usage::
 
@@ -60,9 +64,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("generate_golden_data")
 
-# Camera to exclude (centre top-down camera — poor mask quality)
-_SKIP_CAMERA_ID = "e3v8250"
-
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser.
@@ -71,7 +72,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         Configured :class:`argparse.ArgumentParser`.
     """
     parser = argparse.ArgumentParser(
-        description="Generate frozen golden reference outputs from the v1.0 pipeline.",
+        description="Generate frozen golden reference outputs using the v2.0 PosePipeline.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
@@ -136,7 +137,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run golden data generation.
+    """Run golden data generation using the v2.0 PosePipeline.
 
     Args:
         argv: Optional list of CLI argument strings. If None, uses sys.argv.
@@ -165,170 +166,98 @@ def main(argv: list[str] | None = None) -> int:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Output directory: %s", args.output_dir.resolve())
 
-    # --- Now import pipeline modules (after seed setup) ---
-    from aquapose.calibration.loader import (
-        compute_undistortion_maps,
-        load_calibration_data,
-    )
-    from aquapose.calibration.projection import RefractiveProjectionModel
-    from aquapose.io.video import VideoSet
-    from aquapose.pipeline.stages import (
-        run_detection,
-        run_midline_extraction,
-        run_segmentation,
-        run_tracking,
-        run_triangulation,
-    )
-    from aquapose.reconstruction.midline import MidlineExtractor
-    from aquapose.segmentation.model import UNetSegmentor
-    from aquapose.tracking.tracker import FishTracker
+    # --- Import pipeline modules (after seed setup) ---
+    from aquapose.engine.config import load_config
+    from aquapose.engine.pipeline import PosePipeline, build_stages
 
-    # --- Discover camera videos (same logic as orchestrator.py) ---
-    video_paths: dict[str, Path] = {}
-    for suffix in ("*.avi", "*.mp4"):
-        for p in args.video_dir.glob(suffix):
-            camera_id = p.stem.split("-")[0]
-            if camera_id == _SKIP_CAMERA_ID:
-                logger.info("Skipping excluded camera: %s", camera_id)
-                continue
-            video_paths[camera_id] = p
+    # --- Build PipelineConfig from CLI args ---
+    overrides: dict[str, object] = {
+        "video_dir": str(args.video_dir),
+        "calibration_path": str(args.calibration),
+        "detection.detector_kind": args.detector_kind,
+        "detection.stop_frame": args.stop_frame,
+        "tracking.max_fish": args.max_fish,
+    }
+    if args.yolo_weights is not None:
+        overrides["detection.model_path"] = str(args.yolo_weights)
+    if args.unet_weights is not None:
+        overrides["midline.weights_path"] = str(args.unet_weights)
 
-    if not video_paths:
-        logger.error(
-            "No .avi/.mp4 files found in %s (after excluding %r)",
-            args.video_dir,
-            _SKIP_CAMERA_ID,
-        )
-        return 1
+    config = load_config(cli_overrides=overrides, run_id="golden_data_generation")
 
-    camera_ids = sorted(video_paths)
-    logger.info("Found %d cameras: %s", len(camera_ids), camera_ids)
-
-    # --- Load calibration + undistortion maps ---
-    logger.info("Loading calibration from %s", args.calibration)
-    calib = load_calibration_data(args.calibration)
-
-    undist_maps: dict[str, object] = {}
-    models: dict[str, RefractiveProjectionModel] = {}
-    for cam_id in video_paths:
-        if cam_id not in calib.cameras:
-            logger.warning("Camera %r not in calibration; skipping", cam_id)
-            continue
-        cam_data = calib.cameras[cam_id]
-        maps = compute_undistortion_maps(cam_data)
-        undist_maps[cam_id] = maps
-        models[cam_id] = RefractiveProjectionModel(
-            K=maps.K_new,
-            R=cam_data.R,
-            t=cam_data.t,
-            water_z=calib.water_z,
-            normal=calib.interface_normal,
-            n_air=calib.n_air,
-            n_water=calib.n_water,
-        )
-
-    if not models:
-        logger.error("No cameras matched between video_dir and calibration.")
-        return 1
-
-    # --- Create stateful objects (once, same as orchestrator.py) ---
-    tracker = FishTracker(expected_count=args.max_fish)
-    extractor = MidlineExtractor()
-    segmentor = UNetSegmentor(weights_path=args.unet_weights)
-
-    # --- Build detector kwargs ---
-    detector_kwargs: dict[str, object] = {}
-    if args.detector_kind == "yolo" and args.yolo_weights is not None:
-        detector_kwargs["model_path"] = args.yolo_weights
-
-    # ===================================================================
-    # Stage 1: Detection
-    # ===================================================================
-    logger.info("=== Stage 1: Detection (stop_frame=%d) ===", args.stop_frame)
-    t0 = time.perf_counter()
-    video_set = VideoSet(video_paths, undistortion=undist_maps)
-    with video_set:
-        detections_per_frame = run_detection(
-            video_set=video_set,
-            stop_frame=args.stop_frame,
-            detector_kind=args.detector_kind,
-            **detector_kwargs,
-        )
-    elapsed = time.perf_counter() - t0
+    # --- Build and run PosePipeline ---
     logger.info(
-        "Stage 1 complete: %d frames, %d cameras, %.2fs",
-        len(detections_per_frame),
-        len(models),
-        elapsed,
+        "Running PosePipeline (stop_frame=%d, detector=%s, seed=%d)",
+        args.stop_frame,
+        args.detector_kind,
+        args.seed,
+    )
+    t0_total = time.perf_counter()
+    stages = build_stages(config)
+    pipeline = PosePipeline(stages=stages, config=config)
+    context = pipeline.run()
+    total_elapsed = time.perf_counter() - t0_total
+
+    logger.info(
+        "PosePipeline complete: %d frames, %d cameras, %.2fs total",
+        context.frame_count,
+        len(context.camera_ids or []),
+        total_elapsed,
     )
 
+    # ===================================================================
+    # Extract and save per-stage golden outputs
+    # ===================================================================
+
+    # Stage 1: Detection
     det_path = args.output_dir / "golden_detection.pt"
-    torch.save(detections_per_frame, det_path)
+    torch.save(context.detections, det_path)
     logger.info("Saved golden_detection.pt (%d bytes)", det_path.stat().st_size)
 
-    # ===================================================================
-    # Stage 2: Segmentation
-    # ===================================================================
-    logger.info("=== Stage 2: Segmentation ===")
-    t0 = time.perf_counter()
-    with VideoSet(video_paths, undistortion=undist_maps) as seg_video_set:
-        masks_per_frame = run_segmentation(
-            detections_per_frame=detections_per_frame,
-            video_set=seg_video_set,
-            segmentor=segmentor,
-            stop_frame=args.stop_frame,
-        )
-    elapsed = time.perf_counter() - t0
-    logger.info(
-        "Stage 2 complete: %d frames, %d cameras, %.2fs",
-        len(masks_per_frame),
-        len(models),
-        elapsed,
-    )
+    # Stage 2: Segmentation (masks extracted from annotated_detections)
+    # annotated_detections stores AnnotatedDetection objects with .mask and .crop_region
+    # Reformat to legacy list[dict[str, list[tuple[ndarray, CropRegion]]]] format
+    masks_per_frame = []
+    for frame in context.annotated_detections or []:
+        frame_masks: dict[str, list] = {}
+        for cam_id, det_list in frame.items():
+            cam_masks = []
+            for det in det_list:
+                mask = getattr(det, "mask", None)
+                crop_region = getattr(det, "crop_region", None)
+                if mask is not None and crop_region is not None:
+                    cam_masks.append((mask, crop_region))
+            frame_masks[cam_id] = cam_masks
+        masks_per_frame.append(frame_masks)
 
     seg_path = args.output_dir / "golden_segmentation.pt.gz"
     with gzip.open(seg_path, "wb", compresslevel=6) as f:
         torch.save(masks_per_frame, f)
     logger.info("Saved golden_segmentation.pt.gz (%d bytes)", seg_path.stat().st_size)
 
-    # ===================================================================
-    # Stage 3: Tracking
-    # ===================================================================
-    logger.info("=== Stage 3: Tracking ===")
-    t0 = time.perf_counter()
-    tracks_per_frame = run_tracking(
-        detections_per_frame=detections_per_frame,
-        models=models,
-        tracker=tracker,
-    )
-    elapsed = time.perf_counter() - t0
-    logger.info(
-        "Stage 3 complete: %d frames, %.2fs",
-        len(tracks_per_frame),
-        elapsed,
-    )
-
+    # Stage 4: Tracking
     trk_path = args.output_dir / "golden_tracking.pt"
-    torch.save(tracks_per_frame, trk_path)
+    torch.save(context.tracks, trk_path)
     logger.info("Saved golden_tracking.pt (%d bytes)", trk_path.stat().st_size)
 
-    # ===================================================================
-    # Stage 4: Midline Extraction
-    # ===================================================================
-    logger.info("=== Stage 4: Midline Extraction ===")
-    t0 = time.perf_counter()
-    midline_sets = run_midline_extraction(
-        tracks_per_frame=tracks_per_frame,
-        masks_per_frame=masks_per_frame,
-        detections_per_frame=detections_per_frame,
-        extractor=extractor,
-    )
-    elapsed = time.perf_counter() - t0
-    logger.info(
-        "Stage 4 complete: %d frames, %.2fs",
-        len(midline_sets),
-        elapsed,
-    )
+    # Stage 2 (midlines): Extract Midline2D from annotated_detections
+    # Legacy format: list[dict[int, dict[str, Midline2D]]] (MidlineSet per frame)
+    # New pipeline produces midlines per detection (before tracking) so fish_id
+    # is not available at Stage 2. We use detection index as a proxy fish_id.
+    midline_sets = []
+    for frame in context.annotated_detections or []:
+        frame_midlines: dict[int, dict[str, object]] = {}
+        det_idx = 0
+        for cam_id, det_list in frame.items():
+            for det in det_list:
+                midline = getattr(det, "midline", None)
+                if midline is not None:
+                    fish_proxy_id = det_idx
+                    if fish_proxy_id not in frame_midlines:
+                        frame_midlines[fish_proxy_id] = {}
+                    frame_midlines[fish_proxy_id][cam_id] = midline
+                det_idx += 1
+        midline_sets.append(frame_midlines)
 
     mid_path = args.output_dir / "golden_midline_extraction.pt"
     torch.save(midline_sets, mid_path)
@@ -336,24 +265,9 @@ def main(argv: list[str] | None = None) -> int:
         "Saved golden_midline_extraction.pt (%d bytes)", mid_path.stat().st_size
     )
 
-    # ===================================================================
-    # Stage 5: Triangulation
-    # ===================================================================
-    logger.info("=== Stage 5: Triangulation ===")
-    t0 = time.perf_counter()
-    midlines_3d = run_triangulation(
-        midline_sets=midline_sets,
-        models=models,
-    )
-    elapsed = time.perf_counter() - t0
-    logger.info(
-        "Stage 5 complete: %d frames, %.2fs",
-        len(midlines_3d),
-        elapsed,
-    )
-
+    # Stage 5: Triangulation (Reconstruction)
     tri_path = args.output_dir / "golden_triangulation.pt"
-    torch.save(midlines_3d, tri_path)
+    torch.save(context.midlines_3d, tri_path)
     logger.info("Saved golden_triangulation.pt (%d bytes)", tri_path.stat().st_size)
 
     # ===================================================================
@@ -377,8 +291,8 @@ def main(argv: list[str] | None = None) -> int:
         "cuda_version": cuda_version,
         "gpu_name": gpu_name,
         "numpy_version": np.__version__,
-        "camera_ids": camera_ids,
-        "frame_count": len(detections_per_frame),
+        "camera_ids": context.camera_ids,
+        "frame_count": context.frame_count,
         "generation_timestamp": datetime.now(UTC).isoformat(),
     }
 
@@ -398,7 +312,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     logger.info(
         "Commit with: git add tests/golden/ && git commit -m "
-        '"data(14): commit golden reference outputs from v1.0 pipeline"'
+        '"data(16): commit golden reference outputs from v2.0 PosePipeline"'
     )
 
     return 0

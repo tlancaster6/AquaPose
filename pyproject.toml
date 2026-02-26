@@ -73,8 +73,9 @@ dependencies = [
 ]
 
 [tool.hatch.envs.default.scripts]
-test = "pytest tests/ -m \"not slow\" {args}"
+test = "pytest tests/ -m \"not slow and not regression\" {args}"
 test-all = "pytest tests/ {args}"
+test-regression = "pytest tests/regression/ -m regression {args}"
 lint = "ruff check src/ tests/ {args}"
 format = "ruff format src/ tests/ {args}"
 typecheck = "basedpyright src/ {args}"
@@ -100,6 +101,7 @@ dependencies = ["python-semantic-release", "build"]
 [tool.pytest.ini_options]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "regression: marks tests as regression (deselect with '-m \"not regression\"')",
 ]
 
 [tool.ruff]

@@ -10,10 +10,19 @@ per-stage and end-to-end comparison.
 
 All regression tests skip gracefully if golden data or real data paths are
 unavailable on the current machine.
+
+Required environment variables for regression tests:
+    AQUAPOSE_VIDEO_DIR: Path to directory containing per-camera video files.
+    AQUAPOSE_CALIBRATION_PATH: Path to AquaCal calibration JSON file.
+
+Optional environment variables (have sensible relative-path defaults):
+    AQUAPOSE_YOLO_WEIGHTS: Path to YOLO detector weights file.
+    AQUAPOSE_UNET_WEIGHTS: Path to U-Net segmentation model weights file.
 """
 
 from __future__ import annotations
 
+import os
 import random
 from pathlib import Path
 
@@ -79,44 +88,71 @@ def _set_deterministic_seeds(seed: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Known real-data paths (well-known defaults on the development machine)
+# Default weight paths (relative, no hardcoded machine-specific roots)
 # ---------------------------------------------------------------------------
 
-_DEFAULT_VIDEO_DIR = Path("C:/Users/tucke/Desktop/Aqua/Videos/021826/core_videos")
-_DEFAULT_CALIBRATION = Path(
-    "C:/Users/tucke/Desktop/Aqua/AquaCal/release_calibration/calibration.json"
-)
 _DEFAULT_YOLO_WEIGHTS = Path("runs/detect/output/yolo_fish/train_v1/weights/best.pt")
-_DEFAULT_UNET_WEIGHTS = Path(
-    "C:/Users/tucke/Desktop/Aqua/AquaPose/unet/run2/best_model.pth"
-)
+_DEFAULT_UNET_WEIGHTS = Path("runs/unet/run2/best_model.pth")
 
 
 def _resolve_real_data_paths(
     metadata: dict,
 ) -> tuple[Path, Path, Path | None, Path | None]:
-    """Resolve paths to real video/calibration data from metadata or defaults.
+    """Resolve paths to real video/calibration data from environment variables.
 
-    Returns the (video_dir, calibration, yolo_weights, unet_weights) tuple.
-    Skips the test session via ``pytest.skip`` if paths are not available.
+    Reads ``AQUAPOSE_VIDEO_DIR`` and ``AQUAPOSE_CALIBRATION_PATH`` from the
+    environment.  If either is not set, the test session is skipped with a
+    clear message directing the user to set the variable.
+
+    Optional weight paths are resolved from ``AQUAPOSE_YOLO_WEIGHTS`` and
+    ``AQUAPOSE_UNET_WEIGHTS`` environment variables, falling back to
+    relative-path defaults that work within the repo.
 
     Args:
-        metadata: Golden metadata dict (may contain path hints).
+        metadata: Golden metadata dict (may contain path hints embedded at
+            golden-data generation time; environment variables take precedence).
 
     Returns:
         Tuple of (video_dir, calibration_path, yolo_weights, unet_weights).
     """
-    video_dir = Path(metadata.get("video_dir", _DEFAULT_VIDEO_DIR))
-    calibration = Path(metadata.get("calibration_path", _DEFAULT_CALIBRATION))
-    yolo_weights_raw = metadata.get("yolo_weights")
-    yolo_weights = Path(yolo_weights_raw) if yolo_weights_raw else _DEFAULT_YOLO_WEIGHTS
-    unet_weights_raw = metadata.get("unet_weights")
-    unet_weights = Path(unet_weights_raw) if unet_weights_raw else _DEFAULT_UNET_WEIGHTS
+    video_dir_env = os.environ.get("AQUAPOSE_VIDEO_DIR")
+    calibration_env = os.environ.get("AQUAPOSE_CALIBRATION_PATH")
+
+    if video_dir_env is None:
+        pytest.skip(
+            "AQUAPOSE_VIDEO_DIR not set — set environment variable to run regression tests"
+        )
+    if calibration_env is None:
+        pytest.skip(
+            "AQUAPOSE_CALIBRATION_PATH not set — set environment variable to run regression tests"
+        )
+
+    video_dir = Path(video_dir_env)
+    calibration = Path(calibration_env)
 
     if not video_dir.exists():
         pytest.skip(f"Real video data not available at {video_dir}")
     if not calibration.exists():
         pytest.skip(f"Calibration file not available at {calibration}")
+
+    # Weight paths: env var > metadata hint > default
+    yolo_weights_env = os.environ.get("AQUAPOSE_YOLO_WEIGHTS")
+    if yolo_weights_env is not None:
+        yolo_weights = Path(yolo_weights_env)
+    else:
+        yolo_weights_raw = metadata.get("yolo_weights")
+        yolo_weights = (
+            Path(yolo_weights_raw) if yolo_weights_raw else _DEFAULT_YOLO_WEIGHTS
+        )
+
+    unet_weights_env = os.environ.get("AQUAPOSE_UNET_WEIGHTS")
+    if unet_weights_env is not None:
+        unet_weights = Path(unet_weights_env)
+    else:
+        unet_weights_raw = metadata.get("unet_weights")
+        unet_weights = (
+            Path(unet_weights_raw) if unet_weights_raw else _DEFAULT_UNET_WEIGHTS
+        )
 
     return video_dir, calibration, yolo_weights, unet_weights
 

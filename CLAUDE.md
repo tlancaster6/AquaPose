@@ -32,11 +32,12 @@ hatch run pre-commit run --all-files  # all pre-commit hooks
 src/aquapose/
 ├── calibration/    # AquaCal loading, refractive projection, ray casting
 ├── core/           # Core domain logic (pose state, loss functions)
+├── engine/         # PosePipeline, Stage protocol, PipelineContext, config
+├── reconstruction/ # RANSAC triangulation, B-spline midline fitting
 ├── segmentation/   # MOG2/YOLO detection, SAM pseudo-labels, U-Net inference
-├── mesh/           # Parametric fish mesh, cross-section profiles
-├── initialization/ # PCA keypoints, multi-view triangulation, fish state init
+├── tracking/       # FishTracker, Hungarian matching, cross-view association
 ├── io/             # HDF5 output, data loaders
-└── utils/          # General-purpose helpers
+└── visualization/  # Reprojection overlays, diagnostic video writers
 tests/
 ├── unit/           # Per-module unit tests
 ├── integration/    # Cross-module tests

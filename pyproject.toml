@@ -39,13 +39,6 @@ dependencies = [
     "click>=8.1",
 ]
 
-# pytorch3d must be installed separately (not on PyPI stable):
-# Option A (recommended): miropsota third-party wheel
-#   pip install fvcore iopath
-#   pip install --extra-index-url https://miropsota.github.io/torch_packages_builder pytorch3d
-# Option B: CPU-only source build (always works, no CUDA acceleration)
-#   FORCE_CUDA=0 pip install "git+https://github.com/facebookresearch/pytorch3d.git"
-# Tested with pytorch3d-0.7.9+pt2.9.1cu128 on torch 2.10.0+cu130 (Windows).
 # sam2 must be installed separately (not on PyPI stable):
 # git clone https://github.com/facebookresearch/sam2.git && pip install -e sam2/
 

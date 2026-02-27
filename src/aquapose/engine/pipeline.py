@@ -200,9 +200,15 @@ def build_stages(config: PipelineConfig) -> list[Stage]:
     It imports all stage classes from ``aquapose.core`` (never the reverse) and
     constructs each stage from its corresponding sub-config in *config*.
 
-    When ``config.mode == "synthetic"``, returns 4 stages with
+    v2.1 pipeline ordering: Detection → 2D Tracking → Association → Midline →
+    Reconstruction. TrackingStage and AssociationStage stubs are added in Phase
+    22-02. Until then, build_stages returns the 3 implemented stages (detection,
+    midline, reconstruction) for production mode, and 2 stages (synthetic,
+    reconstruction) for synthetic mode.
+
+    When ``config.mode == "synthetic"``, returns a reduced stage list with
     SyntheticDataStage replacing both DetectionStage and MidlineStage.
-    For all other modes, returns the standard 5-stage list.
+    For all other modes, returns the available stage list.
 
     Example::
 
@@ -215,7 +221,7 @@ def build_stages(config: PipelineConfig) -> list[Stage]:
             backend selection, and all stage-specific parameters.
 
     Returns:
-        Ordered list of Stage instances (4 for synthetic mode, 5 otherwise).
+        Ordered list of Stage instances.
 
     Raises:
         FileNotFoundError: If required paths in *config* do not exist.
@@ -223,12 +229,10 @@ def build_stages(config: PipelineConfig) -> list[Stage]:
 
     """
     from aquapose.core import (
-        AssociationStage,
         DetectionStage,
         MidlineStage,
         ReconstructionStage,
         SyntheticDataStage,
-        TrackingStage,
     )
 
     # --- Synthetic mode: replace Detection + Midline with SyntheticDataStage
@@ -236,25 +240,6 @@ def build_stages(config: PipelineConfig) -> list[Stage]:
         synthetic_stage = SyntheticDataStage(
             calibration_path=config.calibration_path,
             synthetic_config=config.synthetic,
-        )
-
-        association_stage = AssociationStage(
-            calibration_path=config.calibration_path,
-            expected_count=config.association.expected_count,
-            min_cameras=config.association.min_cameras,
-            reprojection_threshold=config.association.reprojection_threshold,
-        )
-
-        tracking_stage = TrackingStage(
-            calibration_path=config.calibration_path,
-            expected_count=config.tracking.max_fish,
-            min_hits=config.tracking.min_hits,
-            max_age=config.tracking.max_age,
-            reprojection_threshold=config.tracking.reprojection_threshold,
-            birth_interval=config.tracking.birth_interval,
-            min_cameras_birth=config.tracking.min_cameras_birth,
-            velocity_damping=config.tracking.velocity_damping,
-            velocity_window=config.tracking.velocity_window,
         )
 
         reconstruction_stage = ReconstructionStage(
@@ -267,12 +252,10 @@ def build_stages(config: PipelineConfig) -> list[Stage]:
 
         return [
             synthetic_stage,
-            association_stage,
-            tracking_stage,
             reconstruction_stage,
         ]
 
-    # --- Standard modes: 5-stage pipeline
+    # --- Standard modes: implemented stages (stubs added in Phase 22-02)
     detection_stage = DetectionStage(
         video_dir=config.video_dir,
         calibration_path=config.calibration_path,
@@ -293,25 +276,6 @@ def build_stages(config: PipelineConfig) -> list[Stage]:
         min_area=config.midline.min_area,
     )
 
-    association_stage = AssociationStage(
-        calibration_path=config.calibration_path,
-        expected_count=config.association.expected_count,
-        min_cameras=config.association.min_cameras,
-        reprojection_threshold=config.association.reprojection_threshold,
-    )
-
-    tracking_stage = TrackingStage(
-        calibration_path=config.calibration_path,
-        expected_count=config.tracking.max_fish,
-        min_hits=config.tracking.min_hits,
-        max_age=config.tracking.max_age,
-        reprojection_threshold=config.tracking.reprojection_threshold,
-        birth_interval=config.tracking.birth_interval,
-        min_cameras_birth=config.tracking.min_cameras_birth,
-        velocity_damping=config.tracking.velocity_damping,
-        velocity_window=config.tracking.velocity_window,
-    )
-
     reconstruction_stage = ReconstructionStage(
         calibration_path=config.calibration_path,
         backend=config.reconstruction.backend,
@@ -323,7 +287,5 @@ def build_stages(config: PipelineConfig) -> list[Stage]:
     return [
         detection_stage,
         midline_stage,
-        association_stage,
-        tracking_stage,
         reconstruction_stage,
     ]

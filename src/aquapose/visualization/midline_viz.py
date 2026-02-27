@@ -20,9 +20,9 @@ from aquapose.visualization.overlay import FISH_COLORS
 
 if TYPE_CHECKING:
     from aquapose.calibration.projection import RefractiveProjectionModel
+    from aquapose.core.tracking import FishTrack, TrackState
     from aquapose.segmentation.crop import CropRegion
     from aquapose.segmentation.detector import Detection
-    from aquapose.tracking.tracker import FishTrack, TrackState
 
 logger = logging.getLogger(__name__)
 

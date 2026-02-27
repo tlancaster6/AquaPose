@@ -1,9 +1,12 @@
 """ReconstructionStage — Stage 5 of the 5-stage AquaPose pipeline.
 
-Reads tracked fish (context.tracks from Stage 4) and annotated detections
-(context.annotated_detections from Stage 2), assembles per-frame MidlineSets,
-and produces 3D B-spline midlines via the configured backend. Populates
-PipelineContext.midlines_3d.
+Reads annotated detections (context.annotated_detections from Stage 4) and
+tracklet groups (context.tracklet_groups from Stage 3), assembles per-frame
+MidlineSets, and produces 3D B-spline midlines via the configured backend.
+Populates PipelineContext.midlines_3d.
+
+v2.1 transition: Stage will be fully updated in Phase 26 to consume
+TrackletGroup objects. Until Phase 26, run() requires annotated_detections.
 """
 
 from __future__ import annotations
@@ -88,44 +91,39 @@ class ReconstructionStage:
     def run(self, context: PipelineContext) -> PipelineContext:
         """Run 3D reconstruction across all frames.
 
-        Reads ``context.tracks`` (Stage 4) and ``context.annotated_detections``
-        (Stage 2) to assemble per-frame MidlineSets. Passes each MidlineSet to
-        the configured backend and collects the per-frame results.
+        v2.1 transition: Reads ``context.annotated_detections`` (Stage 4) to
+        assemble per-frame MidlineSets. Fish identity is populated from
+        ``context.tracklet_groups`` when available (Phase 26+). Until Phase 26,
+        reconstruction produces midlines without persistent fish IDs.
 
         Populates ``context.midlines_3d`` as a list (one entry per frame) of
         dicts mapping fish_id to Midline3D.
 
         Args:
             context: Accumulated pipeline state from prior stages. Must have
-                ``tracks`` (from Stage 4) and ``annotated_detections``
-                (from Stage 2) populated.
+                ``annotated_detections`` (from Stage 4) populated.
 
         Returns:
             The same *context* object with ``midlines_3d`` populated.
 
         Raises:
-            ValueError: If ``context.tracks`` or ``context.annotated_detections``
-                is not populated.
+            ValueError: If ``context.annotated_detections`` is not populated.
 
         """
-        if context.tracks is None:
-            raise ValueError(
-                "ReconstructionStage requires context.tracks — "
-                "it is not populated. Ensure Stage 4 (TrackingStage) has run.",
-            )
         if context.annotated_detections is None:
             raise ValueError(
                 "ReconstructionStage requires context.annotated_detections — "
-                "it is not populated. Ensure Stage 2 (MidlineStage) has run.",
+                "it is not populated. Ensure Stage 4 (MidlineStage) has run.",
             )
 
         t0 = time.perf_counter()
 
         midlines_3d_per_frame: list[dict] = []
 
-        for frame_idx, (frame_tracks, frame_annotated) in enumerate(
-            zip(context.tracks, context.annotated_detections, strict=False),
-        ):
+        # v2.1 transition: iterate frames using annotated_detections only.
+        # Phase 26 will replace this with TrackletGroup-driven reconstruction.
+        for frame_idx, frame_annotated in enumerate(context.annotated_detections):
+            frame_tracks: list = []  # empty until Phase 26 wires tracklet_groups
             midline_set = self._assemble_midline_set(
                 frame_idx=frame_idx,
                 frame_tracks=frame_tracks,

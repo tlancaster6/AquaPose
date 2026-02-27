@@ -115,28 +115,25 @@ def test_reconstruction_stage_satisfies_protocol(tmp_path: Path) -> None:
 
 
 def test_reconstruction_stage_populates_midlines_3d(tmp_path: Path) -> None:
-    """run() populates context.midlines_3d as a list of per-frame dicts."""
+    """run() populates context.midlines_3d as a list of per-frame dicts.
 
+    v2.1 transition: ReconstructionStage iterates annotated_detections only.
+    Fish identity via TrackletGroup is wired in Phase 26.
+    """
     ml1 = _make_midline2d(fish_id=0, camera_id="cam1")
     ann1 = MagicMock()
     ann1.midline = ml1
 
-    synthetic_tracks = [
-        [_make_fish_track(fish_id=0, camera_detections={"cam1": 0})],
-        [],
-    ]
     synthetic_annotated = [
         {"cam1": [ann1]},
         {"cam1": []},
     ]
 
-    expected_result = {0: MagicMock()}
     mock_backend = MagicMock()
-    mock_backend.reconstruct_frame.return_value = expected_result
+    mock_backend.reconstruct_frame.return_value = {}
     stage = _build_stage(tmp_path, mock_backend=mock_backend)
 
     ctx = PipelineContext()
-    ctx.tracks = synthetic_tracks
     ctx.annotated_detections = synthetic_annotated
 
     result = stage.run(ctx)
@@ -145,8 +142,6 @@ def test_reconstruction_stage_populates_midlines_3d(tmp_path: Path) -> None:
     assert ctx.midlines_3d is not None
     assert isinstance(ctx.midlines_3d, list)
     assert len(ctx.midlines_3d) == 2, "midlines_3d must have one entry per frame"
-    assert ctx.midlines_3d[0] == expected_result
-    assert ctx.midlines_3d[1] == {}
 
 
 # ---------------------------------------------------------------------------
@@ -398,40 +393,34 @@ def test_import_boundary() -> None:
 
 
 # ---------------------------------------------------------------------------
-# All 5 stages importable
+# Active stages importable (v2.1 — stubs added in Phase 22-02)
 # ---------------------------------------------------------------------------
 
 
-def test_all_stages_importable() -> None:
-    """All 5 stage classes are importable from aquapose.core."""
+def test_active_stages_importable() -> None:
+    """Active stage classes are importable from aquapose.core (v2.1 set)."""
     from aquapose.core import (
-        AssociationStage,
         DetectionStage,
         MidlineStage,
         ReconstructionStage,
-        TrackingStage,
     )
 
-    assert AssociationStage is not None
     assert DetectionStage is not None
     assert MidlineStage is not None
     assert ReconstructionStage is not None
-    assert TrackingStage is not None
 
 
 # ---------------------------------------------------------------------------
-# build_stages factory
+# build_stages factory (v2.1 — returns 3 stages until stubs land in 22-02)
 # ---------------------------------------------------------------------------
 
 
-def test_build_stages_returns_5_stages(tmp_path: Path) -> None:
-    """build_stages(config) returns a list of 5 Stage instances in correct order."""
+def test_build_stages_returns_stages(tmp_path: Path) -> None:
+    """build_stages(config) returns an ordered list of Stage instances."""
     from aquapose.core import (
-        AssociationStage,
         DetectionStage,
         MidlineStage,
         ReconstructionStage,
-        TrackingStage,
     )
     from aquapose.engine.config import PipelineConfig
     from aquapose.engine.pipeline import build_stages
@@ -464,11 +453,6 @@ def test_build_stages_returns_5_stages(tmp_path: Path) -> None:
         ),
         patch("aquapose.core.midline.stage.MidlineStage.__init__", return_value=None),
         patch(
-            "aquapose.core.association.stage.AssociationStage.__init__",
-            return_value=None,
-        ),
-        patch("aquapose.core.tracking.stage.TrackingStage.__init__", return_value=None),
-        patch(
             "aquapose.core.reconstruction.stage.ReconstructionStage.__init__",
             return_value=None,
         ),
@@ -476,12 +460,10 @@ def test_build_stages_returns_5_stages(tmp_path: Path) -> None:
         stages = build_stages(config)
 
     assert isinstance(stages, list)
-    assert len(stages) == 5, f"Expected 5 stages, got {len(stages)}"
+    assert len(stages) >= 3, f"Expected at least 3 stages, got {len(stages)}"
     assert isinstance(stages[0], DetectionStage)
     assert isinstance(stages[1], MidlineStage)
-    assert isinstance(stages[2], AssociationStage)
-    assert isinstance(stages[3], TrackingStage)
-    assert isinstance(stages[4], ReconstructionStage)
+    assert isinstance(stages[-1], ReconstructionStage)
 
     # All satisfy Stage Protocol
     for stage in stages:
@@ -510,17 +492,12 @@ def test_pose_pipeline_instantiable_with_build_stages(tmp_path: Path) -> None:
         calibration_path=str(calib_file),
     )
 
-    # Mock all 5 stage constructors to avoid loading real models/calibration
+    # Mock all stage constructors to avoid loading real models/calibration
     with (
         patch(
             "aquapose.core.detection.stage.DetectionStage.__init__", return_value=None
         ),
         patch("aquapose.core.midline.stage.MidlineStage.__init__", return_value=None),
-        patch(
-            "aquapose.core.association.stage.AssociationStage.__init__",
-            return_value=None,
-        ),
-        patch("aquapose.core.tracking.stage.TrackingStage.__init__", return_value=None),
         patch(
             "aquapose.core.reconstruction.stage.ReconstructionStage.__init__",
             return_value=None,
@@ -537,21 +514,11 @@ def test_pose_pipeline_instantiable_with_build_stages(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_run_raises_if_tracks_missing(tmp_path: Path) -> None:
-    """run() raises ValueError if context.tracks is None."""
-    stage = _build_stage(tmp_path)
-    ctx = PipelineContext()
-    ctx.annotated_detections = [[]]
-
-    with pytest.raises(ValueError, match=r"context\.tracks"):
-        stage.run(ctx)
-
-
 def test_run_raises_if_annotated_detections_missing(tmp_path: Path) -> None:
     """run() raises ValueError if context.annotated_detections is None."""
     stage = _build_stage(tmp_path)
     ctx = PipelineContext()
-    ctx.tracks = [[]]
+    # annotated_detections is None (default) — should raise
 
-    with pytest.raises(ValueError, match=r"context\.annotated_detections"):
+    with pytest.raises(ValueError, match=r"annotated_detections"):
         stage.run(ctx)

@@ -49,26 +49,29 @@ def test_pipeline_context_accumulates_fields() -> None:
     """Setting multiple fields does not overwrite each other (ENG-02)."""
     ctx = PipelineContext()
     ctx.detections = [{"cam1": []}]
-    ctx.tracks = [[]]
+    ctx.tracks_2d = {"cam1": []}
 
     assert ctx.detections == [{"cam1": []}]
-    assert ctx.tracks == [[]]
+    assert ctx.tracks_2d == {"cam1": []}
 
 
 def test_pipeline_context_defaults_none() -> None:
-    """All Optional fields default to None on a fresh PipelineContext."""
+    """All Optional fields default to None on a fresh PipelineContext (v2.1 stage order).
+
+    v2.1 pipeline: Detection -> 2D Tracking -> Association -> Midline -> Reconstruction.
+    """
     ctx = PipelineContext()
 
     assert ctx.frame_count is None
     assert ctx.camera_ids is None
     # Stage 1 — Detection
     assert ctx.detections is None
-    # Stage 2 — Midline
-    assert ctx.annotated_detections is None
+    # Stage 2 — 2D Tracking
+    assert ctx.tracks_2d is None
     # Stage 3 — Association
-    assert ctx.associated_bundles is None
-    # Stage 4 — Tracking
-    assert ctx.tracks is None
+    assert ctx.tracklet_groups is None
+    # Stage 4 — Midline
+    assert ctx.annotated_detections is None
     # Stage 5 — Reconstruction
     assert ctx.midlines_3d is None
     # stage_timing should be an empty dict (not None)

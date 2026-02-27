@@ -1,29 +1,12 @@
-"""Cross-view fish identity association and temporal tracking."""
+"""Legacy tracking package stub — v2.1 tracking lives in aquapose.core.tracking.
 
-from .associate import (
-    AssociationResult,
-    ClaimResult,
-    FrameAssociations,
-    UnclaimedInfo,
-    claim_detections_for_tracks,
-    discover_births,
-    ransac_centroid_cluster,
-)
-from .tracker import FishTrack, FishTracker, TrackHealth, TrackState
-from .writer import TrackingWriter, read_tracking_results
+In v2.1, per-camera 2D tracking is performed by the TrackingStage in
+aquapose.core.tracking. The cross-camera association lives in
+aquapose.core.association. FishTrack and TrackState have moved to
+aquapose.core.tracking.types.
 
-__all__ = [
-    "AssociationResult",
-    "ClaimResult",
-    "FishTrack",
-    "FishTracker",
-    "FrameAssociations",
-    "TrackHealth",
-    "TrackState",
-    "TrackingWriter",
-    "UnclaimedInfo",
-    "claim_detections_for_tracks",
-    "discover_births",
-    "ransac_centroid_cluster",
-    "read_tracking_results",
-]
+This package is retained as an empty stub to avoid import errors in any
+code that imports ``aquapose.tracking`` as a package (not specific symbols).
+"""
+
+__all__: list = []

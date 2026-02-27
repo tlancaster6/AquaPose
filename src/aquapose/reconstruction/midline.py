@@ -21,7 +21,7 @@ from skimage.morphology import skeletonize
 from aquapose.segmentation.crop import CropRegion
 
 if TYPE_CHECKING:
-    from aquapose.tracking.tracker import FishTrack
+    from aquapose.core.tracking import FishTrack
 
 logger = logging.getLogger(__name__)
 

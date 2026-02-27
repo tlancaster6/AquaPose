@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 
 ## Current Position
 
-Phase: 19 of 21 (Alpha Refactor Audit) — IN PROGRESS
-Plan: 3 of 4 in current phase — COMPLETE
-Status: Phase 19-03 Complete — 19-AUDIT.md produced: 19 findings (1 Critical root cause / 7 IB-003 violations, 7 Warnings, 10 Info), DoD gate 7 PASS / 2 FAIL, all 7 codebase health categories covered
-Last activity: 2026-02-26 - Completed Phase 19 Plan 03: Comprehensive audit report
+Phase: 20 of 21 (Post-Refactor Loose Ends) — IN PROGRESS
+Plan: 1 of 5 in current phase — COMPLETE
+Status: Phase 20-01 Complete — PipelineContext/Stage moved to core/context.py; 0 IB-003 violations; 513 tests pass
+Last activity: 2026-02-27 - Completed Phase 20 Plan 01: Fix IB-003 import boundary violations
 
-Progress: [████████░░] 80%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -154,6 +154,11 @@ Phase 13 decisions:
 - [Phase 19-03]: Regression tests all SKIPPED (not FAILED) -- infrastructure correct, video data at different path than expected; not a code defect
 - [Phase 19-03]: Legacy src/aquapose/pipeline/ module not yet archived -- active importable module, classified Warning AUD-008 for Phase 20 cleanup
 - [Phase 19-03]: 0 TODO/FIXME/HACK comments found in src/ and tests/ -- codebase clean of outstanding annotations
+- [Phase 20-01]: PipelineContext and Stage Protocol moved to core/context.py — pure data contracts belong in core/, not engine/
+- [Phase 20-01]: engine/stages.py deleted with no backward-compat shim — all 9 consumer files updated directly
+- [Phase 20-01]: SyntheticConfig TYPE_CHECKING import in core/synthetic.py permitted — config flows downward (engine->core), annotation-only
+- [Phase 20-01]: IB-003 allowlist added to import_boundary_checker.py for documented exceptions
+- [Phase 20-01]: SR-002 rule updated to exclude aquapose.core.context — engine importing it is correct design
 - [Phase 20-02]: Dead modules deleted entirely (pipeline/, initialization/, mesh/, utils/) — zero pipeline consumers per audit
 - [Phase 20-02]: Plan 01 test imports (engine.stages -> core.context) completed before Plan 02 commit to restore clean test baseline
 
@@ -173,6 +178,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-26
-Stopped at: Completed Phase 19-03 (19-AUDIT.md: 19 findings, DoD 7 PASS / 2 FAIL, remediation summary for Phase 20)
+Last session: 2026-02-27
+Stopped at: Completed Phase 20-01 (core/context.py created; engine/stages.py deleted; 0 IB-003 violations; 513 tests pass)
 Resume file: None

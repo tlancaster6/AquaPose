@@ -66,6 +66,14 @@ class MidlineConfig:
             is implemented; "direct_pose" is a planned stub.
         n_points: Number of midline points to produce per detection.
         min_area: Minimum mask area (pixels) required to attempt midline extraction.
+        speed_threshold: Minimum pixel-per-frame speed for velocity signal in
+            head-tail orientation. Below this, velocity is ignored. Default 2.0.
+        orientation_weight_geometric: Weight for cross-camera geometric vote
+            in orientation resolution. Default 1.0.
+        orientation_weight_velocity: Weight for velocity alignment signal.
+            Default 0.5.
+        orientation_weight_temporal: Weight for temporal prior signal.
+            Default 0.3.
     """
 
     confidence_threshold: float = 0.5
@@ -73,6 +81,10 @@ class MidlineConfig:
     backend: str = "segment_then_extract"
     n_points: int = 15
     min_area: int = 300
+    speed_threshold: float = 2.0
+    orientation_weight_geometric: float = 1.0
+    orientation_weight_velocity: float = 0.5
+    orientation_weight_temporal: float = 0.3
 
 
 @dataclass(frozen=True)

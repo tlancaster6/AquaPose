@@ -18,6 +18,7 @@ from aquapose.engine.hdf5_observer import HDF5ExportObserver
 from aquapose.engine.observers import Observer
 from aquapose.engine.overlay_observer import Overlay2DObserver
 from aquapose.engine.timing import TimingObserver
+from aquapose.engine.tracklet_trail_observer import TrackletTrailObserver
 
 __all__ = ["build_observers"]
 
@@ -32,6 +33,7 @@ _OBSERVER_MAP: dict[str, type] = {
     "animation3d": Animation3DObserver,
     "diagnostic": DiagnosticObserver,
     "console": ConsoleObserver,
+    "tracklet_trail": TrackletTrailObserver,
 }
 
 
@@ -92,6 +94,13 @@ def build_observers(
         )
         observers.append(Animation3DObserver(output_dir=config.output_dir))
         observers.append(DiagnosticObserver())
+        observers.append(
+            TrackletTrailObserver(
+                output_dir=config.output_dir,
+                video_dir=config.video_dir,
+                calibration_path=config.calibration_path,
+            )
+        )
 
     elif mode == "benchmark":
         observers.append(TimingObserver(output_path=output_dir / "timing.txt"))
@@ -120,6 +129,14 @@ def build_observers(
         elif cls is ConsoleObserver:
             observers.append(
                 ConsoleObserver(verbose=verbose, total_stages=total_stages)
+            )
+        elif cls is TrackletTrailObserver:
+            observers.append(
+                TrackletTrailObserver(
+                    output_dir=config.output_dir,
+                    video_dir=config.video_dir,
+                    calibration_path=config.calibration_path,
+                )
             )
 
     return observers

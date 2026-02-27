@@ -39,6 +39,7 @@ from aquapose.engine.observers import EventBus, Observer
 from aquapose.engine.overlay_observer import Overlay2DObserver
 from aquapose.engine.pipeline import PosePipeline
 from aquapose.engine.timing import TimingObserver
+from aquapose.engine.tracklet_trail_observer import TrackletTrailObserver
 
 __all__ = [
     "Animation3DObserver",
@@ -67,6 +68,7 @@ __all__ = [
     "SyntheticConfig",
     "TimingObserver",
     "TrackingConfig",
+    "TrackletTrailObserver",
     "build_observers",
     "load_config",
     "serialize_config",

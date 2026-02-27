@@ -192,7 +192,7 @@ Plans:
 **Goal:** Remediate all findings from the Phase 19 audit (19-AUDIT.md). Fix the critical IB-003 violations, resolve warning-level items (Stage 3/4 coupling, CLI thinning, camera skip removal, dead modules), address info-level items (large file splitting, duplicated code, stale comments), and fix regression test paths. This phase closes out the v2.0 Alpha refactor.
 **Requirements**: REMEDIATE
 **Depends on:** Phase 19
-**Plans:** 2/5 plans executed
+**Plans:** 3/5 plans executed
 
 Plans:
 - [ ] 20-01-PLAN.md — Fix IB-003: move PipelineContext + Stage to core/context.py (wave 1)

@@ -8,7 +8,7 @@ progress:
   total_phases: 10
   completed_phases: 8
   total_plans: 32
-  completed_plans: 28
+  completed_plans: 30
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 20 of 21 (Post-Refactor Loose Ends) — IN PROGRESS
-Plan: 1 of 5 in current phase — COMPLETE
-Status: Phase 20-01 Complete — PipelineContext/Stage moved to core/context.py; 0 IB-003 violations; 513 tests pass
-Last activity: 2026-02-27 - Completed Phase 20 Plan 01: Fix IB-003 import boundary violations
+Plan: 3 of 5 in current phase — COMPLETE
+Status: Phase 20-03 Complete — 0 skip_camera refs; build_observers() in engine/observer_factory.py; CLI at 161 LOC; 513 tests pass
+Last activity: 2026-02-27 - Completed Phase 20 Plan 03: Remove skip_camera logic + extract observer assembly to engine
 
-Progress: [█████████░] 90%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -161,6 +161,8 @@ Phase 13 decisions:
 - [Phase 20-01]: SR-002 rule updated to exclude aquapose.core.context — engine importing it is correct design
 - [Phase 20-02]: Dead modules deleted entirely (pipeline/, initialization/, mesh/, utils/) — zero pipeline consumers per audit
 - [Phase 20-02]: Plan 01 test imports (engine.stages -> core.context) completed before Plan 02 commit to restore clean test baseline
+- [Phase 20-03]: skip_camera_id removal was already done in Plan 01 commit — Plan 03 Task 1 discovered 0 occurrences at start; zero additional commits needed for Task 1
+- [Phase 20-03]: build_observers() in engine/observer_factory.py is public API; CLI at 161 LOC is practical minimum for two Click commands; AUD-002 objective (observer logic in engine layer) fully achieved
 
 ### Pending Todos
 
@@ -179,5 +181,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed Phase 20-01 (core/context.py created; engine/stages.py deleted; 0 IB-003 violations; 513 tests pass)
+Stopped at: Completed Phase 20-03 (skip_camera removal verified + build_observers() extracted to engine; CLI 161 LOC; 513 tests pass)
 Resume file: None

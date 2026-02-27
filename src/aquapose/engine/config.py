@@ -97,6 +97,12 @@ class AssociationConfig:
             Default 100.
         leiden_resolution: Resolution parameter for Leiden clustering. Default 1.0.
         max_merge_gap: Maximum frame gap for fragment merging. Default 30.
+        eviction_reproj_threshold: Maximum median ray-to-consensus-point distance
+            (metres) for a tracklet to remain in its cluster. Default 0.025
+            (2.5 cm -- fish are ~10 cm long, ~2 cm wide).
+        min_cameras_refine: Minimum cameras in a cluster to attempt 3D
+            refinement. Clusters with fewer cameras skip refinement. Default 3.
+        refinement_enabled: Toggle to skip refinement entirely. Default True.
     """
 
     ray_distance_threshold: float = 0.03
@@ -109,6 +115,9 @@ class AssociationConfig:
     min_shared_voxels: int = 100
     leiden_resolution: float = 1.0
     max_merge_gap: int = 30
+    eviction_reproj_threshold: float = 0.025
+    min_cameras_refine: int = 3
+    refinement_enabled: bool = True
 
 
 @dataclass(frozen=True)

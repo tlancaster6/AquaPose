@@ -39,11 +39,15 @@ class TrackletGroup:
             cross-package import within core/).
         confidence: Association confidence score. ``None`` until Phase 25/26
             populates it with the Leiden clustering confidence.
+        per_frame_confidence: Per-frame confidence values aligned with the
+            union of all constituent tracklets' frame ranges. ``None`` until
+            refinement runs. Each element is a float in [0, 1].
     """
 
     fish_id: int
     tracklets: tuple
     confidence: float | None = None
+    per_frame_confidence: tuple | None = None
 
 
 # ---------------------------------------------------------------------------

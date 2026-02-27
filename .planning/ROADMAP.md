@@ -58,7 +58,7 @@ Full details: `.planning/milestones/v2.0-ROADMAP.md`
 - [x] **Phase 23: Refractive Lookup Tables** — Build and serialize forward (pixel→ray) and inverse (voxel→pixel) LUTs per camera (completed 2026-02-27)
 - [x] **Phase 24: Per-Camera 2D Tracking** — OC-SORT independent per-camera 2D tracking producing structured tracklets (completed 2026-02-27)
 - [x] **Phase 25: Association Scoring and Clustering** — Pairwise ray-ray scoring across cameras and Leiden-based global identity clustering (completed 2026-02-27)
-- [ ] **Phase 26: Association Refinement and Pipeline Wiring** — 3D refinement of clusters, deferred midline extraction, reconstruction from tracklet groups
+- [x] **Phase 26: Association Refinement and Pipeline Wiring** — 3D refinement of clusters, deferred midline extraction, reconstruction from tracklet groups (completed 2026-02-27)
 - [ ] **Phase 27: Diagnostic Visualization** — Centroid trail overlays per camera and cross-camera color-coded association visualization
 
 ## Phase Details
@@ -131,12 +131,12 @@ Plans:
   2. Midline extraction (skeletonization + BFS pruning + arc-length sampling) runs only on detections belonging to confirmed tracklet groups, using cross-camera group membership to resolve head-tail ambiguity
   3. Reconstruction triangulates using only the cameras known to observe each fish in each frame (from `tracklet_groups`), with no RANSAC cross-view matching step required
   4. The full pipeline (Detection → 2D Tracking → Association → Midline → Reconstruction) runs end-to-end on a real video clip and produces HDF5 output with correct fish IDs
-**Plans**: TBD
+**Plans**: 3/3
 
 Plans:
-- [ ] 26-01: Association refinement via 3D triangulation error and tracklet eviction (ASSOC-03)
-- [ ] 26-02: Deferred midline extraction from confirmed tracklet groups (PIPE-02)
-- [ ] 26-03: Reconstruction from tracklet_groups with known camera membership (PIPE-03)
+- [x] 26-01: Association refinement via 3D triangulation error and tracklet eviction (ASSOC-03)
+- [x] 26-02: Deferred midline extraction from confirmed tracklet groups (PIPE-02)
+- [x] 26-03: Reconstruction from tracklet_groups with known camera membership (PIPE-03)
 
 ### Phase 27: Diagnostic Visualization
 **Goal**: Users can generate per-camera centroid trail videos and cross-camera association overlays color-coded by global fish ID to inspect tracking and association quality
@@ -183,7 +183,7 @@ Plans:
 | 23. Refractive Lookup Tables | 2/2 | Complete    | 2026-02-27 | - |
 | 24. Per-Camera 2D Tracking | 1/1 | Complete    | 2026-02-27 | - |
 | 25. Association Scoring and Clustering | 2/2 | Complete | 2026-02-27 | - |
-| 26. Association Refinement and Pipeline Wiring | 2/3 | In Progress|  | - |
+| 26. Association Refinement and Pipeline Wiring | 3/3 | Complete | 2026-02-27 | - |
 | 27. Diagnostic Visualization | v2.1 | 0/TBD | Not started | - |
 
 ### Phase 28: e2e testing

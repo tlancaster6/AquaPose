@@ -24,7 +24,7 @@ Requirements for the Identity milestone. Each maps to roadmap phases.
 
 ### Pipeline Integration
 
-- [ ] **PIPE-01**: PipelineContext fields reflect new stage ordering (tracks_2d, tracklet_groups), CarryForward carries per-camera 2D track state, and build_stages() wires the new 5-stage order
+- [x] **PIPE-01**: PipelineContext fields reflect new stage ordering (tracks_2d, tracklet_groups), CarryForward carries per-camera 2D track state, and build_stages() wires the new 5-stage order
 - [ ] **PIPE-02**: Midline extraction runs after association (Stage 4), processing only detections belonging to confirmed tracklet-groups, with head-tail consistency from cross-camera group membership
 - [ ] **PIPE-03**: Reconstruction reads from tracklet_groups and annotated_detections, triangulating using only cameras known to observe each fish per frame (no RANSAC for cross-view matching)
 
@@ -80,7 +80,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ASSOC-01 | Phase 25 | Pending |
 | ASSOC-02 | Phase 25 | Pending |
 | ASSOC-03 | Phase 26 | Pending |
-| PIPE-01 | Phase 22 | Pending |
+| PIPE-01 | Phase 22 | Complete |
 | PIPE-02 | Phase 26 | Pending |
 | PIPE-03 | Phase 26 | Pending |
 | DIAG-01 | Phase 27 | Pending |

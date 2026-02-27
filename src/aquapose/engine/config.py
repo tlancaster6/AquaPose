@@ -98,6 +98,27 @@ class TrackingConfig:
 
 
 @dataclass(frozen=True)
+class LutConfig:
+    """Config for refractive lookup table generation.
+
+    Attributes:
+        tank_diameter: Cylindrical tank diameter in metres.
+        tank_height: Tank depth (water column height) in metres.
+        voxel_resolution_m: Voxel grid spacing in metres (default 0.02 = 2 cm).
+        margin_fraction: Fractional margin beyond tank dimensions for LUT coverage
+            (default 0.1 = 10%).
+        forward_grid_step: Pixel step size for forward LUT grid (default 1 = every
+            pixel).
+    """
+
+    tank_diameter: float = 2.0
+    tank_height: float = 1.0
+    voxel_resolution_m: float = 0.02
+    margin_fraction: float = 0.1
+    forward_grid_step: int = 1
+
+
+@dataclass(frozen=True)
 class SyntheticConfig:
     """Config for synthetic data generation in synthetic mode.
 
@@ -159,6 +180,8 @@ class PipelineConfig:
         association: Association stage config (Stage 3).
         tracking: Tracking stage config (Stage 4).
         reconstruction: Reconstruction stage config (Stage 5).
+        synthetic: Synthetic data generation config (synthetic mode only).
+        lut: Refractive lookup table config (tank geometry and grid resolution).
     """
 
     run_id: str = dataclasses.field(default="")
@@ -176,6 +199,7 @@ class PipelineConfig:
         default_factory=ReconstructionConfig
     )
     synthetic: SyntheticConfig = dataclasses.field(default_factory=SyntheticConfig)
+    lut: LutConfig = dataclasses.field(default_factory=LutConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +337,7 @@ def load_config(
     trk_kwargs: dict[str, Any] = {}
     rec_kwargs: dict[str, Any] = {}
     syn_kwargs: dict[str, Any] = {}
+    lut_kwargs: dict[str, Any] = {}
     top_kwargs: dict[str, Any] = {}
 
     # --- layer 2: YAML overrides ------------------------------------------
@@ -343,6 +368,7 @@ def load_config(
             rec_kwargs, yaml_nested.get("reconstruction", {})
         )
         syn_kwargs = _merge_stage_config(syn_kwargs, yaml_nested.get("synthetic", {}))
+        lut_kwargs = _merge_stage_config(lut_kwargs, yaml_nested.get("lut", {}))
         top_kwargs = _merge_stage_config(top_kwargs, yaml_nested.get("__top__", {}))
 
     # --- layer 3: CLI overrides -------------------------------------------
@@ -366,6 +392,7 @@ def load_config(
             rec_kwargs, cli_nested.get("reconstruction", {})
         )
         syn_kwargs = _merge_stage_config(syn_kwargs, cli_nested.get("synthetic", {}))
+        lut_kwargs = _merge_stage_config(lut_kwargs, cli_nested.get("lut", {}))
         top_kwargs = _merge_stage_config(top_kwargs, cli_nested.get("__top__", {}))
 
     # --- layer 4: resolve run_id and output_dir ---------------------------
@@ -394,6 +421,7 @@ def load_config(
         tracking=TrackingConfig(**_filter_fields(TrackingConfig, trk_kwargs)),
         reconstruction=ReconstructionConfig(**rec_kwargs),
         synthetic=SyntheticConfig(**syn_kwargs),
+        lut=LutConfig(**_filter_fields(LutConfig, lut_kwargs)),
         **top_kwargs,
     )
 

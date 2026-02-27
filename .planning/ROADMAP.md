@@ -183,15 +183,15 @@ Plans:
 | 23. Refractive Lookup Tables | 2/2 | Complete    | 2026-02-27 | - |
 | 24. Per-Camera 2D Tracking | 1/1 | Complete    | 2026-02-27 | - |
 | 25. Association Scoring and Clustering | 2/2 | Complete | 2026-02-27 | - |
-| 26. Association Refinement and Pipeline Wiring | v2.1 | 0/TBD | Not started | - |
+| 26. Association Refinement and Pipeline Wiring | 1/3 | In Progress|  | - |
 | 27. Diagnostic Visualization | v2.1 | 0/TBD | Not started | - |
 
 ### Phase 28: e2e testing
 
-**Goal:** [To be planned]
+**Goal:** Pipeline runs e2e on real and synthetic data.  Blocking bugs fixed as they are encountered. Complex but non-blocking bugs logged and triaged. Tests in tests/e2e updated to current pipeline and confirmed passing. Final output indicates the pipeline is basically functional -- i.e., at least some fish yield reasonable 3d splines with trajectories that span at least a few contiguous frames. Full optimization and tuning is out of phase scope, we are just looking for pipeline-breaking bugs.
 **Requirements**: TBD
 **Depends on:** Phase 27
-**Plans:** 0 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 - [ ] TBD (run /gsd:plan-phase 28 to break down)

@@ -29,13 +29,21 @@ def _generate_fish_splines(
     fish_count: int,
     n_points: int,
     rng: np.random.Generator,
+    water_z: float = 1.03,
 ) -> list[np.ndarray]:
     """Generate 3D fish splines as straight or slightly curved midlines.
+
+    Fish are placed in world coordinates below the water interface. The z
+    coordinate must be greater than water_z (the air-water interface depth)
+    for refractive projection to produce valid results.
 
     Args:
         fish_count: Number of fish to generate.
         n_points: Number of midline points per fish.
         rng: Numpy random generator for reproducibility.
+        water_z: Z coordinate of the air-water interface (metres). Fish are
+            placed at water_z + 0.05 to water_z + 0.35 (5-35 cm below
+            the surface), within the visible portion of the tank.
 
     Returns:
         List of fish splines, each shape (n_points, 3).
@@ -43,10 +51,14 @@ def _generate_fish_splines(
     """
     splines = []
     for _i in range(fish_count):
-        # Place fish at different x/y positions within approximate tank bounds
+        # Place fish within the visible region of the tank. The x/y range
+        # of ±0.08 m keeps fish in view for all ring cameras and also works
+        # for mock unit tests (640px image with 1000px/m scale factor).
         cx = rng.uniform(-0.08, 0.08)
         cy = rng.uniform(-0.08, 0.08)
-        cz = rng.uniform(0.02, 0.12)
+        # Fish must be placed BELOW the air-water interface (z > water_z).
+        # Typical tank depth: 5-35 cm below the water surface.
+        cz = water_z + rng.uniform(0.05, 0.35)
 
         # Generate a midline as a slightly curved line
         t = np.linspace(-0.02, 0.02, n_points)
@@ -143,9 +155,16 @@ class SyntheticDataStage:
             )
             image_sizes[cam_name] = cam.image_size
 
-        # Generate base 3D splines
+        # Generate base 3D splines using the calibration water_z so fish
+        # are placed below the air-water interface where refractive projection
+        # produces valid pixel coordinates.
         n_points = 15
-        base_splines = _generate_fish_splines(self._config.fish_count, n_points, rng)
+        base_splines = _generate_fish_splines(
+            self._config.fish_count,
+            n_points,
+            rng,
+            water_z=cal_data.water_z,
+        )
 
         all_detections: list[dict[str, list]] = []
         all_annotated: list[dict[str, list]] = []

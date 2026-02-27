@@ -36,11 +36,11 @@ Requirements for the pre-alpha clean-room refactor. Each maps to roadmap phases.
 
 ### CLI & Modes
 
-- [ ] **CLI-01**: `aquapose run` CLI entrypoint as thin wrapper over PosePipeline
-- [ ] **CLI-02**: Production mode — standard pipeline execution
-- [ ] **CLI-03**: Diagnostic mode — activates diagnostic observer, extra artifacts
-- [ ] **CLI-04**: Synthetic mode — stage adapter injects synthetic data, no pipeline bypass
-- [ ] **CLI-05**: Benchmark mode — timing-focused, minimal observers
+- [x] **CLI-01**: `aquapose run` CLI entrypoint as thin wrapper over PosePipeline
+- [x] **CLI-02**: Production mode — standard pipeline execution
+- [x] **CLI-03**: Diagnostic mode — activates diagnostic observer, extra artifacts
+- [x] **CLI-04**: Synthetic mode — stage adapter injects synthetic data, no pipeline bypass
+- [x] **CLI-05**: Benchmark mode — timing-focused, minimal observers
 
 ### Verification
 
@@ -98,11 +98,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | OBS-03 | Phase 17 | Complete |
 | OBS-04 | Phase 17 | Complete |
 | OBS-05 | Phase 17 | Complete |
-| CLI-01 | Phase 18 | Pending |
-| CLI-02 | Phase 18 | Pending |
-| CLI-03 | Phase 18 | Pending |
-| CLI-04 | Phase 18 | Pending |
-| CLI-05 | Phase 18 | Pending |
+| CLI-01 | Phase 18 | Complete |
+| CLI-02 | Phase 18 | Complete |
+| CLI-03 | Phase 18 | Complete |
+| CLI-04 | Phase 18 | Complete |
+| CLI-05 | Phase 18 | Complete |
 
 **Coverage:**
 - v2.0 requirements: 22 total

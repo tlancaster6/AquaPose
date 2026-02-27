@@ -206,7 +206,7 @@ Plans:
 **Goal:** Produce a backward-looking retrospective of the v2.0 Alpha refactor (Phases 13-20) and a forward-looking prospective that seeds the next milestone's requirements. Analytical and documentary — no new features or substantive fixes.
 **Requirements**: CLI-01, CLI-02, CLI-03, CLI-04, CLI-05 (bookkeeping fix)
 **Depends on:** Phase 20
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 21-01-PLAN.md — Retrospective document + CLI requirement bookkeeping fix (wave 1)

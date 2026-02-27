@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Alpha
 status: unknown
-last_updated: "2026-02-27T03:11:16.899Z"
+last_updated: "2026-02-27T03:16:11.205Z"
 progress:
   total_phases: 10
-  completed_phases: 9
+  completed_phases: 10
   total_plans: 34
-  completed_plans: 33
+  completed_plans: 34
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 
 ## Current Position
 
-Phase: 21 of 21 (Retrospective, Prospective) — IN PROGRESS
-Plan: 1 of 2 in current phase — COMPLETE
-Status: Phase 21-01 Complete — v2.0 Alpha retrospective document; all 22 requirements marked complete; 7 gaps identified for prospective
-Last activity: 2026-02-27 - Completed Phase 21 Plan 01: Retrospective document + CLI requirement bookkeeping fix
+Phase: 21 of 21 (Retrospective, Prospective) — COMPLETE
+Plan: 2 of 2 in current phase — COMPLETE
+Status: Phase 21 Complete — v2.0 Alpha retrospective + v2.1 prospective documents; all 22 requirements complete; ready for /gsd:complete-milestone
+Last activity: 2026-02-27 - Completed Phase 21 Plan 02: v2.1 prospective with 11 candidate requirements seeding next milestone
 
-Progress: [██████████] 99%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -51,6 +51,7 @@ Progress: [██████████] 99%
 | Phase 20-post-refactor-loose-ends P02 | 30 | 1 tasks | 37 files |
 | Phase 20 P05 | 35 | 2 tasks | 9 files |
 | Phase 21-retrospective-prospective P01 | 3 | 2 tasks | 2 files |
+| Phase 21-retrospective-prospective P02 | 2 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -175,6 +176,9 @@ Phase 13 decisions:
 - [Phase 21-retrospective-prospective]: Retrospective written as fresh higher-level analysis (not 19-AUDIT.md rehash): architecture, DoD gates, code health, phase highlights, gaps, GSD process
 - [Phase 21-retrospective-prospective]: 7 gaps identified for prospective: U-Net IoU 0.623 primary bottleneck, regression suite blocked, O(N^2) association stage, no CI/CD, curve optimizer unbenchmarked, HDF5 schema undocumented, v1.0 algorithmic limitations inherited
 - [Phase 21-retrospective-prospective]: CLI-01 through CLI-05 bookkeeping fix: confirmed implemented, marked complete — all 22 v2.0 requirements now complete
+- [Phase 21-retrospective-prospective]: Evaluation infrastructure (CI, regression suite, measurement pipeline) ordered before accuracy improvements — measurement precedes optimization
+- [Phase 21-retrospective-prospective]: 3-phase v2.1 structure: Phase 1 CI+evaluation foundations, Phase 2 segmentation primary bottleneck, Phase 3 downstream optimization (RECON-01, TRACK-02)
+- [Phase 21-retrospective-prospective]: 11 candidate requirements with IDs EVAL-01..03, SEG-01..03, TRACK-01..02, RECON-01..02, CI-01..02 seed /gsd:new-milestone for v2.1
 
 ### Pending Todos
 

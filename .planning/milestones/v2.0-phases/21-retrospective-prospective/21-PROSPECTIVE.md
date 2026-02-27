@@ -1,136 +1,164 @@
 # v2.1 Prospective: AquaPose
 
-**Status:** Draft — interactive refinement in progress
+**Status:** Draft — ready for `/gsd:new-milestone` review
+
+**Scope:** Pipeline reorder (2D tracking → tracklet association → deferred midline → reconstruction) plus evaluation foundations and diagnostic tooling. Detection improvements (OBB) and keypoint pose estimation are deferred to a future milestone.
+
+**Design spec:** Detailed algorithmic design for the cross-camera association pipeline is in `MS3-SPECSEED.md` (same directory). Requirements below reference that document; they define *what*, not *how*.
 
 ---
 
 ## Bottleneck Ordering
 
-Two major thrusts, roughly parallel:
-
 1. **Evaluation infrastructure** — regression suite in CI, measurement pipelines. Must come first so improvements are measurable.
-2. **Pipeline reordering** — move 2D tracking before midline extraction, associate on tracklets instead of per-frame. Fixes the root cause of 3D reconstruction failure (broken cross-view correspondence). Can begin immediately.
-3. **Detection quality** — OBB detector for tighter crops, reducing multi-fish contamination and mask bleed.
-4. **Midline quality** — keypoint pose estimation as the primary path, segmentation preserved as a backend.
+2. **Pipeline reordering** — move 2D tracking before midline extraction, associate on tracklets instead of per-frame. Fixes the root cause of 3D reconstruction failure (broken cross-view correspondence).
 
-The pipeline reorder and keypoint work are the two biggest changes. The reorder is arguably more urgent — 2D midlines and tracking already look decent, but 3D reconstruction is broken despite both backends (triangulation and curve optimizer) being available. The problem is structural, not algorithmic.
+The pipeline reorder is the single biggest change. 2D midlines and tracking already look decent, but 3D reconstruction is broken despite both backends (triangulation and curve optimizer) being available. The problem is structural, not algorithmic.
 
 ---
 
 ## Pipeline Reordering
 
-### Current pipeline
+### Current pipeline (v2.0)
 ```
-Detection → Midline Extraction → Association → Tracking → Reconstruction
+Detection → Midline → Association(RANSAC 3D) → Tracking(3D claim) → Reconstruction
 ```
 
-### Proposed pipeline
+### Target pipeline (v2.1)
 ```
-Detection → 2D Tracking → Cross-Camera Association → Midline Extraction → Reconstruction
+Detection → 2D Tracking → Cross-Camera Association → Midline → Reconstruction
 ```
+
+**This is a replacement, not an addition.** The v2.0 pipeline stages (RANSAC centroid association, 3D bundle-claiming tracker) are deleted. The existing `FishTracker`, `ransac_centroid_cluster()`, and associated code are removed — recoverable from git history if needed in a future milestone. Keeping the codebase lean during iteration is the priority.
 
 **Why:** The current pipeline extracts midlines before knowing which fish it's looking at, then tries to associate noisy midlines across 12 cameras per frame. This produces broken cross-view correspondence, which makes 3D reconstruction a mess regardless of backend.
 
 **What's broken now:** 3D splines are in the right general area of the tank but jump wildly frame-to-frame. Triangulation produces multi-meter splines that appear and disappear. Curve optimizer produces reasonable-length splines but they never land on fish and jump randomly. Both symptoms point to cross-view correspondence failure.
 
-**The fix:** Track in 2D first (easy, well-solved problem — Hungarian matching on bboxes within a single camera view). Then associate *tracklets* across cameras using reprojected trajectory consistency (project tracklet A's centroid trajectory into camera B's view, check if it matches tracklet B). This uses many frames of evidence instead of single-frame geometry, making it far more robust.
+**The fix:** Track in 2D first (easy, well-solved problem — OC-SORT on bboxes within a single camera view). Then associate *tracklets* across cameras using ray-ray geometric consistency tested over many shared frames, with ghost-point penalties from the wider camera network. This uses many frames of evidence instead of single-frame geometry, making it far more robust.
 
 **Key benefits of reordering:**
 - 2D tracking within one camera is nearly trivial — smooth motion, rare identity confusion
-- Tracklet association uses trajectory shape (hundreds of frames) instead of single-frame centroids
+- Tracklet association uses trajectory-level evidence (hundreds of frames) instead of single-frame centroids
 - Midline extraction happens only for confirmed tracklet-groups, not every detection
 - Cross-camera association can inform head-tail ordering consistency
 - 3D reconstruction inherits temporal smoothness from 2D tracklets by construction
 - One bad frame doesn't break association because the tracklet has hundreds of frames of evidence
 
-**Architectural note:** The Stage protocol and PipelineContext accumulator pattern are unchanged. This reorders stages, not the architecture. PipelineContext fields will shift (e.g., `tracks_2d` appears earlier, `annotated_detections` moves later).
+### PipelineContext data flow (new)
+
+| Stage | Reads | Writes |
+|-------|-------|--------|
+| 1. Detection | frames, calibration | `detections` — per-camera per-frame bbox + confidence |
+| 2. 2D Tracking | `detections` | `tracks_2d` — per-camera tracklets with local IDs |
+| 3. Cross-Camera Association | `tracks_2d`, calibration | `tracklet_groups` — global fish ID → {cam: tracklet} |
+| 4. Midline | `tracklet_groups`, `detections`, frames | `annotated_detections` — midlines for grouped detections only |
+| 5. Reconstruction | `tracklet_groups`, `annotated_detections`, calibration | `midlines_3d` — per-fish 3D splines |
+
+### Identity model
+
+- **Stage 2** assigns **local per-camera IDs** — tracklet IDs meaningful only within a single camera's timeline. No cross-camera awareness.
+- **Stage 3** assigns **global fish IDs** — the association stage determines which local tracklets across cameras correspond to the same physical fish. Global IDs are authoritative from this point forward.
+- Local IDs are internal bookkeeping; downstream stages reference global fish IDs only.
+
+### CarryForward (new)
+
+Per-camera 2D track state (positions, velocities, lifecycle per local tracklet). Each camera's tracker is independent — no cross-camera state in carry. Cross-camera association operates on complete tracklets within the batch, not incrementally.
+
+### Chunk-aware design
+
+The association pipeline (Steps 0–5 in the design spec) is built as a single-chunk processor. The only concession to future chunking is structural: Step 3 accepts an optional `prior_context` argument for seeding cluster identities from a previous chunk, and the pipeline always emits a `handoff_state` alongside global ID assignments. No chunk-boundary logic, chunk-size selection, or multi-chunk orchestration is built in this milestone.
+
+### Code disposition
+
+Deleted (not archived):
+- `FishTracker` and 3D bundle-claiming logic (`tracker.py`)
+- `ransac_centroid_cluster()` and RANSAC association (`associate.py`)
+- `AssociationStage` (replaced by new cross-camera association stage)
+- `TrackingStage` (replaced by new 2D tracking stage)
+- Related tests for deleted code
+
+Recoverable from git history. Reintegration of 3D tracking as an alternative backend is a possible future task, not a v2.1 concern.
 
 ---
 
-## Candidate Requirements
+## Requirements
 
-### Phase 1: Foundations
+### Foundations
 
-**EVAL-01: Make regression suite runnable in CI**
+**EVAL-01: Regression suite in CI**
 7 regression tests skip without production video data. Provide a synthetic fixture so numerical equivalence is verified automatically. Fix the 1 xfail (midline golden data regeneration). CI already exists (test.yml, slow-tests.yml) — the gap is that regression tests silently skip.
 
-**FLEX-01: Flexible keypoint count through the pipeline**
-Current pipeline hardcodes 15 midline points. Refactor so `n_points` flows from config through MidlineStage, Midline2D, association, tracking, and reconstruction. Required before keypoint head (which outputs 6 points) can plug in.
+### Refractive Lookup Tables
 
-### Phases 2-3: Pipeline Reorder
+**LUT-01: Forward lookup table (pixel → ray)**
+For each camera, precompute a grid mapping 2D pixel coordinates to 3D ray (origin, direction) in water-space using the calibrated refraction model. At query time, bilinear interpolation over the grid recovers the ray for any detection centroid. Eliminates per-frame refraction math during association.
 
-**REORDER-01: Per-camera 2D tracking**
-Implement lightweight per-camera 2D tracking using Hungarian matching on bbox IoU/centroid distance. Each camera produces independent tracklets. This is a well-solved problem — smooth motion within a single camera view with rare identity confusion.
+Serialize to disk and reload on subsequent runs. One-time cost per camera setup.
 
-Output: per-camera list of 2D tracklets, each a sequence of detections over time with a local track ID.
+**LUT-02: Inverse lookup table (voxel → pixel)**
+Discretize the tank volume into a regular voxel grid (default 2 cm resolution, configurable). For each voxel center, project through the refraction model into every camera and record: visibility (boolean) and projected pixel coordinates (u, v).
 
-**REORDER-02: Cross-camera tracklet association**
-Associate tracklets across cameras using reprojected trajectory consistency. For each pair of tracklets with temporal overlap, project one tracklet's centroid trajectory into the other camera's view via calibration, compute median distance across shared frames. Low median = same fish.
+Produces:
+- Camera overlap graph (which camera pairs share visible voxels) — consumed by association Step 0
+- Ghost-point lookup (which cameras should see a given 3D point and where) — consumed by association Step 1.3
+- Fast reprojection for refinement — consumed by association Step 5
 
-Handles tracklet fragmentation at the cross-camera level — short high-confidence 2D tracklets are associated using multi-camera information to resolve gaps.
+Storage: ~37 MB at default resolution. Serialize to disk.
 
-Output: tracklet groups, where each group represents one physical fish with its associated camera tracklets.
+### Per-Camera 2D Tracking
 
-**REORDER-03: Deferred midline extraction**
-Move midline extraction after association. Extract midlines only for detections belonging to confirmed tracklet-groups. Cross-camera association can inform head-tail ordering consistency (the arbitrary BFS endpoint problem).
+**TRACK-01: OC-SORT 2D tracking stage**
+Replace the existing `TrackingStage` (3D bundle claiming) with a new stage that runs OC-SORT independently per camera, immediately after detection.
 
-**REORDER-04: Reconstruct from associated tracklets**
-Triangulate using only the cameras known to observe each fish (from tracklet association). Per-fish, per-frame triangulation with known correspondence. No RANSAC needed for cross-view matching — correspondence is already established.
+Delete `FishTracker`, `ransac_centroid_cluster()`, and the old `TrackingStage`/`AssociationStage`.
 
-### Phase 4: Detection Improvement
+Each tracklet must include: `camera_id`, `track_id` (local), `frames`, `centroids`, `frame_status` (detected vs. coasted), `bboxes`. See design spec "Tracklet Output Format" for details.
 
-**DET-01: Oriented bounding box detector**
-Replace axis-aligned YOLO bounding boxes with an oriented bounding box (OBB) or ellipse-based detector. Benefits:
-- Tighter crops reduce multi-fish contamination (current major error source)
-- Less background in crop reduces mask bleed (current major error source)
-- Free rough heading estimate from orientation angle
-- Improves crop quality for both segmentation and keypoint backends
+Output: `tracks_2d` on PipelineContext.
 
-YOLO-OBB is trainable with the existing data pipeline. Same detection→crop flow, just tighter boxes.
+### Cross-Camera Association
 
-### Phase 5: Keypoint Pose Estimation
+**ASSOC-01: Pairwise tracklet scoring**
+For each adjacent camera pair (from LUT-02's overlap graph), score all tracklet pairs with temporal overlap. Scoring uses ray-ray closest-point distance (from LUT-01 rays) aggregated across shared frames, plus a ghost-point penalty (from LUT-02 voxel lookups) that checks consistency with the wider camera network.
 
-**KP-01: Keypoint regression head on shared encoder**
-Add a lightweight keypoint head to the existing MobileNetV3-Small encoder:
-- Encoder bottleneck → AdaptiveAvgPool → FC(128) → FC(12) for 6 keypoints × 2 coords
-- ~75K new parameters on top of existing 2.5M encoder
-- Train keypoint head with encoder frozen on manually annotated data (starting ~200-500 crops)
-- Unfreeze encoder for fine-tuning if accuracy insufficient
-- Output: normalized crop-relative coordinates, transformed to full-frame via existing CropRegion
+Produces per-pair affinity scores. Includes early termination for obvious non-matches.
 
-Architecture:
-```
-                    ┌─→ Segmentation Decoder → mask (existing, preserved)
-Crop → Encoder →────┤
-                    └─→ Keypoint Head → 6 × (x, y) (new)
-```
+See design spec Steps 1.1–1.6.
 
-Segmentation head weights are preserved. At inference, backend config selects which head to use. Shared encoder forward pass means running both heads adds negligible cost.
+**ASSOC-02: Graph clustering and global ID assignment**
+Build a weighted affinity graph from pairwise scores (ASSOC-01). Cluster using connected components + Leiden algorithm with must-not-link constraints (same-camera tracklets overlapping in detected frames cannot share a cluster).
 
-**KP-02: Keypoint training data (manual annotation)**
-Hand-label 6 midline keypoints on ~200-500 fish crops. Small but high-quality dataset. Annotate with CVAT or similar tool. These become ground truth for both training and evaluation.
+Assign global fish IDs to each cluster. Merge same-camera tracklet fragments within clusters (non-overlapping or coasted-only overlap).
 
-**KP-03: Midline keypoint backend**
-Implement `"direct_pose"` backend (stub already exists in MidlineStage) that:
-- Runs encoder + keypoint head on crops
-- Outputs Midline2D with 6 points in full-frame coords
-- Sets half_widths to None (acceptable loss — not load-bearing for reconstruction)
-- Swappable with `"segment_then_extract"` via config
+See design spec Steps 2–4.
 
-### Diagnostic Tooling (built alongside reorder phases)
+**ASSOC-03: 3D consistency refinement**
+For each cluster, triangulate 3D positions across frames using member tracklets. Reproject into each camera and check reprojection error. Evict tracklets with consistently high error. Evicted tracklets become singletons (no global ID).
+
+Emit per-frame confidence estimates (reprojection residuals, camera count, close-encounter flags).
+
+See design spec Step 5.
+
+Output: `tracklet_groups` on PipelineContext, plus `handoff_state` for future chunk-aware operation.
+
+### Pipeline Integration
+
+**PIPE-01: PipelineContext and CarryForward update**
+Update `PipelineContext` fields to reflect the new stage ordering (`tracks_2d`, `tracklet_groups`). Update `CarryForward` to carry per-camera 2D track state instead of 3D track state. Update `build_stages()` to wire the new stage order. This is a prerequisite for the new stages — the context fields must exist before TRACK-01 and ASSOC-* can write to them.
+
+**PIPE-02: Deferred midline extraction**
+Move midline extraction to Stage 4 (after association). Extract midlines only for detections belonging to confirmed tracklet-groups. Cross-camera group membership provides a head-tail consistency signal — if most cameras agree on head direction, flip outliers.
+
+Update `MidlineStage` to read from `tracklet_groups` instead of raw `detections`.
+
+**PIPE-03: Reconstruction from associated tracklets**
+Update `ReconstructionStage` to read from `tracklet_groups` and `annotated_detections`. Triangulate using only the cameras known to observe each fish per frame (correspondence pre-established). No RANSAC needed for cross-view matching.
+
+### Diagnostic Tooling
 
 **DIAG-01: Tracklet and association visualization**
-Visualize 2D tracklets per camera (draw centroid trails on video) and cross-camera associations (color by association group). Essential for validating the reorder work — without this you're flying blind on whether tracklet association is working. Build incrementally as each REORDER step lands, not as an afterthought.
-
-### Deferred (post-evaluation)
-
-These become relevant after pipeline reorder and keypoint results are assessed:
-
-- **Segmentation improvements** (encoder capacity, augmentation, training data) — pursue only if keypoint path doesn't meet accuracy needs
-- **3D reconstruction benchmark** — synthetic ground truth for Chamfer/point-to-curve error
-- **Curve optimizer vs. triangulation benchmark** — depends on reconstruction benchmark existing
-- **Refractive calibration validation** — if pipeline reorder fixes cross-view correspondence but 3D reconstruction is still inaccurate, calibration error is the next suspect. Validate by triangulating a known static object visible in multiple cameras.
-- **HDF5 schema documentation** — low effort, standalone, do whenever convenient
+Visualize 2D tracklets per camera (centroid trails on video) and cross-camera associations (color-coded by global fish ID). Build incrementally as each stage lands — essential for validating correctness at every step.
 
 ---
 
@@ -139,20 +167,57 @@ These become relevant after pipeline reorder and keypoint results are assessed:
 **Why reorder the pipeline?**
 3D reconstruction is broken despite decent 2D midlines and working 2D tracking. The symptoms (multi-meter splines, frame-to-frame jumping, neither backend producing usable output) all point to cross-view correspondence failure. The current pipeline tries to associate per-frame across 12 cameras — a hard problem. Tracking in 2D first (easy) then associating tracklets (robust, uses trajectory-level evidence) fixes the correspondence problem structurally rather than trying to tune RANSAC parameters.
 
-**Why keypoints over better segmentation?**
-Mask bleed (loose masks bleeding off the fish body) is a fundamental boundary estimation problem made worse by training on pseudo-labels that themselves have bleed. Keypoint estimation reframes the problem as "where are N points on the body" — inherently more robust to noisy boundaries. The ordered chain topology (head→tail) also allows regularization that penalizes out-of-order points, which is free prior knowledge.
+**Why replace rather than preserve the old pipeline?**
+Maintaining two pipeline orderings (3D-first and 2D-first) doubles the surface area for every change to PipelineContext, CarryForward, or stage interfaces. The v2.0 tracking code is recoverable from git history. Lean iteration now; reintegration as a backend is a possible future task if needed.
 
-**Why keep segmentation as a backend?**
-Segmentation still provides masks (useful for visualization) and half-widths. The shared encoder architecture means both backends are available at negligible additional cost. If keypoints work well, segmentation becomes a secondary diagnostic output rather than the primary midline source.
+**Why OC-SORT for 2D tracking?**
+OC-SORT extends standard SORT with observation-centric re-update (reducing Kalman drift during occlusion), observation-centric momentum (better post-occlusion prediction), and improved lost-track recovery. No appearance model needed — within a single top-down camera view, fish are distinguishable by position and velocity alone. Fallback: plain SORT if OC-SORT proves problematic.
 
-**Why OBB before keypoints?**
-Multi-fish crop contamination and excess background both degrade any Stage 2 approach. OBB is upstream of the segmentation-vs-keypoints decision and benefits both paths. Better crops are a prerequisite for accurate keypoint annotation too — annotators need clean single-fish crops.
+**Why ray-ray distance + ghost penalty for association?**
+Ray-ray distance is the natural geometric primitive — it avoids committing to a 3D point before multi-view consensus exists. The ghost penalty catches coincidental ray intersections by checking whether the wider camera network agrees. Together they produce a robust pairwise score that leverages the full camera rig.
+
+**Why Leiden clustering?**
+Leiden discovers cluster count automatically (no need to specify k=9), handles sparse community structure well, and has a tunable resolution parameter. Must-not-link constraints are enforced in post-processing, keeping the clustering algorithm-agnostic. Fallbacks: spectral clustering (requires specifying k), correlation clustering (NP-hard approximation).
+
+**Why precomputed LUTs?**
+The forward (pixel→ray) and inverse (voxel→pixel) LUTs eliminate per-frame refraction math during association. The inverse LUT is particularly valuable — it provides instant camera-overlap queries, ghost-point lookups, and fast reprojection, all from a single 37 MB precomputed structure.
+
+---
+
+## Deferred to Future Milestones
+
+**Detection improvement:**
+- OBB detector for tighter crops (DET-01) — benefits both segmentation and keypoint backends
+
+**Keypoint pose estimation:**
+- Keypoint regression head on shared encoder (KP-01)
+- Keypoint training data / manual annotation (KP-02)
+- Direct pose midline backend (KP-03)
+- Flexible keypoint count through pipeline (FLEX-01) — only needed when keypoint head (6 points) plugs in
+
+**Post-evaluation:**
+- Segmentation improvements — pursue only if keypoint path doesn't meet accuracy needs
+- 3D reconstruction benchmark — synthetic ground truth for Chamfer/point-to-curve error
+- Curve optimizer vs. triangulation benchmark
+- Refractive calibration validation
+- HDF5 schema documentation
+- 3D tracking backend reintegration
+- Chunk-based processing orchestration (chunk boundary logic, chunk size selection)
+
+---
+
+## New Dependencies
+
+- **`leidenalg`** (or `igraph`): Leiden community detection for tracklet graph clustering (ASSOC-02)
+- **OC-SORT implementation**: Either a third-party package or vendored implementation for per-camera 2D tracking (TRACK-01). Evaluate available Python packages during implementation.
 
 ---
 
 ## Out of Scope for v2.1
 
-- New module structure — Stage protocol and PipelineContext pattern unchanged
+- Preserving v2.0 pipeline as alternative configuration
+- Chunk orchestration (contracts are built, orchestration is deferred)
+- Appearance-based re-identification features
 - GUI or web interface
 - Real-time processing
 - Dataset collection (hardware)
@@ -160,7 +225,3 @@ Multi-fish crop contamination and excess background both degrade any Stage 2 app
 - New output formats beyond HDF5
 - Multi-species generalization
 - MOG2 backend validation
-
----
-
-*Remaining requirements to be refined interactively.*

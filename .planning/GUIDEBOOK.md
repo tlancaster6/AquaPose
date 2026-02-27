@@ -1,8 +1,8 @@
-# AquaPose Alpha Development Guide
+# AquaPose Development Guide
 
 ## 1. Purpose
 
-AquaPose is evolving from a script-driven scientific pipeline into an event-driven scientific computation engine for multi-view 3D pose inference.
+AquaPose is an event-driven scientific computation engine for multi-view 3D fish pose inference. It reconstructs 3D fish midlines from multi-view silhouettes using a 13-camera aquarium rig with refractive calibration.
 
 ---
 
@@ -19,7 +19,7 @@ If a change violates any of these, it is architecturally suspect.
 The system has strict one-way dependencies between three layers.
 
 **Layer 1 — Core Computation** (`src/aquapose/core/`)
-Pure computation modules: calibration, detection, segmentation, tracking, midline extraction, triangulation, optimization. They accept structured inputs, return structured outputs, have no side effects, do not write files, do not generate visualizations, and do not import dev tooling. They are blind to diagnostics.
+Pure computation modules: calibration, detection, segmentation, 2D tracking, cross-camera association, midline extraction, triangulation, optimization. They accept structured inputs, return structured outputs, have no side effects, do not write files, do not generate visualizations, and do not import dev tooling. They are blind to diagnostics.
 
 **Layer 2 — Execution Engine** (`src/aquapose/engine/`)
 The pipeline orchestrator. Defines stage order, manages execution state, emits structured lifecycle events, handles execution modes, coordinates observers, and owns artifact management. All execution flows through this layer. There is exactly one canonical entrypoint.
@@ -42,12 +42,13 @@ No exceptions. No `TYPE_CHECKING` backdoors. Enforced by lint rule from the firs
 ```
 src/aquapose/
   core/               # Layer 1: pure computation modules
-    calibration/
-    detection/
-    segmentation/
-    tracking/
-    association/
-    reconstruction/
+    calibration/      # AquaCal loading, refractive projection, ray casting, LUTs
+    detection/        # YOLO detection, detector factory
+    segmentation/     # U-Net inference, SAM pseudo-labels, crop utilities
+    tracking/         # Per-camera 2D tracking (OC-SORT)
+    association/      # Cross-camera tracklet association (scoring, clustering, refinement)
+    midline/          # Midline extraction (segment-then-extract, direct pose)
+    reconstruction/   # Triangulation, B-spline fitting
   engine/             # Layer 2 + 3: orchestration and observability
     pipeline.py       # PosePipeline orchestrator
     stages.py         # Stage Protocol, PipelineContext
@@ -76,68 +77,104 @@ Resolved before the pipeline loop starts. Not stages — these are input prepara
 - Available to all stages via `PipelineContext`
 - Intrinsics are consumed by the frame source for undistortion; extrinsics and projection models are passed through to stages that need them
 
+**Refractive Lookup Tables**
+- **Forward LUT (pixel → ray):** For each camera, a precomputed grid mapping 2D pixel coordinates to 3D ray (origin, direction) in water-space. Bilinear interpolation at query time. Eliminates per-frame refraction math during association.
+- **Inverse LUT (voxel → pixel):** The tank volume (2 m diameter × 1 m tall cylinder) discretized into a regular voxel grid (default 2 cm). Each voxel records which cameras can see it and the projected pixel coordinates in each. Provides: camera overlap graph, ghost-point lookups, fast reprojection.
+- Both LUTs are computed once per camera setup, serialized to disk, and reloaded on subsequent runs. They are available to stages via `PipelineContext` alongside calibration data.
+
 **Outer loop:**
 ```python
 for batch in frame_source.batches(size=config.batch_size):
-    context = PipelineContext(frames=batch, calibration=calibration, carry=carry, ...)
+    context = PipelineContext(frames=batch, calibration=calibration, luts=luts, carry=carry, ...)
     pipeline.run(context)
     carry = context.carry
 ```
 
-The pipeline sees each batch as a complete unit of work. Stages never know batching exists. Cross-batch state (tracking continuity) is handed forward explicitly via a typed `CarryForward` object, not accumulated internally. Stitching and aggregation across batches lives outside the pipeline loop.
+The pipeline sees each batch as a complete unit of work. Stages never know batching exists. Cross-batch state (2D tracking continuity) is handed forward explicitly via a typed `CarryForward` object, not accumulated internally. Stitching and aggregation across batches lives outside the pipeline loop.
 
 ---
 
 ## 6. Pipeline Stages
 
+```
+Detection → 2D Tracking → Cross-Camera Association → Midline → Reconstruction
+```
+
 ### Stage 1 — Detection
 *Swappable backend: model-based*
 
 - **In:** frames, detection config
-- **Out:** `detections_per_frame` — `list[FrameDetections]` per camera per frame. Empty lists for cameras with no fish.
+- **Out:** `detections` — per-camera per-frame bounding boxes with confidence scores. Empty lists for cameras with no fish.
 - Cameras are processed independently — no cross-view logic here
 - Confidence threshold and NMS parameters are backend config
 - A 13-camera rig with partial overlap means most cameras will have zero or few detections per frame; this is normal, not an error
-- "model-based" is the current backend; no specific alternative backends are planned
 
-### Stage 2 — Midline
+### Stage 2 — 2D Tracking
+*Swappable backend: OC-SORT*
+
+- **In:** `detections`, CarryForward (previous batch's per-camera track state)
+- **Out:** `tracks_2d` — per-camera list of 2D tracklets, each a time-series of detections with a local track ID. Updates CarryForward for next batch.
+- Each camera is tracked independently — no cross-camera awareness at this stage
+- Tracklets carry per-frame status tags: `"detected"` (matched to a real detection) or `"coasted"` (Kalman prediction only). This distinction is consumed by association for must-not-link constraints and fragment merging.
+- Local track IDs are scoped to a single camera — they have no cross-camera meaning
+- OC-SORT extends standard SORT with observation-centric re-update, momentum, and lost-track recovery. No appearance model — within a single top-down camera view, fish are distinguishable by position and velocity alone.
+- Fallback: plain SORT if OC-SORT proves problematic
+
+### Stage 3 — Cross-Camera Association
+
+- **In:** `tracks_2d`, calibration, LUTs
+- **Out:** `tracklet_groups` — groups of tracklets matched across cameras, each representing one physical fish with a global ID. Also emits `handoff_state` for future chunk-aware operation.
+- Assigns **global fish IDs** that are authoritative for all downstream stages. Local per-camera IDs are internal bookkeeping from this point forward.
+- Algorithm overview (see `MS3-SPECSEED.md` for full design):
+  1. Camera overlap graph from inverse LUT
+  2. Pairwise tracklet scoring via ray-ray distance + ghost-point penalty
+  3. Affinity graph construction + Leiden clustering with must-not-link constraints
+  4. Same-camera fragment merging within clusters
+  5. 3D consistency refinement (triangulate per-cluster, evict outlier tracklets)
+- Per-frame confidence estimates (reprojection residuals, camera count, close-encounter flags) are attached to each group
+- Handles partial observability (fish visible in 4–5 of 12 cameras) and tracklet fragmentation (multiple short tracklets per fish per camera)
+- The pipeline accepts an optional `prior_context` for chunk-aware seeding and always emits `handoff_state`. Chunk orchestration is deferred; the stage operates as a single-chunk full-batch processor.
+
+### Stage 4 — Midline
 *Swappable backend: segment-then-extract / direct pose estimation*
 
-- **In:** detections, frames
-- **Out:** `annotated_detections` — each detection enriched with its 15-point 2D midline + half-widths. Midlines travel with their parent detection from this point forward. Segment-then-extract runs segmentation model (U-Net, SAM, etc.) → skeletonize → BFS internally. Direct keypoint produces midlines in a single model call.
-- All backends must produce the same output structure: 15 arc-length-sampled points with half-widths
+- **In:** `tracklet_groups`, `detections`, frames
+- **Out:** `annotated_detections` — midlines for detections belonging to confirmed tracklet-groups only. Ungrouped detections are skipped entirely.
+- Segment-then-extract: crop → segmentation model (U-Net, SAM, etc.) → skeletonize → BFS → arc-length resample to N points + half-widths
+- Direct pose estimation: crop → encoder + keypoint head → N keypoint coordinates (planned, not yet implemented)
+- All backends must produce the same output structure: N arc-length-sampled points with optional half-widths
 - Detections that fail midline extraction (e.g. degenerate masks) produce a flagged empty midline, not an exception
-- Midline orientation (head vs tail) is not resolved here — that's a reconstruction concern
-- The direct pose estimation backend is planned but not currently implemented
-
-### Stage 3 — Cross-View Association
-
-- **In:** annotated detections, projection models
-- **Out:** `associated_bundles` — groups of annotated detections matched across cameras for each physical fish per frame, with camera assignments. Currently matches on bbox centroids; midline data is carried through and available for future association methods.
-- A fish visible in N cameras produces one bundle with N entries; a fish visible in only one camera still produces a bundle (single-view)
-- Unassociated detections (false positives, reflections) are discarded here
-- This stage was previously internal to the tracker — extracting it is a key structural change in this refactor
-
-### Stage 4 — Tracking
-*Swappable backend: Hungarian matching*
-
-- **In:** associated bundles, CarryForward (previous batch's track state)
-- **Out:** `tracks_per_frame` — associated bundles promoted to persistent fish IDs via temporal matching with population constraints. Lifecycle states (probationary → confirmed → coasting → dead). Updates CarryForward for next batch.
-- Tracking is purely temporal — all cross-view correspondence is resolved by stage 3
-- CarryForward is typed narrowly to what tracking needs (previous frame's track positions, IDs, lifecycle states), not a generic container
-- Population constraint enforces known fish count when available
-- First batch of a run has empty CarryForward; tracks bootstrap from association output
-- "Hungarian" matching is the current backend; no additional backends are currently planned
+- Cross-camera group membership (from Stage 3) provides a head-tail consistency signal — if most cameras agree on head direction, flip outliers
 
 ### Stage 5 — Reconstruction
 *Swappable backend: triangulation / curve optimizer*
 
-- **In:** tracked bundles (annotated detections with persistent IDs), projection models
-- **Out:** `midlines_3d` — per-frame `dict[fish_id, Spline3D]` (7-control-point 3D B-splines) + `dropped: dict[fish_id, DropReason]` for fish that failed reconstruction.
+- **In:** `tracklet_groups`, `annotated_detections`, calibration
+- **Out:** `midlines_3d` — per-frame `dict[fish_id, Spline3D]` (B-spline 3D midlines) + `dropped: dict[fish_id, DropReason]` for fish that failed reconstruction.
+- Triangulates using only the cameras known to observe each fish (from tracklet association). Per-fish, per-frame with known correspondence — no RANSAC needed for cross-view matching.
 - Both backends must resolve head-tail orientation before or during reconstruction
 - Single-view fish cannot be reconstructed; they appear in `dropped` with an appropriate reason
-- Triangulation backend handles midline point correspondence across views; curve optimizer avoids this by fitting a parametric curve directly
-- Output spline control point count (7) is config, not hardcoded
+- Output spline control point count is config, not hardcoded
+
+### PipelineContext Data Flow
+
+| Stage | Reads | Writes |
+|-------|-------|--------|
+| 1. Detection | frames, calibration | `detections` |
+| 2. 2D Tracking | `detections`, CarryForward | `tracks_2d`, CarryForward |
+| 3. Association | `tracks_2d`, calibration, LUTs | `tracklet_groups`, `handoff_state` |
+| 4. Midline | `tracklet_groups`, `detections`, frames | `annotated_detections` |
+| 5. Reconstruction | `tracklet_groups`, `annotated_detections`, calibration | `midlines_3d` |
+
+### Identity Model
+
+- **Stage 2** assigns **local per-camera IDs** — meaningful only within a single camera's timeline
+- **Stage 3** assigns **global fish IDs** — authoritative from this point forward
+- Downstream stages reference global fish IDs only
+
+### CarryForward
+
+Per-camera 2D track state (positions, velocities, lifecycle per local tracklet). Each camera's tracker is independent — no cross-camera state in carry. Cross-camera association operates on complete tracklets within the batch, not incrementally.
 
 ---
 
@@ -232,9 +269,9 @@ Default output location: `~/aquapose/runs/{run_id}/`, overridable via `AQUAPOSE_
   config.yaml
   stages/
     detection/
-    midline/
-    association/
     tracking/
+    association/
+    midline/
     reconstruction/
   observers/
     timing/
@@ -253,77 +290,32 @@ The CLI is a thin wrapper over PosePipeline. No subcommands per mode. No script 
 
 ---
 
-## 15. Migration Strategy
+## 15. Milestone History
 
-Clean-room rebuild — not an incremental migration.
+### v1.0 MVP (shipped 2026-02-25)
+Clean-room rebuild from scripts to event-driven pipeline. 12 phases, 28 plans. Established the Stage protocol, PipelineContext accumulator, observer system, and CLI entrypoint.
 
-### Build Order
+### v2.0 Alpha (shipped 2026-02-27)
+Stabilized architecture, implemented all 5 stages and 5 observers, synthetic mode, full diagnostic pipeline. 10 phases, 34 plans. Revealed that 3D reconstruction is broken due to structural cross-view correspondence failure.
 
-1. Stage interface definition (Protocol, PipelineContext) + import boundary lint rule
-2. Config dataclasses
-3. Event system (types + emitter)
-4. Observer base + attachment protocol
-5. Pipeline skeleton (wires stages, emits events, no real computation)
-6. Each stage migration (one commit per stage)
-7. Each observer extraction (one commit per observer)
-8. CLI entrypoint
-
-### Priority
-
-Stage interfaces first — everything else is shaped by them. Start with two or three real stages (detection, midline, reconstruction), define the interface they share, and resist the urge to abstract until you see the actual commonality.
-
-### Commit Discipline
-
-Conventional commits: `refactor(engine): port detection stage`
-
-One commit = one independently valid state of the system. Every commit leaves the project importable and tests passing. Never commit a half-migrated stage. If a stage migration is too big for one commit, split it into "define new stage wrapping old logic" and "remove old callsite" as two commits.
-
-### Structural Checks Per Commit
-
-**From commit 1:** Import boundary enforcement + full lint/typecheck (`ruff` + `basedpyright`).
-
-**Phased custom rules** (added in the same commit as the code they govern):
-- No file I/O in stage `run()` → add when first stage is migrated
-- No mutable class attrs on stages → add with stage interface commit
-- Observers don't import from `core/` internals → add with observer base class
-
-### Verification
-
-Golden data generated as a standalone preparatory commit before any stage migration begins.
-
-Each ported stage verified with:
-- **Interface tests:** stage.run(context) produces correct output types, honors the contract
-- **Numerical regression tests:** against golden data, asserting numerical equivalence within tolerance
-
-Regression tests kept and marked `@pytest.mark.regression` — run outside the fast test loop but kept as a safety net for subtle numerical drift.
-
-**Golden data tiers:**
-- Trusted stages (detection, segmentation): snapshot outputs, assert tight tolerances
-- Suspect stages (known accuracy issues): snapshot inputs only, write interface tests during migration, snapshot outputs after accuracy is fixed
-
-### Code Disposition
-
-- Full cleanup during port — refactor internals to match new conventions
-- Nothing is sacred — everything can be refactored as long as behavior is preserved
-- Existing scripts archived to `scripts/legacy/` then deleted after alpha is stable
-- Existing tests rewritten alongside new interfaces
-- Minimal new dependencies allowed (not pydantic — frozen dataclasses already decided)
+### v2.1 Identity (in progress)
+Pipeline reorder: Detection → 2D Tracking → Cross-Camera Association → Midline → Reconstruction. Replaces RANSAC centroid association and 3D bundle-claiming tracker with OC-SORT 2D tracking and trajectory-based tracklet association. Adds refractive LUTs for efficient geometric queries. Defers OBB detection and keypoint pose estimation to a future milestone.
 
 ---
 
 ## 16. Definition of Done
 
-Alpha stabilization is complete when:
+v2.1 Identity is complete when:
 
-- There is exactly one canonical pipeline entrypoint
-- All scripts invoke PosePipeline
-- `aquapose run` produces 3D midlines from video input through the new pipeline
-- Diagnostic functionality is implemented via observers
-- Synthetic mode runs through the pipeline (as a stage adapter, not a pipeline bypass)
-- Timing, raw export (HDF5), visualization, and diagnostics are all implemented as observers
-- No stage imports dev tooling; dev tooling depends on core, never vice versa
-- The CLI is a thin wrapper over PosePipeline
-- No script calls stage functions directly
+- Pipeline runs in the new stage order (Detection → 2D Tracking → Association → Midline → Reconstruction)
+- Per-camera 2D tracking produces tracklets with local IDs and detected/coasted frame tags
+- Cross-camera association produces globally consistent fish IDs from tracklet-level evidence
+- Midline extraction operates only on associated tracklet-group detections
+- Reconstruction uses pre-established correspondence (no RANSAC for cross-view matching)
+- Refractive LUTs (forward and inverse) are precomputed, serialized, and reloaded
+- Diagnostic visualization shows 2D tracklet trails and association group coloring
+- Old tracking/association code (FishTracker, ransac_centroid_cluster, v2.0 AssociationStage/TrackingStage) is deleted
+- `aquapose run` produces 3D midlines from video input through the reordered pipeline
 
 ---
 
@@ -343,9 +335,15 @@ New developers extend AquaPose by attaching observers — not by writing new scr
 
 Left to implementation judgment:
 
-- Observer attachment mechanism (register at construction vs add/remove dynamically)
+- OC-SORT implementation choice (third-party package vs vendored)
+- Leiden resolution parameter tuning
+- Voxel grid resolution (default 2 cm, configurable)
+- LUT serialization format (numpy .npz, HDF5, etc.)
+- Forward LUT grid density per camera
+- Tracklet association score thresholds (s_min, τ, T_min, T_saturate)
+- Eviction threshold for 3D consistency refinement
 - Exact PipelineContext field structure and typing
+- Observer attachment mechanism (register at construction vs add/remove dynamically)
 - Compression/serialization details for config logging
 - Loading skeleton for YAML config parsing
 - Specific custom lint rules and when to introduce them
-- Per-stage decision on retaining regression tests beyond the guidelines above

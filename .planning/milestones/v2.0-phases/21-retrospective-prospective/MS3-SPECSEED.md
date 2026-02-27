@@ -44,7 +44,7 @@ This produces a structure: `voxel_map[x, y, z]` → list of `(camera_id, u, v)` 
 - **Ghost point penalty (Step 1):** After triangulating a candidate 3D point, snap to the nearest voxel and instantly look up which other cameras should see it and where.
 - **Reprojection in refinement (Step 5):** Project a triangulated 3D point into any camera via voxel lookup instead of running the refraction model again.
 
-**Storage:** At 2 cm default resolution in a 1m × 1m × 0.5m tank, this is ~625K voxels × 12 cameras × (1 bool + 2 floats) ≈ 37 MB. The visibility boolean can be stored as a 12-bit mask per voxel for compact querying. Resolution is a configurable parameter (`voxel_resolution_cm`, default 2). Finer grids (1 cm, ~300 MB) are available but unlikely to help — the precision-limiting factor is always the triangulated 3D point feeding into the lookup, which has centimeter-scale uncertainty due to the top-down rig geometry.
+**Storage:** The tank is a 2 m diameter × 1 m tall cylinder. The voxel grid covers the bounding box (2 m × 2 m × 1 m) at default 2 cm resolution: 100 × 100 × 50 = 500K voxels, of which ~393K fall inside the cylindrical boundary. Per voxel: 12 cameras × (1 bool + 2 floats) ≈ ~40 MB total. The visibility boolean can be stored as a 12-bit mask per voxel for compact querying. Resolution is a configurable parameter (`voxel_resolution_cm`, default 2). Finer grids (1 cm, ~300 MB) are available but unlikely to help — the precision-limiting factor is always the triangulated 3D point feeding into the lookup, which has centimeter-scale uncertainty due to the top-down rig geometry.
 
 Note that the voxel LUT is only used during association (this pipeline). Downstream 3D reconstruction operates on continuous coordinates using full-precision ray casting and triangulation, independent of the voxel grid. Coarse voxel resolution here does not limit the precision of the final 3D output.
 
@@ -121,12 +121,13 @@ For each frame t where d(t) < τ:
 
 1. **Triangulate** the candidate 3D point P (midpoint of closest approach between the two rays).
 2. **Snap to nearest voxel** in the inverse LUT and retrieve the list of other cameras that see this voxel, along with expected pixel coordinates.
-3. For each such camera c:
-   - If camera c has a detection within a pixel-distance threshold of the expected (u, v) at frame t → **supporting evidence** (another camera agrees).
-   - If camera c has detections at frame t but none near the expected (u, v) → **negative evidence** (camera sees the region but no fish is there). This is the ghost penalty.
-   - If camera c has no detections at frame t in this region → **neutral** (camera might not cover this area, or fish might be occluded).
+3. For each such camera c (that the LUT says can see this voxel), classify it at frame t:
+   - **Supporting:** Camera c has a detection within a pixel-distance threshold of the expected (u, v). Another camera independently agrees a fish is there.
+   - **Negative:** Camera c has no detection near the expected (u, v) — regardless of whether it has detections elsewhere or zero detections total. The LUT already confirmed this camera can see the voxel, so the absence of a detection near the expected point is genuine evidence against the candidate. (Zero detections typically means all fish are outside this camera's FOV, which is the same signal: no fish at this 3D location.)
 
-4. Compute a per-frame ghost ratio: g(t) = (number of cameras with negative evidence) / (number of cameras with visibility of the voxel, excluding the original pair).
+   Cameras that cannot see the voxel (per LUT visibility mask) are never queried — they provide no information and are excluded before this step.
+
+4. Compute a per-frame ghost ratio: g(t) = (number of cameras with negative evidence) / (total cameras with visibility of the voxel, excluding the original pair).
 
 A high ghost ratio across frames indicates a spurious match — the triangulated point is a "ghost" that other cameras contradict.
 
@@ -137,7 +138,8 @@ Given T_shared overlapping frames, the distance series d(t), and the ghost ratio
 - **Inlier fraction:** f = (number of frames where d(t) < τ) / T_shared, where τ is calibrated to fish body size (e.g., 2 cm).
 - **Median distance:** robust central tendency, less sensitive to detection jitter.
 - **Mean ghost ratio:** ḡ = mean of g(t) over inlier frames. High values indicate a spurious match.
-- **Combined score:** s(a, b) = f × (1 − ḡ), weighted by temporal overlap length. The ghost penalty multiplicatively suppresses pairs that look good geometrically from two cameras but are contradicted by the rest of the network.
+- **Overlap reliability:** w = min(T_shared, T_saturate) / T_saturate, where T_saturate is a saturation threshold (e.g., 100 frames). Very short overlaps produce unreliable inlier fractions (high variance); beyond ~100 frames, more data doesn't meaningfully improve estimate quality. This soft-clamp penalizes short overlaps without letting long overlaps inflate scores indefinitely.
+- **Combined score:** s(a, b) = f × (1 − ḡ) × w. The ghost penalty multiplicatively suppresses pairs that look good geometrically from two cameras but are contradicted by the rest of the network. The overlap reliability term down-weights scores based on marginal temporal evidence.
 
 ### 1.5 Early Termination
 
@@ -202,7 +204,7 @@ For each cluster (candidate global fish ID):
 
 1. At each frame where ≥2 member tracklets have detections, **triangulate** the 3D position using all available rays (least-squares closest point to the set of refracted rays).
 2. **Reproject** the triangulated 3D point back into each camera and compute reprojection error against the observed 2D centroid.
-3. If a tracklet consistently shows high reprojection error across frames, **evict** it from the cluster.
+3. If a tracklet consistently shows high reprojection error across frames, **evict** it from the cluster. The exact eviction threshold (e.g., median reprojection error > X pixels, or above the cluster's mean + Nσ) is TBD — to be determined empirically during implementation based on typical reprojection error distributions.
 4. Evicted tracklets are left as **singletons** (unassociated, no global ID). A tracklet that failed geometric consistency with its highest-affinity cluster is unlikely to fit a different cluster better — reassignment would more often introduce wrong associations than recover correct ones. A high orphan rate (>10% of tracklets) is a diagnostic signal of upstream issues (detection quality, scoring thresholds, camera coverage) rather than something to patch with greedy reassignment.
 
 This step catches errors that pairwise scores miss — a tracklet might score well individually with two cluster members but be geometrically inconsistent with the cluster as a whole.
@@ -306,12 +308,12 @@ The inverse voxel map is accessed with random 3D coordinates (the triangulated p
 
 **Mitigation:**
 
-- **Grid resolution is already 2 cm by default,** which keeps storage at ~37 MB. If ghost penalty accuracy is empirically insufficient, the resolution can be refined to 1 cm (~300 MB) via the `voxel_resolution_cm` config parameter, at the cost of increased memory and reduced cache performance.
+- **Grid resolution is already 2 cm by default,** which keeps storage at ~40 MB. If ghost penalty accuracy is empirically insufficient, the resolution can be refined to 1 cm (~300 MB) via the `voxel_resolution_cm` config parameter, at the cost of increased memory and reduced cache performance.
 - **Process by spatial region:** When iterating over tracklet pairs, group them by approximate tank region (based on mean centroid back-projection). This clusters voxel accesses spatially, improving cache behavior. This is a second-order optimization — only worth implementing if profiling confirms cache misses are a real bottleneck.
 
 ### Bottleneck 4: LUT Precomputation (One-Time)
 
-The inverse voxel map requires projecting ~625K voxel centers (at the default 2 cm resolution) through the refraction model for each of 12 cameras — ~7.5M refraction calculations. At ~1 μs each, this is roughly 8 seconds.
+The inverse voxel map requires projecting ~393K voxel centers (at the default 2 cm resolution, cylindrical tank) through the refraction model for each of 12 cameras — ~4.7M refraction calculations. At ~1 μs each, this is roughly 5 seconds.
 
 **Mitigation:** This is embarrassingly parallel across voxels and cameras. A GPU implementation or multicore CPU parallelization reduces it to under a second. Since this is a one-time cost per camera setup, even the serial runtime is acceptable for batch workflows. Serialize the result to disk and reload on subsequent runs.
 

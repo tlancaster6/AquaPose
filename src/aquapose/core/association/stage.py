@@ -92,6 +92,12 @@ class AssociationStage:
         # Step 4: Merge fragments
         groups = merge_fragments(groups, self._config.association)
 
+        # Step 5: Geometric refinement via 3D triangulation
+        if forward_luts is not None:
+            from aquapose.core.association.refinement import refine_clusters
+
+            groups = refine_clusters(groups, forward_luts, self._config.association)
+
         context.tracklet_groups = groups
         return context
 

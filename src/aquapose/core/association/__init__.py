@@ -10,6 +10,10 @@ from aquapose.core.association.clustering import (
     cluster_tracklets,
     merge_fragments,
 )
+from aquapose.core.association.refinement import (
+    RefinementConfigLike,
+    refine_clusters,
+)
 from aquapose.core.association.scoring import (
     AssociationConfigLike,
     ray_ray_closest_point,
@@ -29,11 +33,13 @@ __all__ = [
     "AssociationStage",
     "ClusteringConfigLike",
     "HandoffState",
+    "RefinementConfigLike",
     "TrackletGroup",
     "build_must_not_link",
     "cluster_tracklets",
     "merge_fragments",
     "ray_ray_closest_point",
+    "refine_clusters",
     "score_all_pairs",
     "score_tracklet_pair",
 ]

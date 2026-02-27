@@ -182,10 +182,10 @@ Plans:
 **Plans:** 4/4 plans complete
 
 Plans:
-- [ ] 19-01-PLAN.md — Import boundary checker and pre-commit hook (wave 1)
-- [ ] 19-02-PLAN.md — Reusable smoke test script and pytest integration (wave 1)
-- [ ] 19-03-PLAN.md — DoD gate check, codebase health audit, and 19-AUDIT.md report (wave 2)
-- [ ] 19-04-PLAN.md — Phase 15 bug ledger triage (wave 1)
+- [x] 19-01-PLAN.md — Import boundary checker and pre-commit hook (wave 1)
+- [x] 19-02-PLAN.md — Reusable smoke test script and pytest integration (wave 1)
+- [x] 19-03-PLAN.md — DoD gate check, codebase health audit, and 19-AUDIT.md report (wave 2)
+- [x] 19-04-PLAN.md — Phase 15 bug ledger triage (wave 1)
 
 ### Phase 20: Post-Refactor Loose Ends
 

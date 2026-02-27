@@ -1,6 +1,7 @@
 """Core domain logic for 3D fish pose estimation.
 
-Exports all 5 pipeline stage classes. Each stage satisfies the Stage Protocol
+Exports all 5 pipeline stage classes and the core data contracts
+(PipelineContext, Stage Protocol). Each stage satisfies the Stage Protocol
 via structural typing (no inheritance required).
 
 Stage ordering:
@@ -12,6 +13,7 @@ Stage ordering:
 """
 
 from aquapose.core.association import AssociationStage
+from aquapose.core.context import PipelineContext, Stage
 from aquapose.core.detection import DetectionStage
 from aquapose.core.midline import MidlineStage
 from aquapose.core.reconstruction import ReconstructionStage
@@ -22,7 +24,9 @@ __all__ = [
     "AssociationStage",
     "DetectionStage",
     "MidlineStage",
+    "PipelineContext",
     "ReconstructionStage",
+    "Stage",
     "SyntheticDataStage",
     "TrackingStage",
 ]

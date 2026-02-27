@@ -24,10 +24,10 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
+from aquapose.core.context import PipelineContext, Stage
 from aquapose.core.reconstruction import ReconstructionStage
 from aquapose.core.reconstruction.backends import get_backend
 from aquapose.core.tracking import FishTrack, TrackState
-from aquapose.engine.stages import PipelineContext, Stage
 from aquapose.reconstruction.midline import Midline2D
 
 # ---------------------------------------------------------------------------

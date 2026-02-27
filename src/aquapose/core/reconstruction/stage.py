@@ -4,9 +4,6 @@ Reads tracked fish (context.tracks from Stage 4) and annotated detections
 (context.annotated_detections from Stage 2), assembles per-frame MidlineSets,
 and produces 3D B-spline midlines via the configured backend. Populates
 PipelineContext.midlines_3d.
-
-Import boundary (ENG-07): this module does NOT import from ``aquapose.engine``.
-``PipelineContext`` is referenced only under ``TYPE_CHECKING`` for annotations.
 """
 
 from __future__ import annotations
@@ -14,21 +11,15 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
 
+from aquapose.core.context import PipelineContext
 from aquapose.core.reconstruction.backends import get_backend
 from aquapose.reconstruction.midline import Midline2D
 from aquapose.reconstruction.triangulation import DEFAULT_INLIER_THRESHOLD
 
-if TYPE_CHECKING:
-    from aquapose.engine.stages import PipelineContext
-
 __all__ = ["ReconstructionStage"]
 
 logger = logging.getLogger(__name__)
-
-# Default camera to exclude — centre top-down wide-angle, poor quality.
-_DEFAULT_SKIP_CAMERA_ID = "e3v8250"
 
 
 class ReconstructionStage:
@@ -55,7 +46,6 @@ class ReconstructionStage:
 
     Args:
         calibration_path: Path to the AquaCal calibration JSON file.
-        skip_camera_id: Camera ID to exclude from reconstruction.
         backend: Backend kind — ``"triangulation"`` (default) or
             ``"curve_optimizer"``.
         inlier_threshold: Maximum reprojection error (pixels) for RANSAC inliers.
@@ -74,7 +64,6 @@ class ReconstructionStage:
     def __init__(
         self,
         calibration_path: str | Path,
-        skip_camera_id: str = _DEFAULT_SKIP_CAMERA_ID,
         backend: str = "triangulation",
         inlier_threshold: float = DEFAULT_INLIER_THRESHOLD,
         snap_threshold: float = 20.0,
@@ -82,12 +71,10 @@ class ReconstructionStage:
         **backend_kwargs: object,
     ) -> None:
         self._calibration_path = Path(calibration_path)
-        self._skip_camera_id = skip_camera_id
 
         # Build kwargs for the backend constructor
         combined_kwargs: dict[str, object] = {
             "calibration_path": calibration_path,
-            "skip_camera_id": skip_camera_id,
         }
         if backend == "triangulation":
             combined_kwargs["inlier_threshold"] = inlier_threshold

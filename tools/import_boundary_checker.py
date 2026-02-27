@@ -66,6 +66,22 @@ _LEGACY_COMPUTATION_DIRS = {
 _FORBIDDEN_IN_CORE = ("aquapose.engine", "aquapose.cli")
 _FORBIDDEN_IN_ENGINE = ("aquapose.cli",)
 
+# IB-003 TYPE_CHECKING allowlist: (filename_suffix, module) pairs that are
+# permitted exceptions. These are documented design decisions where a core/
+# module legitimately receives a config type from the engine layer as a
+# constructor argument. The import is annotation-only (TYPE_CHECKING guard)
+# and config flows strictly downward from engine to core, not upward.
+#
+# Rationale for each entry:
+#   core/synthetic.py + aquapose.engine.config: SyntheticDataStage receives
+#   SyntheticConfig from the engine layer. Config flows downward (engine ->
+#   core), so this is an acceptable annotation-only dependency.
+_IB003_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
+    [
+        ("core/synthetic.py", "aquapose.engine.config"),
+    ]
+)
+
 # File I/O call names that are forbidden inside stage run() methods.
 _FILE_IO_CALLS = frozenset(
     [
@@ -266,9 +282,18 @@ def _check_import_boundaries(
 
         # IB-003: TYPE_CHECKING backdoors are forbidden in core/ and legacy
         # computation modules that follow core/ rules.
+        # Exception: entries in _IB003_ALLOWLIST are documented design decisions
+        # where config flows strictly downward from engine to core.
         for line, module in type_checking_imports:
             hit = _module_starts_with_any(module, _FORBIDDEN_IN_CORE)
             if hit:
+                # Check against the allowlist using the POSIX-normalised suffix
+                rel_posix = filepath.as_posix()
+                if any(
+                    rel_posix.endswith(suffix) and module == allowed_module
+                    for suffix, allowed_module in _IB003_ALLOWLIST
+                ):
+                    continue
                 result.add(
                     filepath,
                     line,
@@ -343,18 +368,23 @@ def _check_observer_core_imports(
     This is a WARNING (not an error) since some legitimate imports of core types
     may be needed by observers. The rule flags direct imports below the top-level
     ``aquapose.core`` namespace (e.g. ``aquapose.core.detection.types``).
+
+    Exception: ``aquapose.core.context`` is the canonical home of PipelineContext
+    and Stage (moved from engine/stages.py in Phase 20). Engine files importing
+    from it are correct and expected.
     """
     runtime_imports, type_checking_imports = _collect_imports(tree)
     for line, module in runtime_imports + type_checking_imports:
-        # Flag imports that go deeper than aquapose.core (i.e. submodule internals)
-        if module.startswith("aquapose.core."):
+        # Flag imports that go deeper than aquapose.core (i.e. submodule internals),
+        # but allow aquapose.core.context which is the canonical pipeline contract.
+        if module.startswith("aquapose.core.") and module != "aquapose.core.context":
             result.add(
                 filepath,
                 line,
                 "SR-002",
                 f"Observer imports core/ submodule internal '{module}' — "
-                f"prefer using types from engine/stages.py (PipelineContext) "
-                f"or the aquapose.core public API",
+                f"prefer using the aquapose.core public API or "
+                f"aquapose.core.context for PipelineContext/Stage",
                 is_warning=True,
             )
 

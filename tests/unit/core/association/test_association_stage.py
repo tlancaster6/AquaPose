@@ -21,7 +21,7 @@ import pytest
 
 from aquapose.core.association import AssociationBundle, AssociationStage
 from aquapose.core.association.backends import get_backend
-from aquapose.engine.stages import PipelineContext, Stage
+from aquapose.core.context import PipelineContext, Stage
 from aquapose.segmentation.detector import Detection
 
 # ---------------------------------------------------------------------------

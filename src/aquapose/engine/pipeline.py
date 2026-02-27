@@ -14,6 +14,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from aquapose.core.context import PipelineContext, Stage
 from aquapose.engine.config import PipelineConfig, serialize_config
 from aquapose.engine.events import (
     Event,
@@ -24,7 +25,6 @@ from aquapose.engine.events import (
     StageStart,
 )
 from aquapose.engine.observers import EventBus, Observer
-from aquapose.engine.stages import PipelineContext, Stage
 
 
 class PosePipeline:

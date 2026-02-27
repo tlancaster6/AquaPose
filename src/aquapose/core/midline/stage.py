@@ -3,9 +3,6 @@
 Reads detection bounding boxes from Stage 1, crops and segments each detection
 via U-Net, then extracts 15-point 2D midlines with half-widths via
 skeletonization + BFS pruning. Populates PipelineContext.annotated_detections.
-
-Import boundary (ENG-07): this module does NOT import from ``aquapose.engine``.
-``PipelineContext`` is referenced only under ``TYPE_CHECKING`` for annotations.
 """
 
 from __future__ import annotations
@@ -13,19 +10,13 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
 
+from aquapose.core.context import PipelineContext
 from aquapose.core.midline.backends import get_backend
-
-if TYPE_CHECKING:
-    from aquapose.engine.stages import PipelineContext
 
 __all__ = ["MidlineStage"]
 
 logger = logging.getLogger(__name__)
-
-# Camera to exclude — centre top-down wide-angle, poor mask quality
-_DEFAULT_SKIP_CAMERA_ID = "e3v8250"
 
 
 class MidlineStage:
@@ -39,10 +30,10 @@ class MidlineStage:
     The backend is created eagerly at construction time. A missing weights file
     raises :class:`FileNotFoundError` immediately.
 
-    Camera and video discovery follows the same v1.0 convention as DetectionStage:
+    Camera and video discovery:
     - Glob ``*.avi`` and ``*.mp4`` in *video_dir*
     - Camera ID = ``stem.split("-")[0]``
-    - Skip cameras whose ID matches *skip_camera_id*
+    - All cameras in the input directory are processed (no internal filtering)
 
     Calibration data is loaded at construction for undistortion map computation.
 
@@ -54,7 +45,6 @@ class MidlineStage:
         confidence_threshold: Minimum confidence for mask acceptance.
         backend: Backend kind — "segment_then_extract" (default) or
             "direct_pose" (raises NotImplementedError).
-        skip_camera_id: Camera ID to exclude from processing.
         device: PyTorch device string (e.g. "cuda", "cpu").
         n_points: Number of midline points per detection.
         min_area: Minimum mask area (pixels) to attempt midline extraction.
@@ -73,7 +63,6 @@ class MidlineStage:
         weights_path: str | None = None,
         confidence_threshold: float = 0.5,
         backend: str = "segment_then_extract",
-        skip_camera_id: str = _DEFAULT_SKIP_CAMERA_ID,
         device: str = "cuda",
         n_points: int = 15,
         min_area: int = 300,
@@ -85,7 +74,6 @@ class MidlineStage:
 
         self._video_dir = Path(video_dir)
         self._calibration_path = Path(calibration_path)
-        self._skip_camera_id = skip_camera_id
 
         # Validate paths eagerly
         if not self._video_dir.exists():
@@ -95,21 +83,15 @@ class MidlineStage:
                 f"calibration_path does not exist: {self._calibration_path}"
             )
 
-        # Discover camera videos (same logic as v1.0 orchestrator)
+        # Discover camera videos
         video_paths: dict[str, Path] = {}
         for suffix in ("*.avi", "*.mp4"):
             for p in self._video_dir.glob(suffix):
                 camera_id = p.stem.split("-")[0]
-                if camera_id == self._skip_camera_id:
-                    logger.info("Skipping excluded camera: %s", camera_id)
-                    continue
                 video_paths[camera_id] = p
 
         if not video_paths:
-            raise ValueError(
-                f"No .avi/.mp4 files found in {self._video_dir} "
-                f"(after excluding {self._skip_camera_id!r})"
-            )
+            raise ValueError(f"No .avi/.mp4 files found in {self._video_dir}")
 
         logger.info(
             "MidlineStage: found %d cameras: %s",

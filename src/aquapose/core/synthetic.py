@@ -15,6 +15,7 @@ import torch
 
 from aquapose.calibration import RefractiveProjectionModel
 from aquapose.calibration.loader import load_calibration_data
+from aquapose.core.context import PipelineContext
 from aquapose.core.midline.types import AnnotatedDetection
 from aquapose.reconstruction.midline import Midline2D
 from aquapose.segmentation.crop import CropRegion
@@ -22,7 +23,6 @@ from aquapose.segmentation.detector import Detection
 
 if TYPE_CHECKING:
     from aquapose.engine.config import SyntheticConfig
-    from aquapose.engine.stages import PipelineContext
 
 
 def _generate_fish_splines(

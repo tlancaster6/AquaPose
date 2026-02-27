@@ -7,7 +7,7 @@ import inspect
 
 import pytest
 
-from aquapose.engine.stages import PipelineContext, Stage
+from aquapose.core.context import PipelineContext, Stage
 
 # ---------------------------------------------------------------------------
 # Stage structural typing
@@ -115,16 +115,17 @@ _FORBIDDEN_MODULES = [
 
 
 def test_import_boundary_no_computation_imports() -> None:
-    """engine.stages must not import from any computation module (ENG-07).
+    """core.context must not import from any computation module (ENG-07).
 
+    PipelineContext and Stage live in core/context.py (moved from engine/stages.py).
     We inspect the source code directly to catch both runtime and TYPE_CHECKING
     imports, since the plan explicitly forbids even TYPE_CHECKING exceptions.
     """
-    module = importlib.import_module("aquapose.engine.stages")
+    module = importlib.import_module("aquapose.core.context")
     source = inspect.getsource(module)
 
     for forbidden in _FORBIDDEN_MODULES:
         assert forbidden not in source, (
-            f"engine.stages imports from forbidden module '{forbidden}'. "
-            "Engine package must only use stdlib types (ENG-07)."
+            f"core.context imports from forbidden module '{forbidden}'. "
+            "Context module must only use stdlib types (ENG-07)."
         )

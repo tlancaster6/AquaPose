@@ -7,9 +7,9 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import torch
 
+from aquapose.core.context import PipelineContext, Stage
 from aquapose.core.synthetic import SyntheticDataStage
 from aquapose.engine.config import SyntheticConfig
-from aquapose.engine.stages import PipelineContext, Stage
 
 
 def _make_mock_calibration(

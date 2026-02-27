@@ -17,9 +17,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from aquapose.core.context import PipelineContext, Stage
 from aquapose.core.detection import Detection, DetectionStage
 from aquapose.core.detection.backends import get_backend
-from aquapose.engine.stages import PipelineContext, Stage
 
 # ---------------------------------------------------------------------------
 # Protocol conformance

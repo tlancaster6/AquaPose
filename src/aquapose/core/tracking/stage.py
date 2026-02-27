@@ -4,9 +4,6 @@ Reads raw detections from Stage 1 (context.detections) and maintains
 persistent FishTrack identities across frames via the selected tracking
 backend. Populates PipelineContext.tracks.
 
-Import boundary (ENG-07): this module does NOT import from ``aquapose.engine``.
-``PipelineContext`` is referenced only under ``TYPE_CHECKING`` for annotations.
-
 Design note (v1.0 debt): Stage 4 reads context.detections (raw per-camera
 detections from Stage 1), NOT context.associated_bundles (Stage 3 output).
 The Hungarian backend re-derives cross-camera association internally via
@@ -21,19 +18,13 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
 
+from aquapose.core.context import PipelineContext
 from aquapose.core.tracking.backends import get_backend
-
-if TYPE_CHECKING:
-    from aquapose.engine.stages import PipelineContext
 
 __all__ = ["TrackingStage"]
 
 logger = logging.getLogger(__name__)
-
-# Camera to exclude — centre top-down wide-angle, poor tracking quality.
-_DEFAULT_SKIP_CAMERA_ID = "e3v8250"
 
 
 class TrackingStage:
@@ -56,7 +47,6 @@ class TrackingStage:
     Args:
         calibration_path: Path to the AquaCal calibration JSON file.
         expected_count: Expected number of fish; used as population constraint.
-        skip_camera_id: Camera ID to exclude from tracking.
         backend: Backend kind — currently only ``"hungarian"`` is supported.
         **tracker_kwargs: Additional kwargs forwarded to the backend constructor
             (min_hits, max_age, reprojection_threshold, birth_interval, etc.).
@@ -70,7 +60,6 @@ class TrackingStage:
         self,
         calibration_path: str | Path,
         expected_count: int = 9,
-        skip_camera_id: str = _DEFAULT_SKIP_CAMERA_ID,
         backend: str = "hungarian",
         **tracker_kwargs: object,
     ) -> None:
@@ -79,7 +68,6 @@ class TrackingStage:
             backend,
             calibration_path=calibration_path,
             expected_count=expected_count,
-            skip_camera_id=skip_camera_id,
             **tracker_kwargs,
         )
 

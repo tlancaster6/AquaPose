@@ -16,9 +16,6 @@ __all__ = ["RansacCentroidBackend"]
 
 logger = logging.getLogger(__name__)
 
-# Camera to exclude — centre top-down wide-angle, poor association quality.
-_DEFAULT_SKIP_CAMERA_ID = "e3v8250"
-
 
 class RansacCentroidBackend:
     """RANSAC centroid clustering backend for cross-view fish association.
@@ -36,7 +33,6 @@ class RansacCentroidBackend:
         expected_count: Expected fish count, used as RANSAC stopping criterion.
         min_cameras: Minimum cameras required for a valid multi-view bundle.
         reprojection_threshold: Maximum pixel reprojection error for inliers.
-        skip_camera_id: Camera ID to exclude from association.
 
     Raises:
         FileNotFoundError: If *calibration_path* does not exist.
@@ -48,7 +44,6 @@ class RansacCentroidBackend:
         expected_count: int = 9,
         min_cameras: int = 3,
         reprojection_threshold: float = 15.0,
-        skip_camera_id: str = _DEFAULT_SKIP_CAMERA_ID,
     ) -> None:
         from aquapose.calibration.loader import (
             compute_undistortion_maps,
@@ -60,7 +55,6 @@ class RansacCentroidBackend:
         self._expected_count = expected_count
         self._min_cameras = min_cameras
         self._reprojection_threshold = reprojection_threshold
-        self._skip_camera_id = skip_camera_id
 
         if not self._calibration_path.exists():
             raise FileNotFoundError(
@@ -72,11 +66,6 @@ class RansacCentroidBackend:
 
         self._models: dict[str, RefractiveProjectionModel] = {}
         for cam_id, cam_data in calib.cameras.items():
-            if cam_id == self._skip_camera_id:
-                logger.info(
-                    "RansacCentroidBackend: skipping excluded camera %s", cam_id
-                )
-                continue
             maps = compute_undistortion_maps(cam_data)
             self._models[cam_id] = RefractiveProjectionModel(
                 K=maps.K_new,

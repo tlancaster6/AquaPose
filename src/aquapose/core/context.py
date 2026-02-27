@@ -1,7 +1,11 @@
-"""Stage Protocol and PipelineContext dataclass for the engine pipeline.
+"""Stage Protocol and PipelineContext — core data contracts for the pipeline.
 
 Defines the structural typing contract that all pipeline stages must satisfy,
 and the typed accumulator that flows data between stages.
+
+These types live in core/ because they are pure data containers with no engine
+logic. Placing them here eliminates all TYPE_CHECKING backdoors where core/
+stage files previously needed to import from engine/.
 """
 
 from __future__ import annotations

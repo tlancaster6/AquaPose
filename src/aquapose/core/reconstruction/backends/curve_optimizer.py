@@ -18,9 +18,6 @@ __all__ = ["CurveOptimizerBackend"]
 
 logger = logging.getLogger(__name__)
 
-# Default camera to exclude — centre top-down wide-angle, poor quality.
-_DEFAULT_SKIP_CAMERA_ID = "e3v8250"
-
 
 class CurveOptimizerBackend:
     """Correspondence-free 3D B-spline curve optimizer reconstruction backend.
@@ -35,7 +32,6 @@ class CurveOptimizerBackend:
 
     Args:
         calibration_path: Path to the AquaCal calibration JSON file.
-        skip_camera_id: Camera ID to exclude from optimization.
         lr: L-BFGS learning rate override. None uses CurveOptimizerConfig default.
         max_iter_coarse: Maximum L-BFGS coarse stage iterations. None uses default.
         max_iter_fine: Maximum L-BFGS fine stage iterations. None uses default.
@@ -47,13 +43,11 @@ class CurveOptimizerBackend:
     def __init__(
         self,
         calibration_path: str | Path,
-        skip_camera_id: str = _DEFAULT_SKIP_CAMERA_ID,
         lr: float | None = None,
         max_iter_coarse: int | None = None,
         max_iter_fine: int | None = None,
     ) -> None:
         self._calibration_path = Path(calibration_path)
-        self._skip_camera_id = skip_camera_id
 
         # Build optimizer config from overrides (only override what was specified)
         config_kwargs: dict[str, Any] = {}
@@ -72,7 +66,7 @@ class CurveOptimizerBackend:
         self._optimizer = CurveOptimizer(config=optimizer_config)
 
         # Eagerly load calibration — fail-fast on missing file
-        self._models = self._load_models(self._calibration_path, skip_camera_id)
+        self._models = self._load_models(self._calibration_path)
 
     def reconstruct_frame(
         self,
@@ -101,13 +95,11 @@ class CurveOptimizerBackend:
     @staticmethod
     def _load_models(
         calibration_path: Path,
-        skip_camera_id: str,
     ) -> dict[str, Any]:
         """Load calibration and build per-camera RefractiveProjectionModel dict.
 
         Args:
             calibration_path: Path to AquaCal calibration JSON.
-            skip_camera_id: Camera ID to exclude from the returned dict.
 
         Returns:
             Dict mapping camera_id to RefractiveProjectionModel.
@@ -124,8 +116,6 @@ class CurveOptimizerBackend:
         calib = load_calibration_data(str(calibration_path))
         models: dict[str, Any] = {}
         for cam_id, cam_data in calib.cameras.items():
-            if cam_id == skip_camera_id:
-                continue
             maps = compute_undistortion_maps(cam_data)
             models[cam_id] = RefractiveProjectionModel(
                 K=maps.K_new,

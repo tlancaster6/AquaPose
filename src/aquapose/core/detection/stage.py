@@ -1,11 +1,8 @@
 """DetectionStage — Stage 1 of the 5-stage AquaPose pipeline.
 
 Reads video frames across all cameras, runs YOLO detection per frame,
-and populates :class:`~aquapose.engine.stages.PipelineContext` with
+and populates :class:`~aquapose.core.context.PipelineContext` with
 per-frame per-camera detection results.
-
-Import boundary (ENG-07): this module does NOT import from ``aquapose.engine``.
-``PipelineContext`` is referenced only under ``TYPE_CHECKING`` for annotations.
 """
 
 from __future__ import annotations
@@ -13,20 +10,15 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+from aquapose.core.context import PipelineContext
 from aquapose.core.detection.backends import get_backend
 from aquapose.core.detection.types import Detection
-
-if TYPE_CHECKING:
-    from aquapose.engine.stages import PipelineContext
 
 __all__ = ["DetectionStage"]
 
 logger = logging.getLogger(__name__)
-
-# Camera to exclude — centre top-down wide-angle, poor mask quality
-_DEFAULT_SKIP_CAMERA_ID = "e3v8250"
 
 
 class DetectionStage:
@@ -35,10 +27,10 @@ class DetectionStage:
     The detection backend is created eagerly at construction time. A missing
     weights file raises :class:`FileNotFoundError` immediately.
 
-    Camera discovery follows the v1.0 convention:
+    Camera discovery:
     - Glob ``*.avi`` and ``*.mp4`` in *video_dir*
     - Camera ID = ``stem.split("-")[0]``
-    - Skip cameras whose ID matches *skip_camera_id*
+    - All cameras in the input directory are processed (no internal filtering)
 
     Calibration data is loaded at construction and undistortion maps are
     computed per camera for use with :class:`~aquapose.io.video.VideoSet`.
@@ -48,7 +40,6 @@ class DetectionStage:
         calibration_path: Path to the AquaCal calibration JSON file.
         detector_kind: Backend kind — currently only ``"yolo"`` is supported.
         stop_frame: If set, stop processing after this many frames.
-        skip_camera_id: Camera ID to exclude from processing.
         **detector_kwargs: Additional kwargs forwarded to the detector
             constructor (e.g. ``model_path``, ``conf_threshold``).
 
@@ -65,7 +56,6 @@ class DetectionStage:
         calibration_path: str | Path,
         detector_kind: str = "yolo",
         stop_frame: int | None = None,
-        skip_camera_id: str = _DEFAULT_SKIP_CAMERA_ID,
         **detector_kwargs: Any,
     ) -> None:
         from aquapose.calibration.loader import (
@@ -76,7 +66,6 @@ class DetectionStage:
         self._video_dir = Path(video_dir)
         self._calibration_path = Path(calibration_path)
         self._stop_frame = stop_frame
-        self._skip_camera_id = skip_camera_id
 
         # Validate paths eagerly
         if not self._video_dir.exists():
@@ -86,21 +75,15 @@ class DetectionStage:
                 f"calibration_path does not exist: {self._calibration_path}"
             )
 
-        # Discover camera videos (same logic as v1.0 orchestrator)
+        # Discover camera videos
         video_paths: dict[str, Path] = {}
         for suffix in ("*.avi", "*.mp4"):
             for p in self._video_dir.glob(suffix):
                 camera_id = p.stem.split("-")[0]
-                if camera_id == self._skip_camera_id:
-                    logger.info("Skipping excluded camera: %s", camera_id)
-                    continue
                 video_paths[camera_id] = p
 
         if not video_paths:
-            raise ValueError(
-                f"No .avi/.mp4 files found in {self._video_dir} "
-                f"(after excluding {self._skip_camera_id!r})"
-            )
+            raise ValueError(f"No .avi/.mp4 files found in {self._video_dir}")
 
         logger.info(
             "DetectionStage: found %d cameras: %s",

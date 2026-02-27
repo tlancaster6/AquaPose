@@ -6,6 +6,7 @@ from pathlib import Path
 
 import yaml
 
+from aquapose.core.context import PipelineContext
 from aquapose.engine import (
     Event,
     PipelineComplete,
@@ -16,7 +17,6 @@ from aquapose.engine import (
     StageStart,
     load_config,
 )
-from aquapose.engine.stages import PipelineContext
 
 # ---------------------------------------------------------------------------
 # Test helpers / fixtures

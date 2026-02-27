@@ -3,9 +3,6 @@
 Reads annotated detections from Stage 2, groups detections across cameras into
 per-fish bundles via RANSAC centroid clustering, and populates
 PipelineContext.associated_bundles.
-
-Import boundary (ENG-07): this module does NOT import from ``aquapose.engine``.
-``PipelineContext`` is referenced only under ``TYPE_CHECKING`` for annotations.
 """
 
 from __future__ import annotations
@@ -13,19 +10,13 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from aquapose.core.association.backends import get_backend
-
-if TYPE_CHECKING:
-    from aquapose.engine.stages import PipelineContext
+from aquapose.core.context import PipelineContext
 
 __all__ = ["AssociationStage"]
 
 logger = logging.getLogger(__name__)
-
-# Camera to exclude — centre top-down wide-angle, poor association quality.
-_DEFAULT_SKIP_CAMERA_ID = "e3v8250"
 
 
 class AssociationStage:
@@ -46,7 +37,6 @@ class AssociationStage:
         min_cameras: Minimum cameras required for a valid multi-view bundle.
         reprojection_threshold: Maximum pixel reprojection error for RANSAC
             inliers.
-        skip_camera_id: Camera ID to exclude from association.
         backend: Backend kind — currently only ``"ransac_centroid"`` is
             supported.
 
@@ -61,7 +51,6 @@ class AssociationStage:
         expected_count: int = 9,
         min_cameras: int = 3,
         reprojection_threshold: float = 15.0,
-        skip_camera_id: str = _DEFAULT_SKIP_CAMERA_ID,
         backend: str = "ransac_centroid",
     ) -> None:
         self._calibration_path = Path(calibration_path)
@@ -71,7 +60,6 @@ class AssociationStage:
             expected_count=expected_count,
             min_cameras=min_cameras,
             reprojection_threshold=reprojection_threshold,
-            skip_camera_id=skip_camera_id,
         )
 
     def run(self, context: PipelineContext) -> PipelineContext:

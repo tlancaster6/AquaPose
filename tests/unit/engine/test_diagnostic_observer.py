@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from aquapose.core.context import PipelineContext
 from aquapose.engine.diagnostic_observer import DiagnosticObserver
 from aquapose.engine.events import StageComplete
 from aquapose.engine.observers import Observer
-from aquapose.engine.stages import PipelineContext
 
 
 def test_diagnostic_observer_satisfies_protocol() -> None:

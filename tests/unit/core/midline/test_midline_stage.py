@@ -18,9 +18,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from aquapose.core.context import PipelineContext, Stage
 from aquapose.core.midline import AnnotatedDetection, MidlineStage
 from aquapose.core.midline.backends import get_backend
-from aquapose.engine.stages import PipelineContext, Stage
 from aquapose.segmentation.detector import Detection
 
 # ---------------------------------------------------------------------------

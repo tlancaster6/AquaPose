@@ -20,9 +20,9 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
+from aquapose.core.context import PipelineContext, Stage
 from aquapose.core.tracking import FishTrack, TrackingStage, TrackState
 from aquapose.core.tracking.backends import get_backend
-from aquapose.engine.stages import PipelineContext, Stage
 from aquapose.segmentation.detector import Detection
 
 # ---------------------------------------------------------------------------

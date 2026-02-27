@@ -62,7 +62,6 @@ class HungarianBackend:
     Args:
         calibration_path: Path to the AquaCal calibration JSON file.
         expected_count: Expected number of fish (population constraint).
-        skip_camera_id: Camera ID to exclude from tracking.
         min_hits: Consecutive frames before a new track is confirmed.
         max_age: Grace period (frames) before a confirmed track is deleted.
         reprojection_threshold: Maximum pixel distance for track claiming.
@@ -79,7 +78,6 @@ class HungarianBackend:
         self,
         calibration_path: str | Path,
         expected_count: int = 9,
-        skip_camera_id: str = "e3v8250",
         min_hits: int = DEFAULT_MIN_HITS,
         max_age: int = DEFAULT_MAX_AGE,
         reprojection_threshold: float = DEFAULT_REPROJECTION_THRESHOLD,
@@ -96,8 +94,7 @@ class HungarianBackend:
         if not calib_path.exists():
             raise FileNotFoundError(f"Calibration file not found: {calib_path}")
 
-        self._skip_camera_id = skip_camera_id
-        self._models = self._load_models(calib_path, skip_camera_id)
+        self._models = self._load_models(calib_path)
 
         self._tracker = FishTracker(
             min_hits=min_hits,
@@ -140,23 +137,16 @@ class HungarianBackend:
         Returns:
             List of confirmed FishTrack objects after processing this frame.
         """
-        # Filter out the skip camera before passing to tracker.
-        filtered_detections = {
-            cam_id: dets
-            for cam_id, dets in detections_per_camera.items()
-            if cam_id != self._skip_camera_id
-        }
-
         # Filter models to cameras with detections (avoids projection overhead
         # for cameras not contributing to this frame).
         active_models = {
             cam_id: model
             for cam_id, model in self._models.items()
-            if cam_id in filtered_detections
+            if cam_id in detections_per_camera
         }
 
         return self._tracker.update(
-            detections_per_camera=filtered_detections,
+            detections_per_camera=detections_per_camera,
             models=active_models,
             frame_index=frame_idx,
         )
@@ -168,13 +158,11 @@ class HungarianBackend:
     @staticmethod
     def _load_models(
         calibration_path: Path,
-        skip_camera_id: str,
     ) -> dict[str, Any]:
         """Load calibration and build per-camera RefractiveProjectionModel dict.
 
         Args:
             calibration_path: Path to AquaCal calibration JSON.
-            skip_camera_id: Camera ID to exclude from the returned dict.
 
         Returns:
             Dict mapping camera_id to RefractiveProjectionModel.
@@ -188,8 +176,6 @@ class HungarianBackend:
         calib = load_calibration_data(str(calibration_path))
         models: dict[str, Any] = {}
         for cam_id, cam_data in calib.cameras.items():
-            if cam_id == skip_camera_id:
-                continue
             maps = compute_undistortion_maps(cam_data)
             models[cam_id] = RefractiveProjectionModel(
                 K=maps.K_new,

@@ -1,11 +1,11 @@
 """Unit tests for build_stages mode-aware stage factory (v2.1).
 
 v2.1: build_stages returns 5 stages in production mode and 4 in synthetic mode.
-Stage order: Detection -> TrackingStage -> AssociationStubStage -> Midline -> Reconstruction
-Synthetic order: SyntheticDataStage -> TrackingStage -> AssociationStubStage -> Reconstruction
+Stage order: Detection -> TrackingStage -> AssociationStage -> Midline -> Reconstruction
+Synthetic order: SyntheticDataStage -> TrackingStage -> AssociationStage -> Reconstruction
 
 TrackingStage is imported from aquapose.core.tracking.
-AssociationStubStage is inline in engine/pipeline.py.
+AssociationStage is inline in engine/pipeline.py.
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from unittest.mock import patch
 
 import pytest
 
+from aquapose.core.association import AssociationStage
 from aquapose.engine.config import PipelineConfig, SyntheticConfig
-from aquapose.engine.pipeline import AssociationStubStage
 
 
 class TestBuildStagesProductionMode:
@@ -62,8 +62,8 @@ class TestBuildStagesProductionMode:
             stages = build_stages(config)
             assert stages[0] is mock_det.return_value, "Stage 0 must be DetectionStage"
             assert isinstance(stages[1], TrackingStage), "Stage 1 must be TrackingStage"
-            assert isinstance(stages[2], AssociationStubStage), (
-                "Stage 2 must be AssociationStubStage"
+            assert isinstance(stages[2], AssociationStage), (
+                "Stage 2 must be AssociationStage"
             )
             assert stages[3] is mock_mid.return_value, "Stage 3 must be MidlineStage"
             assert stages[4] is mock_rec.return_value, (
@@ -153,8 +153,8 @@ class TestBuildStagesSyntheticMode:
                 "Stage 0 must be SyntheticDataStage"
             )
             assert isinstance(stages[1], TrackingStage), "Stage 1 must be TrackingStage"
-            assert isinstance(stages[2], AssociationStubStage), (
-                "Stage 2 must be AssociationStubStage"
+            assert isinstance(stages[2], AssociationStage), (
+                "Stage 2 must be AssociationStage"
             )
             assert stages[3] is mock_rec.return_value, (
                 "Stage 3 must be ReconstructionStage"
@@ -198,7 +198,7 @@ class TestBuildStagesSyntheticMode:
 
 
 class TestTrackingStageDirectly:
-    """Tests for TrackingStage behavior and AssociationStubStage."""
+    """Tests for TrackingStage behavior and AssociationStage."""
 
     def test_tracking_stage_produces_tracks_2d(self) -> None:
         """TrackingStage sets context.tracks_2d (not None)."""
@@ -228,15 +228,6 @@ class TestTrackingStageDirectly:
         assert isinstance(carry, CarryForward)
         assert isinstance(carry.tracks_2d_state, dict)
 
-    def test_association_stub_produces_empty_tracklet_groups(self) -> None:
-        """AssociationStubStage sets context.tracklet_groups to an empty list."""
-        from aquapose.core.context import PipelineContext
-
-        ctx = PipelineContext()
-        stub = AssociationStubStage()
-        result_ctx = stub.run(ctx)
-        assert result_ctx.tracklet_groups == []
-
     def test_tracking_stage_present_in_production_build(self) -> None:
         """TrackingStage appears at position 1 in production build."""
 
@@ -256,9 +247,9 @@ class TestTrackingStageDirectly:
             stages = build_stages(config)
             stage_names = [type(s).__name__ for s in stages]
             assert "TrackingStage" in stage_names
-            assert "AssociationStubStage" in stage_names
+            assert "AssociationStage" in stage_names
             assert stage_names.index("TrackingStage") == 1
-            assert stage_names.index("AssociationStubStage") == 2
+            assert stage_names.index("AssociationStage") == 2
 
     def test_no_tracking_stub_stage_in_build(self) -> None:
         """TrackingStubStage is gone — not present in any build output."""
@@ -300,4 +291,4 @@ class TestTrackingStageDirectly:
             stages = build_stages(config)
             stage_types = [type(s) for s in stages]
             assert TrackingStage in stage_types
-            assert AssociationStubStage in stage_types
+            assert AssociationStage in stage_types

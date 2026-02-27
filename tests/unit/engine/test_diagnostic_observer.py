@@ -151,8 +151,8 @@ def test_all_stages_captured_in_full_sequence() -> None:
     observer = DiagnosticObserver()
     stage_names = [
         "DetectionStage",
-        "TrackingStubStage",
-        "AssociationStubStage",
+        "TrackingStage",
+        "AssociationStage",
         "MidlineStage",
         "ReconstructionStage",
     ]

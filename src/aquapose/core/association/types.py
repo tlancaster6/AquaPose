@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-__all__ = ["AssociationBundle", "TrackletGroup"]
+__all__ = ["AssociationBundle", "HandoffState", "TrackletGroup"]
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +44,31 @@ class TrackletGroup:
     fish_id: int
     tracklets: tuple
     confidence: float | None = None
+
+
+# ---------------------------------------------------------------------------
+# v2.1 domain type: HandoffState
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class HandoffState:
+    """Chunk handoff state emitted by the Association stage.
+
+    Typed stub for future chunk-boundary orchestration. Fields are defined
+    but populated with None/empty values in v2.1 (single-chunk mode).
+
+    Attributes:
+        active_fish_ids: Global fish IDs active at chunk end. None in v2.1.
+        per_id_3d_state: Per-fish 3D position/velocity at chunk end. None in v2.1.
+        per_id_2d_state: Per-fish per-camera 2D state at chunk end. None in v2.1.
+        per_id_confidence: Per-fish association confidence at boundary. None in v2.1.
+    """
+
+    active_fish_ids: tuple | None = None
+    per_id_3d_state: dict | None = None
+    per_id_2d_state: dict | None = None
+    per_id_confidence: dict | None = None
 
 
 # ---------------------------------------------------------------------------

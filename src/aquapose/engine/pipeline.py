@@ -6,7 +6,8 @@ artifact before any stage runs (ENG-06, ENG-08).
 
 The :func:`build_stages` factory is the canonical way to construct all 5 stages
 from a :class:`~aquapose.engine.config.PipelineConfig` and wire them into
-:class:`PosePipeline`.
+:class:`PosePipeline`. Stage 3 uses ``AssociationStage`` from
+``aquapose.core.association`` for Leiden-based cross-camera clustering.
 
 Stage 2 (TrackingStage) uses a different ``run()`` signature —
 ``(context, carry) -> (context, carry)`` — because it maintains per-camera
@@ -206,29 +207,6 @@ class PosePipeline:
         return context
 
 
-class AssociationStubStage:
-    """Stub Stage 3: Cross-camera tracklet association (placeholder for Phase 25).
-
-    Writes correctly-typed but empty output to PipelineContext.tracklet_groups.
-    Real Leiden clustering implementation replaces this in Phase 25.
-    """
-
-    def run(self, context: PipelineContext) -> PipelineContext:
-        """Run stub association — produces empty tracklet_groups.
-
-        Args:
-            context: Accumulated pipeline state from the Tracking stage.
-
-        Returns:
-            The same context with tracklet_groups set to an empty list.
-
-        """
-        logger.warning("AssociationStubStage is a stub — producing empty output")
-        # Empty list: no tracklet groups identified yet
-        context.tracklet_groups = []
-        return context
-
-
 # ---------------------------------------------------------------------------
 # Stage factory
 # ---------------------------------------------------------------------------
@@ -242,15 +220,15 @@ def build_stages(config: PipelineConfig) -> list:
     constructs each stage from its corresponding sub-config in *config*.
 
     v2.1 pipeline ordering: Detection → 2D Tracking → Association → Midline →
-    Reconstruction. Stage 3 is a stub (AssociationStubStage) that produces
-    correctly-typed empty output until Phase 25 (Leiden Association) replaces it.
+    Reconstruction. Stage 3 (AssociationStage) performs Leiden-based cross-camera
+    tracklet clustering using ray-ray geometry and ghost-point penalties.
 
     When ``config.mode == "synthetic"``, returns a 4-stage list with
     SyntheticDataStage replacing both DetectionStage and MidlineStage:
-    SyntheticDataStage → TrackingStage → AssociationStubStage → ReconstructionStage.
+    SyntheticDataStage → TrackingStage → AssociationStage → ReconstructionStage.
 
     For all other modes, returns the full 5-stage list:
-    DetectionStage → TrackingStage → AssociationStubStage → MidlineStage → ReconstructionStage.
+    DetectionStage → TrackingStage → AssociationStage → MidlineStage → ReconstructionStage.
 
     Example::
 
@@ -276,6 +254,7 @@ def build_stages(config: PipelineConfig) -> list:
         ReconstructionStage,
         SyntheticDataStage,
     )
+    from aquapose.core.association import AssociationStage
     from aquapose.core.tracking import TrackingStage
 
     tracking_stage = TrackingStage(config=config.tracking)
@@ -298,7 +277,7 @@ def build_stages(config: PipelineConfig) -> list:
         return [
             synthetic_stage,
             tracking_stage,
-            AssociationStubStage(),
+            AssociationStage(config),
             reconstruction_stage,
         ]
 
@@ -326,7 +305,7 @@ def build_stages(config: PipelineConfig) -> list:
     return [
         detection_stage,
         tracking_stage,
-        AssociationStubStage(),
+        AssociationStage(config),
         midline_stage,
         reconstruction_stage,
     ]

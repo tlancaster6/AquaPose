@@ -165,7 +165,7 @@ class TestCLIExecution:
             "cli_overrides", {}
         )
         assert overrides.get("detection.detector_kind") == "mog2"
-        assert overrides.get("tracking.max_age") == "10"
+        assert overrides.get("tracking.max_age") == 10
 
     def test_pipeline_constructed_with_stages_and_observers(
         self,

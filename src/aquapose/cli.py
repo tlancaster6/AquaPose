@@ -171,7 +171,17 @@ def run(
         key, _, value = item.partition("=")
         if not key:
             continue
-        cli_overrides[key] = value
+        # Coerce numeric/boolean strings to native types
+        if value.lower() in ("true", "false"):
+            cli_overrides[key] = value.lower() == "true"
+        else:
+            try:
+                cli_overrides[key] = int(value)
+            except ValueError:
+                try:
+                    cli_overrides[key] = float(value)
+                except ValueError:
+                    cli_overrides[key] = value
 
     # 2. Inject mode into overrides only if explicitly provided via CLI
     if mode is not None:
@@ -204,8 +214,10 @@ def run(
 
     try:
         pipeline.run()
-    except Exception as exc:
-        sys.stderr.write(f"Error: {exc}\n")
+    except Exception:
+        import traceback
+
+        traceback.print_exc()
         sys.exit(1)
 
 

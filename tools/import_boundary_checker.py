@@ -368,8 +368,8 @@ def check_file(filepath: Path, src_root: Path, result: CheckResult) -> None:
     """Run all applicable rules against a single Python file."""
     try:
         source = filepath.read_text(encoding="utf-8")
-    except OSError as exc:
-        # Non-fatal — skip unreadable files.
+    except (OSError, UnicodeDecodeError) as exc:
+        # Non-fatal — skip unreadable/non-UTF-8 files.
         print(f"WARNING: could not read {filepath}: {exc}", file=sys.stderr)
         return
 

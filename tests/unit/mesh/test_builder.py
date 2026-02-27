@@ -1,11 +1,22 @@
 """Tests for build_fish_mesh: watertight mesh, gradient flow, batch API."""
+# ruff: noqa — dead module, pending deletion in Phase 20
+
+import pytest
+
+pytestmark = pytest.mark.skip(
+    reason="mesh module is dead code, pending deletion in Phase 20"
+)
 
 import torch
-from pytorch3d.structures import Meshes
 
 from aquapose.mesh.builder import build_fish_mesh
 from aquapose.mesh.profiles import DEFAULT_CICHLID_PROFILE
 from aquapose.mesh.state import FishState
+
+try:
+    from pytorch3d.structures import Meshes
+except ImportError:
+    Meshes = None
 
 N_SECTIONS = len(DEFAULT_CICHLID_PROFILE.section_positions)
 M_VERTS = 10

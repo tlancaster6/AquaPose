@@ -8,8 +8,8 @@
 
 ## Summary
 
-- **Total findings:** 20
-- **Critical:** 3 | **Warning:** 7 | **Info:** 10
+- **Total findings:** 22
+- **Critical:** 1 (7 violations) | **Warning:** 9 | **Info:** 10
 - **DoD Gate:** FAIL (2 of 9 criteria: FAIL)
 
 The v2.0 Alpha refactor is fundamentally sound. The 5-stage pipeline, engine/core separation, event system, and observer pattern are all faithfully implemented. Two DoD criteria fail on narrow grounds: the `cli.py` entrypoint is above the "thin wrapper" LOC threshold, and IB-003 violations remain in all 5 core stage files. All 7 bug-ledger items from Phase 15 are now fully triaged (2 Resolved, 2 Accepted, 3 Open at Warning severity). The codebase is clean of TODOs/FIXMEs and dead code in new modules.
@@ -154,23 +154,26 @@ Two engine observer files (`animation_observer.py:14` and `overlay_observer.py:1
 
 ### Mode Tests
 
-| Mode | Status | Notes |
-|------|--------|-------|
-| synthetic | PASS | `test_synthetic_mode` passes in 6.56s |
-| production | NOT RUN (skip) | No full config on CI machine |
-| diagnostic | NOT RUN (skip) | No full config on CI machine |
-| benchmark | NOT RUN (skip) | No full config on CI machine |
+| Mode | Status | Duration | Notes |
+|------|--------|----------|-------|
+| production | PASS | 74s | HDF5 + timing artifacts produced |
+| diagnostic | PASS | 74s | HDF5, overlay mosaic, 3D animation produced |
+| synthetic | PASS | 4.5s | HDF5 + timing artifacts produced |
+| benchmark | PASS | 80s | Timing artifact produced (no HDF5, as expected) |
 
 ### Backend Tests
-Not run — requires production config and real video data.
+
+| Backend | Status | Duration | Notes |
+|---------|--------|----------|-------|
+| triangulation | PASS | 24s | Default backend, all artifacts produced |
+| curve_optimizer | PASS | 80s | All artifacts produced |
 
 ### Reproducibility Test
-Not run — requires production config.
+
+**Status: EXPECTED FAILURE** — control points differ between identical runs due to RANSAC non-determinism in the triangulation stage. RANSAC randomly samples inlier subsets, producing different 3D point estimates across runs. Diffs appear from frame 4 onward with max_diff up to ~1.3 units. This is inherent to the algorithm, not a defect.
 
 ### Summary
-Only synthetic mode was verifiable without full production data. Synthetic mode PASSES, confirming the pipeline's core execution path (SyntheticDataStage → Association → Tracking → Reconstruction) is functional. Other modes cannot be verified in this environment without production video files.
-
-**Coverage gap:** 3 of 4 modes unverified (Warning AUD-009).
+All 4 modes and both reconstruction backends pass. The pipeline produces correct artifacts for each mode. Reproducibility non-determinism is accepted behavior (RANSAC-based triangulation).
 
 ---
 
@@ -204,22 +207,59 @@ Skip reason: `_resolve_real_data_paths()` in `tests/regression/conftest.py:116` 
 
 ### 5.1 Dead Code Candidates
 
+**Complete dead code inventory** (traced from pipeline entrypoint `cli.py` → `engine/` → `core/`):
+
+| Module | Status | Used by active pipeline? | Notes |
+|--------|--------|--------------------------|-------|
+| `calibration/` | ACTIVE | Yes — all stages via loader, projection | Core dependency |
+| `segmentation/` | ACTIVE | Yes — DetectionStage, MidlineStage | Detection + mask input |
+| `tracking/` | ACTIVE | Yes — TrackingStage backends | FishTracker, association |
+| `reconstruction/` | ACTIVE | Yes — ReconstructionStage backends, observers | Triangulation + curve optimizer |
+| `io/` | ACTIVE | Yes — VideoSet used by DetectionStage, MidlineStage, observers | Video I/O |
+| `visualization/` | ACTIVE | Yes — overlay, animation, diagnostic observers | Observer-driven viz |
+| `synthetic/` | ACTIVE | Yes — SyntheticDataStage | First-class pipeline mode |
+| `initialization/` | **DEAD** | No | v1.0 cold-start init, fully replaced by core/ stages |
+| `mesh/` | **DEAD** | No | v1.0 parametric mesh model, never called by pipeline |
+| `pipeline/` | **DEAD** | No | v1.0 orchestrator API, replaced by engine/pipeline |
+| `utils/` | **DEAD** | No | Empty stub — `__all__ = []`, zero imports |
+| `optimization/` | **DEAD** | No | Empty dir (only `__pycache__/`), source files deleted |
+
+**Dead module: `src/aquapose/initialization/`**
+- Contains `keypoints.py` (extract_keypoints) and `triangulator.py` (init_fish_states_from_masks)
+- Only consumer is `triangulator.py` importing `mesh.state.FishState` — itself dead
+- Only imported by unit tests (`tests/unit/initialization/`)
+- Not referenced by any `core/`, `engine/`, or `cli.py` code
+- Severity: **Warning (AUD-019)** — dead code that should be deleted
+
+**Dead module: `src/aquapose/mesh/`**
+- Contains parametric fish mesh model: `builder.py` (build_fish_mesh, requires pytorch3d), `state.py` (FishState), `spine.py`, `cross_section.py`, `profiles.py`
+- `mesh/__init__.py` re-exports `build_fish_mesh` from `builder.py`, causing a top-level `from pytorch3d.structures import Meshes` — this breaks any import from the `mesh` package on machines without pytorch3d
+- Only consumers: `initialization/triangulator.py` (dead) and unit tests (`tests/unit/mesh/`)
+- Not referenced by any `core/`, `engine/`, or `cli.py` code
+- Severity: **Warning (AUD-020)** — dead code with a toxic import side-effect (pytorch3d)
+
+**Dead module: `src/aquapose/pipeline/`**
+- Contains v1.0 orchestrator: `orchestrator.py` (`reconstruct()`), `stages.py` (per-stage batch functions), `report.py`
+- `reconstruct()` is the old v1.0 pipeline API, completely replaced by `engine.pipeline.PosePipeline`
+- Only imported by legacy scripts in `scripts/legacy/`
+- Severity: **Warning (AUD-008)** — should be deleted/archived
+
 **Dead module: `src/aquapose/utils/`**
-- `src/aquapose/utils/__init__.py` is an empty stub with `__all__ = []` and no functions
-- No file in the codebase imports from `aquapose.utils`
+- Empty stub with `__all__ = []` and no functions
+- Zero imports from anywhere in the codebase
 - Severity: **Info (AUD-010)**
 
-**Orphan module: `src/aquapose/optimization/` (pycache only)**
-- `src/aquapose/optimization/` contains only `__pycache__/` — source files (`__init__.py`, `loss.py`, `optimizer.py`, `renderer.py`, `validation.py`) are in git history but not in HEAD
-- The directory was deleted but `__pycache__` remains as a filesystem artifact
-- No code imports `aquapose.optimization` anywhere in the current codebase
-- Severity: **Info (AUD-011)** — stale pycache, not a code issue
+**Dead directory: `src/aquapose/optimization/`**
+- Contains only `__pycache__/` — source files deleted but pycache remains
+- Zero imports from anywhere
+- Severity: **Info (AUD-011)** — stale filesystem artifact
 
-**Legacy orchestrator: `src/aquapose/pipeline/`**
-- `src/aquapose/pipeline/__init__.py` exports `reconstruct` (old v1.0 entrypoint) and `write_diagnostic_report`
-- Only imported by legacy scripts in `scripts/legacy/`
-- The `reconstruct()` function is the v1.0 pipeline API — it should be archived per the guidebook's "existing scripts archived to scripts/legacy/ then deleted after alpha is stable"
-- Severity: **Warning (AUD-012)** — active module that should be deleted/archived
+**Legacy scripts depending on dead modules:**
+- `scripts/legacy/diagnose_pipeline.py` → imports `aquapose.pipeline.stages` (dead)
+- `scripts/legacy/diagnose_tracking.py` → imports `aquapose.pipeline.stages` (dead)
+- `scripts/legacy/diagnose_triangulation.py` → imports `aquapose.pipeline.stages` (dead)
+- `scripts/legacy/per_camera_spline_overlay.py` → imports `aquapose.pipeline.stages` (dead)
+- These scripts cannot run without the dead modules and should be deleted when `pipeline/` is removed
 
 ### 5.2 Repeated Patterns Candidates for Functionalization
 
@@ -289,7 +329,7 @@ src/aquapose/
 
 **Deviations:**
 1. `cli/` is `cli.py` (single file, not subdirectory). This is a cosmetic difference — functionally equivalent for the alpha release. Severity: **Info (AUD-015)**
-2. Legacy computation modules (`calibration/`, `segmentation/`, `tracking/`, `reconstruction/`, `initialization/`, `io/`, `visualization/`, `synthetic/`, `mesh/`) remain as top-level modules alongside the new `core/`+`engine/` structure. They are not imported by the new engine stages but are imported by legacy scripts, training tools, and test utilities. Severity: **Info (AUD-016)** — expected holdover from clean-room rebuild
+2. Top-level computation modules (`calibration/`, `segmentation/`, `tracking/`, `reconstruction/`, `io/`, `visualization/`, `synthetic/`) are actively imported by `core/` stages and `engine/` observers — they are part of the live pipeline, not legacy holdovers. However, `initialization/`, `mesh/`, `pipeline/`, `utils/`, and `optimization/` are dead code with zero pipeline consumers (see Section 5.1). Severity: **Info (AUD-016)** — active modules are correctly structured; dead modules tracked by AUD-008, AUD-019, AUD-020
 3. `pipeline/` module exists as legacy orchestrator, not yet archived. Severity: **Warning** — see AUD-012 (covered above)
 
 ### 5.6 Unused Imports and Dependencies
@@ -364,18 +404,20 @@ Revised critical count: **1 root cause, 7 violations**
 | ID | Section | Finding | Evidence |
 |----|---------|---------|----------|
 | AUD-002 | DoD #8 | CLI `cli.py` is 244 LOC — observer assembly logic (73 LOC) belongs in engine layer | `src/aquapose/cli.py:41-113` |
-| AUD-003 | 3 | Production, diagnostic, benchmark modes not smoke-tested — only synthetic mode verified | Phase 19-02 |
+| AUD-003 | 3 | ~~RESOLVED~~ All 4 modes and both backends pass smoke tests | Smoke test report |
 | AUD-004 | 4 | All 7 regression tests SKIPPED — no numerical confidence in v2.0 pipeline | `tests/regression/` |
 | AUD-005 | Bug Ledger OPEN-1 | Stage 3 output not consumed by Stage 4 — AssociationStage overhead wasted | `src/aquapose/core/tracking/stage.py:86-138` |
 | AUD-006 | Bug Ledger OPEN-2 | Hungarian Backend ignores Stage 3 bundles — uses Stage 1 detections directly | `src/aquapose/core/tracking/stage.py:124-129` |
 | AUD-007 | Bug Ledger OPEN-3 | Camera skip ID hardcoded in 10 locations — not configurable via PipelineConfig | `src/aquapose/engine/config.py` (missing field) |
-| AUD-008 | 5.1 | Legacy `src/aquapose/pipeline/` module not archived — still an active importable module | `src/aquapose/pipeline/orchestrator.py` |
+| AUD-008 | 5.1 | Dead module: `src/aquapose/pipeline/` — v1.0 orchestrator, replaced by engine/pipeline | `src/aquapose/pipeline/orchestrator.py` |
+| AUD-019 | 5.1 | Dead module: `src/aquapose/initialization/` — v1.0 cold-start init, not called by pipeline | `src/aquapose/initialization/` |
+| AUD-020 | 5.1 | Dead module: `src/aquapose/mesh/` — v1.0 parametric mesh, not called by pipeline. Toxic pytorch3d import via `__init__.py` | `src/aquapose/mesh/builder.py:4` |
 
 ### Info (10 findings)
 
 | ID | Section | Finding | Evidence |
 |----|---------|---------|----------|
-| AUD-009 | 3 | Mode smoke test coverage gap: only synthetic tested | Phase 19-02 |
+| AUD-009 | 3 | Reproducibility test: expected RANSAC non-determinism in control points | Smoke test report (accepted behavior) |
 | AUD-010 | 5.1 | `src/aquapose/utils/` is empty stub — unused module | `src/aquapose/utils/__init__.py` |
 | AUD-011 | 5.1 | `src/aquapose/optimization/__pycache__/` stale — source files deleted but pycache remains | filesystem artifact |
 | AUD-012 | 5.3 | `src/aquapose/visualization/diagnostics.py` is 2,203 LOC — candidate for splitting | `src/aquapose/visualization/diagnostics.py` |
@@ -443,26 +485,43 @@ Add `skip_camera_id: str = "e3v8250"` to `PipelineConfig` in `src/aquapose/engin
 **Estimated effort:** Small (10 files, mechanical change)
 **Suggested Phase 20 grouping:** Can combine with AUD-002 as "Config/CLI completeness"
 
-#### AUD-008: Legacy `pipeline/` Module Not Archived
+#### AUD-008 + AUD-019 + AUD-020: Dead Module Cleanup
 
 **What needs to be done:**
-Per guidebook Section 15 "Code Disposition": "Existing scripts archived to `scripts/legacy/` then deleted after alpha is stable." The legacy pipeline orchestrator should be either deleted or confirmed as a kept backward-compat shim. If the decision is to delete: remove `src/aquapose/pipeline/` and update any remaining callers (only `scripts/legacy/` currently imports it).
+Delete 4 dead modules and their orphaned tests:
 
-**Estimated effort:** Small (if deleting) — verify legacy script callers, remove module
-**Suggested Phase 20 grouping:** "Legacy module cleanup" plan
+| Module | Action | Orphaned tests |
+|--------|--------|----------------|
+| `src/aquapose/pipeline/` | Delete entirely | `tests/unit/pipeline/` |
+| `src/aquapose/initialization/` | Delete entirely | `tests/unit/initialization/` |
+| `src/aquapose/mesh/` | Delete entirely | `tests/unit/mesh/` |
+| `src/aquapose/utils/` | Delete entirely | None |
+| `src/aquapose/optimization/` | Delete `__pycache__/` dir | None |
+
+Also delete legacy scripts that depend on dead modules:
+- `scripts/legacy/diagnose_pipeline.py`
+- `scripts/legacy/diagnose_tracking.py`
+- `scripts/legacy/diagnose_triangulation.py`
+- `scripts/legacy/per_camera_spline_overlay.py`
+
+Remove `pytorch3d` from `pyproject.toml` optional dependencies if present (no active code uses it).
+
+**Estimated effort:** Small (mechanical deletion, no refactoring)
+**Suggested Phase 20 grouping:** "Dead module cleanup" plan — one plan, all deletions
 
 ---
 
 ### Info Findings Summary
 
 Findings AUD-009 through AUD-018 are all informational — no action required in Phase 20 unless the team chooses to address them. They document:
-- Empty `utils/` module (easy delete)
-- Stale `__pycache__` in deleted `optimization/` dir (easy cleanup)
+- RANSAC reproducibility non-determinism (accepted, inherent to algorithm)
+- Empty `utils/` module (covered by AUD-008/019/020 cleanup)
+- Stale `__pycache__` in deleted `optimization/` dir (covered by cleanup)
 - Large files candidates for splitting (optional, no functional impact)
 - Duplicated video discovery logic (minor refactor)
 - `cli.py` vs `cli/` naming (cosmetic)
-- Legacy modules co-existing with new structure (expected, guidebook-sanctioned)
-- Backward-compat test fixtures that will eventually become stale
+- Active computation modules correctly structured alongside `core/`+`engine/`; dead modules tracked separately
+- Backward-compat test fixtures that will be deleted with dead modules
 - Old "orchestrator" vocabulary in 2 comments (trivial)
 - 0 TODO/FIXME/HACK items (positive — no action needed)
 

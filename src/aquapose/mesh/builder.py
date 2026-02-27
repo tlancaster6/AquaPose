@@ -1,7 +1,6 @@
 """Mesh assembly: combines spine and cross-sections into a PyTorch3D Meshes object."""
 
 import torch
-from pytorch3d.structures import Meshes
 
 from .cross_section import build_cross_section_verts
 from .profiles import DEFAULT_CICHLID_PROFILE, CrossSectionProfile
@@ -147,7 +146,7 @@ def build_fish_mesh(
     heights: torch.Tensor | None = None,
     widths: torch.Tensor | None = None,
     n_verts: int = M_VERTS,
-) -> Meshes:
+) -> "Meshes":  # noqa: F821
     """Build a differentiable parametric fish mesh from a batch of FishState objects.
 
     For each FishState, generates a swept elliptical cross-section mesh along a
@@ -170,6 +169,8 @@ def build_fish_mesh(
             are in the autograd graph — call mesh.verts_list()[i].sum().backward()
             to compute gradients w.r.t. state parameters.
     """
+    from pytorch3d.structures import Meshes
+
     if profile is None:
         profile = DEFAULT_CICHLID_PROFILE
 

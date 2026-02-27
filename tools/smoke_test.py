@@ -115,14 +115,16 @@ class SmokeTestReport:
         for r in self.results:
             if r.skipped:
                 status = "SKIP"
-                detail = r.skip_reason or ""
+                lines.append(f"  [{status}] {r.name}: {r.skip_reason or ''}")
             elif r.passed:
                 status = "PASS"
-                detail = f"{r.duration_seconds:.1f}s"
+                lines.append(f"  [{status}] {r.name}: {r.duration_seconds:.1f}s")
             else:
                 status = "FAIL"
-                detail = r.error or ""
-            lines.append(f"  [{status}] {r.name}: {detail}")
+                lines.append(f"  [{status}] {r.name}")
+                if r.error:
+                    for err_line in r.error.splitlines():
+                        lines.append(f"         {err_line}")
         lines.append("=" * 60)
         return "\n".join(lines)
 
@@ -194,6 +196,8 @@ class SmokeTestRunner:
         self._only = only
 
         self._output_base.mkdir(parents=True, exist_ok=True)
+        self._test_index = 0
+        self._test_total = 0
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -252,6 +256,10 @@ class SmokeTestRunner:
         for override in extra_overrides:
             cmd += ["--set", override]
 
+        self._test_index += 1
+        counter = f"[{self._test_index}/{self._test_total}]" if self._test_total else ""
+        print(f"\nRunning Test {counter}: {output_subdir}")
+
         try:
             result = subprocess.run(
                 cmd,
@@ -265,9 +273,17 @@ class SmokeTestRunner:
             return False, f"Subprocess error: {exc}", []
 
         if result.returncode != 0:
-            error = (result.stderr or result.stdout or "").strip()
+            # Combine stderr and stdout so tracebacks aren't lost
+            parts = []
+            if result.stderr and result.stderr.strip():
+                parts.append(result.stderr.strip())
+            if result.stdout and result.stdout.strip():
+                parts.append(result.stdout.strip())
+            error = "\n".join(parts) if parts else f"Exit code {result.returncode}"
+            print(f"  FAILED (exit {result.returncode})")
             return False, error, []
 
+        print("  OK")
         artifacts = [str(p) for p in out_dir.rglob("*") if p.is_file()]
         return True, "", artifacts
 
@@ -517,6 +533,13 @@ class SmokeTestRunner:
         run_modes = self._only in (None, "modes")
         run_backends = self._only in (None, "backends")
         run_repro = self._only in (None, "repro")
+
+        self._test_index = 0
+        self._test_total = (
+            (len(ALL_MODES) if run_modes else 0)
+            + (len(ALL_BACKENDS) if run_backends else 0)
+            + (2 if run_repro else 0)  # repro runs the pipeline twice
+        )
 
         if run_modes:
             results.extend(self.run_mode_tests())

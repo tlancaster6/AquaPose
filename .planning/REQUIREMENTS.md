@@ -74,22 +74,22 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LUT-01 | — | Pending |
-| LUT-02 | — | Pending |
-| TRACK-01 | — | Pending |
-| ASSOC-01 | — | Pending |
-| ASSOC-02 | — | Pending |
-| ASSOC-03 | — | Pending |
-| PIPE-01 | — | Pending |
-| PIPE-02 | — | Pending |
-| PIPE-03 | — | Pending |
-| DIAG-01 | — | Pending |
+| LUT-01 | Phase 23 | Pending |
+| LUT-02 | Phase 23 | Pending |
+| TRACK-01 | Phase 24 | Pending |
+| ASSOC-01 | Phase 25 | Pending |
+| ASSOC-02 | Phase 25 | Pending |
+| ASSOC-03 | Phase 26 | Pending |
+| PIPE-01 | Phase 22 | Pending |
+| PIPE-02 | Phase 26 | Pending |
+| PIPE-03 | Phase 26 | Pending |
+| DIAG-01 | Phase 27 | Pending |
 
 **Coverage:**
 - v2.1 requirements: 10 total
-- Mapped to phases: 0
-- Unmapped: 10 (awaiting roadmap)
+- Mapped to phases: 10
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-27*
-*Last updated: 2026-02-27 after initial definition*
+*Last updated: 2026-02-27 after roadmap creation (Phases 22-27)*

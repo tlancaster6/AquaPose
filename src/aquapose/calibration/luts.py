@@ -1,11 +1,11 @@
-"""Forward lookup table (pixel to refracted ray) for fast ray casting."""
+"""Forward and inverse lookup tables for fast refraction-based ray casting and voxel projection."""
 
 from __future__ import annotations
 
 import hashlib
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -449,3 +449,565 @@ def validate_forward_lut(
         "max_origin_error_m": max_origin_error_m,
         "mean_origin_error_m": mean_origin_error_m,
     }
+
+
+# ---------------------------------------------------------------------------
+# Inverse LUT — voxel grid to per-camera pixel projections
+# ---------------------------------------------------------------------------
+
+
+def _build_cylindrical_voxel_grid(
+    tank_center_xy: tuple[float, float],
+    tank_diameter: float,
+    tank_height: float,
+    water_z: float,
+    voxel_resolution: float,
+    margin_fraction: float,
+) -> tuple[np.ndarray, dict[str, float]]:
+    """Build a regular 3D voxel grid clipped to a cylindrical volume.
+
+    Args:
+        tank_center_xy: (cx, cy) of the tank centre in world XY coordinates.
+        tank_diameter: Tank diameter in metres.
+        tank_height: Water column height in metres.
+        water_z: Z-coordinate of the water surface in world frame.
+        voxel_resolution: Grid spacing in metres.
+        margin_fraction: Fractional margin beyond tank dimensions (e.g., 0.1 → 10%).
+
+    Returns:
+        voxel_centers: Array of shape (N_voxels, 3), float32, world-frame XYZ.
+        grid_bounds: Dict with keys 'x_min', 'x_max', 'y_min', 'y_max',
+            'z_min', 'z_max' representing the extents of the candidate grid.
+    """
+    cx, cy = tank_center_xy
+    radius = (tank_diameter / 2.0) * (1.0 + margin_fraction)
+    z_min = water_z
+    z_max = water_z + tank_height * (1.0 + margin_fraction)
+
+    x_min = cx - radius
+    x_max = cx + radius
+    y_min = cy - radius
+    y_max = cy + radius
+
+    # Generate a regular grid of candidate voxel centres
+    xs = np.arange(
+        x_min, x_max + voxel_resolution * 0.5, voxel_resolution, dtype=np.float32
+    )
+    ys = np.arange(
+        y_min, y_max + voxel_resolution * 0.5, voxel_resolution, dtype=np.float32
+    )
+    zs = np.arange(
+        z_min, z_max + voxel_resolution * 0.5, voxel_resolution, dtype=np.float32
+    )
+
+    # Build full 3D meshgrid (ij indexing: x, y, z order)
+    gx, gy, gz = np.meshgrid(xs, ys, zs, indexing="ij")  # each (Nx, Ny, Nz)
+
+    # Flatten to candidate list
+    all_x = gx.ravel()
+    all_y = gy.ravel()
+    all_z = gz.ravel()
+
+    # Filter to cylindrical volume
+    dist_sq = (all_x - cx) ** 2 + (all_y - cy) ** 2
+    inside_cylinder = dist_sq <= radius**2
+
+    voxel_centers = np.stack(
+        [all_x[inside_cylinder], all_y[inside_cylinder], all_z[inside_cylinder]],
+        axis=-1,
+    ).astype(np.float32)
+
+    grid_bounds = {
+        "x_min": float(x_min),
+        "x_max": float(x_max),
+        "y_min": float(y_min),
+        "y_max": float(y_max),
+        "z_min": float(z_min),
+        "z_max": float(z_max),
+    }
+
+    return voxel_centers, grid_bounds
+
+
+def _build_grid_index(
+    voxel_centers: np.ndarray,
+    grid_bounds: dict[str, float],
+    voxel_resolution: float,
+) -> dict[tuple[int, int, int], int]:
+    """Build a mapping from integer grid coordinates to voxel array indices.
+
+    Args:
+        voxel_centers: Array of shape (N, 3), float32.
+        grid_bounds: Dict with x_min, y_min, z_min keys.
+        voxel_resolution: Grid spacing in metres.
+
+    Returns:
+        Dictionary mapping (ix, iy, iz) integer grid coordinates to voxel
+        array indices. Enables O(1) nearest-voxel lookup for arbitrary points.
+    """
+    x_min = grid_bounds["x_min"]
+    y_min = grid_bounds["y_min"]
+    z_min = grid_bounds["z_min"]
+
+    grid_to_idx: dict[tuple[int, int, int], int] = {}
+    for idx, (x, y, z) in enumerate(voxel_centers):
+        ix = round((float(x) - x_min) / voxel_resolution)
+        iy = round((float(y) - y_min) / voxel_resolution)
+        iz = round((float(z) - z_min) / voxel_resolution)
+        grid_to_idx[(ix, iy, iz)] = idx
+
+    return grid_to_idx
+
+
+@dataclass
+class InverseLUT:
+    """Inverse lookup table mapping 3D voxel centres to per-camera pixel projections.
+
+    Discretizes the cylindrical tank volume and records which cameras can see
+    each voxel and where it projects. Provides camera overlap graph and
+    ghost-point lookups without running the refraction model at query time.
+
+    Attributes:
+        voxel_centers: 3D coordinates of all voxel centres, shape (N, 3), float32.
+        visibility_mask: Boolean array, shape (N, C), True if camera c sees voxel n.
+        projected_pixels: Pixel coordinates, shape (N, C, 2), float32. NaN where not visible.
+        camera_ids: Ordered list of camera IDs (index into C dimension).
+        voxel_resolution: Grid spacing in metres.
+        grid_bounds: Dict with 'x_min', 'x_max', 'y_min', 'y_max', 'z_min', 'z_max'.
+    """
+
+    voxel_centers: np.ndarray  # shape (N, 3), float32
+    visibility_mask: np.ndarray  # shape (N, C), bool
+    projected_pixels: np.ndarray  # shape (N, C, 2), float32; NaN where not visible
+    camera_ids: list[str]
+    voxel_resolution: float
+    grid_bounds: dict[str, float]
+    _grid_to_voxel_idx: dict[tuple[int, int, int], int] = field(
+        default_factory=dict, repr=False
+    )
+
+    def __post_init__(self) -> None:
+        """Build the grid index mapping after initialisation."""
+        if not self._grid_to_voxel_idx:
+            self._grid_to_voxel_idx = _build_grid_index(
+                self.voxel_centers, self.grid_bounds, self.voxel_resolution
+            )
+
+
+def generate_inverse_lut(
+    calibration: CalibrationData,  # type: ignore[name-defined]
+    lut_config: LutConfigLike,
+    undistortion_maps: dict[str, UndistortionMaps] | None = None,  # type: ignore[name-defined]
+) -> InverseLUT:
+    """Generate an InverseLUT for the full cylindrical tank volume.
+
+    Projects all voxel centres into each ring camera using
+    RefractiveProjectionModel.project(), recording visibility and pixel
+    coordinates. Prints a coverage histogram and memory report after generation.
+
+    Args:
+        calibration: Complete calibration data.
+        lut_config: LUT generation configuration (tank geometry, voxel resolution).
+        undistortion_maps: Optional per-camera undistortion maps. When provided,
+            K_new is used instead of the raw K.
+
+    Returns:
+        InverseLUT with voxel centres, visibility masks, projected pixels, and
+        the camera overlap graph index.
+    """
+    from aquapose.calibration.loader import (  # noqa: F401
+        CalibrationData,
+        UndistortionMaps,
+    )
+
+    # Derive tank centre from ring camera position centroid (XY only)
+    cam_positions = calibration.camera_positions()
+    ring_cams = calibration.ring_cameras
+    xs = [float(cam_positions[c][0]) for c in ring_cams]
+    ys = [float(cam_positions[c][1]) for c in ring_cams]
+    tank_cx = float(np.mean(xs))
+    tank_cy = float(np.mean(ys))
+
+    # Build cylindrical voxel grid
+    voxel_centers, grid_bounds = _build_cylindrical_voxel_grid(
+        tank_center_xy=(tank_cx, tank_cy),
+        tank_diameter=lut_config.tank_diameter,
+        tank_height=lut_config.tank_height,
+        water_z=calibration.water_z,
+        voxel_resolution=lut_config.voxel_resolution_m,
+        margin_fraction=lut_config.margin_fraction,
+    )
+
+    n_voxels = len(voxel_centers)
+    n_cameras = len(ring_cams)
+
+    visibility_mask = np.zeros((n_voxels, n_cameras), dtype=bool)
+    projected_pixels = np.full((n_voxels, n_cameras, 2), np.nan, dtype=np.float32)
+
+    voxel_tensor = torch.from_numpy(voxel_centers)  # (N, 3), float32
+
+    for cam_idx, cam_id in enumerate(ring_cams):
+        cam = calibration.cameras[cam_id]
+
+        # Use post-undistortion K if available
+        if undistortion_maps is not None and cam_id in undistortion_maps:
+            K = undistortion_maps[cam_id].K_new
+        else:
+            K = cam.K
+
+        model = RefractiveProjectionModel(
+            K=K,
+            R=cam.R,
+            t=cam.t,
+            water_z=calibration.water_z,
+            normal=calibration.interface_normal,
+            n_air=calibration.n_air,
+            n_water=calibration.n_water,
+        )
+
+        t0 = time.perf_counter()
+        with torch.no_grad():
+            pixels, valid = model.project(voxel_tensor)  # (N, 2), (N,)
+        elapsed = time.perf_counter() - t0
+
+        pixels_np = pixels.cpu().numpy()  # (N, 2)
+        valid_np = valid.cpu().numpy()  # (N,)
+
+        # Check within image bounds
+        width, height = cam.image_size
+        in_bounds = (
+            valid_np
+            & (pixels_np[:, 0] >= 0)
+            & (pixels_np[:, 0] < width)
+            & (pixels_np[:, 1] >= 0)
+            & (pixels_np[:, 1] < height)
+        )
+
+        visibility_mask[:, cam_idx] = in_bounds
+        projected_pixels[in_bounds, cam_idx, :] = pixels_np[in_bounds]
+
+        logger.info("Projecting voxels into camera %s... done (%.1fs)", cam_id, elapsed)
+
+    # Coverage histogram
+    n_visible_cameras = visibility_mask.sum(axis=1)  # (N,)
+    print("Camera coverage histogram:")
+    for min_cams in range(1, n_cameras + 1):
+        pct = float((n_visible_cameras >= min_cams).sum()) / n_voxels * 100.0
+        print(f"  {min_cams}+ cameras: {pct:.1f}% of voxels")
+
+    # Memory footprint (the forward LUT memory is not available here, so just report inverse)
+    inv_mb = (
+        voxel_centers.nbytes + visibility_mask.nbytes + projected_pixels.nbytes
+    ) / (1024 * 1024)
+    print(f"LUT memory: inverse {inv_mb:.1f} MB")
+
+    return InverseLUT(
+        voxel_centers=voxel_centers,
+        visibility_mask=visibility_mask,
+        projected_pixels=projected_pixels,
+        camera_ids=ring_cams,
+        voxel_resolution=lut_config.voxel_resolution_m,
+        grid_bounds=grid_bounds,
+    )
+
+
+def camera_overlap_graph(
+    inverse_lut: InverseLUT,
+    min_shared_voxels: int = 100,
+) -> dict[tuple[str, str], int]:
+    """Compute a camera overlap graph from shared voxel visibility counts.
+
+    For each camera pair, counts the number of voxels visible to both cameras.
+    Only pairs exceeding min_shared_voxels are included.
+
+    Args:
+        inverse_lut: The InverseLUT containing visibility_mask.
+        min_shared_voxels: Minimum number of shared voxels to include a pair.
+
+    Returns:
+        Dictionary mapping sorted camera ID pairs to shared voxel counts.
+        Keys are (min(cam_a, cam_b), max(cam_a, cam_b)).
+    """
+    cam_ids = inverse_lut.camera_ids
+    n_cameras = len(cam_ids)
+    mask = inverse_lut.visibility_mask  # (N, C), bool
+
+    graph: dict[tuple[str, str], int] = {}
+
+    for i in range(n_cameras):
+        for j in range(i + 1, n_cameras):
+            shared = int((mask[:, i] & mask[:, j]).sum())
+            if shared >= min_shared_voxels:
+                pair = (min(cam_ids[i], cam_ids[j]), max(cam_ids[i], cam_ids[j]))
+                graph[pair] = shared
+
+    return graph
+
+
+def ghost_point_lookup(
+    inverse_lut: InverseLUT,
+    points_3d: torch.Tensor,
+) -> list[list[tuple[str, float, float]]]:
+    """Look up which cameras can see each 3D point and return pixel coordinates.
+
+    Snaps each point to the nearest voxel using integer grid coordinates.
+    Points outside the cylindrical volume return an empty list.
+
+    Args:
+        inverse_lut: The InverseLUT to query.
+        points_3d: 3D world points, shape (N, 3), float32.
+
+    Returns:
+        List of length N. Each element is a list of (camera_id, pixel_u, pixel_v)
+        for cameras that can see the nearest voxel. Empty list for out-of-volume points.
+    """
+    x_min = inverse_lut.grid_bounds["x_min"]
+    y_min = inverse_lut.grid_bounds["y_min"]
+    z_min = inverse_lut.grid_bounds["z_min"]
+    res = inverse_lut.voxel_resolution
+    grid_map = inverse_lut._grid_to_voxel_idx
+    cam_ids = inverse_lut.camera_ids
+
+    pts = points_3d.cpu().numpy() if isinstance(points_3d, torch.Tensor) else points_3d
+    results: list[list[tuple[str, float, float]]] = []
+
+    for pt in pts:
+        ix = round((float(pt[0]) - x_min) / res)
+        iy = round((float(pt[1]) - y_min) / res)
+        iz = round((float(pt[2]) - z_min) / res)
+
+        voxel_idx = grid_map.get((ix, iy, iz), None)
+        if voxel_idx is None:
+            results.append([])
+            continue
+
+        visible_cams: list[tuple[str, float, float]] = []
+        for cam_idx, cam_id in enumerate(cam_ids):
+            if inverse_lut.visibility_mask[voxel_idx, cam_idx]:
+                pix = inverse_lut.projected_pixels[voxel_idx, cam_idx]
+                visible_cams.append((cam_id, float(pix[0]), float(pix[1])))
+
+        results.append(visible_cams)
+
+    return results
+
+
+def validate_inverse_lut(
+    inverse_lut: InverseLUT,
+    calibration: CalibrationData,  # type: ignore[name-defined]
+    n_samples: int = 50,
+    seed: int = 42,
+) -> dict[str, float]:
+    """Validate InverseLUT projected_pixels against RefractiveProjectionModel.project().
+
+    Samples random visible voxels and compares stored pixel coordinates with
+    on-the-fly model projections.
+
+    Args:
+        inverse_lut: The InverseLUT to validate.
+        calibration: CalibrationData used to reconstruct projection models.
+        n_samples: Number of voxels to sample per camera.
+        seed: Random seed for reproducibility.
+
+    Returns:
+        Dictionary with 'max_pixel_error' and 'mean_pixel_error' keys (pixels).
+
+    Raises:
+        ValueError: If max pixel error exceeds 1.0 px.
+    """
+    rng = np.random.default_rng(seed)
+    max_error = 0.0
+    errors: list[float] = []
+
+    for cam_idx, cam_id in enumerate(inverse_lut.camera_ids):
+        cam = calibration.cameras[cam_id]
+        model = RefractiveProjectionModel(
+            K=cam.K,
+            R=cam.R,
+            t=cam.t,
+            water_z=calibration.water_z,
+            normal=calibration.interface_normal,
+            n_air=calibration.n_air,
+            n_water=calibration.n_water,
+        )
+
+        visible_indices = np.where(inverse_lut.visibility_mask[:, cam_idx])[0]
+        if len(visible_indices) == 0:
+            continue
+
+        sample_size = min(n_samples, len(visible_indices))
+        sampled = rng.choice(visible_indices, size=sample_size, replace=False)
+
+        centers = torch.from_numpy(inverse_lut.voxel_centers[sampled])  # (K, 3)
+        stored_pix = inverse_lut.projected_pixels[sampled, cam_idx, :]  # (K, 2)
+
+        with torch.no_grad():
+            model_pix, _ = model.project(centers)
+
+        model_pix_np = model_pix.cpu().numpy()  # (K, 2)
+
+        # NaN in model output means invalid — skip those
+        valid = ~np.isnan(model_pix_np[:, 0])
+        if not valid.any():
+            continue
+
+        diffs = np.linalg.norm(stored_pix[valid] - model_pix_np[valid], axis=-1)
+        errors.extend(diffs.tolist())
+        max_error = max(max_error, float(diffs.max()))
+
+    mean_error = float(np.mean(errors)) if errors else 0.0
+
+    if max_error > 1.0:
+        raise ValueError(
+            f"InverseLUT validation failed: max pixel error {max_error:.4f} px "
+            f"exceeds 1.0 px threshold."
+        )
+
+    return {
+        "max_pixel_error": max_error,
+        "mean_pixel_error": mean_error,
+    }
+
+
+def save_inverse_lut(
+    lut: InverseLUT,
+    path: str | Path,
+    config_hash: str = "",
+) -> None:
+    """Save an InverseLUT to a .npz file.
+
+    Args:
+        lut: The InverseLUT to save.
+        path: Destination file path (should end in .npz).
+        config_hash: Optional hash string for cache invalidation.
+    """
+    # Serialise grid_to_voxel_idx as parallel coordinate arrays
+    grid_keys = np.array(list(lut._grid_to_voxel_idx.keys()), dtype=np.int32)  # (M, 3)
+    grid_vals = np.array(list(lut._grid_to_voxel_idx.values()), dtype=np.int32)  # (M,)
+
+    # grid_bounds as a flat array: x_min, x_max, y_min, y_max, z_min, z_max
+    bounds_arr = np.array(
+        [
+            lut.grid_bounds["x_min"],
+            lut.grid_bounds["x_max"],
+            lut.grid_bounds["y_min"],
+            lut.grid_bounds["y_max"],
+            lut.grid_bounds["z_min"],
+            lut.grid_bounds["z_max"],
+        ],
+        dtype=np.float32,
+    )
+
+    np.savez(
+        str(path),
+        voxel_centers=lut.voxel_centers,
+        visibility_mask=lut.visibility_mask,
+        projected_pixels=lut.projected_pixels,
+        camera_ids=np.array(lut.camera_ids),
+        voxel_resolution=np.array(lut.voxel_resolution, dtype=np.float32),
+        grid_bounds=bounds_arr,
+        grid_keys=grid_keys,
+        grid_vals=grid_vals,
+        config_hash=np.array(config_hash),
+    )
+
+
+def load_inverse_lut(path: str | Path) -> tuple[InverseLUT, str]:
+    """Load an InverseLUT from a .npz file.
+
+    Args:
+        path: Path to the .npz file written by save_inverse_lut().
+
+    Returns:
+        Tuple of (InverseLUT, config_hash) where config_hash is the stored
+        hash string for cache invalidation.
+    """
+    data = np.load(str(path), allow_pickle=False)
+
+    camera_ids: list[str] = [str(s) for s in data["camera_ids"]]
+    voxel_resolution = float(data["voxel_resolution"])
+    config_hash = str(data["config_hash"])
+
+    bounds_arr = data["grid_bounds"]
+    grid_bounds = {
+        "x_min": float(bounds_arr[0]),
+        "x_max": float(bounds_arr[1]),
+        "y_min": float(bounds_arr[2]),
+        "y_max": float(bounds_arr[3]),
+        "z_min": float(bounds_arr[4]),
+        "z_max": float(bounds_arr[5]),
+    }
+
+    # Reconstruct the grid index mapping
+    grid_keys = data["grid_keys"]  # (M, 3)
+    grid_vals = data["grid_vals"]  # (M,)
+    grid_to_voxel_idx: dict[tuple[int, int, int], int] = {
+        (int(k[0]), int(k[1]), int(k[2])): int(v)
+        for k, v in zip(grid_keys, grid_vals, strict=False)
+    }
+
+    lut = InverseLUT(
+        voxel_centers=data["voxel_centers"],
+        visibility_mask=data["visibility_mask"],
+        projected_pixels=data["projected_pixels"],
+        camera_ids=camera_ids,
+        voxel_resolution=voxel_resolution,
+        grid_bounds=grid_bounds,
+        _grid_to_voxel_idx=grid_to_voxel_idx,
+    )
+
+    return lut, config_hash
+
+
+def save_inverse_luts(
+    lut: InverseLUT,
+    calibration_path: str | Path,
+    lut_config: LutConfigLike,
+) -> None:
+    """Save an InverseLUT to the luts/ directory next to the calibration file.
+
+    Args:
+        lut: The InverseLUT to save.
+        calibration_path: Path to the calibration file (determines output directory).
+        lut_config: LUT config used to compute the cache-invalidation hash.
+    """
+    lut_dir = Path(calibration_path).parent / "luts"
+    lut_dir.mkdir(parents=True, exist_ok=True)
+
+    config_hash = compute_lut_hash(calibration_path, lut_config)
+    out_path = lut_dir / "inverse.npz"
+    save_inverse_lut(lut, out_path, config_hash=config_hash)
+    logger.debug("Saved inverse LUT → %s", out_path)
+
+
+def load_inverse_luts(
+    calibration_path: str | Path,
+    lut_config: LutConfigLike,
+) -> InverseLUT | None:
+    """Load InverseLUT from disk, returning None if cache is stale or missing.
+
+    Args:
+        calibration_path: Path to the calibration file (determines LUT directory).
+        lut_config: LUT config used to check the cache-invalidation hash.
+
+    Returns:
+        InverseLUT if the cache is valid, or None if LUT is missing or stale.
+    """
+    lut_dir = Path(calibration_path).parent / "luts"
+    inv_path = lut_dir / "inverse.npz"
+
+    if not inv_path.exists():
+        return None
+
+    expected_hash = compute_lut_hash(calibration_path, lut_config)
+    lut, stored_hash = load_inverse_lut(inv_path)
+
+    if stored_hash != expected_hash:
+        logger.info(
+            "Inverse LUT cache miss (hash mismatch: stored=%s, expected=%s)",
+            stored_hash,
+            expected_hash,
+        )
+        return None
+
+    return lut

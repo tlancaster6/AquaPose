@@ -24,9 +24,9 @@ def get_backend(kind: str, **kwargs: Any) -> object:
               via chamfer distance. Delegates to ``CurveOptimizer.optimize_midlines()``.
 
         **kwargs: Forwarded to the backend constructor. For ``"triangulation"``,
-            accepted kwargs are: ``calibration_path``, ``skip_camera_id``,
-            ``inlier_threshold``, ``snap_threshold``, ``max_depth``.
-            For ``"curve_optimizer"``, same plus optimizer-specific params.
+            accepted kwargs are: ``calibration_path``, ``inlier_threshold``,
+            ``snap_threshold``, ``max_depth``. For ``"curve_optimizer"``,
+            same plus optimizer-specific params.
 
     Returns:
         A configured backend instance with a

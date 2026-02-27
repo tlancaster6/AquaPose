@@ -39,6 +39,7 @@ def _generate_fish_splines(
 
     Returns:
         List of fish splines, each shape (n_points, 3).
+
     """
     splines = []
     for _i in range(fish_count):
@@ -75,6 +76,7 @@ def _apply_frame_displacement(
 
     Returns:
         List of displaced splines for this frame.
+
     """
     displaced = []
     for spline in splines:
@@ -96,6 +98,7 @@ class SyntheticDataStage:
     Args:
         calibration_path: Path to AquaCal calibration JSON file.
         synthetic_config: Configuration for synthetic data generation.
+
     """
 
     def __init__(
@@ -118,6 +121,7 @@ class SyntheticDataStage:
         Returns:
             Context with detections, annotated_detections, frame_count, and
             camera_ids populated.
+
         """
         rng = np.random.default_rng(self._config.seed)
         cal_data = load_calibration_data(self._calibration_path)
@@ -150,7 +154,9 @@ class SyntheticDataStage:
             # Per-frame RNG for displacement (deterministic per frame)
             frame_rng = np.random.default_rng(self._config.seed + frame_idx + 1)
             frame_splines = _apply_frame_displacement(
-                base_splines, frame_idx, frame_rng
+                base_splines,
+                frame_idx,
+                frame_rng,
             )
 
             frame_dets: dict[str, list] = {cam: [] for cam in camera_ids}
@@ -181,7 +187,9 @@ class SyntheticDataStage:
                     # Add noise if configured
                     if self._config.noise_std > 0:
                         noise = rng.normal(
-                            0, self._config.noise_std, size=pixels_np.shape
+                            0,
+                            self._config.noise_std,
+                            size=pixels_np.shape,
                         ).astype(np.float32)
                         pixels_np = pixels_np + noise
 

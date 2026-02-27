@@ -79,14 +79,14 @@ _FORBIDDEN_IN_ENGINE = ("aquapose.cli",)
 _IB003_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
     [
         ("core/synthetic.py", "aquapose.engine.config"),
-    ]
+    ],
 )
 
 # File I/O call names that are forbidden inside stage run() methods.
 _FILE_IO_CALLS = frozenset(
     [
         "open",
-    ]
+    ],
 )
 
 # Path method names that indicate file I/O (write_* or read_*).
@@ -97,7 +97,7 @@ _PATH_IO_METHODS = frozenset(
         "read_text",
         "read_bytes",
         "open",
-    ]
+    ],
 )
 
 
@@ -140,7 +140,7 @@ class CheckResult:
     ) -> None:
         """Append a violation to the result set."""
         self.violations.append(
-            Violation(filepath, line, rule_id, description, is_warning)
+            Violation(filepath, line, rule_id, description, is_warning),
         )
 
     @property
@@ -180,6 +180,7 @@ def _collect_imports(
     Returns:
         A pair ``(runtime_imports, type_checking_imports)`` where each element
         is a list of ``(line_number, module_name)`` tuples.
+
     """
     runtime: list[tuple[int, str]] = []
     type_checking: list[tuple[int, str]] = []
@@ -457,6 +458,7 @@ def main(argv: list[str] | None = None) -> int:
 
     Returns:
         0 if all checks pass, 1 if any hard violations are found.
+
     """
     parser = argparse.ArgumentParser(
         description="AquaPose import boundary and structural rule checker",
@@ -522,7 +524,8 @@ def main(argv: list[str] | None = None) -> int:
     if result.violations:
         printed_files: set[Path] = set()
         for violation in sorted(
-            result.violations, key=lambda v: (str(v.filepath), v.line)
+            result.violations,
+            key=lambda v: (str(v.filepath), v.line),
         ):
             if violation.filepath not in printed_files:
                 if printed_files:

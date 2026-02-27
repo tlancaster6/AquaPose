@@ -43,6 +43,7 @@ class AssociationStage:
     Raises:
         FileNotFoundError: If *calibration_path* does not exist.
         ValueError: If *backend* is not a recognized backend identifier.
+
     """
 
     def __init__(
@@ -87,6 +88,7 @@ class AssociationStage:
         Raises:
             ValueError: If neither ``detections`` nor ``annotated_detections``
                 is populated on the context.
+
         """
         # Prefer annotated_detections (Stage 2 output) over raw detections.
         # Both have the same outer structure: list[dict[str, list[Detection]]].
@@ -101,7 +103,7 @@ class AssociationStage:
             raise ValueError(
                 "AssociationStage requires context.detections or "
                 "context.annotated_detections — neither is populated. "
-                "Ensure Stage 1 (DetectionStage) has run."
+                "Ensure Stage 1 (DetectionStage) has run.",
             )
 
         t0 = time.perf_counter()
@@ -120,7 +122,7 @@ class AssociationStage:
                     detections_per_camera[cam_id] = list(cam_list)
 
             frame_bundles = self._backend.associate_frame(  # type: ignore[union-attr]
-                detections_per_camera
+                detections_per_camera,
             )
             bundles_per_frame.append(frame_bundles)
 

@@ -59,6 +59,7 @@ class ReconstructionStage:
     Raises:
         FileNotFoundError: If *calibration_path* does not exist.
         ValueError: If *backend* is not a recognized backend identifier.
+
     """
 
     def __init__(
@@ -105,16 +106,17 @@ class ReconstructionStage:
         Raises:
             ValueError: If ``context.tracks`` or ``context.annotated_detections``
                 is not populated.
+
         """
         if context.tracks is None:
             raise ValueError(
                 "ReconstructionStage requires context.tracks — "
-                "it is not populated. Ensure Stage 4 (TrackingStage) has run."
+                "it is not populated. Ensure Stage 4 (TrackingStage) has run.",
             )
         if context.annotated_detections is None:
             raise ValueError(
                 "ReconstructionStage requires context.annotated_detections — "
-                "it is not populated. Ensure Stage 2 (MidlineStage) has run."
+                "it is not populated. Ensure Stage 2 (MidlineStage) has run.",
             )
 
         t0 = time.perf_counter()
@@ -122,7 +124,7 @@ class ReconstructionStage:
         midlines_3d_per_frame: list[dict] = []
 
         for frame_idx, (frame_tracks, frame_annotated) in enumerate(
-            zip(context.tracks, context.annotated_detections, strict=False)
+            zip(context.tracks, context.annotated_detections, strict=False),
         ):
             midline_set = self._assemble_midline_set(
                 frame_idx=frame_idx,
@@ -170,6 +172,7 @@ class ReconstructionStage:
         Returns:
             MidlineSet: dict[fish_id, dict[cam_id, Midline2D]]. May be empty
             if no fish have sufficient midline observations.
+
         """
         midline_set: dict[int, dict[str, Midline2D]] = {}
 

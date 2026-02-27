@@ -54,6 +54,7 @@ class MidlineStage:
             do not exist.
         ValueError: If no valid camera videos are found.
         NotImplementedError: If *backend* is ``"direct_pose"``.
+
     """
 
     def __init__(
@@ -80,7 +81,7 @@ class MidlineStage:
             raise FileNotFoundError(f"video_dir does not exist: {self._video_dir}")
         if not self._calibration_path.exists():
             raise FileNotFoundError(
-                f"calibration_path does not exist: {self._calibration_path}"
+                f"calibration_path does not exist: {self._calibration_path}",
             )
 
         # Discover camera videos
@@ -147,6 +148,7 @@ class MidlineStage:
         Raises:
             ValueError: If ``context.detections`` or ``context.camera_ids`` is
                 None (Stage 1 has not yet run).
+
         """
         from aquapose.io.video import VideoSet
 

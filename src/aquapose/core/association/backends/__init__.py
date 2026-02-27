@@ -22,8 +22,7 @@ def get_backend(kind: str, **kwargs: Any) -> object:
 
         **kwargs: Forwarded to the backend constructor. For
             ``"ransac_centroid"``, accepted kwargs are: ``calibration_path``,
-            ``expected_count``, ``min_cameras``, ``reprojection_threshold``,
-            ``skip_camera_id``.
+            ``expected_count``, ``min_cameras``, ``reprojection_threshold``.
 
     Returns:
         A configured backend instance with an

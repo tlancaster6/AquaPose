@@ -22,9 +22,9 @@ def get_backend(kind: str, **kwargs: Any) -> object:
 
         **kwargs: Forwarded to the backend constructor. For ``"hungarian"``,
             accepted kwargs are: ``calibration_path``, ``expected_count``,
-            ``skip_camera_id``, ``min_hits``, ``max_age``,
-            ``reprojection_threshold``, ``birth_interval``,
-            ``min_cameras_birth``, ``velocity_damping``, ``velocity_window``.
+            ``min_hits``, ``max_age``, ``reprojection_threshold``,
+            ``birth_interval``, ``min_cameras_birth``, ``velocity_damping``,
+            ``velocity_window``.
 
     Returns:
         A configured backend instance with a

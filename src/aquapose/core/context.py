@@ -37,6 +37,7 @@ class Stage(Protocol):
 
         Returns:
             The same context object with this stage's output fields populated.
+
         """
         ...
 
@@ -83,6 +84,7 @@ class PipelineContext:
             Each entry maps fish_id to a Spline3D (or Midline3D) object.
             Type: ``list[dict[int, Spline3D]]``
         stage_timing: Wall-clock seconds per stage, keyed by stage class name.
+
     """
 
     frame_count: int | None = None
@@ -107,11 +109,12 @@ class PipelineContext:
             ValueError: If the field is None, indicating the producing stage
                 has not yet run.
             AttributeError: If ``field_name`` is not a valid field on this dataclass.
+
         """
         value = getattr(self, field_name)
         if value is None:
             raise ValueError(
                 f"PipelineContext.{field_name} is None — the stage that produces "
-                f"'{field_name}' has not run yet. Check stage ordering."
+                f"'{field_name}' has not run yet. Check stage ordering.",
             )
         return value

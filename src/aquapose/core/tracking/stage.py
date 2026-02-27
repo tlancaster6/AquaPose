@@ -54,6 +54,7 @@ class TrackingStage:
     Raises:
         FileNotFoundError: If *calibration_path* does not exist.
         ValueError: If *backend* is not a recognized backend identifier.
+
     """
 
     def __init__(
@@ -92,11 +93,12 @@ class TrackingStage:
 
         Raises:
             ValueError: If ``context.detections`` is not populated.
+
         """
         if context.detections is None:
             raise ValueError(
                 "TrackingStage requires context.detections — "
-                "it is not populated. Ensure Stage 1 (DetectionStage) has run."
+                "it is not populated. Ensure Stage 1 (DetectionStage) has run.",
             )
 
         t0 = time.perf_counter()
@@ -107,7 +109,7 @@ class TrackingStage:
         ]
 
         for frame_idx, (frame_dets, frame_bundles) in enumerate(
-            zip(context.detections, bundles_per_frame, strict=False)
+            zip(context.detections, bundles_per_frame, strict=False),
         ):
             frame_tracks = self._backend.track_frame(  # type: ignore[union-attr]
                 frame_idx=frame_idx,

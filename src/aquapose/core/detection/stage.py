@@ -48,6 +48,7 @@ class DetectionStage:
             weights do not exist.
         ValueError: If no valid camera videos are found, or *detector_kind*
             is not recognized.
+
     """
 
     def __init__(
@@ -72,7 +73,7 @@ class DetectionStage:
             raise FileNotFoundError(f"video_dir does not exist: {self._video_dir}")
         if not self._calibration_path.exists():
             raise FileNotFoundError(
-                f"calibration_path does not exist: {self._calibration_path}"
+                f"calibration_path does not exist: {self._calibration_path}",
             )
 
         # Discover camera videos
@@ -124,6 +125,7 @@ class DetectionStage:
 
         Returns:
             The same *context* object with detection fields populated.
+
         """
         from aquapose.io.video import VideoSet
 

@@ -60,6 +60,7 @@ class PosePipeline:
             artifact before any stage executes.
         observers: Optional list of Observer instances. Each observer is
             subscribed to the base ``Event`` type so it receives all events.
+
     """
 
     def __init__(
@@ -87,6 +88,7 @@ class PosePipeline:
             observer: Any object satisfying the Observer protocol.
             event_type: Event class to subscribe to.  Defaults to ``Event``
                 (receives all events).
+
         """
         self._bus.subscribe(event_type, observer)
 
@@ -102,6 +104,7 @@ class PosePipeline:
         Args:
             observer: Observer instance to remove.
             event_type: Event class to unsubscribe from.  Defaults to ``Event``.
+
         """
         self._bus.unsubscribe(event_type, observer)
 
@@ -124,6 +127,7 @@ class PosePipeline:
         Raises:
             Exception: Re-raises any exception thrown by a stage after emitting
                 ``PipelineFailed``.
+
         """
         pipeline_start = time.monotonic()
 
@@ -157,7 +161,7 @@ class PosePipeline:
                         elapsed_seconds=elapsed,
                         summary={},
                         context=context,
-                    )
+                    ),
                 )
 
         except Exception as exc:
@@ -167,7 +171,7 @@ class PosePipeline:
                     run_id=self._config.run_id,
                     error=str(exc),
                     elapsed_seconds=total_elapsed,
-                )
+                ),
             )
             raise
 
@@ -178,7 +182,7 @@ class PosePipeline:
                 run_id=self._config.run_id,
                 elapsed_seconds=total_elapsed,
                 context=context,
-            )
+            ),
         )
 
         return context
@@ -216,6 +220,7 @@ def build_stages(config: PipelineConfig) -> list[Stage]:
     Raises:
         FileNotFoundError: If required paths in *config* do not exist.
         ValueError: If any backend kind string is unrecognized.
+
     """
     from aquapose.core import (
         AssociationStage,

@@ -59,7 +59,7 @@ Full details: `.planning/milestones/v2.0-ROADMAP.md`
 - [x] **Phase 24: Per-Camera 2D Tracking** — OC-SORT independent per-camera 2D tracking producing structured tracklets (completed 2026-02-27)
 - [x] **Phase 25: Association Scoring and Clustering** — Pairwise ray-ray scoring across cameras and Leiden-based global identity clustering (completed 2026-02-27)
 - [x] **Phase 26: Association Refinement and Pipeline Wiring** — 3D refinement of clusters, deferred midline extraction, reconstruction from tracklet groups (completed 2026-02-27)
-- [ ] **Phase 27: Diagnostic Visualization** — Centroid trail overlays per camera and cross-camera color-coded association visualization
+- [x] **Phase 27: Diagnostic Visualization** — Centroid trail overlays per camera and cross-camera color-coded association visualization (completed 2026-02-27)
 
 ## Phase Details
 
@@ -184,14 +184,14 @@ Plans:
 | 24. Per-Camera 2D Tracking | 1/1 | Complete    | 2026-02-27 | - |
 | 25. Association Scoring and Clustering | 2/2 | Complete | 2026-02-27 | - |
 | 26. Association Refinement and Pipeline Wiring | 3/3 | Complete | 2026-02-27 | - |
-| 27. Diagnostic Visualization | v2.1 | 0/TBD | Not started | - |
+| 27. Diagnostic Visualization | 1/1 | Complete   | 2026-02-27 | - |
 
 ### Phase 28: e2e testing
 
 **Goal:** Pipeline runs e2e on real and synthetic data.  Blocking bugs fixed as they are encountered. Complex but non-blocking bugs logged and triaged. Tests in tests/e2e updated to current pipeline and confirmed passing. Final output indicates the pipeline is basically functional -- i.e., at least some fish yield reasonable 3d splines with trajectories that span at least a few contiguous frames. Full optimization and tuning is out of phase scope, we are just looking for pipeline-breaking bugs.
 **Requirements**: TBD
 **Depends on:** Phase 27
-**Plans:** 2/3 plans executed
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] TBD (run /gsd:plan-phase 28 to break down)

@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 24 — Per-Camera 2D Tracking (Plan 1 of 1 complete)
+**Current focus:** Phase 27 — Diagnostic Visualization (Plan 1 of 1 complete)
 
 ## Current Position
 
-Phase: 24 of 27 (v2.1 Identity — Per-Camera 2D Tracking)
-Plan: 1 of 1 completed in current phase — Phase 24 COMPLETE
-Status: Active — Phase 24 done (TrackingStage, OcSortTracker, boxmot wrapper); Phase 25 (Association) can proceed once Phase 23 is also confirmed
-Last activity: 2026-02-27 — Plan 24-01 complete (OcSortTracker wrapper, TrackingStage, 25 unit tests, TrackingStubStage removed)
+Phase: 27 of 27 (v2.1 Identity — Diagnostic Visualization)
+Plan: 1 of 1 completed in current phase — Phase 27 Plan 1 COMPLETE
+Status: Active — Phase 27-01 done (TrackletTrailObserver, 9 unit tests, observer factory wiring)
+Last activity: 2026-02-27 — Plan 27-01 complete (TrackletTrailObserver: per-camera trail videos, association mosaic, diagnostic mode integration)
 
-Progress: [████░░░░░░] 40% (v2.1, 4/10 plans done)
+Progress: [█████░░░░░] 50% (v2.1, 5/10 plans done)
 
 ## Performance Metrics
 
@@ -44,6 +44,7 @@ Progress: [████░░░░░░] 40% (v2.1, 4/10 plans done)
 | 23-refractive-lookup-tables | 2/2 complete | 28 min | 14 min |
 | 24-per-camera-2d-tracking | 1/1 complete | 14 min | 14 min |
 | 25-27 | TBD | — | — |
+| 27-diagnostic-visualization | 1/1 complete | 7 min | 7 min |
 
 *Updated after each plan completion*
 
@@ -74,6 +75,14 @@ Key decisions entering v2.1:
 - [Phase 24-01]: OcSort does NOT output coasting tracks in update() result — coasting positions captured separately from active_tracks with time_since_update>0
 - [Phase 24-01]: TrackingStage uses Any-typed config to avoid circular engine->core import; deferred OcSortTracker import inside run()
 - [Phase 24-01]: TrackingStubStage removed entirely; TrackingStage now at Stage 2 in all pipeline modes
+- [Phase 27-01]: FISH_COLORS_BGR hardcoded in tracklet_trail_observer.py (not imported) to avoid tight coupling
+- [Phase 27-01]: calib_data typed as object in generation method signatures (ENG-07 boundary); cast at VideoSet callsite with type: ignore[arg-type]
+- [Phase 27-01]: _draw_trail_scaled separate from _draw_trail to keep scale factors isolated from per-camera path
+- [Phase 27-01]: TrackletTrailObserver added to diagnostic mode in observer_factory; registered as "tracklet_trail" for --add-observer
+
+### Roadmap Evolution
+
+- Phase 28 added: e2e testing
 
 ### Pending Todos
 
@@ -87,5 +96,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed 24-per-camera-2d-tracking-01-PLAN.md — OcSortTracker wrapper, TrackingStage, 25 unit tests, TrackingStubStage removed; Phase 24 complete; Phase 25 (Association) can proceed
+Stopped at: Completed 27-diagnostic-visualization-01-PLAN.md — TrackletTrailObserver: per-camera centroid trail videos, association mosaic, 9 unit tests, observer factory wiring; Phase 27 Plan 1 complete
 Resume file: None

@@ -30,7 +30,7 @@ Requirements for the Identity milestone. Each maps to roadmap phases.
 
 ### Diagnostic Tooling
 
-- [ ] **DIAG-01**: User can visualize 2D tracklets per camera (centroid trails on video) and cross-camera associations (color-coded by global fish ID)
+- [x] **DIAG-01**: User can visualize 2D tracklets per camera (centroid trails on video) and cross-camera associations (color-coded by global fish ID)
 
 ## Future Requirements
 
@@ -83,7 +83,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PIPE-01 | Phase 22 | Complete |
 | PIPE-02 | Phase 26 | Pending |
 | PIPE-03 | Phase 26 | Pending |
-| DIAG-01 | Phase 27 | Pending |
+| DIAG-01 | Phase 27 | Complete |
 
 **Coverage:**
 - v2.1 requirements: 10 total

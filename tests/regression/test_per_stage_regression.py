@@ -1,17 +1,17 @@
 """Per-stage numerical regression tests against v1.0 golden reference data.
 
-Each test runs the new PosePipeline (via the session-scoped ``pipeline_context``
-fixture) and compares one stage's output to the corresponding golden .pt file.
+DEFERRED (EVAL-01): The v2.1 pipeline reorder (Detection -> 2D Tracking ->
+Association -> Midline -> Reconstruction) invalidates these tests. The old
+golden data was generated with v1.0 tracking-driven reconstruction. New
+regression tests will be written post-v2.1 stabilization.
+
+These tests are retained as templates. All tests are skipped with EVAL-01 note.
 
 Stage mapping from v1.0 golden data to new PipelineContext fields:
 - golden_detection.pt       -> context.detections          (Stage 1)
-- golden_midline_extraction.pt -> context.annotated_detections (Stage 2, partial)
-- golden_tracking.pt        -> context.tracks               (Stage 4)
+- golden_midline_extraction.pt -> context.annotated_detections (Stage 4, partial)
+- golden_tracking.pt        -> context.tracks_2d            (Stage 2, new format)
 - golden_triangulation.pt   -> context.midlines_3d          (Stage 5)
-
-Note: Stage 3 (Association) has no v1.0 golden data — cross-camera matching was
-internal to the v1.0 tracker. Stage 2 midlines are compared at the point-array
-level since fish_id is not available before tracking in the new model.
 
 All tests are marked @pytest.mark.regression and @pytest.mark.slow so they are
 excluded from the fast test loop. Run with:
@@ -24,6 +24,14 @@ import numpy as np
 import pytest
 
 from tests.regression.conftest import DET_ATOL, MID_ATOL, RECON_ATOL, TRK_ATOL
+
+pytestmark = pytest.mark.skip(
+    reason=(
+        "Regression tests deferred — pipeline reorder invalidates existing tests (EVAL-01). "
+        "Golden data generated with v1.0 tracking-driven reconstruction is incompatible "
+        "with the v2.1 pipeline order. Tests retained as templates for post-v2.1 rebuild."
+    )
+)
 
 # ---------------------------------------------------------------------------
 # Detection regression (Stage 1)

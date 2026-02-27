@@ -3,6 +3,7 @@
 Validates:
 - ReconstructionStage satisfies the Stage Protocol via structural typing
 - run() correctly assembles MidlineSet and populates PipelineContext.midlines_3d
+- run() produces empty midlines_3d when tracklet_groups is empty (stub path, Phase 22)
 - Triangulation backend delegates to triangulate_midlines()
 - Curve optimizer backend delegates to CurveOptimizer.optimize_midlines()
 - Backend selection via "triangulation" and "curve_optimizer" strings
@@ -119,6 +120,7 @@ def test_reconstruction_stage_populates_midlines_3d(tmp_path: Path) -> None:
 
     v2.1 transition: ReconstructionStage iterates annotated_detections only.
     Fish identity via TrackletGroup is wired in Phase 26.
+    tracklet_groups must be None (not empty list) to reach the annotated_detections path.
     """
     ml1 = _make_midline2d(fish_id=0, camera_id="cam1")
     ann1 = MagicMock()
@@ -135,6 +137,9 @@ def test_reconstruction_stage_populates_midlines_3d(tmp_path: Path) -> None:
 
     ctx = PipelineContext()
     ctx.annotated_detections = synthetic_annotated
+    # tracklet_groups must be None (not []) to reach the annotated_detections path.
+    # When tracklet_groups == [], run() early-returns with empty midlines_3d.
+    ctx.tracklet_groups = None
 
     result = stage.run(ctx)
 
@@ -142,6 +147,26 @@ def test_reconstruction_stage_populates_midlines_3d(tmp_path: Path) -> None:
     assert ctx.midlines_3d is not None
     assert isinstance(ctx.midlines_3d, list)
     assert len(ctx.midlines_3d) == 2, "midlines_3d must have one entry per frame"
+
+
+def test_reconstruction_stage_empty_tracklet_groups_stub_path(tmp_path: Path) -> None:
+    """run() produces empty midlines_3d when tracklet_groups is [] (stub path, Phase 22)."""
+    mock_backend = MagicMock()
+    stage = _build_stage(tmp_path, mock_backend=mock_backend)
+
+    ctx = PipelineContext()
+    ctx.frame_count = 3
+    ctx.tracklet_groups = []  # empty list = stub output from AssociationStubStage
+
+    result = stage.run(ctx)
+
+    assert result is ctx, "run() must return the same context object"
+    assert ctx.midlines_3d is not None
+    assert isinstance(ctx.midlines_3d, list)
+    assert len(ctx.midlines_3d) == 3, "midlines_3d must have one entry per frame"
+    for frame_result in ctx.midlines_3d:
+        assert frame_result == {}, "Each frame must be an empty dict when stub"
+    mock_backend.reconstruct_frame.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -393,7 +418,7 @@ def test_import_boundary() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Active stages importable (v2.1 — stubs added in Phase 22-02)
+# Active stages importable (v2.1 — stubs in engine/pipeline.py, not core/)
 # ---------------------------------------------------------------------------
 
 
@@ -409,21 +434,31 @@ def test_active_stages_importable() -> None:
     assert MidlineStage is not None
     assert ReconstructionStage is not None
 
+    # Stub stages live in engine/pipeline.py (not core/)
+    from aquapose.engine.pipeline import AssociationStubStage, TrackingStubStage
+
+    assert TrackingStubStage is not None
+    assert AssociationStubStage is not None
+
 
 # ---------------------------------------------------------------------------
-# build_stages factory (v2.1 — returns 3 stages until stubs land in 22-02)
+# build_stages factory (v2.1 — 5 stages in production, 4 in synthetic)
 # ---------------------------------------------------------------------------
 
 
 def test_build_stages_returns_stages(tmp_path: Path) -> None:
-    """build_stages(config) returns an ordered list of Stage instances."""
+    """build_stages(config) returns an ordered list of 5 Stage instances (production mode)."""
     from aquapose.core import (
         DetectionStage,
         MidlineStage,
         ReconstructionStage,
     )
     from aquapose.engine.config import PipelineConfig
-    from aquapose.engine.pipeline import build_stages
+    from aquapose.engine.pipeline import (
+        AssociationStubStage,
+        TrackingStubStage,
+        build_stages,
+    )
 
     # Create dummy files so path checks don't fail at import time
     video_dir = tmp_path / "videos"
@@ -460,16 +495,21 @@ def test_build_stages_returns_stages(tmp_path: Path) -> None:
         stages = build_stages(config)
 
     assert isinstance(stages, list)
-    assert len(stages) >= 3, f"Expected at least 3 stages, got {len(stages)}"
+    assert len(stages) == 5, f"Expected 5 stages, got {len(stages)}"
     assert isinstance(stages[0], DetectionStage)
-    assert isinstance(stages[1], MidlineStage)
-    assert isinstance(stages[-1], ReconstructionStage)
+    assert isinstance(stages[1], TrackingStubStage)
+    assert isinstance(stages[2], AssociationStubStage)
+    assert isinstance(stages[3], MidlineStage)
+    assert isinstance(stages[4], ReconstructionStage)
 
-    # All satisfy Stage Protocol
+    # All satisfy Stage Protocol (stubs are duck-typed, not runtime_checkable)
+    from aquapose.core.context import Stage
+
     for stage in stages:
-        assert isinstance(stage, Stage), (
-            f"{type(stage).__name__} must satisfy Stage Protocol"
-        )
+        if not isinstance(stage, (TrackingStubStage, AssociationStubStage)):
+            assert isinstance(stage, Stage), (
+                f"{type(stage).__name__} must satisfy Stage Protocol"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -515,10 +555,11 @@ def test_pose_pipeline_instantiable_with_build_stages(tmp_path: Path) -> None:
 
 
 def test_run_raises_if_annotated_detections_missing(tmp_path: Path) -> None:
-    """run() raises ValueError if context.annotated_detections is None."""
+    """run() raises ValueError if context.annotated_detections is None (and tracklet_groups is also None)."""
     stage = _build_stage(tmp_path)
     ctx = PipelineContext()
-    # annotated_detections is None (default) — should raise
+    # Both annotated_detections and tracklet_groups are None — should raise
+    # (tracklet_groups=None means neither the stub path nor the full path applies)
 
     with pytest.raises(ValueError, match=r"annotated_detections"):
         stage.run(ctx)

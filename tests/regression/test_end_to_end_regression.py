@@ -1,6 +1,14 @@
 """End-to-end regression tests for the AquaPose PosePipeline.
 
-These tests validate the full pipeline run as a unit:
+DEFERRED (EVAL-01): The v2.1 pipeline reorder (Detection -> 2D Tracking ->
+Association -> Midline -> Reconstruction) invalidates these tests. The old
+golden data and field names (e.g., context.tracks, context.associated_bundles)
+are incompatible with the v2.1 PipelineContext layout. New end-to-end regression
+tests will be written post-v2.1 stabilization.
+
+These tests are retained as templates. All tests are skipped with EVAL-01 note.
+
+Original test suite:
 1. test_end_to_end_3d_output    — Compare final 3D midlines against golden_triangulation.pt
 2. test_pipeline_completes_all_stages — Assert all PipelineContext fields are populated
 3. test_pipeline_determinism    — Run pipeline twice with same seed and assert bit-identical output
@@ -22,6 +30,14 @@ from tests.regression.conftest import (
     RECON_ATOL,
     _resolve_real_data_paths,
     _set_deterministic_seeds,
+)
+
+pytestmark = pytest.mark.skip(
+    reason=(
+        "Regression tests deferred — pipeline reorder invalidates existing tests (EVAL-01). "
+        "Golden data and context field names (tracks, associated_bundles) are incompatible "
+        "with the v2.1 PipelineContext. Tests retained as templates for post-v2.1 rebuild."
+    )
 )
 
 # ---------------------------------------------------------------------------

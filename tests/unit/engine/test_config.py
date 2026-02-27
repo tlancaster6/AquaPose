@@ -39,8 +39,8 @@ def test_load_config_defaults() -> None:
     assert config.midline.confidence_threshold == 0.5
     assert config.midline.weights_path is None
 
-    # Tracking stage defaults (Stage 4)
-    assert config.tracking.max_fish == 9
+    # Tracking stage defaults (Stage 2, stub in v2.1 Phase 22)
+    assert config.tracking.max_coast_frames == 30
 
     # Reconstruction stage defaults (Stage 5)
     assert config.reconstruction.backend == "triangulation"
@@ -52,10 +52,14 @@ def test_load_config_defaults() -> None:
 
 
 def test_load_config_yaml_override() -> None:
-    """YAML overrides apply; non-overridden fields retain defaults."""
+    """YAML overrides apply; non-overridden fields retain defaults.
+
+    Old tracking keys (max_fish) are filtered by _filter_fields() since
+    TrackingConfig was simplified to a stub in v2.1 Phase 22.
+    """
     yaml_content = {
         "detection": {"detector_kind": "mog2"},
-        "tracking": {"max_fish": 5},
+        "tracking": {"max_coast_frames": 15},
     }
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as tmp:
@@ -69,7 +73,7 @@ def test_load_config_yaml_override() -> None:
 
     # Overridden fields
     assert config.detection.detector_kind == "mog2"
-    assert config.tracking.max_fish == 5
+    assert config.tracking.max_coast_frames == 15
 
     # Non-overridden fields retain defaults
     assert config.detection.stop_frame is None
@@ -88,7 +92,7 @@ def test_load_config_cli_overrides() -> None:
 
     assert config.detection.detector_kind == "mog2"
     # Non-overridden fields retain defaults
-    assert config.tracking.max_fish == 9
+    assert config.tracking.max_coast_frames == 30
 
 
 def test_load_config_cli_overrides_nested_dict() -> None:
@@ -190,7 +194,7 @@ def test_serialize_config_roundtrip() -> None:
     assert parsed["run_id"] == "run_roundtrip_test"
     assert parsed["mode"] == "production"
     assert parsed["detection"]["detector_kind"] == "yolo"
-    assert parsed["tracking"]["max_fish"] == 9
+    assert parsed["tracking"]["max_coast_frames"] == 30
     assert parsed["midline"]["confidence_threshold"] == pytest.approx(0.5)
     assert parsed["reconstruction"]["backend"] == "triangulation"
 

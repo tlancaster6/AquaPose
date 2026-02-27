@@ -136,24 +136,24 @@ def test_stage_timing_captured() -> None:
 
     observer.on_event(
         StageComplete(
-            stage_name="TrackingStage",
-            stage_index=3,
+            stage_name="TrackingStubStage",
+            stage_index=1,
             elapsed_seconds=1.23,
             context=ctx,
         )
     )
 
-    assert observer.stages["TrackingStage"].elapsed_seconds == 1.23
+    assert observer.stages["TrackingStubStage"].elapsed_seconds == 1.23
 
 
 def test_all_stages_captured_in_full_sequence() -> None:
-    """Five StageComplete events produce five snapshot entries."""
+    """Five StageComplete events produce five snapshot entries (v2.1 stage names)."""
     observer = DiagnosticObserver()
     stage_names = [
         "DetectionStage",
+        "TrackingStubStage",
+        "AssociationStubStage",
         "MidlineStage",
-        "AssociationStage",
-        "TrackingStage",
         "ReconstructionStage",
     ]
 
@@ -174,3 +174,25 @@ def test_all_stages_captured_in_full_sequence() -> None:
     assert len(observer.stages) == 5
     for name in stage_names:
         assert name in observer.stages
+
+
+def test_snapshot_has_tracks_2d_and_tracklet_groups_fields() -> None:
+    """StageSnapshot has tracks_2d and tracklet_groups fields (v2.1)."""
+    observer = DiagnosticObserver()
+    ctx = PipelineContext()
+    ctx.frame_count = 1
+    ctx.tracks_2d = {"cam1": []}
+    ctx.tracklet_groups = []
+
+    observer.on_event(
+        StageComplete(
+            stage_name="TrackingStubStage",
+            stage_index=1,
+            elapsed_seconds=0.1,
+            context=ctx,
+        )
+    )
+
+    snapshot = observer.stages["TrackingStubStage"]
+    assert snapshot.tracks_2d is ctx.tracks_2d
+    assert snapshot.tracklet_groups is ctx.tracklet_groups

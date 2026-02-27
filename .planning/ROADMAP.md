@@ -184,7 +184,7 @@ Plans:
 | 24. Per-Camera 2D Tracking | 1/1 | Complete    | 2026-02-27 | - |
 | 25. Association Scoring and Clustering | 2/2 | Complete | 2026-02-27 | - |
 | 26. Association Refinement and Pipeline Wiring | 3/3 | Complete | 2026-02-27 | - |
-| 27. Diagnostic Visualization | 1/1 | Complete   | 2026-02-27 | - |
+| 27. Diagnostic Visualization | 1/1 | Complete    | 2026-02-27 | - |
 
 ### Phase 28: e2e testing
 

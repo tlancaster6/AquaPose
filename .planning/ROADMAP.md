@@ -180,7 +180,7 @@ Plans:
 | 20. Post-Refactor Loose Ends | v2.0 | 5/5 | Complete | 2026-02-27 |
 | 21. Retrospective, Prospective | v2.0 | 2/2 | Complete | 2026-02-27 |
 | 22. Pipeline Scaffolding | 2/2 | Complete    | 2026-02-27 | - |
-| 23. Refractive Lookup Tables | 2/2 | Complete   | 2026-02-27 | - |
+| 23. Refractive Lookup Tables | 2/2 | Complete    | 2026-02-27 | - |
 | 24. Per-Camera 2D Tracking | v2.1 | 0/TBD | Not started | - |
 | 25. Association Scoring and Clustering | v2.1 | 0/TBD | Not started | - |
 | 26. Association Refinement and Pipeline Wiring | v2.1 | 0/TBD | Not started | - |

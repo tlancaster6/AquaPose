@@ -96,5 +96,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed 27-diagnostic-visualization-01-PLAN.md — TrackletTrailObserver: per-camera centroid trail videos, association mosaic, 9 unit tests, observer factory wiring; Phase 27 Plan 1 complete
-Resume file: None
+Stopped at: Phase 28 context gathered
+Resume file: .planning/phases/28-e2e-testing/28-CONTEXT.md

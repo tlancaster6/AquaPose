@@ -77,48 +77,24 @@ class MidlineConfig:
 
 @dataclass(frozen=True)
 class AssociationConfig:
-    """Config for the Association stage (Stage 3).
+    """Config for the Association stage (stub in v2.1 Phase 22).
 
-    Attributes:
-        expected_count: Expected number of fish; used as the RANSAC stopping
-            criterion for centroid clustering.
-        min_cameras: Minimum cameras required for a valid multi-view bundle.
-            Bundles with fewer contributing cameras are discarded.
-        reprojection_threshold: Maximum pixel reprojection error for RANSAC
-            inliers. Detections within this distance of the projected 3D
-            centroid are considered associated.
+    Will be populated with Leiden clustering parameters in Phase 25.
     """
-
-    expected_count: int = 9
-    min_cameras: int = 3
-    reprojection_threshold: float = 15.0
 
 
 @dataclass(frozen=True)
 class TrackingConfig:
-    """Config for the Tracking stage (Stage 4).
+    """Config for the 2D Tracking stage (stub in v2.1 Phase 22).
+
+    Will be populated with OC-SORT parameters in Phase 24.
 
     Attributes:
-        max_fish: Maximum number of fish identities to track simultaneously.
-            Alias for expected_count — used to gate population constraint logic.
-        min_hits: Consecutive frames required to confirm a new track.
-        max_age: Grace period (frames) before a confirmed track is deleted.
-        reprojection_threshold: Maximum pixel distance for track claiming.
-        birth_interval: Frames between periodic birth RANSAC attempts.
-        min_cameras_birth: Minimum cameras required to birth a new track.
-        velocity_damping: Per-frame velocity damping factor during coasting.
-        velocity_window: Number of recent frame-to-frame deltas to average
-            for velocity smoothing.
+        max_coast_frames: Maximum frames to coast (predict without observation)
+            before dropping a track. Placeholder; Phase 24 adds full OC-SORT config.
     """
 
-    max_fish: int = 9
-    min_hits: int = 5
-    max_age: int = 7
-    reprojection_threshold: float = 15.0
-    birth_interval: int = 30
-    min_cameras_birth: int = 3
-    velocity_damping: float = 0.8
-    velocity_window: int = 5
+    max_coast_frames: int = 30
 
 
 @dataclass(frozen=True)
@@ -398,14 +374,24 @@ def load_config(
         "output_dir", _default_output_dir(resolved_run_id)
     )
 
+    # --- filter kwargs to only include fields present on each dataclass ----
+    # AssociationConfig and TrackingConfig are stripped-down placeholders in
+    # v2.1 Phase 22. Filter out any old YAML/CLI keys that no longer exist as
+    # dataclass fields, so stale config files don't raise TypeError.
+    def _filter_fields(dc_type: type, kwargs: dict[str, Any]) -> dict[str, Any]:
+        valid = {f.name for f in dataclasses.fields(dc_type)}
+        return {k: v for k, v in kwargs.items() if k in valid}
+
     # --- construct & freeze -----------------------------------------------
     return PipelineConfig(
         run_id=resolved_run_id,
         output_dir=resolved_output_dir,
         detection=DetectionConfig(**det_kwargs),
         midline=MidlineConfig(**mid_kwargs),
-        association=AssociationConfig(**assoc_kwargs),
-        tracking=TrackingConfig(**trk_kwargs),
+        association=AssociationConfig(
+            **_filter_fields(AssociationConfig, assoc_kwargs)
+        ),
+        tracking=TrackingConfig(**_filter_fields(TrackingConfig, trk_kwargs)),
         reconstruction=ReconstructionConfig(**rec_kwargs),
         synthetic=SyntheticConfig(**syn_kwargs),
         **top_kwargs,

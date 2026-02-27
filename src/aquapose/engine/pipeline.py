@@ -11,10 +11,11 @@ from a :class:`~aquapose.engine.config.PipelineConfig` and wire them into
 
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 
-from aquapose.core.context import PipelineContext, Stage
+from aquapose.core.context import CarryForward, PipelineContext, Stage
 from aquapose.engine.config import PipelineConfig, serialize_config
 from aquapose.engine.events import (
     Event,
@@ -25,6 +26,8 @@ from aquapose.engine.events import (
     StageStart,
 )
 from aquapose.engine.observers import EventBus, Observer
+
+logger = logging.getLogger(__name__)
 
 
 class PosePipeline:
@@ -146,12 +149,20 @@ class PosePipeline:
         context = PipelineContext()
 
         # --- 5. Execute stages in order -----------------------------------
+        # TrackingStubStage (and eventually the real TrackingStage) uses a
+        # different run() signature: (context, carry) -> (context, carry).
+        # We maintain carry state across all batches on the pipeline instance.
+        carry: CarryForward | None = None
+
         try:
             for i, stage in enumerate(self._stages):
                 stage_name = type(stage).__name__
                 self._bus.emit(StageStart(stage_name=stage_name, stage_index=i))
                 stage_start = time.monotonic()
-                context = stage.run(context)
+                if isinstance(stage, TrackingStubStage):
+                    context, carry = stage.run(context, carry)
+                else:
+                    context = stage.run(context)
                 elapsed = time.monotonic() - stage_start
                 context.stage_timing[stage_name] = elapsed
                 self._bus.emit(
@@ -189,11 +200,79 @@ class PosePipeline:
 
 
 # ---------------------------------------------------------------------------
+# Stub stages (Phase 22 placeholders)
+# ---------------------------------------------------------------------------
+
+
+class TrackingStubStage:
+    """Stub Stage 2: Per-camera 2D tracking (placeholder for Phase 24).
+
+    Writes correctly-typed but empty output to PipelineContext.tracks_2d.
+    Accepts and returns CarryForward unchanged, establishing the carry
+    interface plumbing for Phase 24 (OC-SORT).
+    Real OC-SORT implementation replaces this in Phase 24.
+
+    The ``run()`` signature accepts an optional ``carry`` argument, which
+    differs from the standard Stage Protocol. The pipeline runner detects
+    this stage via ``isinstance(stage, TrackingStubStage)`` and dispatches
+    accordingly, passing and receiving the ``CarryForward`` object.
+    """
+
+    def run(
+        self,
+        context: PipelineContext,
+        carry: CarryForward | None = None,
+    ) -> tuple[PipelineContext, CarryForward]:
+        """Run stub tracking — produces empty tracks_2d, passes carry through.
+
+        Args:
+            context: Accumulated pipeline state from the Detection stage.
+            carry: Cross-batch carry state. Created as empty default if None.
+
+        Returns:
+            Tuple of (context, carry). context.tracks_2d is set to an empty
+            dict. carry is returned unchanged (or a new default if None was
+            passed).
+
+        """
+        logger.warning("TrackingStubStage is a stub — producing empty output")
+        # Empty dict: no cameras have tracklets yet
+        context.tracks_2d = {}
+        # Pass through carry unchanged (or create default if None)
+        if carry is None:
+            carry = CarryForward()
+        return context, carry
+
+
+class AssociationStubStage:
+    """Stub Stage 3: Cross-camera tracklet association (placeholder for Phase 25).
+
+    Writes correctly-typed but empty output to PipelineContext.tracklet_groups.
+    Real Leiden clustering implementation replaces this in Phase 25.
+    """
+
+    def run(self, context: PipelineContext) -> PipelineContext:
+        """Run stub association — produces empty tracklet_groups.
+
+        Args:
+            context: Accumulated pipeline state from the Tracking stage.
+
+        Returns:
+            The same context with tracklet_groups set to an empty list.
+
+        """
+        logger.warning("AssociationStubStage is a stub — producing empty output")
+        # Empty list: no tracklet groups identified yet
+        context.tracklet_groups = []
+        return context
+
+
+# ---------------------------------------------------------------------------
 # Stage factory
 # ---------------------------------------------------------------------------
 
 
-def build_stages(config: PipelineConfig) -> list[Stage]:
+def build_stages(config: PipelineConfig) -> list:
     """Construct pipeline stages from a :class:`PipelineConfig`.
 
     This factory is the canonical way to wire stages into :class:`PosePipeline`.
@@ -201,14 +280,16 @@ def build_stages(config: PipelineConfig) -> list[Stage]:
     constructs each stage from its corresponding sub-config in *config*.
 
     v2.1 pipeline ordering: Detection → 2D Tracking → Association → Midline →
-    Reconstruction. TrackingStage and AssociationStage stubs are added in Phase
-    22-02. Until then, build_stages returns the 3 implemented stages (detection,
-    midline, reconstruction) for production mode, and 2 stages (synthetic,
-    reconstruction) for synthetic mode.
+    Reconstruction. Stages 2 and 3 are stubs (TrackingStubStage,
+    AssociationStubStage) that produce correctly-typed empty output until Phase 24
+    (OC-SORT Tracking) and Phase 25 (Leiden Association) replace them.
 
-    When ``config.mode == "synthetic"``, returns a reduced stage list with
-    SyntheticDataStage replacing both DetectionStage and MidlineStage.
-    For all other modes, returns the available stage list.
+    When ``config.mode == "synthetic"``, returns a 4-stage list with
+    SyntheticDataStage replacing both DetectionStage and MidlineStage:
+    SyntheticDataStage → TrackingStubStage → AssociationStubStage → ReconstructionStage.
+
+    For all other modes, returns the full 5-stage list:
+    DetectionStage → TrackingStubStage → AssociationStubStage → MidlineStage → ReconstructionStage.
 
     Example::
 
@@ -221,7 +302,7 @@ def build_stages(config: PipelineConfig) -> list[Stage]:
             backend selection, and all stage-specific parameters.
 
     Returns:
-        Ordered list of Stage instances.
+        Ordered list of stage instances (mix of Stage protocol and stub types).
 
     Raises:
         FileNotFoundError: If required paths in *config* do not exist.
@@ -235,27 +316,29 @@ def build_stages(config: PipelineConfig) -> list[Stage]:
         SyntheticDataStage,
     )
 
-    # --- Synthetic mode: replace Detection + Midline with SyntheticDataStage
+    reconstruction_stage = ReconstructionStage(
+        calibration_path=config.calibration_path,
+        backend=config.reconstruction.backend,
+        inlier_threshold=config.reconstruction.inlier_threshold,
+        snap_threshold=config.reconstruction.snap_threshold,
+        max_depth=config.reconstruction.max_depth,
+    )
+
+    # --- Synthetic mode: SyntheticDataStage replaces Detection + Midline
     if config.mode == "synthetic":
         synthetic_stage = SyntheticDataStage(
             calibration_path=config.calibration_path,
             synthetic_config=config.synthetic,
         )
 
-        reconstruction_stage = ReconstructionStage(
-            calibration_path=config.calibration_path,
-            backend=config.reconstruction.backend,
-            inlier_threshold=config.reconstruction.inlier_threshold,
-            snap_threshold=config.reconstruction.snap_threshold,
-            max_depth=config.reconstruction.max_depth,
-        )
-
         return [
             synthetic_stage,
+            TrackingStubStage(),
+            AssociationStubStage(),
             reconstruction_stage,
         ]
 
-    # --- Standard modes: implemented stages (stubs added in Phase 22-02)
+    # --- Production (and all other) modes: full 5-stage pipeline
     detection_stage = DetectionStage(
         video_dir=config.video_dir,
         calibration_path=config.calibration_path,
@@ -276,16 +359,10 @@ def build_stages(config: PipelineConfig) -> list[Stage]:
         min_area=config.midline.min_area,
     )
 
-    reconstruction_stage = ReconstructionStage(
-        calibration_path=config.calibration_path,
-        backend=config.reconstruction.backend,
-        inlier_threshold=config.reconstruction.inlier_threshold,
-        snap_threshold=config.reconstruction.snap_threshold,
-        max_depth=config.reconstruction.max_depth,
-    )
-
     return [
         detection_stage,
+        TrackingStubStage(),
+        AssociationStubStage(),
         midline_stage,
         reconstruction_stage,
     ]

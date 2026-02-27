@@ -9,19 +9,22 @@ from aquapose.engine.events import Event, StageComplete
 
 logger = logging.getLogger(__name__)
 
-# PipelineContext field names that hold per-frame data (list-typed).
+# PipelineContext field names that hold per-frame data (list-typed, indexed by frame).
+# detections, annotated_detections, and midlines_3d are all list[...] indexed by frame.
 _PER_FRAME_FIELDS = (
     "detections",
     "annotated_detections",
-    "associated_bundles",
-    "tracks",
     "midlines_3d",
 )
 
-# PipelineContext field names that hold scalar data.
+# PipelineContext field names that hold scalar or non-frame-indexed data.
+# tracks_2d is dict[str, list[Tracklet2D]] (keyed by camera, not frame).
+# tracklet_groups is list[TrackletGroup] (flat cross-batch list, not frame-indexed).
 _SCALAR_FIELDS = (
     "frame_count",
     "camera_ids",
+    "tracks_2d",
+    "tracklet_groups",
 )
 
 
@@ -44,8 +47,8 @@ class StageSnapshot:
         camera_ids: Active camera IDs (from PipelineContext), or None.
         detections: Reference to PipelineContext.detections, or None.
         annotated_detections: Reference to PipelineContext.annotated_detections, or None.
-        associated_bundles: Reference to PipelineContext.associated_bundles, or None.
-        tracks: Reference to PipelineContext.tracks, or None.
+        tracks_2d: Reference to PipelineContext.tracks_2d (dict, not per-frame), or None.
+        tracklet_groups: Reference to PipelineContext.tracklet_groups (flat list), or None.
         midlines_3d: Reference to PipelineContext.midlines_3d, or None.
     """
 
@@ -56,8 +59,8 @@ class StageSnapshot:
     camera_ids: list[str] | None = None
     detections: list | None = None
     annotated_detections: list | None = None
-    associated_bundles: list | None = None
-    tracks: list | None = None
+    tracks_2d: dict | None = None
+    tracklet_groups: list | None = None
     midlines_3d: list | None = None
 
     # Keep a frozen set of per-frame field names for __getitem__.
@@ -128,8 +131,8 @@ class DiagnosticObserver:
             camera_ids=getattr(context, "camera_ids", None),
             detections=getattr(context, "detections", None),
             annotated_detections=getattr(context, "annotated_detections", None),
-            associated_bundles=getattr(context, "associated_bundles", None),
-            tracks=getattr(context, "tracks", None),
+            tracks_2d=getattr(context, "tracks_2d", None),
+            tracklet_groups=getattr(context, "tracklet_groups", None),
             midlines_3d=getattr(context, "midlines_3d", None),
         )
 

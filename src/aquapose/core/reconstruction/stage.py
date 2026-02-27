@@ -91,25 +91,44 @@ class ReconstructionStage:
     def run(self, context: PipelineContext) -> PipelineContext:
         """Run 3D reconstruction across all frames.
 
-        v2.1 transition: Reads ``context.annotated_detections`` (Stage 4) to
-        assemble per-frame MidlineSets. Fish identity is populated from
-        ``context.tracklet_groups`` when available (Phase 26+). Until Phase 26,
-        reconstruction produces midlines without persistent fish IDs.
+        v2.1 transition: Checks ``context.tracklet_groups`` first. When it is
+        empty (stub output from AssociationStubStage), produces empty midlines_3d
+        without attempting reconstruction. Full TrackletGroup-driven reconstruction
+        is implemented in Phase 26.
+
+        When ``tracklet_groups`` is non-empty (Phase 26+), reads
+        ``context.annotated_detections`` (Stage 4) to assemble per-frame MidlineSets.
 
         Populates ``context.midlines_3d`` as a list (one entry per frame) of
         dicts mapping fish_id to Midline3D.
 
         Args:
-            context: Accumulated pipeline state from prior stages. Must have
-                ``annotated_detections`` (from Stage 4) populated.
+            context: Accumulated pipeline state from prior stages.
 
         Returns:
             The same *context* object with ``midlines_3d`` populated.
 
         Raises:
-            ValueError: If ``context.annotated_detections`` is not populated.
+            ValueError: If ``context.tracklet_groups`` is None and
+                ``context.annotated_detections`` is also None — at least one
+                must be populated for reconstruction to proceed.
 
         """
+        tracklet_groups = context.tracklet_groups
+
+        # Phase 22: tracklet_groups is empty list from AssociationStubStage.
+        # Produce empty midlines for each frame — Phase 26 fills in real logic.
+        if tracklet_groups is not None and len(tracklet_groups) == 0:
+            frame_count = context.frame_count or 0
+            context.midlines_3d = [{} for _ in range(frame_count)]
+            logger.info(
+                "ReconstructionStage.run: tracklet_groups empty (stub) — "
+                "producing empty midlines_3d for %d frames",
+                frame_count,
+            )
+            return context
+
+        # Fall-through: use annotated_detections path (v2.1 transition, non-stub).
         if context.annotated_detections is None:
             raise ValueError(
                 "ReconstructionStage requires context.annotated_detections — "

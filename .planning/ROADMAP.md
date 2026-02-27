@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 1-9 (shipped 2026-02-25)
-- 🚧 **v2.0 Alpha** — Phases 13-18 (in progress)
+- ✅ **v2.0 Alpha** — Phases 13-21 (shipped 2026-02-27)
 
 ## Phases
 
@@ -28,128 +28,24 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 
 </details>
 
-### 🚧 v2.0 Alpha (In Progress)
+<details>
+<summary>✅ v2.0 Alpha (Phases 13-21) — SHIPPED 2026-02-27</summary>
 
-**Milestone Goal:** Transform AquaPose from a script-driven scientific pipeline into an event-driven scientific computation engine with strict architectural layering, verified for numerical equivalence with v1.0.
+- [x] Phase 13: Engine Core (4/4 plans) — completed 2026-02-25
+- [x] Phase 14: Golden Data and Verification Framework (2/2 plans) — completed 2026-02-25
+- [x] Phase 14.1: Fix Critical Mismatch (2/2 plans) — completed 2026-02-25 (INSERTED)
+- [x] Phase 15: Stage Migrations (5/5 plans) — completed 2026-02-26
+- [x] Phase 16: Numerical Verification and Legacy Cleanup (2/2 plans) — completed 2026-02-26
+- [x] Phase 17: Observers (5/5 plans) — completed 2026-02-26
+- [x] Phase 18: CLI and Execution Modes (3/3 plans) — completed 2026-02-26
+- [x] Phase 19: Alpha Refactor Audit (4/4 plans) — completed 2026-02-26
+- [x] Phase 20: Post-Refactor Loose Ends (5/5 plans) — completed 2026-02-27
+- [x] Phase 21: Retrospective, Prospective (2/2 plans) — completed 2026-02-27
 
-- [x] **Phase 13: Engine Core** - Stage Protocol, PipelineContext, events, observer base, config, orchestrator, import boundary (completed 2026-02-25)
-- [x] **Phase 14: Golden Data and Verification Framework** - Generate frozen reference outputs from v1.0, define interface test harness (completed 2026-02-25)
-- [x] **Phase 15: Stage Migrations** - Port all 5 computation stages as pure Stage implementors (completed 2026-02-26)
-- [x] **Phase 16: Numerical Verification and Legacy Cleanup** - Regression tests against golden data, archive legacy scripts (completed 2026-02-26)
-- [x] **Phase 17: Observers** - Timing, HDF5 export, 2D reprojection, 3D animation, diagnostic observers (completed 2026-02-26)
-- [x] **Phase 18: CLI and Execution Modes** - `aquapose run` entrypoint, production/diagnostic/synthetic/benchmark modes (completed 2026-02-26)
+**10 phases, 34 plans total**
+Full details: `.planning/milestones/v2.0-ROADMAP.md`
 
-## Phase Details
-
-### Phase 13: Engine Core
-**Goal**: The architectural skeleton exists — protocol interfaces, typed context, event system, observer base, config hierarchy, pipeline orchestrator, and enforced import boundary — ready for stages to be plugged in
-**Depends on**: Nothing (first phase of v2.0)
-**Requirements**: ENG-01, ENG-02, ENG-03, ENG-04, ENG-05, ENG-06, ENG-07, ENG-08
-**Success Criteria** (what must be TRUE):
-  1. A class can implement Stage Protocol via structural typing and be recognized without inheriting a base class
-  2. PipelineContext accumulates typed fields set by each stage with no implicit shared state
-  3. Firing a lifecycle event delivers it synchronously to all subscribed observers
-  4. A frozen config object can be constructed from defaults, overridden by YAML, then overridden by CLI kwargs, and raises on post-freeze mutation
-  5. The full serialized run config is written as the first artifact when PosePipeline.run() is called
-**Plans**: 4 plans
-
-Plans:
-- [x] 13-01-PLAN.md — Stage Protocol, PipelineContext, and import boundary (wave 1)
-- [x] 13-02-PLAN.md — Config dataclass hierarchy with YAML and CLI override support (wave 1)
-- [x] 13-03-PLAN.md — Event system and Observer protocol (wave 1)
-- [x] 13-04-PLAN.md — PosePipeline orchestrator skeleton (wave 2)
-
-### Phase 14: Golden Data and Verification Framework
-**Goal**: Frozen reference outputs from the v1.0 pipeline exist on disk as a committed snapshot, and an interface test harness can assert that a Stage produces correct output from a given context
-**Depends on**: Phase 13
-**Requirements**: VER-01, VER-02
-**Success Criteria** (what must be TRUE):
-  1. Running the v1.0 pipeline on a fixed clip produces outputs that are committed as golden data in a standalone commit
-  2. A test can instantiate any Stage, call stage.run(context), and assert output fields in PipelineContext
-  3. The golden data generation script is deterministic — re-running on the same clip produces bit-identical outputs
-**Plans**: 2 plans
-
-Plans:
-- [x] 14-01-PLAN.md — Golden data generation script and committed snapshot (wave 1)
-- [x] 14-02-PLAN.md — Interface test harness for stage output correctness (wave 2)
-
-### Phase 14.1: Fix Critical Mismatch Between Old and Proposed Pipeline Structures (INSERTED)
-
-**Goal:** Align all active planning documents and Phase 13/14 code to the guidebook's canonical 5-stage pipeline model (Detection, Midline, Association, Tracking, Reconstruction). The guidebook is the single source of truth. This phase does NOT port any stages — it corrects the planning foundation so Phase 15 starts from a consistent, accurate model.
-**Requirements**: None (correction phase — updates existing requirements)
-**Depends on:** Phase 14
-**Plans:** 2/2 plans complete
-
-Plans:
-- [x] 14.1-01-PLAN.md — Update planning documents (ROADMAP, REQUIREMENTS) and delete redundant inbox files (wave 1)
-- [x] 14.1-02-PLAN.md — Update engine code (PipelineContext, config) and golden test harness to match 5-stage model (wave 1)
-
-### Phase 15: Stage Migrations
-**Goal**: All 5 computation stages exist as pure Stage implementors with no side effects, wired into PosePipeline and producing context fields that downstream stages consume
-**Depends on**: Phase 14
-**Requirements**: STG-01, STG-02, STG-03, STG-04, STG-05
-**Success Criteria** (what must be TRUE):
-  1. Detection stage can be swapped between model-based detection backends (YOLO or MOG2) via config with no code change
-  2. Each stage accepts only PipelineContext as input and writes only PipelineContext fields — no filesystem reads/writes inside stage logic
-  3. PosePipeline.run() on a real clip completes all 5 stages without error
-  4. Interface tests pass for each of the 5 stages individually
-**Plans**: 5 plans
-
-Plans:
-- [x] 15-01-PLAN.md — Detection stage (model-based backend: YOLO/MOG2) (wave 1)
-- [x] 15-02-PLAN.md — Midline stage (segment-then-extract backend: U-Net/SAM + skeletonization + BFS pruning) (wave 2)
-- [x] 15-03-PLAN.md — Cross-view association stage (RANSAC centroid clustering) (wave 3)
-- [x] 15-04-PLAN.md — Tracking stage (Hungarian 3D with population constraint) (wave 4)
-- [x] 15-05-PLAN.md — Reconstruction stage (triangulation backend: RANSAC + view-angle weighting + B-spline fitting) (wave 5)
-
-### Phase 16: Numerical Verification and Legacy Cleanup
-**Goal**: The migrated pipeline is confirmed numerically equivalent to v1.0 on real data, and all legacy scripts are archived and removed from active paths
-**Depends on**: Phase 15
-**Requirements**: VER-03, VER-04
-**Success Criteria** (what must be TRUE):
-  1. Regression tests run the new pipeline on the golden-data clip and confirm outputs match golden data within accepted tolerance (or document known intentional bug fixes)
-  2. All legacy pipeline scripts have been moved to scripts/legacy/ and are no longer on any active import path
-  3. The test suite passes with no references to the old script-based execution path
-**Plans**: TBD
-
-Plans:
-- [x] 16-01: Numerical regression tests against golden data
-- [x] 16-02: Legacy script archival and removal
-
-### Phase 17: Observers
-**Goal**: All diagnostic, export, and visualization side effects are implemented as Observers that subscribe to pipeline events and produce their outputs independently of stage logic
-**Depends on**: Phase 16
-**Requirements**: OBS-01, OBS-02, OBS-03, OBS-04, OBS-05
-**Success Criteria** (what must be TRUE):
-  1. Attaching the timing observer to a run produces a per-stage and total timing report without modifying any stage code
-  2. Attaching the HDF5 export observer writes spline control points and metadata to disk after the pipeline completes
-  3. Attaching the diagnostic observer captures intermediate stage outputs in memory without any stage being aware
-  4. Removing all observers from a run produces identical numerical outputs (observers are purely additive side effects)
-**Plans**: TBD
-
-Plans:
-- [x] 17-01: Timing observer
-- [x] 17-02: HDF5 export observer
-- [x] 17-03: 2D reprojection overlay visualization observer
-- [x] 17-04: 3D midline animation visualization observer
-- [x] 17-05: Diagnostic observer
-
-### Phase 18: CLI and Execution Modes
-**Goal**: `aquapose run` is a working CLI entrypoint that accepts a config path and mode flag, assembles the correct observer set, and runs the pipeline — with no pipeline logic living in the CLI layer
-**Depends on**: Phase 17
-**Requirements**: CLI-01, CLI-02, CLI-03, CLI-04, CLI-05
-**Success Criteria** (what must be TRUE):
-  1. `aquapose run --config path.yaml` runs the full pipeline on a real clip and exits 0
-  2. `aquapose run --mode diagnostic` activates the diagnostic observer and produces extra artifacts without any code change to stages or core observers
-  3. `aquapose run --mode synthetic` runs the pipeline using injected synthetic data via a stage adapter, not a pipeline bypass
-  4. `aquapose run --mode benchmark` runs with timing observer only and reports total and per-stage time
-  5. The CLI layer contains no reconstruction logic — it only parses args, builds config, assembles observers, and calls PosePipeline.run()
-**Plans**: TBD
-
-Plans:
-- [x] 18-01: CLI entrypoint and production mode
-- [x] 18-02: Diagnostic and benchmark modes
-- [x] 18-03: Synthetic mode via stage adapter
+</details>
 
 ## Progress
 
@@ -167,47 +63,13 @@ Plans:
 | 7. Multi-View Triangulation | v1.0 | 1/1 | Complete | 2026-02-22 |
 | 8. End-to-End Integration Testing | v1.0 | 2/3 | Complete | 2026-02-23 |
 | 9. Curve-Based Optimization | v1.0 | 2/2 | Complete | 2026-02-25 |
-| 13. Engine Core | 4/4 | Complete    | 2026-02-25 | - |
-| 14. Golden Data and Verification Framework | 2/2 | Complete    | 2026-02-25 | - |
-| 15. Stage Migrations | 5/5 | Complete    | 2026-02-26 | - |
-| 16. Numerical Verification and Legacy Cleanup | 2/2 | Complete    | 2026-02-26 | - |
-| 17. Observers | 5/5 | Complete    | 2026-02-26 | - |
-| 18. CLI and Execution Modes | v2.0 | Complete    | 2026-02-26 | - |
-
-### Phase 19: Alpha Refactor Audit
-
-**Goal:** Verify the completed v2.0 Alpha refactor (Phases 13-18) faithfully implements the architectural vision in `alpha_refactor_guidebook.md`. Produce a structured audit report, reusable smoke test tooling, and automated import boundary enforcement. Catalog findings for Phase 20 remediation without fixing them.
-**Requirements**: AUDIT
-**Depends on:** Phase 18
-**Plans:** 4/4 plans complete
-
-Plans:
-- [x] 19-01-PLAN.md — Import boundary checker and pre-commit hook (wave 1)
-- [x] 19-02-PLAN.md — Reusable smoke test script and pytest integration (wave 1)
-- [x] 19-03-PLAN.md — DoD gate check, codebase health audit, and 19-AUDIT.md report (wave 2)
-- [x] 19-04-PLAN.md — Phase 15 bug ledger triage (wave 1)
-
-### Phase 20: Post-Refactor Loose Ends
-
-**Goal:** Remediate all findings from the Phase 19 audit (19-AUDIT.md). Fix the critical IB-003 violations, resolve warning-level items (Stage 3/4 coupling, CLI thinning, camera skip removal, dead modules), address info-level items (large file splitting, duplicated code, stale comments), and fix regression test paths. This phase closes out the v2.0 Alpha refactor.
-**Requirements**: REMEDIATE
-**Depends on:** Phase 19
-**Plans:** 5/5 plans complete
-
-Plans:
-- [x] 20-01-PLAN.md — Fix IB-003: move PipelineContext + Stage to core/context.py (wave 1)
-- [x] 20-02-PLAN.md — Dead module cleanup: delete pipeline/, initialization/, mesh/, utils/, optimization/ (wave 1)
-- [x] 20-03-PLAN.md — Camera skip removal + CLI thinning (wave 1)
-- [x] 20-04-PLAN.md — Stage 3/4 coupling fix: tracking consumes association bundles (wave 2)
-- [x] 20-05-PLAN.md — Info cleanup: shared utilities, diagnostics split, regression test paths (wave 2)
-
-### Phase 21: Retrospective, Prospective
-
-**Goal:** Produce a backward-looking retrospective of the v2.0 Alpha refactor (Phases 13-20) and a forward-looking prospective that seeds the next milestone's requirements. Analytical and documentary — no new features or substantive fixes.
-**Requirements**: CLI-01, CLI-02, CLI-03, CLI-04, CLI-05 (bookkeeping fix)
-**Depends on:** Phase 20
-**Plans:** 2/2 plans complete
-
-Plans:
-- [ ] 21-01-PLAN.md — Retrospective document + CLI requirement bookkeeping fix (wave 1)
-- [ ] 21-02-PLAN.md — Prospective document seeding next milestone (wave 2)
+| 13. Engine Core | v2.0 | 4/4 | Complete | 2026-02-25 |
+| 14. Golden Data and Verification | v2.0 | 2/2 | Complete | 2026-02-25 |
+| 14.1 Fix Critical Mismatch | v2.0 | 2/2 | Complete | 2026-02-25 |
+| 15. Stage Migrations | v2.0 | 5/5 | Complete | 2026-02-26 |
+| 16. Numerical Verification | v2.0 | 2/2 | Complete | 2026-02-26 |
+| 17. Observers | v2.0 | 5/5 | Complete | 2026-02-26 |
+| 18. CLI and Execution Modes | v2.0 | 3/3 | Complete | 2026-02-26 |
+| 19. Alpha Refactor Audit | v2.0 | 4/4 | Complete | 2026-02-26 |
+| 20. Post-Refactor Loose Ends | v2.0 | 5/5 | Complete | 2026-02-27 |
+| 21. Retrospective, Prospective | v2.0 | 2/2 | Complete | 2026-02-27 |

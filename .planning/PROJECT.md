@@ -2,7 +2,7 @@
 
 ## What This Is
 
-AquaPose is a 3D fish pose estimation system that reconstructs the position, orientation, and body shape of cichlids from a 13-camera aquarium rig. The primary pipeline detects fish via YOLO/MOG2, segments them with U-Net trained on SAM2 pseudo-labels, extracts 2D midlines via skeletonization, associates identities across cameras with RANSAC centroid clustering, triangulates 3D midline points through a refractive camera model, and fits continuous B-splines — producing dense 3D trajectories and midline kinematics for behavioral research. A curve-based optimizer provides an alternative correspondence-free reconstruction method. An analysis-by-synthesis pipeline (differentiable mesh rendering) is shelved but retained.
+AquaPose is a 3D fish pose estimation system that reconstructs the position, orientation, and body shape of cichlids from a 13-camera aquarium rig. Built as an event-driven computation engine with strict 3-layer architecture (Core Computation → PosePipeline → Observers), the pipeline executes 5 stages — Detection (YOLO), Midline (U-Net + skeletonization), Association (RANSAC centroid clustering), Tracking (Hungarian 3D), and Reconstruction (multi-view triangulation + B-spline fitting) — producing dense 3D trajectories and midline kinematics for behavioral research. A curve-based optimizer provides an alternative correspondence-free reconstruction backend. Invoked via `aquapose run --config path.yaml` with production, diagnostic, synthetic, and benchmark execution modes.
 
 ## Core Value
 
@@ -39,21 +39,25 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - ✓ Cross-view holdout validation (RECON-ABS-05) — v1.0 (shelved)
 - Shelved 2026-02-21: functionally complete but 30+ min/sec runtime is impractical
 
+- ✓ Event-driven pipeline architecture (3-layer: Core Computation → PosePipeline → Observers) — v2.0
+- ✓ Stage Protocol interface with strongly typed PipelineContext — v2.0
+- ✓ Frozen dataclass configuration system with YAML + CLI overrides — v2.0
+- ✓ Structured lifecycle event system — v2.0
+- ✓ Observer-based diagnostics, timing, visualization, and export (5 observers) — v2.0
+- ✓ CLI entrypoint (`aquapose run`) as thin wrapper over PosePipeline — v2.0
+- ✓ Clean-room stage migrations preserving numerical equivalence (5 stages) — v2.0
+- ✓ Execution modes via configuration (production, diagnostic, synthetic, benchmark) — v2.0
+- ✓ Golden data verification framework and regression test suite — v2.0
+- ✓ AST-based import boundary checker with pre-commit enforcement — v2.0
+
 ### Active
 
-- [ ] Event-driven pipeline architecture (3-layer: Core Computation → PosePipeline → Observers)
-- [ ] Stage Protocol interface with strongly typed PipelineContext
-- [ ] Frozen dataclass configuration system with YAML + CLI overrides
-- [ ] Structured lifecycle event system
-- [ ] Observer-based diagnostics, timing, visualization, and export
-- [ ] CLI entrypoint (`aquapose run`) as thin wrapper over PosePipeline
-- [ ] Clean-room stage migrations preserving numerical equivalence
-- [ ] Execution modes via configuration (production, diagnostic, synthetic, benchmark)
+(None — fresh requirements for next milestone via `/gsd:new-milestone`)
 
 ### Out of Scope
 
 - Merge-and-split interaction handling — future milestone
-- Sex classification — deferred to v2
+- Sex classification — deferred
 - Full-day recording processing — future milestone (v1 targets 5–30 min clips)
 - Real-time processing — batch only
 - Fin segmentation — body-only masks
@@ -61,30 +65,20 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - Voxel carving initialization fallback — epipolar consensus is sufficient
 - Mobile or web interface — CLI/script-based pipeline
 - Offline mode / edge deployment — lab workstation only
-
-## Current Milestone: v2.0 Alpha
-
-**Goal:** Transform AquaPose from a script-driven scientific pipeline into an event-driven scientific computation engine with strict architectural layering.
-
-**Target features:**
-- Stage Protocol interface + strongly typed PipelineContext
-- Frozen dataclass config system (defaults → YAML → CLI → freeze)
-- Structured lifecycle events + observer system
-- Clean-room migration of all computation stages
-- Observer-based diagnostics, timing, visualization, HDF5 export
-- CLI entrypoint: `aquapose run --mode diagnostic --config path.yaml`
-- Execution modes (production/diagnostic/synthetic/benchmark) via config, not branching
-- Numerical equivalence with v1.0 pipeline verified via golden data
+- Pydantic for config — frozen dataclasses already decided and shipped in v2.0
 
 ## Context
 
-### Current State (v1.0 shipped)
+### Current State (v2.0 Alpha shipped)
 
-- **Codebase:** 50,802 LOC Python across `src/aquapose/` (calibration, core, segmentation, mesh, initialization, io, utils)
-- **Tech stack:** Python 3.11, PyTorch, PyTorch3D, scikit-image, OpenCV, h5py, ultralytics (YOLO), hatch build system
-- **Two reconstruction methods:** Direct triangulation (primary, fast) and curve optimization (experimental, correspondence-free)
+- **Codebase:** 18,660 LOC source + 14,826 LOC tests across `src/aquapose/` (calibration, core/, engine/, segmentation, tracking, reconstruction, io, visualization)
+- **Architecture:** Event-driven 3-layer — Core Computation (5 stages) → PosePipeline (orchestrator) → Observers (5 side-effect handlers)
+- **Tech stack:** Python 3.11, PyTorch, PyTorch3D, scikit-image, OpenCV, h5py, ultralytics (YOLO), Click (CLI), Plotly (3D viz), hatch build system
+- **Test suite:** 514 unit tests, 7 regression tests (data-dependent), 1 E2E smoke test
+- **Two reconstruction backends:** Triangulation (primary, fast) and curve optimizer (experimental, correspondence-free) — selected via config
 - **Segmentation quality:** U-Net IoU 0.623 — sufficient for pipeline but noisy 2D midlines are the primary quality bottleneck for real data
 - **Known limitation:** Z-reconstruction uncertainty 132x larger than XY due to top-down camera geometry
+- **Import boundary:** Automated AST-based checker enforced via pre-commit hook — core/ never imports engine/ at runtime
 
 ### Rig Geometry
 
@@ -126,6 +120,14 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Curve optimizer as alternative to triangulation | Correspondence-free B-spline fitting via chamfer distance | — Pending real-data validation |
 | XY-only tracking cost matrix | Z uncertainty 132x larger; XY-only prevents Z-noise ID swaps | ✓ Good |
 | Population-constrained tracking | 9 fish always; dead tracks recycled to unmatched observations | ✓ Good |
+| Stage Protocol via structural typing (not ABC) | typing.Protocol with runtime_checkable — no inheritance required | ✓ Good — clean 5-stage architecture |
+| Frozen dataclasses for config (not Pydantic) | Simpler, stdlib-only, hierarchical nesting | ✓ Good — defaults→YAML→CLI→freeze works well |
+| PipelineContext in core/, not engine/ | Pure data contracts belong in core/ layer | ✓ Good — resolved IB-003 violations |
+| Observers as event subscribers (not stage hooks) | Zero coupling to stages; fault-tolerant dispatch | ✓ Good — adding/removing observers has no effect on computation |
+| Port behavior, not rewrite logic | Numerical equivalence is the acceptance bar | ✓ Good — golden data framework validates |
+| Canonical 5-stage model (not 7) | Detection, Midline, Association, Tracking, Reconstruction — aligned to guidebook | ✓ Good — simplified planning and implementation |
+| TrackingStage consumes Stage 3 bundles | Stage 3 is hard dependency; bundles-aware backend | ✓ Good — clean data flow, no re-derivation |
+| Import boundary via AST checker + pre-commit | Automated enforcement prevents architectural regression | ✓ Good — 0 violations at milestone completion |
 
 ---
-*Last updated: 2026-02-25 after v2.0 milestone start*
+*Last updated: 2026-02-27 after v2.0 Alpha milestone*

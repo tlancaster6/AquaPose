@@ -47,6 +47,54 @@
 
 ---
 
+## Milestone: v2.0 — Alpha
+
+**Shipped:** 2026-02-27
+**Phases:** 10 | **Plans:** 34 | **Timeline:** 3 days
+
+### What Was Built
+- Event-driven 3-layer architecture: Core Computation → PosePipeline → Observers
+- 5 pure Stage implementors (Detection, Midline, Association, Tracking, Reconstruction)
+- 5 Observers (timing, HDF5 export, 2D overlay, 3D animation, diagnostic)
+- CLI entrypoint (`aquapose run`) with 4 execution modes
+- Golden data verification framework and regression test suite
+- AST-based import boundary checker with pre-commit enforcement
+- Comprehensive architectural audit and full remediation
+
+### What Worked
+- **Guidebook-driven design:** The `alpha_refactor_guidebook.md` provided a clear architectural vision that was faithfully implemented — 9/9 DoD criteria passed at audit
+- **Audit-then-remediate pattern:** Phase 19 diagnosed without fixing, Phase 20 fixed systematically — produced higher-quality remediation than fix-as-you-go
+- **Golden data before migration:** Committing v1.0 outputs before porting any stages (VER-01) gave confidence during Stage Migration phase
+- **Structural typing for protocols:** `typing.Protocol` with `runtime_checkable` eliminated inheritance requirements — stages are plain classes
+- **3-day velocity:** 10 phases and 34 plans in 3 days shows the refactor scope was well-defined and the GSD workflow scaled
+
+### What Was Inefficient
+- **Phase 14.1 insertion:** The 7-to-5 stage mismatch should have been caught during Phase 13 discussion, not after Phase 14 shipped — missed context alignment cost an extra phase
+- **SUMMARY frontmatter underutilized:** `requirements_completed` and `one_liner` fields were empty in most SUMMARY.md files, making milestone tooling (summary-extract) less useful
+- **VER-03 not executable in CI:** Regression tests can only run on the dev machine with real data — no automated gate for numerical equivalence
+- **STATE.md milestone field stale:** The init tool reported v1.0 as the milestone because STATE.md wasn't properly updated between milestones
+
+### Patterns Established
+- Import boundary: `core/` never imports `engine/` at runtime (AST-enforced)
+- Stage Protocol: `run(context: PipelineContext) -> PipelineContext` — no inheritance
+- Observer dispatch: fault-tolerant, observers cannot affect pipeline execution
+- Config hierarchy: frozen dataclasses with defaults → YAML → CLI → freeze
+- `build_stages()` and `build_observers()` factories in engine layer
+
+### Key Lessons
+1. **Align on canonical models before coding** — the 7-to-5 stage mismatch cost an entire inserted phase; discuss-phase should validate domain models against reference docs
+2. **Audit phases pay for themselves** — Phase 19's structured findings made Phase 20 remediation systematic instead of ad-hoc
+3. **Import boundaries need enforcement from day one** — 7 IB-003 violations accumulated across 5 phases before the checker existed
+4. **Populate SUMMARY frontmatter consistently** — milestone tooling depends on `requirements_completed` and `one_liner` fields
+5. **Environment-dependent tests need env var configuration** — `AQUAPOSE_VIDEO_DIR` pattern works well for data-dependent tests
+
+### Cost Observations
+- Model mix: ~60% sonnet, ~30% opus, ~10% haiku (balanced profile)
+- Sessions: ~8-10 across 3 days
+- Notable: Phase 20 was the most intensive (5 plans, 37 files touched in Plan 02 alone)
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -54,14 +102,18 @@
 | Milestone | Timeline | Phases | Key Change |
 |-----------|----------|--------|------------|
 | v1.0 | 11 days | 12 | Initial development; architecture pivot mid-milestone |
+| v2.0 | 3 days | 10 | Full architectural refactor; audit-then-remediate pattern |
 
 ### Cumulative Quality
 
-| Milestone | LOC | Files | Quick Tasks |
+| Milestone | LOC | Tests | Quick Tasks |
 |-----------|-----|-------|-------------|
-| v1.0 | 50,802 | 300 | 8 |
+| v1.0 | 50,802 | ~300 | 8 |
+| v2.0 | 18,660 + 14,826 test | 514 | 1 |
 
 ### Top Lessons (Verified Across Milestones)
 
 1. Invest in input quality (segmentation) before building downstream pipelines
 2. Pivot early when runtime measurements invalidate an approach
+3. Align on canonical domain models before coding — mismatches compound
+4. Audit phases produce better remediation than fix-as-you-go

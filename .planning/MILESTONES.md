@@ -25,3 +25,28 @@
 
 ---
 
+
+## v2.0 Alpha (Shipped: 2026-02-27)
+
+**Phases completed:** 10 phases, 34 plans
+**Timeline:** 3 days (2026-02-25 → 2026-02-27)
+**Codebase:** 18,660 LOC source, 14,826 LOC tests (514 tests)
+**Git range:** v1.0..bd327bd (140 commits)
+
+**Key accomplishments:**
+1. Built event-driven engine skeleton — Stage Protocol (structural typing), PipelineContext (typed accumulator), frozen dataclass config hierarchy, typed lifecycle events, Observer protocol with EventBus, PosePipeline orchestrator
+2. Migrated all 5 computation stages (Detection, Midline, Association, Tracking, Reconstruction) as pure Stage implementors with strict import boundary enforcement
+3. Implemented 5 observers (timing, HDF5 export, 2D reprojection overlay, 3D midline animation, diagnostic capture) as pure event subscribers with zero stage coupling
+4. Created `aquapose run` CLI entrypoint with 4 execution modes (production, diagnostic, synthetic, benchmark) and observer factory in engine layer
+5. Built golden data verification framework (frozen v1.0 outputs) and regression test suite with per-stage numerical tolerance checking
+6. Conducted full architectural audit against guidebook, built AST-based import boundary checker with pre-commit hook, remediated all critical findings (IB-003, dead modules, Stage 3/4 coupling)
+
+**Delivered:** Complete architectural refactor from script-driven pipeline to event-driven computation engine with strict 3-layer architecture (Core Computation → PosePipeline → Observers), verified for numerical equivalence with v1.0, with comprehensive audit tooling and diagnostic infrastructure.
+
+**Known gaps:**
+- VER-03 regression tests skip without real video data env vars (infrastructure correct, human execution pending)
+- MOG2 detection backend not implemented (YOLO only; registry pattern ready)
+- Pre-existing flaky test: test_near_claim_penalty_suppresses_ghost (test-ordering state pollution)
+
+---
+

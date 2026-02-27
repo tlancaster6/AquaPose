@@ -2,11 +2,12 @@
 
 Validates:
 - TrackingStage satisfies the Stage Protocol via structural typing
-- run() correctly populates PipelineContext.tracks from context.detections
+- run() correctly populates PipelineContext.tracks from context.associated_bundles
 - Tracker state persists across frames (fish_id continuity)
 - FishTrack objects have required attributes (fish_id, positions, state)
 - Backend registry raises ValueError for unknown kinds
 - Import boundary (ENG-07): no engine/ runtime imports in core/tracking/
+- ValueError raised when context.associated_bundles is None (Stage 3 precondition)
 """
 
 from __future__ import annotations
@@ -15,15 +16,15 @@ import importlib
 import inspect
 from collections import deque
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 
+from aquapose.core.association.types import AssociationBundle
 from aquapose.core.context import PipelineContext, Stage
 from aquapose.core.tracking import FishTrack, TrackingStage, TrackState
 from aquapose.core.tracking.backends import get_backend
-from aquapose.segmentation.detector import Detection
 
 # ---------------------------------------------------------------------------
 # Protocol conformance
@@ -44,12 +45,12 @@ def test_tracking_stage_satisfies_protocol(tmp_path: Path) -> None:
 
 
 def test_tracking_stage_populates_tracks(tmp_path: Path) -> None:
-    """run() populates context.tracks from context.detections."""
-    det = Detection(bbox=(10, 10, 50, 50), mask=None, area=2500, confidence=0.9)
-    synthetic_detections: list[dict[str, list[Detection]]] = [
-        {"cam1": [det], "cam2": [det], "cam3": [det]},
-        {"cam1": [det], "cam2": []},
-        {"cam1": [], "cam2": [], "cam3": []},
+    """run() populates context.tracks from context.associated_bundles."""
+    # Three frames of bundles
+    synthetic_bundles: list[list[AssociationBundle]] = [
+        [_make_bundle(0, [0.1, 0.0, 0.5]), _make_bundle(1, [0.5, 0.0, 0.5])],
+        [_make_bundle(0, [0.1, 0.0, 0.5])],
+        [],
     ]
 
     # Create one FishTrack per frame to return from the mock
@@ -68,13 +69,13 @@ def test_tracking_stage_populates_tracks(tmp_path: Path) -> None:
     stage = _build_stage(tmp_path, per_frame_tracks=per_frame_tracks)
 
     ctx = PipelineContext()
-    ctx.detections = synthetic_detections
+    ctx.associated_bundles = synthetic_bundles
     result = stage.run(ctx)
 
     assert result is ctx, "run() must return the same context object"
     assert ctx.tracks is not None
     assert isinstance(ctx.tracks, list)
-    assert len(ctx.tracks) == len(synthetic_detections), (
+    assert len(ctx.tracks) == len(synthetic_bundles), (
         "tracks must have one entry per frame"
     )
 
@@ -84,22 +85,34 @@ def test_tracking_stage_populates_tracks(tmp_path: Path) -> None:
     assert len(ctx.tracks[2]) == 0, "frame 2 should have 0 tracks"
 
 
+def test_tracking_requires_bundles(tmp_path: Path) -> None:
+    """run() raises ValueError if context.associated_bundles is None."""
+    stage = _build_stage(tmp_path)
+    ctx = PipelineContext()
+    # associated_bundles is None by default
+
+    with pytest.raises(ValueError, match=r"associated_bundles"):
+        stage.run(ctx)
+
+
 def test_tracking_stage_no_detections_raises(tmp_path: Path) -> None:
-    """run() raises ValueError if context.detections is not set."""
+    """run() raises ValueError if context.associated_bundles is not set.
+
+    Confirms the error message references Stage 3 (AssociationStage).
+    """
     stage = _build_stage(tmp_path)
     ctx = PipelineContext()
 
-    with pytest.raises(ValueError, match=r"context\.detections"):
+    with pytest.raises(ValueError, match=r"AssociationStage"):
         stage.run(ctx)
 
 
 def test_tracking_stage_returns_same_context(tmp_path: Path) -> None:
     """run() returns the same context object it received (not a copy)."""
-    det = Detection(bbox=(10, 10, 50, 50), mask=None, area=2500, confidence=0.9)
     stage = _build_stage(tmp_path, per_frame_tracks=[[]])
 
     ctx = PipelineContext()
-    ctx.detections = [{"cam1": [det]}]
+    ctx.associated_bundles = [[_make_bundle(0, [0.0, 0.0, 0.5])]]
     result = stage.run(ctx)
 
     assert result is ctx
@@ -117,7 +130,7 @@ def test_tracking_state_persists_across_frames(tmp_path: Path) -> None:
     verifies that the backend.track_frame is called for each frame — i.e., the
     tracker is invoked per-frame without resetting between calls.
     """
-    det = Detection(bbox=(10, 10, 50, 50), mask=None, area=2500, confidence=0.9)
+    bundle = _make_bundle(0, [0.0, 0.0, 0.5])
 
     # Two runs, each with 2 frames
     run1_tracks = [
@@ -144,12 +157,12 @@ def test_tracking_state_persists_across_frames(tmp_path: Path) -> None:
 
     # First run: 2 frames
     ctx1 = PipelineContext()
-    ctx1.detections = [{"cam1": [det]}, {"cam1": [det]}]
+    ctx1.associated_bundles = [[bundle], [bundle]]
     stage.run(ctx1)
 
     # Second run: 2 more frames through the SAME stage instance
     ctx2 = PipelineContext()
-    ctx2.detections = [{"cam1": [det]}, {"cam1": [det]}]
+    ctx2.associated_bundles = [[bundle], [bundle]]
     stage.run(ctx2)
 
     # Total calls: 4 (2 per run)
@@ -171,8 +184,6 @@ def test_tracking_state_persists_across_frames(tmp_path: Path) -> None:
 
 def test_tracks_have_required_attributes(tmp_path: Path) -> None:
     """FishTrack objects in output have fish_id, positions, and state attributes."""
-    det = Detection(bbox=(10, 10, 50, 50), mask=None, area=2500, confidence=0.9)
-
     track = FishTrack(fish_id=42)
     track.positions.append(np.array([1.0, 2.0, 0.5]))
     track.state = TrackState.CONFIRMED
@@ -180,7 +191,7 @@ def test_tracks_have_required_attributes(tmp_path: Path) -> None:
     stage = _build_stage(tmp_path, per_frame_tracks=[[track]])
 
     ctx = PipelineContext()
-    ctx.detections = [{"cam1": [det]}]
+    ctx.associated_bundles = [[_make_bundle(0, [1.0, 2.0, 0.5])]]
     stage.run(ctx)
 
     assert ctx.tracks is not None
@@ -212,18 +223,7 @@ def test_backend_registry_hungarian_constructs(tmp_path: Path) -> None:
     calib_path = tmp_path / "calibration.json"
     calib_path.write_text("{}")
 
-    mock_calib = MagicMock()
-    mock_calib.cameras = {}
-    mock_calib.water_z = 0.0
-    mock_calib.interface_normal = [0.0, 0.0, 1.0]
-    mock_calib.n_air = 1.0
-    mock_calib.n_water = 1.33
-
-    with patch(
-        "aquapose.calibration.loader.load_calibration_data",
-        return_value=mock_calib,
-    ):
-        backend = get_backend("hungarian", calibration_path=str(calib_path))
+    backend = get_backend("hungarian", calibration_path=str(calib_path))
     assert backend is not None
 
 
@@ -286,15 +286,36 @@ def test_import_boundary_no_engine_imports() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _make_bundle(fish_idx: int, centroid: list[float]) -> AssociationBundle:
+    """Create a minimal AssociationBundle for testing.
+
+    Args:
+        fish_idx: Per-frame fish index.
+        centroid: 3D centroid as a list of 3 floats.
+
+    Returns:
+        An AssociationBundle with realistic attributes.
+    """
+    return AssociationBundle(
+        fish_idx=fish_idx,
+        centroid_3d=np.array(centroid, dtype=np.float32),
+        camera_detections={"cam1": 0, "cam2": 0, "cam3": 0},
+        n_cameras=3,
+        reprojection_residual=2.5,
+        confidence=1.0,
+    )
+
+
 def _build_stage(
     tmp_path: Path,
     per_frame_tracks: list[list[FishTrack]] | None = None,
 ) -> TrackingStage:
     """Build a TrackingStage with all heavy I/O mocked.
 
-    The calibration loading and RefractiveProjectionModel construction are
-    patched out. The backend's ``track_frame`` is replaced with a mock
-    that returns ``per_frame_tracks`` entries in order.
+    The calibration loading is not patched — HungarianBackend now only checks
+    that the calibration file exists (no longer loads models). The backend's
+    ``track_frame`` is replaced with a mock that returns ``per_frame_tracks``
+    entries in order.
 
     Args:
         tmp_path: Temporary directory for fake calibration file.
@@ -307,18 +328,7 @@ def _build_stage(
     calib_path = tmp_path / "calibration.json"
     calib_path.write_text("{}")
 
-    mock_calib = MagicMock()
-    mock_calib.cameras = {}
-    mock_calib.water_z = 0.0
-    mock_calib.interface_normal = [0.0, 0.0, 1.0]
-    mock_calib.n_air = 1.0
-    mock_calib.n_water = 1.33
-
-    with patch(
-        "aquapose.calibration.loader.load_calibration_data",
-        return_value=mock_calib,
-    ):
-        stage = TrackingStage(calibration_path=str(calib_path))
+    stage = TrackingStage(calibration_path=str(calib_path))
 
     # Replace backend.track_frame with a side_effect that returns per-frame data
     if per_frame_tracks is not None:

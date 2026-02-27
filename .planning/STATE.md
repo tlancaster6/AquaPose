@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 20 of 21 (Post-Refactor Loose Ends) — IN PROGRESS
-Plan: 3 of 5 in current phase — COMPLETE
-Status: Phase 20-03 Complete — 0 skip_camera refs; build_observers() in engine/observer_factory.py; CLI at 161 LOC; 513 tests pass
-Last activity: 2026-02-27 - Completed Phase 20 Plan 03: Remove skip_camera logic + extract observer assembly to engine
+Plan: 4 of 5 in current phase — COMPLETE
+Status: Phase 20-04 Complete — TrackingStage reads context.associated_bundles; HungarianBackend consumes bundles; no internal RANSAC re-association; 514 tests pass
+Last activity: 2026-02-27 - Completed Phase 20 Plan 04: Fix Stage 3/4 coupling — TrackingStage now consumes AssociationBundles from Stage 3
 
-Progress: [█████████░] 92%
+Progress: [█████████░] 94%
 
 ## Performance Metrics
 
@@ -163,6 +163,10 @@ Phase 13 decisions:
 - [Phase 20-02]: Plan 01 test imports (engine.stages -> core.context) completed before Plan 02 commit to restore clean test baseline
 - [Phase 20-03]: skip_camera_id removal was already done in Plan 01 commit — Plan 03 Task 1 discovered 0 occurrences at start; zero additional commits needed for Task 1
 - [Phase 20-03]: build_observers() in engine/observer_factory.py is public API; CLI at 161 LOC is practical minimum for two Click commands; AUD-002 objective (observer logic in engine layer) fully achieved
+- [Phase 20-04]: TrackingStage.run() reads context.associated_bundles as primary input; raises ValueError naming Stage 3 as missing dependency — Stage 3 is now a hard dependency for Stage 4
+- [Phase 20-04]: HungarianBackend.track_frame() no longer accepts detections_per_camera; bundles are the sole data input; calibration models no longer loaded
+- [Phase 20-04]: FishTracker.update_from_bundles() added — greedy nearest-3D-centroid assignment, birth from unmatched bundles, full lifecycle (probationary/confirmed/coasting/dead) and TRACK-04 dead-ID recycling preserved
+- [Phase 20-04]: discover_births() kept in tracking/associate.py as utility — no longer called during normal pipeline operation (AUD-005/AUD-006 remediated)
 
 ### Pending Todos
 
@@ -181,5 +185,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed Phase 20-03 (skip_camera removal verified + build_observers() extracted to engine; CLI 161 LOC; 513 tests pass)
+Stopped at: Completed Phase 20-04 (TrackingStage consumes Stage 3 bundles; HungarianBackend simplified; 514 tests pass)
 Resume file: None

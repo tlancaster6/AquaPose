@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Identity
 status: unknown
-last_updated: "2026-02-27T22:01:58.382Z"
+last_updated: "2026-02-27T22:51:24.116Z"
 progress:
   total_phases: 7
-  completed_phases: 6
-  total_plans: 11
-  completed_plans: 11
+  completed_phases: 7
+  total_plans: 12
+  completed_plans: 12
 ---
 
 # Project State
@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 27 — Diagnostic Visualization (Plan 1 of 1 complete)
+**Current focus:** Phase 28 — E2E Testing (Plan 1 of 1 complete, awaiting human-verify checkpoint)
 
 ## Current Position
 
-Phase: 27 of 27 (v2.1 Identity — Diagnostic Visualization)
-Plan: 1 of 1 completed in current phase — Phase 27 Plan 1 COMPLETE
-Status: Active — Phase 27-01 done (TrackletTrailObserver, 9 unit tests, observer factory wiring)
-Last activity: 2026-02-27 — Plan 27-01 complete (TrackletTrailObserver: per-camera trail videos, association mosaic, diagnostic mode integration)
+Phase: 28 of 28 (v2.1 Identity — E2E Testing)
+Plan: 1 of 1 completed in current phase — Phase 28 Plan 1 COMPLETE (checkpoint:human-verify pending)
+Status: Active — Phase 28-01 done (e2e test rewrite, SyntheticDataStage z-coordinate bug fix)
+Last activity: 2026-02-27 — Plan 28-01 complete (TestSyntheticSmoke + TestRealData, conftest fixtures, SyntheticDataStage bug fix)
 
 Progress: [█████░░░░░] 50% (v2.1, 5/10 plans done)
 
@@ -47,6 +47,7 @@ Progress: [█████░░░░░] 50% (v2.1, 5/10 plans done)
 | 27-diagnostic-visualization | 1/1 complete | 7 min | 7 min |
 
 *Updated after each plan completion*
+| Phase 28-e2e-testing P01 | 22 | 1 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,9 @@ Key decisions entering v2.1:
 - [Phase 27-01]: calib_data typed as object in generation method signatures (ENG-07 boundary); cast at VideoSet callsite with type: ignore[arg-type]
 - [Phase 27-01]: _draw_trail_scaled separate from _draw_trail to keep scale factors isolated from per-camera path
 - [Phase 27-01]: TrackletTrailObserver added to diagnostic mode in observer_factory; registered as "tracklet_trail" for --add-observer
+- [Phase 28-e2e-testing]: Direct in-process PosePipeline.run() preferred over SmokeTestRunner subprocess for e2e tests
+- [Phase 28-e2e-testing]: Synthetic e2e tests NOT marked @slow -- fast CI guard running in ~30s
+- [Phase 28-e2e-testing]: [Phase 28-01] SyntheticDataStage fish z-coordinate fixed: water_z + 0.05-0.35m (was 0.02-0.12m above interface)
 
 ### Roadmap Evolution
 
@@ -96,5 +100,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Phase 28 context gathered
-Resume file: .planning/phases/28-e2e-testing/28-CONTEXT.md
+Stopped at: Phase 28-01 Plan complete -- checkpoint:human-verify at Task 2 (real-data test verification)
+Resume file: .planning/phases/28-e2e-testing/28-01-SUMMARY.md

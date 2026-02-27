@@ -191,7 +191,7 @@ Plans:
 **Goal:** Pipeline runs e2e on real and synthetic data.  Blocking bugs fixed as they are encountered. Complex but non-blocking bugs logged and triaged. Tests in tests/e2e updated to current pipeline and confirmed passing. Final output indicates the pipeline is basically functional -- i.e., at least some fish yield reasonable 3d splines with trajectories that span at least a few contiguous frames. Full optimization and tuning is out of phase scope, we are just looking for pipeline-breaking bugs.
 **Requirements**: EVAL-01
 **Depends on:** Phase 27
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] 28-01: Rewrite e2e tests (synthetic smoke + real-data validation), fix blocking bugs, document non-blocking issues

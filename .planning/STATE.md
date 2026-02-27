@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Identity
 status: unknown
-last_updated: "2026-02-27T18:12:38.057Z"
+last_updated: "2026-02-27T18:44:17.731Z"
 progress:
-  total_phases: 1
+  total_phases: 3
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
 ---
 
 # Project State
@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 22 — Pipeline Scaffolding (complete)
+**Current focus:** Phase 23 — Refractive Lookup Tables (in progress, Plan 1 of 2 complete)
 
 ## Current Position
 
-Phase: 22 of 27 (v2.1 Identity — Pipeline Scaffolding)
-Plan: 2 of 2 completed in current phase — Phase 22 COMPLETE
-Status: Active — Phase 22 done; Phase 23 (LUTs) and Phase 24 (OC-SORT) can now proceed in parallel
-Last activity: 2026-02-27 — Plan 22-02 complete (stub stages, pipeline rewire)
+Phase: 23 of 27 (v2.1 Identity — Refractive Lookup Tables)
+Plan: 1 of 2 completed in current phase — Phase 23 Plan 01 COMPLETE
+Status: Active — Phase 23 Plan 01 done (ForwardLUT); Phase 23 Plan 02 (InverseLUT) and Phase 24 (OC-SORT) can proceed
+Last activity: 2026-02-27 — Plan 23-01 complete (ForwardLUT, LutConfig, 7 unit tests)
 
 Progress: [██░░░░░░░░] 20% (v2.1, 2/10 plans done)
 
@@ -41,7 +41,8 @@ Progress: [██░░░░░░░░] 20% (v2.1, 2/10 plans done)
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 22-pipeline-scaffolding | 2/2 complete | 26 min | 13 min |
-| 23-27 | TBD | — | — |
+| 23-refractive-lookup-tables | 1/2 in progress | 18 min | — |
+| 24-27 | TBD | — | — |
 
 *Updated after each plan completion*
 
@@ -63,6 +64,8 @@ Key decisions entering v2.1:
 - [Phase 22-pipeline-scaffolding]: TrackingStubStage lives in engine/pipeline.py (not core/) — engine-level placeholder dispatched via isinstance check in PosePipeline.run()
 - [Phase 22-pipeline-scaffolding]: ReconstructionStage.run() early-returns empty midlines when tracklet_groups==[] (stub path); raises ValueError only when both are None
 - [Phase 22-pipeline-scaffolding]: AssociationConfig and TrackingConfig stripped to stubs; _filter_fields() prevents TypeError from stale YAML keys
+- [Phase 23-01]: LutConfigLike Protocol instead of TYPE_CHECKING import: IB-003 forbids TYPE_CHECKING backdoors; Protocol with 5 LutConfig fields preserves import boundary while LutConfig satisfies it structurally at runtime
+- [Phase 23-01]: ForwardLUT stores grids as numpy float32 arrays (not torch tensors) for zero-copy .npz serialization; cast_ray() converts on-demand via torch.from_numpy()
 
 ### Pending Todos
 
@@ -76,5 +79,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed 22-pipeline-scaffolding-02-PLAN.md — stub stages wired, Phase 22 complete; Phases 23 and 24 can proceed
+Stopped at: Completed 23-refractive-lookup-tables-01-PLAN.md — ForwardLUT, LutConfig, 7 unit tests; Phase 23 Plan 02 and Phase 24 can proceed
 Resume file: None

@@ -116,11 +116,11 @@ Plans:
   2. The scored affinity graph is clustered via connected components followed by Leiden algorithm; same-camera tracklets with detection-backed temporal overlap are prevented from sharing a cluster (must-not-link)
   3. Same-camera tracklet fragments from the same fish (non-overlapping in time) are merged within each cluster
   4. The resulting `tracklet_groups` field in PipelineContext contains at most 9 clusters (one per fish), each listing its constituent tracklets across cameras
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 25-01: Pairwise cross-camera affinity scoring (ray-ray distance + ghost-point penalty)
-- [ ] 25-02: Leiden clustering with must-not-link constraints and fragment merging
+- [ ] 25-01: Pairwise cross-camera affinity scoring (ray-ray distance, ghost-point penalty, AssociationConfig expansion)
+- [ ] 25-02: Leiden clustering with must-not-link constraints, fragment merging, AssociationStage pipeline wiring
 
 ### Phase 26: Association Refinement and Pipeline Wiring
 **Goal**: Cross-camera identity clusters are geometrically refined via 3D triangulation error, midline extraction runs only on confirmed tracklet detections, and reconstruction uses known camera membership per fish per frame — completing the end-to-end pipeline

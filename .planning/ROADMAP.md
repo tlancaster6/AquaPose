@@ -72,10 +72,11 @@ Full details: `.planning/milestones/v2.0-ROADMAP.md`
   2. CarryForward persists per-camera 2D track state across frames without carrying old bundle or 3D cluster fields
   3. `build_stages()` returns the new 5-stage sequence and the pipeline executes without runtime errors on a synthetic frame sequence
   4. The old AssociationStage, TrackingStage, FishTracker, and ransac_centroid_cluster modules are absent from the codebase (no import paths, no dead code)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 22-01: Update PipelineContext and CarryForward with new typed fields; delete legacy tracking/association code
+- [ ] 22-01: Define Tracklet2D/TrackletGroup domain types, update PipelineContext, delete legacy tracking/association code
+- [ ] 22-02: Create stub stages, rewire build_stages() to new 5-stage order, update observers and tests
 
 ### Phase 23: Refractive Lookup Tables
 **Goal**: Users can generate and persist forward (pixel→ray) and inverse (voxel→pixel) lookup tables for all cameras, eliminating per-frame refraction math during association

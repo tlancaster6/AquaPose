@@ -203,10 +203,11 @@ Plans:
 
 ### Phase 21: Retrospective, Prospective
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** Produce a backward-looking retrospective of the v2.0 Alpha refactor (Phases 13-20) and a forward-looking prospective that seeds the next milestone's requirements. Analytical and documentary — no new features or substantive fixes.
+**Requirements**: CLI-01, CLI-02, CLI-03, CLI-04, CLI-05 (bookkeeping fix)
 **Depends on:** Phase 20
-**Plans:** 0 plans
+**Plans:** 1/2 plans executed
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 21 to break down)
+- [ ] 21-01-PLAN.md — Retrospective document + CLI requirement bookkeeping fix (wave 1)
+- [ ] 21-02-PLAN.md — Prospective document seeding next milestone (wave 2)

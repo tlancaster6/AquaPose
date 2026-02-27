@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Alpha
 status: unknown
-last_updated: "2026-02-27T02:38:29.904Z"
+last_updated: "2026-02-27T03:11:16.899Z"
 progress:
   total_phases: 10
   completed_phases: 9
-  total_plans: 32
-  completed_plans: 32
+  total_plans: 34
+  completed_plans: 33
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 
 ## Current Position
 
-Phase: 20 of 21 (Post-Refactor Loose Ends) — COMPLETE
-Plan: 5 of 5 in current phase — COMPLETE
-Status: Phase 20-05 Complete — discover_camera_videos() shared utility; diagnostics.py split into midline_viz.py + triangulation_viz.py; regression env vars; 514 tests pass
-Last activity: 2026-02-27 - Completed Phase 20 Plan 05: Remaining audit remediations (AUD-004, AUD-012..018)
+Phase: 21 of 21 (Retrospective, Prospective) — IN PROGRESS
+Plan: 1 of 2 in current phase — COMPLETE
+Status: Phase 21-01 Complete — v2.0 Alpha retrospective document; all 22 requirements marked complete; 7 gaps identified for prospective
+Last activity: 2026-02-27 - Completed Phase 21 Plan 01: Retrospective document + CLI requirement bookkeeping fix
 
-Progress: [██████████] 97%
+Progress: [██████████] 99%
 
 ## Performance Metrics
 
@@ -50,6 +50,7 @@ Progress: [██████████] 97%
 | Phase 19-alpha-refactor-audit P04 | 2 | 1 tasks | 1 files |
 | Phase 20-post-refactor-loose-ends P02 | 30 | 1 tasks | 37 files |
 | Phase 20 P05 | 35 | 2 tasks | 9 files |
+| Phase 21-retrospective-prospective P01 | 3 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -171,6 +172,9 @@ Phase 13 decisions:
 - [Phase 20-05]: diagnostics.py kept as 29-LOC backward-compat re-export shim after split into midline_viz.py and triangulation_viz.py
 - [Phase 20-05]: discover_camera_videos() in io/discovery.py replaces duplicated inline glob logic in DetectionStage and MidlineStage
 - [Phase 20-05]: Regression conftest uses AQUAPOSE_VIDEO_DIR and AQUAPOSE_CALIBRATION_PATH env vars — pytest.skip() with clear message when not set; no hardcoded machine paths
+- [Phase 21-retrospective-prospective]: Retrospective written as fresh higher-level analysis (not 19-AUDIT.md rehash): architecture, DoD gates, code health, phase highlights, gaps, GSD process
+- [Phase 21-retrospective-prospective]: 7 gaps identified for prospective: U-Net IoU 0.623 primary bottleneck, regression suite blocked, O(N^2) association stage, no CI/CD, curve optimizer unbenchmarked, HDF5 schema undocumented, v1.0 algorithmic limitations inherited
+- [Phase 21-retrospective-prospective]: CLI-01 through CLI-05 bookkeeping fix: confirmed implemented, marked complete — all 22 v2.0 requirements now complete
 
 ### Pending Todos
 

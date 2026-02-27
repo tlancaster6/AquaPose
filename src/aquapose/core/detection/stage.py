@@ -15,6 +15,7 @@ from typing import Any
 from aquapose.core.context import PipelineContext
 from aquapose.core.detection.backends import get_backend
 from aquapose.core.detection.types import Detection
+from aquapose.io.discovery import discover_camera_videos
 
 __all__ = ["DetectionStage"]
 
@@ -77,11 +78,7 @@ class DetectionStage:
             )
 
         # Discover camera videos
-        video_paths: dict[str, Path] = {}
-        for suffix in ("*.avi", "*.mp4"):
-            for p in self._video_dir.glob(suffix):
-                camera_id = p.stem.split("-")[0]
-                video_paths[camera_id] = p
+        video_paths = discover_camera_videos(self._video_dir)
 
         if not video_paths:
             raise ValueError(f"No .avi/.mp4 files found in {self._video_dir}")

@@ -20,3 +20,13 @@ Non-blocking bugs and known limitations discovered during Phase 28 e2e testing.
 **Root cause:** `_generate_fish_splines()` in `src/aquapose/core/synthetic.py` placed fish at `cz = rng.uniform(0.02, 0.12)` (z = 2-12 cm). The air-water interface in release_calibration is at `water_z = 1.03m`. Fish above the interface (z < water_z) produce `valid=False` in refractive projection.
 **Fix:** Pass `water_z` from calibration to `_generate_fish_splines()`. Fish now placed at `cz = water_z + rng.uniform(0.05, 0.35)` (5-35 cm below water surface). Committed in b7adf90.
 **File:** `src/aquapose/core/synthetic.py`
+
+## NB-002: Golden regression tests reference deleted v1.0 modules
+
+**Severity:** Non-blocking (tests skipped, no crash)
+**Observed during:** Task 2 human-verify checkpoint
+**Symptom:** `ModuleNotFoundError: No module named 'aquapose.tracking.tracker'` when pytest collects `tests/golden/test_stage_harness.py`.
+**Root cause:** Golden `.pt` fixture files were serialized from the v1.0 pipeline via `torch.save`. They contain pickled objects from `aquapose.tracking.tracker` (FishTrack), `aquapose.segmentation` (CropRegion), and other modules deleted or restructured in v2.1. Python's unpickler fails on import.
+**Impact:** All 8 golden regression tests are non-functional. Module-level `pytestmark = pytest.mark.skip(...)` applied to prevent collection errors.
+**Fix required:** Regenerate golden data from the v2.1 pipeline (`scripts/generate_golden_data.py` needs rewrite for new stage boundaries). Out of scope for Phase 28.
+**File:** `tests/golden/test_stage_harness.py`, `tests/golden/conftest.py`

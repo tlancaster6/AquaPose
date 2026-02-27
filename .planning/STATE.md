@@ -1,33 +1,33 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.0
-milestone_name: Alpha
-status: complete
-last_updated: "2026-02-27T06:00:00.000Z"
+milestone: v2.1
+milestone_name: Identity
+status: active
+last_updated: "2026-02-27T12:00:00.000Z"
 progress:
-  total_phases: 10
-  completed_phases: 10
-  total_plans: 34
-  completed_plans: 34
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-25)
+See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 17 — Observers
+**Current focus:** Defining requirements for v2.1 Identity
 
 ## Current Position
 
-Phase: 21 of 21 (Retrospective, Prospective) — COMPLETE
-Plan: 2 of 2 in current phase — COMPLETE
-Status: Phase 21 Complete — v2.0 Alpha retrospective + v2.1 prospective documents; all 22 requirements complete; ready for /gsd:complete-milestone
-Last activity: 2026-02-27 - Completed Phase 21 Plan 02: v2.1 prospective with 11 candidate requirements seeding next milestone
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-27 — Milestone v2.1 Identity started
 
-Progress: [██████████] 100%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 

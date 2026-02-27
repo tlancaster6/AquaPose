@@ -52,7 +52,24 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ### Active
 
-(None — fresh requirements for next milestone via `/gsd:new-milestone`)
+<!-- v2.1 Identity — pipeline reorder for robust cross-view correspondence -->
+
+- [ ] Precomputed refractive lookup tables (forward + inverse) for fast association
+- [ ] OC-SORT 2D tracking per camera replacing 3D bundle-claiming tracker
+- [ ] Cross-camera tracklet association via ray-ray scoring, Leiden clustering, 3D refinement
+- [ ] Pipeline reordering: Detection → 2D Tracking → Association → Midline → Reconstruction
+- [ ] Tracklet and association diagnostic visualization
+
+## Current Milestone: v2.1 Identity
+
+**Goal:** Reorder the pipeline to track in 2D first, then associate tracklets across cameras using trajectory-level geometric evidence — fixing the root cause of broken 3D reconstruction.
+
+**Target features:**
+- Precomputed refractive LUTs (pixel→ray, voxel→pixel) eliminating per-frame refraction math
+- OC-SORT per-camera 2D tracking replacing 3D bundle-claiming tracker
+- Cross-camera tracklet association (pairwise scoring, graph clustering, 3D refinement)
+- Pipeline integration (new PipelineContext fields, deferred midline, reconstruction from tracklet groups)
+- Diagnostic visualization for tracklets and associations
 
 ### Out of Scope
 
@@ -130,4 +147,4 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Import boundary via AST checker + pre-commit | Automated enforcement prevents architectural regression | ✓ Good — 0 violations at milestone completion |
 
 ---
-*Last updated: 2026-02-27 after v2.0 Alpha milestone*
+*Last updated: 2026-02-27 after v2.1 Identity milestone started*

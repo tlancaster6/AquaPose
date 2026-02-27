@@ -265,6 +265,9 @@ def build_stages(config: PipelineConfig) -> list:
         inlier_threshold=config.reconstruction.inlier_threshold,
         snap_threshold=config.reconstruction.snap_threshold,
         max_depth=config.reconstruction.max_depth,
+        min_cameras=config.reconstruction.min_cameras,
+        max_interp_gap=config.reconstruction.max_interp_gap,
+        n_control_points=config.reconstruction.n_control_points,
     )
 
     # --- Synthetic mode: SyntheticDataStage replaces Detection + Midline

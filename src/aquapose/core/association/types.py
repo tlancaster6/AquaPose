@@ -78,8 +78,9 @@ class HandoffState:
 # ---------------------------------------------------------------------------
 # Legacy compatibility type: AssociationBundle
 #
-# Retained for reconstruction compatibility until Phase 26 replaces it with
-# TrackletGroup-based reconstruction. Do not use in new code.
+# DEPRECATED: Phase 26 replaced reconstruction with TrackletGroup-based
+# reconstruction. This type is retained only for backward compatibility with
+# visualization modules. Do not use in new code.
 # ---------------------------------------------------------------------------
 
 

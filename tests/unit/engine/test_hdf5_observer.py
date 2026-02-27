@@ -13,16 +13,21 @@ from aquapose.engine.hdf5_observer import HDF5ExportObserver
 from aquapose.engine.observers import Observer
 
 
-def _make_spline(seed: int = 0) -> SimpleNamespace:
+def _make_spline(seed: int = 0, is_low_confidence: bool = False) -> SimpleNamespace:
     """Create a mock Spline3D with control_points and arc_length."""
     rng = np.random.RandomState(seed)
     return SimpleNamespace(
         control_points=rng.randn(7, 3).astype(np.float32),
         arc_length=float(rng.uniform(10.0, 50.0)),
+        is_low_confidence=is_low_confidence,
     )
 
 
-def _make_context(n_frames: int = 2, n_fish: int = 2) -> SimpleNamespace:
+def _make_context(
+    n_frames: int = 2,
+    n_fish: int = 2,
+    tracklet_groups: list | None = None,
+) -> SimpleNamespace:
     """Create a mock PipelineContext with midlines_3d."""
     midlines_3d: list[dict[int, SimpleNamespace]] = []
     for frame_idx in range(n_frames):
@@ -30,13 +35,41 @@ def _make_context(n_frames: int = 2, n_fish: int = 2) -> SimpleNamespace:
         for fish_id in range(n_fish):
             frame_dict[fish_id] = _make_spline(seed=frame_idx * 10 + fish_id)
         midlines_3d.append(frame_dict)
-    return SimpleNamespace(midlines_3d=midlines_3d)
+    return SimpleNamespace(midlines_3d=midlines_3d, tracklet_groups=tracklet_groups)
+
+
+def _make_tracklet_group(fish_id: int, frames: tuple[int, ...]) -> SimpleNamespace:
+    """Create a mock TrackletGroup with tracklets."""
+    tracklet = SimpleNamespace(
+        camera_id="cam1",
+        track_id=fish_id,
+        frames=frames,
+        centroids=tuple((50.0, 50.0) for _ in frames),
+        bboxes=tuple((40.0, 40.0, 20.0, 20.0) for _ in frames),
+        frame_status=tuple("detected" for _ in frames),
+    )
+    return SimpleNamespace(
+        fish_id=fish_id,
+        tracklets=(tracklet,),
+        confidence=0.9,
+        per_frame_confidence=None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Protocol conformance
+# ---------------------------------------------------------------------------
 
 
 def test_hdf5_observer_satisfies_protocol(tmp_path: Path) -> None:
     """HDF5ExportObserver satisfies the Observer protocol."""
     observer = HDF5ExportObserver(output_dir=tmp_path)
     assert isinstance(observer, Observer)
+
+
+# ---------------------------------------------------------------------------
+# Frame-major layout (legacy, when tracklet_groups absent)
+# ---------------------------------------------------------------------------
 
 
 def test_hdf5_writes_on_pipeline_complete(tmp_path: Path) -> None:
@@ -133,7 +166,7 @@ def test_hdf5_skips_if_no_context(tmp_path: Path) -> None:
 def test_hdf5_empty_frames(tmp_path: Path) -> None:
     """File written with frame_count=0 when midlines_3d is empty list."""
     observer = HDF5ExportObserver(output_dir=tmp_path)
-    context = SimpleNamespace(midlines_3d=[])
+    context = SimpleNamespace(midlines_3d=[], tracklet_groups=None)
 
     observer.on_event(
         PipelineComplete(run_id="empty", elapsed_seconds=0.5, context=context)
@@ -144,3 +177,167 @@ def test_hdf5_empty_frames(tmp_path: Path) -> None:
 
     with h5py.File(str(output_path), "r") as f:
         assert f.attrs["frame_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Fish-first layout (v2.1, when tracklet_groups present)
+# ---------------------------------------------------------------------------
+
+
+def test_hdf5_fish_first_layout(tmp_path: Path) -> None:
+    """Fish-first layout has /fish_{id}/spline_controls and /fish_{id}/confidence."""
+    groups = [
+        _make_tracklet_group(0, (0, 1)),
+        _make_tracklet_group(1, (0, 1)),
+    ]
+    context = _make_context(n_frames=2, n_fish=2, tracklet_groups=groups)
+
+    observer = HDF5ExportObserver(output_dir=tmp_path)
+    observer.on_event(
+        PipelineComplete(run_id="fish_first", elapsed_seconds=1.0, context=context)
+    )
+
+    with h5py.File(str(tmp_path / "outputs.h5"), "r") as f:
+        assert f.attrs["layout"] == "fish_first"
+        assert "fish_0" in f
+        assert "fish_1" in f
+        assert "spline_controls" in f["fish_0"]
+        assert "confidence" in f["fish_0"]
+
+        sc = f["fish_0"]["spline_controls"][:]
+        assert sc.shape == (2, 7, 3)
+        assert sc.dtype == np.float32
+
+        conf = f["fish_0"]["confidence"][:]
+        assert conf.shape == (2,)
+        assert conf.dtype == np.float32
+
+
+def test_hdf5_fish_first_confidence_values(tmp_path: Path) -> None:
+    """Interpolated frames (is_low_confidence=True) have confidence=0."""
+    groups = [_make_tracklet_group(0, (0, 1, 2))]
+
+    # Frame 1 is interpolated
+    midlines_3d = [
+        {0: _make_spline(seed=0, is_low_confidence=False)},
+        {0: _make_spline(seed=1, is_low_confidence=True)},
+        {0: _make_spline(seed=2, is_low_confidence=False)},
+    ]
+    context = SimpleNamespace(midlines_3d=midlines_3d, tracklet_groups=groups)
+
+    observer = HDF5ExportObserver(output_dir=tmp_path)
+    observer.on_event(
+        PipelineComplete(run_id="conf_test", elapsed_seconds=1.0, context=context)
+    )
+
+    with h5py.File(str(tmp_path / "outputs.h5"), "r") as f:
+        conf = f["fish_0"]["confidence"][:]
+        assert conf[0] == 1.0  # Normal frame
+        assert conf[1] == 0.0  # Interpolated
+        assert conf[2] == 1.0  # Normal frame
+
+
+def test_hdf5_fish_first_root_attributes(tmp_path: Path) -> None:
+    """Fish-first layout includes root attributes: config_hash, run_timestamp."""
+    from aquapose.engine.config import PipelineConfig
+
+    groups = [_make_tracklet_group(0, (0,))]
+    context = _make_context(n_frames=1, n_fish=1, tracklet_groups=groups)
+    config = PipelineConfig(
+        run_id="root_attr_test", calibration_path="/fake/calib.json"
+    )
+
+    observer = HDF5ExportObserver(output_dir=tmp_path)
+    observer.on_event(PipelineStart(run_id="root_attr_test", config=config))
+    observer.on_event(
+        PipelineComplete(run_id="root_attr_test", elapsed_seconds=1.0, context=context)
+    )
+
+    with h5py.File(str(tmp_path / "outputs.h5"), "r") as f:
+        assert "config_hash" in f.attrs
+        assert len(f.attrs["config_hash"]) == 32
+        assert "run_timestamp" in f.attrs
+        assert "calibration_path" in f.attrs
+        assert f.attrs["calibration_path"] == "/fake/calib.json"
+
+
+def test_hdf5_fish_first_empty_midlines(tmp_path: Path) -> None:
+    """Fish-first layout with empty midlines produces valid HDF5."""
+    groups = [_make_tracklet_group(0, (0,))]
+    midlines_3d: list[dict] = [{}]
+    context = SimpleNamespace(midlines_3d=midlines_3d, tracklet_groups=groups)
+
+    observer = HDF5ExportObserver(output_dir=tmp_path)
+    observer.on_event(
+        PipelineComplete(run_id="empty_fish", elapsed_seconds=1.0, context=context)
+    )
+
+    output_path = tmp_path / "outputs.h5"
+    assert output_path.exists()
+
+    with h5py.File(str(output_path), "r") as f:
+        assert f.attrs["frame_count"] == 1
+        assert f.attrs["layout"] == "fish_first"
+
+
+def test_hdf5_backward_compat_no_tracklet_groups(tmp_path: Path) -> None:
+    """When tracklet_groups is None, falls back to frame-major layout."""
+    context = _make_context(n_frames=2, n_fish=1, tracklet_groups=None)
+
+    observer = HDF5ExportObserver(output_dir=tmp_path)
+    observer.on_event(
+        PipelineComplete(run_id="compat", elapsed_seconds=1.0, context=context)
+    )
+
+    with h5py.File(str(tmp_path / "outputs.h5"), "r") as f:
+        assert "frames" in f
+        assert "fish_0" not in f  # No fish-first groups
+        assert "0000" in f["frames"]
+
+
+def test_hdf5_fish_first_spline_values_match(tmp_path: Path) -> None:
+    """Fish-first spline_controls values match the input Midline3D."""
+    groups = [_make_tracklet_group(0, (0,))]
+    spline = _make_spline(seed=42)
+    midlines_3d = [{0: spline}]
+    context = SimpleNamespace(midlines_3d=midlines_3d, tracklet_groups=groups)
+
+    observer = HDF5ExportObserver(output_dir=tmp_path)
+    observer.on_event(
+        PipelineComplete(run_id="values", elapsed_seconds=1.0, context=context)
+    )
+
+    with h5py.File(str(tmp_path / "outputs.h5"), "r") as f:
+        sc = f["fish_0"]["spline_controls"][0]
+        np.testing.assert_array_almost_equal(sc, spline.control_points)
+
+
+def test_hdf5_fish_first_missing_frames_are_nan(tmp_path: Path) -> None:
+    """Frames where a fish is absent have NaN in spline_controls and confidence."""
+    groups = [_make_tracklet_group(0, (0, 1, 2))]
+    # Fish 0 only in frames 0 and 2, missing in frame 1
+    midlines_3d = [
+        {0: _make_spline(seed=0)},
+        {},
+        {0: _make_spline(seed=2)},
+    ]
+    context = SimpleNamespace(midlines_3d=midlines_3d, tracklet_groups=groups)
+
+    observer = HDF5ExportObserver(output_dir=tmp_path)
+    observer.on_event(
+        PipelineComplete(run_id="nan_test", elapsed_seconds=1.0, context=context)
+    )
+
+    with h5py.File(str(tmp_path / "outputs.h5"), "r") as f:
+        sc = f["fish_0"]["spline_controls"][:]
+        conf = f["fish_0"]["confidence"][:]
+
+        # Frame 0 and 2: valid
+        assert not np.any(np.isnan(sc[0]))
+        assert not np.any(np.isnan(sc[2]))
+        assert not np.isnan(conf[0])
+        assert not np.isnan(conf[2])
+
+        # Frame 1: NaN
+        assert np.all(np.isnan(sc[1]))
+        assert np.isnan(conf[1])

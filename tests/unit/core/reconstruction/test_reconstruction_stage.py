@@ -1,15 +1,17 @@
-"""Interface tests for ReconstructionStage — Stage 5 of the AquaPose pipeline.
+"""Interface tests for ReconstructionStage -- Stage 5 of the AquaPose pipeline.
 
 Validates:
 - ReconstructionStage satisfies the Stage Protocol via structural typing
-- run() correctly assembles MidlineSet and populates PipelineContext.midlines_3d
-- run() produces empty midlines_3d when tracklet_groups is empty (stub path, Phase 22)
+- run() correctly uses tracklet_groups for camera membership (no RANSAC)
+- run() produces empty midlines_3d when tracklet_groups is empty (stub path)
+- min_cameras enforcement: frames below threshold are dropped
+- Gap interpolation: short gaps are filled with confidence=0
+- Gap > max_interp_gap: NOT interpolated (stays dropped)
 - Triangulation backend delegates to triangulate_midlines()
 - Curve optimizer backend delegates to CurveOptimizer.optimize_midlines()
 - Backend selection via "triangulation" and "curve_optimizer" strings
 - Backend registry raises ValueError for unknown kinds
 - Import boundary (ENG-07): no engine/ runtime imports in core/reconstruction/
-- MidlineSet assembly from FishTrack.camera_detections + annotated_detections
 - All 5 stages importable from core/
 - build_stages() returns 5 ordered Stage instances
 - PosePipeline instantiable with build_stages(config)
@@ -20,16 +22,19 @@ from __future__ import annotations
 import importlib
 import inspect
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
+from aquapose.core.association.types import TrackletGroup
 from aquapose.core.context import PipelineContext, Stage
 from aquapose.core.reconstruction import ReconstructionStage
 from aquapose.core.reconstruction.backends import get_backend
-from aquapose.core.tracking import FishTrack, TrackState
+from aquapose.core.tracking.types import Tracklet2D
 from aquapose.reconstruction.midline import Midline2D
+from aquapose.reconstruction.triangulation import Midline3D
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -54,30 +59,65 @@ def _make_midline2d(
     )
 
 
-def _make_annotated_detection(
-    midline: Midline2D | None, camera_id: str = "cam1"
-) -> MagicMock:
-    """Create a mock AnnotatedDetection with a midline attribute."""
-    ann = MagicMock()
-    ann.midline = midline
-    ann.camera_id = camera_id
-    return ann
-
-
-def _make_fish_track(
+def _make_midline3d(
     fish_id: int = 0,
-    camera_detections: dict[str, int] | None = None,
-) -> FishTrack:
-    """Create a FishTrack with given camera_detections mapping."""
-    track = FishTrack(fish_id=fish_id)
-    track.camera_detections = camera_detections or {}
-    track.state = TrackState.CONFIRMED
-    track.positions.append(np.array([0.5, 0.5, 0.5], dtype=np.float32))
-    return track
+    frame_index: int = 0,
+    n_ctrl: int = 7,
+) -> Midline3D:
+    """Create a synthetic Midline3D for test assertions."""
+    rng = np.random.RandomState(fish_id * 100 + frame_index)
+    return Midline3D(
+        fish_id=fish_id,
+        frame_index=frame_index,
+        control_points=rng.randn(n_ctrl, 3).astype(np.float32),
+        knots=np.linspace(0, 1, n_ctrl + 4).astype(np.float32),
+        degree=3,
+        arc_length=float(rng.uniform(10, 50)),
+        half_widths=np.full(15, 2.0, dtype=np.float32),
+        n_cameras=4,
+        mean_residual=1.5,
+        max_residual=5.0,
+        is_low_confidence=False,
+    )
+
+
+def _make_annotated_detection(
+    midline: Midline2D | None,
+    centroid: tuple[float, float] = (50.0, 50.0),
+) -> SimpleNamespace:
+    """Create a mock AnnotatedDetection with a midline and detection centroid."""
+    det = SimpleNamespace(centroid=centroid)
+    return SimpleNamespace(midline=midline, detection=det)
+
+
+def _make_tracklet(
+    camera_id: str,
+    track_id: int,
+    frames: tuple[int, ...],
+    centroids: tuple | None = None,
+    frame_status: tuple | None = None,
+) -> Tracklet2D:
+    """Create a Tracklet2D with given camera/frames."""
+    if centroids is None:
+        centroids = tuple((50.0, 50.0) for _ in frames)
+    if frame_status is None:
+        frame_status = tuple("detected" for _ in frames)
+    bboxes = tuple((40.0, 40.0, 20.0, 20.0) for _ in frames)
+    return Tracklet2D(
+        camera_id=camera_id,
+        track_id=track_id,
+        frames=frames,
+        centroids=centroids,
+        bboxes=bboxes,
+        frame_status=frame_status,
+    )
 
 
 def _build_stage(
-    tmp_path: Path, mock_backend: MagicMock | None = None
+    tmp_path: Path,
+    mock_backend: MagicMock | None = None,
+    min_cameras: int = 3,
+    max_interp_gap: int = 5,
 ) -> ReconstructionStage:
     """Build a ReconstructionStage with mocked backend (no real calibration)."""
     calib_file = tmp_path / "calibration.json"
@@ -85,7 +125,9 @@ def _build_stage(
 
     stage = ReconstructionStage.__new__(ReconstructionStage)
     stage._calibration_path = calib_file
-    stage._skip_camera_id = "e3v8250"
+    stage._min_cameras = min_cameras
+    stage._max_interp_gap = max_interp_gap
+    stage._n_control_points = 7
 
     if mock_backend is not None:
         stage._backend = mock_backend
@@ -111,135 +153,306 @@ def test_reconstruction_stage_satisfies_protocol(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Context population
+# Tracklet-group-driven reconstruction
 # ---------------------------------------------------------------------------
 
 
-def test_reconstruction_stage_populates_midlines_3d(tmp_path: Path) -> None:
-    """run() populates context.midlines_3d as a list of per-frame dicts.
-
-    v2.1 transition: ReconstructionStage iterates annotated_detections only.
-    Fish identity via TrackletGroup is wired in Phase 26.
-    tracklet_groups must be None (not empty list) to reach the annotated_detections path.
-    """
+def test_reconstruction_with_tracklet_groups(tmp_path: Path) -> None:
+    """run() uses tracklet_groups camera membership to build MidlineSets."""
     ml1 = _make_midline2d(fish_id=0, camera_id="cam1")
-    ann1 = MagicMock()
-    ann1.midline = ml1
+    ml2 = _make_midline2d(fish_id=0, camera_id="cam2")
+    ml3 = _make_midline2d(fish_id=0, camera_id="cam3")
 
-    synthetic_annotated = [
-        {"cam1": [ann1]},
-        {"cam1": []},
-    ]
+    expected_m3d = _make_midline3d(fish_id=0, frame_index=0)
 
     mock_backend = MagicMock()
-    mock_backend.reconstruct_frame.return_value = {}
-    stage = _build_stage(tmp_path, mock_backend=mock_backend)
+    mock_backend.reconstruct_frame.return_value = {0: expected_m3d}
+
+    stage = _build_stage(tmp_path, mock_backend=mock_backend, min_cameras=3)
+
+    # Build annotated detections: 3 cameras, 2 frames
+    ann1 = _make_annotated_detection(ml1, centroid=(50.0, 50.0))
+    ann2 = _make_annotated_detection(ml2, centroid=(50.0, 50.0))
+    ann3 = _make_annotated_detection(ml3, centroid=(50.0, 50.0))
+
+    annotated = [
+        {"cam1": [ann1], "cam2": [ann2], "cam3": [ann3]},
+        {"cam1": [ann1], "cam2": [ann2], "cam3": [ann3]},
+    ]
+
+    # Build tracklet group with 3 cameras, frames 0-1
+    t1 = _make_tracklet("cam1", 1, (0, 1))
+    t2 = _make_tracklet("cam2", 2, (0, 1))
+    t3 = _make_tracklet("cam3", 3, (0, 1))
+    group = TrackletGroup(fish_id=0, tracklets=(t1, t2, t3))
 
     ctx = PipelineContext()
-    ctx.annotated_detections = synthetic_annotated
-    # tracklet_groups must be None (not []) to reach the annotated_detections path.
-    # When tracklet_groups == [], run() early-returns with empty midlines_3d.
-    ctx.tracklet_groups = None
+    ctx.frame_count = 2
+    ctx.tracklet_groups = [group]
+    ctx.annotated_detections = annotated
 
     result = stage.run(ctx)
 
-    assert result is ctx, "run() must return the same context object"
+    assert result is ctx
     assert ctx.midlines_3d is not None
-    assert isinstance(ctx.midlines_3d, list)
-    assert len(ctx.midlines_3d) == 2, "midlines_3d must have one entry per frame"
+    assert len(ctx.midlines_3d) == 2
+    assert 0 in ctx.midlines_3d[0]
+    mock_backend.reconstruct_frame.assert_called()
+
+
+def test_reconstruction_two_fish(tmp_path: Path) -> None:
+    """run() with 2 fish produces per-fish results in midlines_3d."""
+    m3d_0 = _make_midline3d(fish_id=0, frame_index=0)
+    m3d_1 = _make_midline3d(fish_id=1, frame_index=0)
+
+    mock_backend = MagicMock()
+    mock_backend.reconstruct_frame.side_effect = lambda **kw: {
+        next(iter(kw["midline_set"].keys())): (
+            m3d_0 if 0 in kw["midline_set"] else m3d_1
+        )
+    }
+
+    stage = _build_stage(tmp_path, mock_backend=mock_backend, min_cameras=3)
+
+    ml = _make_midline2d()
+    ann = _make_annotated_detection(ml, centroid=(50.0, 50.0))
+    annotated = [{"cam1": [ann, ann], "cam2": [ann], "cam3": [ann]}]
+
+    t_a1 = _make_tracklet("cam1", 1, (0,))
+    t_a2 = _make_tracklet("cam2", 2, (0,))
+    t_a3 = _make_tracklet("cam3", 3, (0,))
+    group_a = TrackletGroup(fish_id=0, tracklets=(t_a1, t_a2, t_a3))
+
+    t_b1 = _make_tracklet("cam1", 4, (0,))
+    t_b2 = _make_tracklet("cam2", 5, (0,))
+    t_b3 = _make_tracklet("cam3", 6, (0,))
+    group_b = TrackletGroup(fish_id=1, tracklets=(t_b1, t_b2, t_b3))
+
+    ctx = PipelineContext()
+    ctx.frame_count = 1
+    ctx.tracklet_groups = [group_a, group_b]
+    ctx.annotated_detections = annotated
+
+    stage.run(ctx)
+
+    assert len(ctx.midlines_3d) == 1
+    # Both fish should be present in frame 0
+    assert 0 in ctx.midlines_3d[0]
+    assert 1 in ctx.midlines_3d[0]
+
+
+# ---------------------------------------------------------------------------
+# min_cameras enforcement
+# ---------------------------------------------------------------------------
+
+
+def test_min_cameras_drops_insufficient_views(tmp_path: Path) -> None:
+    """Fish with fewer cameras than min_cameras produces dropped frame."""
+    mock_backend = MagicMock()
+    mock_backend.reconstruct_frame.return_value = {}
+    stage = _build_stage(tmp_path, mock_backend=mock_backend, min_cameras=3)
+
+    ml = _make_midline2d()
+    ann = _make_annotated_detection(ml, centroid=(50.0, 50.0))
+    annotated = [{"cam1": [ann], "cam2": [ann]}]
+
+    # Only 2 cameras -> below min_cameras=3
+    t1 = _make_tracklet("cam1", 1, (0,))
+    t2 = _make_tracklet("cam2", 2, (0,))
+    group = TrackletGroup(fish_id=0, tracklets=(t1, t2))
+
+    ctx = PipelineContext()
+    ctx.frame_count = 1
+    ctx.tracklet_groups = [group]
+    ctx.annotated_detections = annotated
+
+    stage.run(ctx)
+
+    assert len(ctx.midlines_3d) == 1
+    assert ctx.midlines_3d[0] == {}  # No fish reconstructed
+    mock_backend.reconstruct_frame.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Gap interpolation
+# ---------------------------------------------------------------------------
+
+
+def test_gap_interpolation_short_gap(tmp_path: Path) -> None:
+    """Short gap (<=max_interp_gap) is interpolated with is_low_confidence=True."""
+    m3d_0 = _make_midline3d(fish_id=0, frame_index=0)
+    m3d_5 = _make_midline3d(fish_id=0, frame_index=5)
+
+    mock_backend = MagicMock()
+
+    def reconstruct_side_effect(**kw: object) -> dict:
+        fi = kw["frame_idx"]
+        if fi == 0:
+            return {0: m3d_0}
+        if fi == 5:
+            return {0: m3d_5}
+        return {}
+
+    mock_backend.reconstruct_frame.side_effect = reconstruct_side_effect
+
+    # max_interp_gap=5, so gap of 4 (frames 1-4) should be interpolated
+    stage = _build_stage(
+        tmp_path, mock_backend=mock_backend, min_cameras=3, max_interp_gap=5
+    )
+
+    ml = _make_midline2d()
+    ann = _make_annotated_detection(ml, centroid=(50.0, 50.0))
+    # Only frames 0 and 5 have 3 cameras; frames 1-4 have 0 cameras
+    annotated = []
+    for i in range(6):
+        if i in (0, 5):
+            annotated.append({"cam1": [ann], "cam2": [ann], "cam3": [ann]})
+        else:
+            annotated.append({})
+
+    t1 = _make_tracklet("cam1", 1, (0, 5))
+    t2 = _make_tracklet("cam2", 2, (0, 5))
+    t3 = _make_tracklet("cam3", 3, (0, 5))
+    group = TrackletGroup(fish_id=0, tracklets=(t1, t2, t3))
+
+    ctx = PipelineContext()
+    ctx.frame_count = 6
+    ctx.tracklet_groups = [group]
+    ctx.annotated_detections = annotated
+
+    stage.run(ctx)
+
+    # Frames 0 and 5 are real; frames 1-4 are interpolated
+    assert 0 in ctx.midlines_3d[0]
+    assert 0 in ctx.midlines_3d[5]
+
+    # Interpolated frames
+    for f in (1, 2, 3, 4):
+        assert 0 in ctx.midlines_3d[f], f"Fish 0 missing in interpolated frame {f}"
+        m = ctx.midlines_3d[f][0]
+        assert m.is_low_confidence is True, (
+            f"Interpolated frame {f} should have is_low_confidence=True"
+        )
+
+
+def test_gap_too_long_not_interpolated(tmp_path: Path) -> None:
+    """Gap > max_interp_gap is NOT interpolated (stays missing)."""
+    m3d_0 = _make_midline3d(fish_id=0, frame_index=0)
+    m3d_8 = _make_midline3d(fish_id=0, frame_index=8)
+
+    mock_backend = MagicMock()
+
+    def reconstruct_side_effect(**kw: object) -> dict:
+        fi = kw["frame_idx"]
+        if fi == 0:
+            return {0: m3d_0}
+        if fi == 8:
+            return {0: m3d_8}
+        return {}
+
+    mock_backend.reconstruct_frame.side_effect = reconstruct_side_effect
+
+    # max_interp_gap=3, gap of 7 (frames 1-7) should NOT be interpolated
+    stage = _build_stage(
+        tmp_path, mock_backend=mock_backend, min_cameras=3, max_interp_gap=3
+    )
+
+    ml = _make_midline2d()
+    ann = _make_annotated_detection(ml, centroid=(50.0, 50.0))
+    annotated = []
+    for i in range(9):
+        if i in (0, 8):
+            annotated.append({"cam1": [ann], "cam2": [ann], "cam3": [ann]})
+        else:
+            annotated.append({})
+
+    t1 = _make_tracklet("cam1", 1, (0, 8))
+    t2 = _make_tracklet("cam2", 2, (0, 8))
+    t3 = _make_tracklet("cam3", 3, (0, 8))
+    group = TrackletGroup(fish_id=0, tracklets=(t1, t2, t3))
+
+    ctx = PipelineContext()
+    ctx.frame_count = 9
+    ctx.tracklet_groups = [group]
+    ctx.annotated_detections = annotated
+
+    stage.run(ctx)
+
+    # Only frames 0 and 8 have results
+    assert 0 in ctx.midlines_3d[0]
+    assert 0 in ctx.midlines_3d[8]
+    # Gap frames should be empty
+    for f in range(1, 8):
+        assert 0 not in ctx.midlines_3d[f], (
+            f"Fish 0 should NOT be in frame {f} (gap > max_interp_gap)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Empty tracklet_groups (stub path)
+# ---------------------------------------------------------------------------
 
 
 def test_reconstruction_stage_empty_tracklet_groups_stub_path(tmp_path: Path) -> None:
-    """run() produces empty midlines_3d when tracklet_groups is [] (stub path, Phase 22)."""
+    """run() produces empty midlines_3d when tracklet_groups is [] (stub path)."""
     mock_backend = MagicMock()
     stage = _build_stage(tmp_path, mock_backend=mock_backend)
 
     ctx = PipelineContext()
     ctx.frame_count = 3
-    ctx.tracklet_groups = []  # empty list = stub output from AssociationStage
+    ctx.tracklet_groups = []
 
     result = stage.run(ctx)
 
-    assert result is ctx, "run() must return the same context object"
+    assert result is ctx
     assert ctx.midlines_3d is not None
-    assert isinstance(ctx.midlines_3d, list)
-    assert len(ctx.midlines_3d) == 3, "midlines_3d must have one entry per frame"
+    assert len(ctx.midlines_3d) == 3
     for frame_result in ctx.midlines_3d:
-        assert frame_result == {}, "Each frame must be an empty dict when stub"
+        assert frame_result == {}
     mock_backend.reconstruct_frame.assert_not_called()
 
 
+def test_empty_tracklet_groups_still_produces_empty_midlines(tmp_path: Path) -> None:
+    """Empty tracklet_groups with frame_count=0 produces empty midlines."""
+    stage = _build_stage(tmp_path)
+    ctx = PipelineContext()
+    ctx.frame_count = 0
+    ctx.tracklet_groups = []
+
+    stage.run(ctx)
+    assert ctx.midlines_3d == []
+
+
 # ---------------------------------------------------------------------------
-# MidlineSet assembly
+# Coasted frames are excluded
 # ---------------------------------------------------------------------------
 
 
-def test_midline_set_assembly(tmp_path: Path) -> None:
-    """_assemble_midline_set correctly builds dict[fish_id, dict[cam_id, Midline2D]]."""
-    ml_cam1 = _make_midline2d(fish_id=0, camera_id="cam1")
-    ml_cam2 = _make_midline2d(fish_id=0, camera_id="cam2")
+def test_coasted_frames_excluded_from_camera_count(tmp_path: Path) -> None:
+    """Coasted frames don't count toward min_cameras."""
+    mock_backend = MagicMock()
+    mock_backend.reconstruct_frame.return_value = {}
+    stage = _build_stage(tmp_path, mock_backend=mock_backend, min_cameras=3)
 
-    ann_cam1 = _make_annotated_detection(ml_cam1, camera_id="cam1")
-    ann_cam2 = _make_annotated_detection(ml_cam2, camera_id="cam2")
+    ml = _make_midline2d()
+    ann = _make_annotated_detection(ml, centroid=(50.0, 50.0))
+    annotated = [{"cam1": [ann], "cam2": [ann], "cam3": [ann]}]
 
-    # Fish 0 is visible in cam1 (det_idx=0) and cam2 (det_idx=1)
-    track = _make_fish_track(fish_id=0, camera_detections={"cam1": 0, "cam2": 0})
-    # Fish 1 has a None midline — should be excluded
-    track2 = _make_fish_track(fish_id=1, camera_detections={"cam1": 1})
-    ann_no_midline = _make_annotated_detection(None, camera_id="cam1")
+    # cam3 is coasted in frame 0 -> only 2 detected cameras -> dropped
+    t1 = _make_tracklet("cam1", 1, (0,), frame_status=("detected",))
+    t2 = _make_tracklet("cam2", 2, (0,), frame_status=("detected",))
+    t3 = _make_tracklet("cam3", 3, (0,), frame_status=("coasted",))
+    group = TrackletGroup(fish_id=0, tracklets=(t1, t2, t3))
 
-    frame_annotated: dict[str, list] = {
-        "cam1": [ann_cam1, ann_no_midline],
-        "cam2": [ann_cam2],
-    }
-    frame_tracks = [track, track2]
+    ctx = PipelineContext()
+    ctx.frame_count = 1
+    ctx.tracklet_groups = [group]
+    ctx.annotated_detections = annotated
 
-    stage = _build_stage(tmp_path)
-    midline_set = stage._assemble_midline_set(
-        frame_idx=0,
-        frame_tracks=frame_tracks,
-        frame_annotated=frame_annotated,
-    )
+    stage.run(ctx)
 
-    assert 0 in midline_set, "Fish 0 should be in MidlineSet"
-    assert "cam1" in midline_set[0], "cam1 should be in fish 0's midlines"
-    assert "cam2" in midline_set[0], "cam2 should be in fish 0's midlines"
-    assert midline_set[0]["cam1"] is ml_cam1
-    assert midline_set[0]["cam2"] is ml_cam2
-
-    # Fish 1 has None midline — excluded
-    assert 1 not in midline_set, "Fish 1 with None midline should be excluded"
-
-
-def test_midline_set_assembly_empty_camera_detections(tmp_path: Path) -> None:
-    """Fish with no camera_detections are excluded from MidlineSet."""
-    track = _make_fish_track(fish_id=0, camera_detections={})
-    stage = _build_stage(tmp_path)
-
-    midline_set = stage._assemble_midline_set(
-        frame_idx=0,
-        frame_tracks=[track],
-        frame_annotated={},
-    )
-    assert midline_set == {}, (
-        "Fish with no camera_detections must produce empty MidlineSet"
-    )
-
-
-def test_midline_set_assembly_out_of_range_det_idx(tmp_path: Path) -> None:
-    """Out-of-range det_idx is handled gracefully (logged and skipped)."""
-    ml = _make_midline2d(fish_id=0)
-    ann = _make_annotated_detection(ml)
-    track = _make_fish_track(fish_id=0, camera_detections={"cam1": 99})  # out of range
-    frame_annotated: dict[str, list] = {"cam1": [ann]}
-    stage = _build_stage(tmp_path)
-
-    midline_set = stage._assemble_midline_set(
-        frame_idx=0,
-        frame_tracks=[track],
-        frame_annotated=frame_annotated,
-    )
-    assert midline_set == {}, "Out-of-range det_idx must be skipped gracefully"
+    assert ctx.midlines_3d[0] == {}
+    mock_backend.reconstruct_frame.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +562,7 @@ def test_backend_selection_curve_optimizer(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Backend registry — unknown kind
+# Backend registry -- unknown kind
 # ---------------------------------------------------------------------------
 
 
@@ -365,20 +578,10 @@ def test_backend_registry_unknown_raises() -> None:
 
 
 def test_import_boundary() -> None:
-    """core/reconstruction/ modules must not import from aquapose.engine at runtime.
-
-    The ENG-07 import boundary forbids runtime imports from aquapose.engine in
-    core/ modules. Imports under TYPE_CHECKING are allowed (annotations only).
-
-    Strategy: verify that aquapose.engine is not in sys.modules as a side-effect
-    of importing the reconstruction modules, and that no module-level code in
-    core/reconstruction/ brings in engine symbols at import time.
-    """
-
+    """core/reconstruction/ modules must not import from aquapose.engine at runtime."""
     modules_to_check = [
         "aquapose.core.reconstruction",
         "aquapose.core.reconstruction.stage",
-        "aquapose.core.reconstruction.types",
         "aquapose.core.reconstruction.backends",
         "aquapose.core.reconstruction.backends.triangulation",
         "aquapose.core.reconstruction.backends.curve_optimizer",
@@ -388,21 +591,15 @@ def test_import_boundary() -> None:
         mod = importlib.import_module(mod_name)
         source = inspect.getsource(mod)
 
-        # Check that aquapose.engine does NOT appear as a bare import anywhere
-        # OUTSIDE a TYPE_CHECKING block. Use a simple state machine that tracks
-        # whether we are inside `if TYPE_CHECKING:` (indented) blocks.
         lines = source.split("\n")
         in_type_checking_block = False
         for line in lines:
             stripped = line.strip()
-            # Detect `if TYPE_CHECKING:` at any indent level
             if stripped == "if TYPE_CHECKING:" or stripped.startswith(
                 "if TYPE_CHECKING:"
             ):
                 in_type_checking_block = True
                 continue
-            # A non-blank, non-indented line that is NOT part of the if-block ends it
-            # We detect this by checking if indentation is 0 for a non-empty line
             if (
                 in_type_checking_block
                 and stripped
@@ -418,7 +615,7 @@ def test_import_boundary() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Active stages importable (v2.1 — stubs in engine/pipeline.py, not core/)
+# Active stages importable
 # ---------------------------------------------------------------------------
 
 
@@ -434,8 +631,6 @@ def test_active_stages_importable() -> None:
     assert MidlineStage is not None
     assert ReconstructionStage is not None
 
-    # AssociationStage lives in core/association (replaced stub in Phase 25)
-    # TrackingStage lives in aquapose.core.tracking (replaced TrackingStubStage in Phase 24)
     from aquapose.core.association import AssociationStage
     from aquapose.core.tracking import TrackingStage
 
@@ -444,12 +639,12 @@ def test_active_stages_importable() -> None:
 
 
 # ---------------------------------------------------------------------------
-# build_stages factory (v2.1 — 5 stages in production, 4 in synthetic)
+# build_stages factory
 # ---------------------------------------------------------------------------
 
 
 def test_build_stages_returns_stages(tmp_path: Path) -> None:
-    """build_stages(config) returns an ordered list of 5 Stage instances (production mode)."""
+    """build_stages(config) returns an ordered list of 5 Stage instances."""
     from aquapose.core import (
         DetectionStage,
         MidlineStage,
@@ -460,7 +655,6 @@ def test_build_stages_returns_stages(tmp_path: Path) -> None:
     from aquapose.engine.config import PipelineConfig
     from aquapose.engine.pipeline import build_stages
 
-    # Create dummy files so path checks don't fail at import time
     video_dir = tmp_path / "videos"
     video_dir.mkdir()
     calib_file = tmp_path / "calibration.json"
@@ -481,7 +675,6 @@ def test_build_stages_returns_stages(tmp_path: Path) -> None:
         ).MidlineConfig(weights_path=str(weights_file)),
     )
 
-    # Mock all heavy init operations
     with (
         patch(
             "aquapose.core.detection.stage.DetectionStage.__init__", return_value=None
@@ -502,7 +695,6 @@ def test_build_stages_returns_stages(tmp_path: Path) -> None:
     assert isinstance(stages[3], MidlineStage)
     assert isinstance(stages[4], ReconstructionStage)
 
-    # All satisfy Stage Protocol (stubs are duck-typed, not runtime_checkable)
     from aquapose.core.context import Stage
 
     for stage in stages:
@@ -518,7 +710,7 @@ def test_build_stages_returns_stages(tmp_path: Path) -> None:
 
 
 def test_pose_pipeline_instantiable_with_build_stages(tmp_path: Path) -> None:
-    """PosePipeline(stages=build_stages(config), config=config) instantiates without error."""
+    """PosePipeline(stages=build_stages(config), config=config) instantiates."""
     from aquapose.engine.config import PipelineConfig
     from aquapose.engine.pipeline import PosePipeline, build_stages
 
@@ -532,7 +724,6 @@ def test_pose_pipeline_instantiable_with_build_stages(tmp_path: Path) -> None:
         calibration_path=str(calib_file),
     )
 
-    # Mock all stage constructors to avoid loading real models/calibration
     with (
         patch(
             "aquapose.core.detection.stage.DetectionStage.__init__", return_value=None
@@ -546,20 +737,18 @@ def test_pose_pipeline_instantiable_with_build_stages(tmp_path: Path) -> None:
         stages = build_stages(config)
         pipeline = PosePipeline(stages=stages, config=config)
 
-    assert pipeline is not None, "PosePipeline must instantiate without error"
+    assert pipeline is not None
 
 
 # ---------------------------------------------------------------------------
-# Validation — missing context fields
+# Validation -- missing context fields
 # ---------------------------------------------------------------------------
 
 
 def test_run_raises_if_annotated_detections_missing(tmp_path: Path) -> None:
-    """run() raises ValueError if context.annotated_detections is None (and tracklet_groups is also None)."""
+    """run() raises ValueError if both tracklet_groups and annotated_detections are None."""
     stage = _build_stage(tmp_path)
     ctx = PipelineContext()
-    # Both annotated_detections and tracklet_groups are None — should raise
-    # (tracklet_groups=None means neither the stub path nor the full path applies)
 
     with pytest.raises(ValueError, match=r"annotated_detections"):
         stage.run(ctx)

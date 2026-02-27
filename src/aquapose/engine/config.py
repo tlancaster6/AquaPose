@@ -213,12 +213,25 @@ class ReconstructionConfig:
         max_depth: Maximum allowed fish depth below the water surface (metres).
             When None (default), no upper depth bound is enforced. Set to the
             physical tank depth to catch above-water outliers.
+        min_cameras: Minimum cameras observing a fish in a frame to attempt
+            triangulation. Frames with fewer cameras are dropped. Default 3
+            (well-supported by rig geometry — 2-camera triangulation is
+            ill-conditioned with refractive geometry).
+        max_interp_gap: Maximum consecutive dropped frames to interpolate.
+            Gaps longer than this are left as missing data. Default 5
+            (~167ms at 30fps, within fish trajectory smoothness).
+        n_control_points: Fixed B-spline control point count per fish per
+            frame. Must match the triangulation module's SPLINE_N_CTRL.
+            Default 7.
     """
 
     backend: str = "triangulation"
     inlier_threshold: float = 50.0
     snap_threshold: float = 20.0
     max_depth: float | None = None
+    min_cameras: int = 3
+    max_interp_gap: int = 5
+    n_control_points: int = 7
 
 
 # ---------------------------------------------------------------------------

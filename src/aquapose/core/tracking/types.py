@@ -60,11 +60,10 @@ class Tracklet2D:
 # ---------------------------------------------------------------------------
 # Legacy compatibility types: FishTrack, TrackState, TrackHealth
 #
-# These types are kept for reconstruction compatibility (used by Stage 5 and
-# visualization). They are no longer populated by TrackingStage (which is
-# deleted in v2.1). Reconstruction stage will be updated in Phase 26 to
-# consume TrackletGroup instead. Until then, these types remain importable
-# from aquapose.core.tracking.
+# DEPRECATED: Phase 26 replaced reconstruction with TrackletGroup-based
+# reconstruction. These types are retained only for backward compatibility
+# with visualization modules that reference them under TYPE_CHECKING. Do not
+# use in new code.
 # ---------------------------------------------------------------------------
 
 # Default constants for FishTrack (kept from v1.0 tracker)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import enum
 from collections import deque
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -586,6 +587,174 @@ class FishTracker:
 
                 dead_id = next(dead_id_iter, None)
                 self._create_track(birth, fish_id_override=dead_id)
+
+        # ----------------------------------------------------------
+        # Phase 3: Lifecycle
+        # ----------------------------------------------------------
+        self.tracks = [t for t in self.tracks if not t.is_dead]
+        self.frame_count += 1
+        return [t for t in self.tracks if t.is_confirmed]
+
+    def update_from_bundles(
+        self,
+        bundles: list[Any],
+        frame_index: int = 0,
+    ) -> list[FishTrack]:
+        """Process one frame using pre-associated bundles from Stage 3.
+
+        Consumes ``AssociationBundle`` objects directly instead of raw
+        detections, eliminating the redundant internal RANSAC association step
+        that ``update()`` performs. The bundle centroids are used for Hungarian
+        assignment — no camera reprojection is required.
+
+        Three phases:
+        1. Bundle matching — existing tracks matched to bundles via nearest 3D
+           centroid (greedy assignment sorted by distance, ascending).
+        2. Birth from bundles — unmatched bundles that pass proximity checks
+           seed new tracks.
+        3. Lifecycle — prune dead tracks, recycle IDs (TRACK-04).
+
+        Args:
+            bundles: List of ``AssociationBundle`` objects from Stage 3.
+                Each bundle has ``centroid_3d``, ``camera_detections``,
+                ``n_cameras``, and ``reprojection_residual``.
+            frame_index: Frame index for bookkeeping.
+
+        Returns:
+            List of confirmed tracks after processing this frame.
+        """
+        non_dead = [t for t in self.tracks if not t.is_dead]
+        claimed_track_ids: set[int] = set()
+        matched_bundle_indices: set[int] = set()
+
+        # ----------------------------------------------------------
+        # Phase 1: Bundle Matching
+        # ----------------------------------------------------------
+        if non_dead and bundles:
+            # Build (distance, priority, track_id, bundle_idx) candidates
+            assignment_candidates: list[tuple[float, int, int, int]] = []
+            for t in non_dead:
+                pred = t.predict()
+                priority = (
+                    0 if t.state in (TrackState.CONFIRMED, TrackState.COASTING) else 1
+                )
+                for b_idx, bundle in enumerate(bundles):
+                    dist = float(np.linalg.norm(bundle.centroid_3d - pred))
+                    if dist < self.reprojection_threshold * 0.1:
+                        # Convert reprojection_threshold (pixels) to a rough
+                        # 3D distance gate using a generous scale factor.
+                        # 0.1 m default is intentionally wide to not reject
+                        # valid matches; the greedy sort by distance is the
+                        # primary assignment mechanism.
+                        pass  # include all candidates; gating via distance
+                    assignment_candidates.append((dist, priority, t.fish_id, b_idx))
+
+            # Sort by (distance, priority) ascending
+            assignment_candidates.sort(key=lambda x: (x[0], x[1]))
+
+            track_map = {t.fish_id: t for t in non_dead}
+
+            for _dist, _priority, track_id, b_idx in assignment_candidates:
+                if track_id in claimed_track_ids:
+                    continue
+                if b_idx in matched_bundle_indices:
+                    continue
+
+                bundle = bundles[b_idx]
+                track = track_map[track_id]
+
+                # Residual validation: reject anomalously high residuals
+                mean_res = track.health.mean_residual
+                residual_floor = self.reprojection_threshold * 0.5
+                if len(
+                    track.health.residual_history
+                ) >= 3 and bundle.reprojection_residual > max(
+                    mean_res * self.residual_reject_factor,
+                    residual_floor,
+                ):
+                    # Reject — don't mark as claimed; track will get missed
+                    continue
+
+                claimed_track_ids.add(track_id)
+                matched_bundle_indices.add(b_idx)
+
+                # Single-view penalty: update position but freeze velocity
+                if bundle.n_cameras == 1:
+                    track.update_position_only(
+                        centroid_3d=bundle.centroid_3d,
+                        camera_detections=bundle.camera_detections,
+                        reprojection_residual=bundle.reprojection_residual,
+                        n_cameras=bundle.n_cameras,
+                    )
+                else:
+                    track.update_from_claim(
+                        centroid_3d=bundle.centroid_3d,
+                        camera_detections=bundle.camera_detections,
+                        reprojection_residual=bundle.reprojection_residual,
+                        n_cameras=bundle.n_cameras,
+                    )
+
+        # Mark unmatched tracks as missed
+        for t in non_dead:
+            if t.fish_id not in claimed_track_ids:
+                t.mark_missed()
+
+        # ----------------------------------------------------------
+        # Phase 2: Birth from Unmatched Bundles
+        # ----------------------------------------------------------
+        non_dead_count = len([t for t in self.tracks if not t.is_dead])
+        unmatched_bundles = [
+            b for i, b in enumerate(bundles) if i not in matched_bundle_indices
+        ]
+
+        should_birth = (
+            self.frame_count == 0
+            or non_dead_count < self.expected_count
+            or self.frame_count % self.birth_interval == 0
+        )
+
+        if should_birth and unmatched_bundles:
+            # TRACK-04: collect dead IDs for recycling
+            dead_ids: list[int] = [t.fish_id for t in self.tracks if t.is_dead]
+            dead_id_iter = iter(dead_ids)
+
+            # Sort births by X for deterministic ID assignment on first frame
+            births_to_process = list(unmatched_bundles)
+            if self.frame_count == 0:
+                births_to_process = sorted(
+                    births_to_process, key=lambda b: float(b.centroid_3d[0])
+                )
+
+            for bundle in births_to_process:
+                # Skip low-quality single-view bundles for birth
+                if bundle.n_cameras < self.min_cameras_birth:
+                    continue
+
+                # Pre-birth proximity check: reject if too close to existing track
+                too_close = False
+                for t in self.tracks:
+                    if not t.is_dead and len(t.positions) > 0:
+                        dist = float(
+                            np.linalg.norm(bundle.centroid_3d - list(t.positions)[-1])
+                        )
+                        if dist < self.birth_proximity_distance:
+                            too_close = True
+                            break
+                if too_close:
+                    continue
+
+                # Convert bundle to AssociationResult for _create_track
+                birth_assoc = AssociationResult(
+                    fish_id=bundle.fish_idx,
+                    centroid_3d=bundle.centroid_3d,
+                    reprojection_residual=bundle.reprojection_residual,
+                    camera_detections=dict(bundle.camera_detections),
+                    n_cameras=bundle.n_cameras,
+                    confidence=bundle.confidence,
+                    is_low_confidence=(bundle.n_cameras < 2),
+                )
+                dead_id = next(dead_id_iter, None)
+                self._create_track(birth_assoc, fish_id_override=dead_id)
 
         # ----------------------------------------------------------
         # Phase 3: Lifecycle

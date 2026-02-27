@@ -28,7 +28,7 @@ def get_backend(kind: str, **kwargs: Any) -> object:
 
     Returns:
         A configured backend instance with a
-        ``track_frame(frame_idx, bundles, detections_per_camera)`` method.
+        ``track_frame(frame_idx, bundles)`` method.
 
     Raises:
         ValueError: If *kind* is not a recognized backend identifier.

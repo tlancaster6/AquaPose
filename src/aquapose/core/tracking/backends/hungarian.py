@@ -1,18 +1,14 @@
 """Hungarian 3D tracking backend for the Tracking stage (Stage 4).
 
-Wraps the v1.0 FishTracker to provide exact behavioral equivalence. The
-backend is stateful — the FishTracker instance persists across frames,
+Wraps the v1.0 FishTracker to maintain persistent fish identities across frames.
+The backend is stateful — the FishTracker instance persists across frames,
 maintaining track identities and lifecycle state.
 
-Design note (v1.0 debt): FishTracker.update() expects raw detections_per_camera
-and performs its own cross-camera association internally (claim_detections_for_tracks,
-discover_births). Stage 3 (AssociationStage) already computed cross-camera bundles,
-but to preserve exact v1.0 numerical equivalence, this backend passes the raw
-detections to FishTracker.update() directly. The Stage 3 associated_bundles are
-a data product for future backends and observers but are NOT consumed here in
-v1.0-equivalent mode. This is intentional design debt — documented in the bug
-ledger as: "Stage 3 output not consumed by Stage 4 — Stage 4 re-derives
-association internally via FishTracker.update() to preserve v1.0 equivalence."
+Consumes ``AssociationBundle`` objects from Stage 3 (AssociationStage) directly.
+FishTracker.update_from_bundles() performs greedy nearest-3D-centroid assignment
+between predicted track positions and bundle centroids — no internal RANSAC
+re-association is performed. Stage 3 has already computed cross-camera bundles,
+so the pipeline's data flow is honest: Stage 4 consumes Stage 3 output.
 """
 
 from __future__ import annotations
@@ -42,22 +38,21 @@ logger = logging.getLogger(__name__)
 
 
 class HungarianBackend:
-    """Temporal tracking backend wrapping v1.0 FishTracker.
+    """Temporal tracking backend wrapping FishTracker, consuming Stage 3 bundles.
 
     Maintains a FishTracker instance at construction time. The tracker is
     stateful and persists across frames, providing continuous fish identity
     assignment (TRACK-04: population constraint — dead IDs are recycled for
     new fish).
 
-    Calibration is loaded eagerly at construction to build the per-camera
-    RefractiveProjectionModel dict required by FishTracker.update().
+    Calibration is loaded eagerly at construction to enable lifecycle
+    parameters that refer to the refractive scale of the scene.
 
-    Design note (v1.0 debt): FishTracker.update() receives raw
-    detections_per_camera and internally re-derives cross-camera association.
-    The AssociationBundle list from Stage 3 is available in track_frame() but
-    is NOT forwarded to FishTracker.update() in this backend — exact v1.0
-    numerical equivalence is preserved by passing raw detections directly.
-    See module docstring for full rationale.
+    Bundles from Stage 3 (AssociationStage) are the primary input to
+    ``track_frame()``. Each bundle carries a pre-computed 3D centroid and
+    camera detection mapping, so FishTracker.update_from_bundles() assigns
+    tracks via nearest-3D-centroid matching — no internal RANSAC re-association
+    is performed.
 
     Args:
         calibration_path: Path to the AquaCal calibration JSON file.
@@ -94,8 +89,6 @@ class HungarianBackend:
         if not calib_path.exists():
             raise FileNotFoundError(f"Calibration file not found: {calib_path}")
 
-        self._models = self._load_models(calib_path)
-
         self._tracker = FishTracker(
             min_hits=min_hits,
             max_age=max_age,
@@ -118,72 +111,24 @@ class HungarianBackend:
         self,
         frame_idx: int,
         bundles: list[Any],
-        detections_per_camera: dict[str, list[Any]],
     ) -> list[FishTrack]:
         """Process one frame and return confirmed fish tracks.
 
-        Passes raw detections_per_camera to FishTracker.update() to preserve
-        exact v1.0 behavioral equivalence. The bundles parameter (Stage 3 output)
-        is available for future backends but is NOT consumed here.
+        Delegates to FishTracker.update_from_bundles(), which performs greedy
+        nearest-3D-centroid matching between predicted track positions and the
+        pre-associated bundle centroids from Stage 3. No internal RANSAC
+        re-association is performed.
 
         Args:
             frame_idx: Frame index for bookkeeping.
-            bundles: AssociationBundle list from Stage 3 — available for future
-                backends but not consumed in v1.0-equivalent mode.
-            detections_per_camera: Raw per-camera detection lists (from Stage 1).
-                Passed directly to FishTracker.update() for track claiming and
-                birth discovery, replicating exact v1.0 behavior.
+            bundles: List of ``AssociationBundle`` objects from Stage 3.
+                Each bundle has ``centroid_3d``, ``camera_detections``,
+                ``n_cameras``, and ``reprojection_residual``.
 
         Returns:
             List of confirmed FishTrack objects after processing this frame.
         """
-        # Filter models to cameras with detections (avoids projection overhead
-        # for cameras not contributing to this frame).
-        active_models = {
-            cam_id: model
-            for cam_id, model in self._models.items()
-            if cam_id in detections_per_camera
-        }
-
-        return self._tracker.update(
-            detections_per_camera=detections_per_camera,
-            models=active_models,
+        return self._tracker.update_from_bundles(
+            bundles=bundles,
             frame_index=frame_idx,
         )
-
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _load_models(
-        calibration_path: Path,
-    ) -> dict[str, Any]:
-        """Load calibration and build per-camera RefractiveProjectionModel dict.
-
-        Args:
-            calibration_path: Path to AquaCal calibration JSON.
-
-        Returns:
-            Dict mapping camera_id to RefractiveProjectionModel.
-        """
-        from aquapose.calibration.loader import (
-            compute_undistortion_maps,
-            load_calibration_data,
-        )
-        from aquapose.calibration.projection import RefractiveProjectionModel
-
-        calib = load_calibration_data(str(calibration_path))
-        models: dict[str, Any] = {}
-        for cam_id, cam_data in calib.cameras.items():
-            maps = compute_undistortion_maps(cam_data)
-            models[cam_id] = RefractiveProjectionModel(
-                K=maps.K_new,
-                R=cam_data.R,
-                t=cam_data.t,
-                water_z=calib.water_z,
-                normal=calib.interface_normal,
-                n_air=calib.n_air,
-                n_water=calib.n_water,
-            )
-        return models

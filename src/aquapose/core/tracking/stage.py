@@ -1,16 +1,12 @@
 """TrackingStage — Stage 4 of the 5-stage AquaPose pipeline.
 
-Reads raw detections from Stage 1 (context.detections) and maintains
-persistent FishTrack identities across frames via the selected tracking
-backend. Populates PipelineContext.tracks.
+Reads pre-associated bundles from Stage 3 (context.associated_bundles) and
+maintains persistent FishTrack identities across frames via the selected
+tracking backend. Populates PipelineContext.tracks.
 
-Design note (v1.0 debt): Stage 4 reads context.detections (raw per-camera
-detections from Stage 1), NOT context.associated_bundles (Stage 3 output).
-The Hungarian backend re-derives cross-camera association internally via
-FishTracker.update() to preserve exact v1.0 numerical equivalence. The
-associated_bundles from Stage 3 are passed through to track_frame() for
-potential future backends or observers, but the default Hungarian backend
-does not consume them. This is documented design debt.
+Stage 3 (AssociationStage) is a hard dependency — if ``context.associated_bundles``
+is not populated, ``run()`` raises a precondition error. The pipeline's data
+flow is honest: each stage consumes the previous stage's output.
 """
 
 from __future__ import annotations
@@ -39,10 +35,9 @@ class TrackingStage:
     The backend is created eagerly at construction time. A missing calibration
     file raises :class:`FileNotFoundError` immediately.
 
-    Key design note: run() reads context.detections (Stage 1 raw output),
-    not context.associated_bundles (Stage 3 output). The Hungarian backend
-    re-derives cross-camera association internally to preserve v1.0 equivalence.
-    See module docstring for full rationale.
+    ``run()`` reads ``context.associated_bundles`` (Stage 3 output) as its
+    primary input. Stage 3 (AssociationStage) is a hard dependency — if
+    ``context.associated_bundles`` is ``None``, a ``ValueError`` is raised.
 
     Args:
         calibration_path: Path to the AquaCal calibration JSON file.
@@ -75,46 +70,37 @@ class TrackingStage:
     def run(self, context: PipelineContext) -> PipelineContext:
         """Run temporal tracking across all frames.
 
-        Reads ``context.detections`` (raw per-frame per-camera detection dicts
-        from Stage 1) and produces per-frame confirmed track lists. The
-        associated_bundles from Stage 3 are passed to the backend for
-        potential future use, but the default Hungarian backend does not
-        consume them.
+        Reads ``context.associated_bundles`` (pre-associated detection groups
+        from Stage 3) and produces per-frame confirmed track lists.
 
         Populates ``context.tracks`` as a list (one entry per frame) of lists
         (one FishTrack per confirmed fish in that frame).
 
         Args:
             context: Accumulated pipeline state from prior stages. Must have
-                ``detections`` (from Stage 1) populated.
+                ``associated_bundles`` (from Stage 3) populated.
 
         Returns:
             The same *context* object with ``tracks`` populated.
 
         Raises:
-            ValueError: If ``context.detections`` is not populated.
+            ValueError: If ``context.associated_bundles`` is not populated.
 
         """
-        if context.detections is None:
+        if context.associated_bundles is None:
             raise ValueError(
-                "TrackingStage requires context.detections — "
-                "it is not populated. Ensure Stage 1 (DetectionStage) has run.",
+                "TrackingStage requires context.associated_bundles — "
+                "ensure Stage 3 (AssociationStage) has run.",
             )
 
         t0 = time.perf_counter()
 
         tracks_per_frame: list[list] = []
-        bundles_per_frame = context.associated_bundles or [
-            [] for _ in context.detections
-        ]
 
-        for frame_idx, (frame_dets, frame_bundles) in enumerate(
-            zip(context.detections, bundles_per_frame, strict=False),
-        ):
+        for frame_idx, frame_bundles in enumerate(context.associated_bundles):
             frame_tracks = self._backend.track_frame(  # type: ignore[union-attr]
                 frame_idx=frame_idx,
                 bundles=frame_bundles,
-                detections_per_camera=frame_dets,
             )
             tracks_per_frame.append(frame_tracks)
 

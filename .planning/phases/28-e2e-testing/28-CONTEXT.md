@@ -41,9 +41,14 @@ Run the full pipeline end-to-end on real and synthetic data. Fix blocking bugs a
 - Test artifacts (reprojection videos, spline data) saved to `tests/e2e/output/` (gitignored contents) for human review
 - Pytest-only execution — no separate validation script
 
+### Synthetic data approach
+- Use existing synthetic mode (`--mode synthetic`) with default SyntheticConfig (3 fish, ~30 frames, seed=42)
+- One simple smoke test — not scenario-based (crossing_paths, tight_schooling, etc. are available but not part of e2e suite)
+- Exercises Tracking → Association → Reconstruction on known-geometry inputs
+- Fabricated 3x3 camera rig with Snell's law projection (no real calibration needed)
+
 ### Claude's Discretion
 - Whether to update existing e2e tests or rewrite from scratch (assess salvageability)
-- Synthetic data generation approach
 - Exact output validation assertions (spline shape, frame count thresholds)
 - Artifact directory structure within tests/e2e/output/
 

@@ -56,7 +56,7 @@ Full details: `.planning/milestones/v2.0-ROADMAP.md`
 
 - [x] **Phase 22: Pipeline Scaffolding** — Reorder PipelineContext, CarryForward, and build_stages(); delete old association and tracking code (completed 2026-02-27)
 - [x] **Phase 23: Refractive Lookup Tables** — Build and serialize forward (pixel→ray) and inverse (voxel→pixel) LUTs per camera (completed 2026-02-27)
-- [ ] **Phase 24: Per-Camera 2D Tracking** — OC-SORT independent per-camera 2D tracking producing structured tracklets
+- [x] **Phase 24: Per-Camera 2D Tracking** — OC-SORT independent per-camera 2D tracking producing structured tracklets (completed 2026-02-27)
 - [ ] **Phase 25: Association Scoring and Clustering** — Pairwise ray-ray scoring across cameras and Leiden-based global identity clustering
 - [ ] **Phase 26: Association Refinement and Pipeline Wiring** — 3D refinement of clusters, deferred midline extraction, reconstruction from tracklet groups
 - [ ] **Phase 27: Diagnostic Visualization** — Centroid trail overlays per camera and cross-camera color-coded association visualization
@@ -181,7 +181,7 @@ Plans:
 | 21. Retrospective, Prospective | v2.0 | 2/2 | Complete | 2026-02-27 |
 | 22. Pipeline Scaffolding | 2/2 | Complete    | 2026-02-27 | - |
 | 23. Refractive Lookup Tables | 2/2 | Complete    | 2026-02-27 | - |
-| 24. Per-Camera 2D Tracking | v2.1 | 0/TBD | Not started | - |
+| 24. Per-Camera 2D Tracking | 1/1 | Complete   | 2026-02-27 | - |
 | 25. Association Scoring and Clustering | v2.1 | 0/TBD | Not started | - |
 | 26. Association Refinement and Pipeline Wiring | v2.1 | 0/TBD | Not started | - |
 | 27. Diagnostic Visualization | v2.1 | 0/TBD | Not started | - |

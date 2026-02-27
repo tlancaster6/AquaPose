@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Identity
 status: unknown
-last_updated: "2026-02-27T19:06:00.871Z"
+last_updated: "2026-02-27T19:12:54Z"
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 5
-  completed_plans: 4
+  total_plans: 6
+  completed_plans: 5
 ---
 
 # Project State
@@ -18,23 +18,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 23 — Refractive Lookup Tables (in progress, Plan 1 of 2 complete)
+**Current focus:** Phase 24 — Per-Camera 2D Tracking (Plan 1 of 1 complete)
 
 ## Current Position
 
-Phase: 23 of 27 (v2.1 Identity — Refractive Lookup Tables)
-Plan: 2 of 2 completed in current phase — Phase 23 COMPLETE
-Status: Active — Phase 23 done (ForwardLUT + InverseLUT); Phase 24 (OC-SORT) can proceed; Phase 25 (Association) awaiting Phase 24
-Last activity: 2026-02-27 — Plan 23-02 complete (InverseLUT, camera_overlap_graph, ghost_point_lookup, 8 unit tests)
+Phase: 24 of 27 (v2.1 Identity — Per-Camera 2D Tracking)
+Plan: 1 of 1 completed in current phase — Phase 24 COMPLETE
+Status: Active — Phase 24 done (TrackingStage, OcSortTracker, boxmot wrapper); Phase 25 (Association) can proceed once Phase 23 is also confirmed
+Last activity: 2026-02-27 — Plan 24-01 complete (OcSortTracker wrapper, TrackingStage, 25 unit tests, TrackingStubStage removed)
 
-Progress: [███░░░░░░░] 30% (v2.1, 3/10 plans done)
+Progress: [████░░░░░░] 40% (v2.1, 4/10 plans done)
 
 ## Performance Metrics
 
 **Velocity (v2.1):**
-- Total plans completed: 2
+- Total plans completed: 4
 - Average duration: 13 min
-- Total execution time: 26 min
+- Total execution time: 54 min
 
 **By Phase (v2.1):**
 
@@ -42,7 +42,8 @@ Progress: [███░░░░░░░] 30% (v2.1, 3/10 plans done)
 |-------|-------|-------|----------|
 | 22-pipeline-scaffolding | 2/2 complete | 26 min | 13 min |
 | 23-refractive-lookup-tables | 2/2 complete | 28 min | 14 min |
-| 24-27 | TBD | — | — |
+| 24-per-camera-2d-tracking | 1/1 complete | 14 min | 14 min |
+| 25-27 | TBD | — | — |
 
 *Updated after each plan completion*
 
@@ -69,6 +70,10 @@ Key decisions entering v2.1:
 - [Phase 23-02]: InverseLUT uses O(1) integer grid dict for ghost_point_lookup (no KD-tree): snap point to (ix,iy,iz) via int(round()), dict lookup into voxel array
 - [Phase 23-02]: float64 for scalar .npz metadata (voxel_resolution, grid_bounds): float32 precision loss breaks equality comparisons and cache invalidation
 - [Phase 23-02]: 1e-6*resolution epsilon on np.arange stop: avoids float32 cumulative overshoot beyond z_max while including exact boundary voxels
+- [Phase 24-01]: boxmot OcSort requires 6-column input [x1,y1,x2,y2,conf,cls] not 5-column; cls=0.0 for single-class tracking
+- [Phase 24-01]: OcSort does NOT output coasting tracks in update() result — coasting positions captured separately from active_tracks with time_since_update>0
+- [Phase 24-01]: TrackingStage uses Any-typed config to avoid circular engine->core import; deferred OcSortTracker import inside run()
+- [Phase 24-01]: TrackingStubStage removed entirely; TrackingStage now at Stage 2 in all pipeline modes
 
 ### Pending Todos
 
@@ -76,11 +81,11 @@ None yet.
 
 ### Blockers/Concerns
 
-- Phase 25 (Association) hard-depends on both Phase 23 (LUTs) and Phase 24 (Tracklets) — do not plan Phase 25 until both complete
+- Phase 25 (Association) hard-depends on both Phase 23 (LUTs) and Phase 24 (Tracklets) — BOTH NOW COMPLETE, Phase 25 can proceed
 - EVAL-01 deferred: regression test suite skipped with pytestmark; rebuild post-v2.1
 
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed 23-refractive-lookup-tables-02-PLAN.md — InverseLUT, camera_overlap_graph, ghost_point_lookup, 8 unit tests; Phase 23 complete; Phase 24 can proceed
+Stopped at: Completed 24-per-camera-2d-tracking-01-PLAN.md — OcSortTracker wrapper, TrackingStage, 25 unit tests, TrackingStubStage removed; Phase 24 complete; Phase 25 (Association) can proceed
 Resume file: None

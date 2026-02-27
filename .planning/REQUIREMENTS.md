@@ -14,7 +14,7 @@ Requirements for the Identity milestone. Each maps to roadmap phases.
 
 ### Per-Camera 2D Tracking
 
-- [ ] **TRACK-01**: User can run OC-SORT 2D tracking independently per camera, producing tracklets with camera_id, track_id, frames, centroids, frame_status (detected/coasted), and bboxes — replacing the old 3D bundle-claiming TrackingStage
+- [x] **TRACK-01**: User can run OC-SORT 2D tracking independently per camera, producing tracklets with camera_id, track_id, frames, centroids, frame_status (detected/coasted), and bboxes — replacing the old 3D bundle-claiming TrackingStage
 
 ### Cross-Camera Association
 
@@ -76,7 +76,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | LUT-01 | Phase 23 | Complete |
 | LUT-02 | Phase 23 | Complete |
-| TRACK-01 | Phase 24 | Pending |
+| TRACK-01 | Phase 24 | Complete |
 | ASSOC-01 | Phase 25 | Pending |
 | ASSOC-02 | Phase 25 | Pending |
 | ASSOC-03 | Phase 26 | Pending |

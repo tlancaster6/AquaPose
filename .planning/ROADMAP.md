@@ -57,7 +57,7 @@ Full details: `.planning/milestones/v2.0-ROADMAP.md`
 - [x] **Phase 22: Pipeline Scaffolding** — Reorder PipelineContext, CarryForward, and build_stages(); delete old association and tracking code (completed 2026-02-27)
 - [x] **Phase 23: Refractive Lookup Tables** — Build and serialize forward (pixel→ray) and inverse (voxel→pixel) LUTs per camera (completed 2026-02-27)
 - [x] **Phase 24: Per-Camera 2D Tracking** — OC-SORT independent per-camera 2D tracking producing structured tracklets (completed 2026-02-27)
-- [ ] **Phase 25: Association Scoring and Clustering** — Pairwise ray-ray scoring across cameras and Leiden-based global identity clustering
+- [x] **Phase 25: Association Scoring and Clustering** — Pairwise ray-ray scoring across cameras and Leiden-based global identity clustering (completed 2026-02-27)
 - [ ] **Phase 26: Association Refinement and Pipeline Wiring** — 3D refinement of clusters, deferred midline extraction, reconstruction from tracklet groups
 - [ ] **Phase 27: Diagnostic Visualization** — Centroid trail overlays per camera and cross-camera color-coded association visualization
 
@@ -119,8 +119,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 25-01: Pairwise cross-camera affinity scoring (ray-ray distance, ghost-point penalty, AssociationConfig expansion)
-- [ ] 25-02: Leiden clustering with must-not-link constraints, fragment merging, AssociationStage pipeline wiring
+- [x] 25-01: Pairwise cross-camera affinity scoring (ray-ray distance, ghost-point penalty, AssociationConfig expansion)
+- [x] 25-02: Leiden clustering with must-not-link constraints, fragment merging, AssociationStage pipeline wiring
 
 ### Phase 26: Association Refinement and Pipeline Wiring
 **Goal**: Cross-camera identity clusters are geometrically refined via 3D triangulation error, midline extraction runs only on confirmed tracklet detections, and reconstruction uses known camera membership per fish per frame — completing the end-to-end pipeline
@@ -182,6 +182,6 @@ Plans:
 | 22. Pipeline Scaffolding | 2/2 | Complete    | 2026-02-27 | - |
 | 23. Refractive Lookup Tables | 2/2 | Complete    | 2026-02-27 | - |
 | 24. Per-Camera 2D Tracking | 1/1 | Complete    | 2026-02-27 | - |
-| 25. Association Scoring and Clustering | 1/2 | In Progress|  | - |
+| 25. Association Scoring and Clustering | 2/2 | Complete | 2026-02-27 | - |
 | 26. Association Refinement and Pipeline Wiring | v2.1 | 0/TBD | Not started | - |
 | 27. Diagnostic Visualization | v2.1 | 0/TBD | Not started | - |

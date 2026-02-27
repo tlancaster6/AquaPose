@@ -77,10 +77,38 @@ class MidlineConfig:
 
 @dataclass(frozen=True)
 class AssociationConfig:
-    """Config for the Association stage (stub in v2.1 Phase 22).
+    """Config for the Association stage (Stage 3).
 
-    Will be populated with Leiden clustering parameters in Phase 25.
+    Controls pairwise cross-camera tracklet scoring and Leiden clustering
+    for fish identity assignment. All thresholds are YAML-tunable.
+
+    Attributes:
+        ray_distance_threshold: Maximum ray-ray closest-point distance (metres)
+            to classify a frame as an inlier. Default 0.03 (3 cm -- fish are
+            ~10 cm long, ~2 cm wide; 3 cm accommodates centroid jitter).
+        score_min: Minimum affinity score to create a graph edge. Default 0.3.
+        t_min: Minimum shared frames for a tracklet pair to be scored. Default 10.
+        t_saturate: Frame count at which overlap reliability saturates. Default 100.
+        early_k: Number of initial frames for early termination check. Default 10.
+        expected_fish_count: Number of fish in the tank (fixed). Default 9.
+        ghost_pixel_threshold: Max pixel distance for a detection to count as
+            "supporting" in ghost penalty. Default 50.0.
+        min_shared_voxels: Minimum shared voxels for camera pair adjacency.
+            Default 100.
+        leiden_resolution: Resolution parameter for Leiden clustering. Default 1.0.
+        max_merge_gap: Maximum frame gap for fragment merging. Default 30.
     """
+
+    ray_distance_threshold: float = 0.03
+    score_min: float = 0.3
+    t_min: int = 10
+    t_saturate: int = 100
+    early_k: int = 10
+    expected_fish_count: int = 9
+    ghost_pixel_threshold: float = 50.0
+    min_shared_voxels: int = 100
+    leiden_resolution: float = 1.0
+    max_merge_gap: int = 30
 
 
 @dataclass(frozen=True)

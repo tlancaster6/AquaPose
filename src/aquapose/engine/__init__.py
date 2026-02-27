@@ -34,6 +34,7 @@ from aquapose.engine.events import (
     StageStart,
 )
 from aquapose.engine.hdf5_observer import HDF5ExportObserver
+from aquapose.engine.observer_factory import build_observers
 from aquapose.engine.observers import EventBus, Observer
 from aquapose.engine.overlay_observer import Overlay2DObserver
 from aquapose.engine.pipeline import PosePipeline
@@ -66,6 +67,7 @@ __all__ = [
     "SyntheticConfig",
     "TimingObserver",
     "TrackingConfig",
+    "build_observers",
     "load_config",
     "serialize_config",
 ]

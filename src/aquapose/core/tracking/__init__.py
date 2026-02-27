@@ -1,13 +1,9 @@
-"""Tracking stage (Stage 4) for the AquaPose 5-stage pipeline.
+"""2D Tracking stage (Stage 2) domain types for the AquaPose v2.1 pipeline.
 
-Provides the TrackingStage class that assigns persistent fish identities
-across frames via temporal association. Populates PipelineContext.tracks.
-
-Also exports FishTrack and TrackState for downstream stages that need to
-interact with track objects (e.g., Stage 5 Reconstruction).
+Exports Tracklet2D — the per-camera temporal tracklet produced by Stage 2 — and
+FishTrack/TrackState for downstream reconstruction compatibility.
 """
 
-from aquapose.core.tracking.stage import TrackingStage
-from aquapose.core.tracking.types import FishTrack, TrackState
+from aquapose.core.tracking.types import FishTrack, TrackHealth, Tracklet2D, TrackState
 
-__all__ = ["FishTrack", "TrackState", "TrackingStage"]
+__all__ = ["FishTrack", "TrackHealth", "TrackState", "Tracklet2D"]

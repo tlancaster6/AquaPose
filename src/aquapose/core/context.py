@@ -1,7 +1,8 @@
 """Stage Protocol and PipelineContext — core data contracts for the pipeline.
 
 Defines the structural typing contract that all pipeline stages must satisfy,
-and the typed accumulator that flows data between stages.
+and the typed accumulator that flows data between stages. Also defines
+CarryForward for persisting per-camera 2D track state across pipeline batches.
 
 These types live in core/ because they are pure data containers with no engine
 logic. Placing them here eliminates all TYPE_CHECKING backdoors where core/
@@ -42,6 +43,28 @@ class Stage(Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class CarryForward:
+    """Cross-batch state carried between pipeline invocations.
+
+    Persists per-camera 2D track state (positions, velocities, lifecycle per
+    local tracklet) across batches. Each camera's tracker is independent —
+    no cross-camera state in carry. Cross-camera association operates on
+    complete tracklets within the batch, not incrementally.
+
+    The dataclass is frozen so carry state is replaced wholesale each batch,
+    not mutated in place.
+
+    Attributes:
+        tracks_2d_state: Per-camera opaque tracker state. Keys are camera IDs,
+            values are backend-specific state objects (e.g., OC-SORT internal
+            state dicts). Placeholder ``dict`` — Phase 24 defines the concrete
+            OC-SORT state type as ``dict[str, Any]``.
+    """
+
+    tracks_2d_state: dict = field(default_factory=dict)
+
+
 @dataclass
 class PipelineContext:
     """Typed accumulator for inter-stage data flow in the 5-stage pipeline.
@@ -54,10 +77,10 @@ class PipelineContext:
     boundary (ENG-07). Actual element types are documented below.
 
     The 5-stage data flow is:
-    1. Detection  -> ``detections``
-    2. Midline    -> ``annotated_detections``
-    3. Association -> ``associated_bundles``
-    4. Tracking   -> ``tracks``
+    1. Detection     -> ``detections``
+    2. 2D Tracking   -> ``tracks_2d``
+    3. Association   -> ``tracklet_groups``
+    4. Midline       -> ``annotated_detections``
     5. Reconstruction -> ``midlines_3d``
 
     Attributes:
@@ -68,18 +91,17 @@ class PipelineContext:
             Indexed by frame_idx. Each entry is a dict mapping camera_id to list of
             Detection objects.
             Type: ``list[dict[str, list[Detection]]]``
-        annotated_detections: Stage 2 (Midline) output. Detections enriched with 15-point
-            2D midlines and half-widths. Same structure as ``detections`` but each
-            Detection carries midline data.
+        tracks_2d: Stage 2 (2D Tracking) output. Per-camera temporal tracklets.
+            Keys are camera IDs; values are lists of Tracklet2D objects for that camera.
+            Type: ``dict[str, list[Tracklet2D]]``
+        tracklet_groups: Stage 3 (Association) output. Cross-camera identity clusters.
+            Each entry is a TrackletGroup representing one fish whose per-camera
+            tracklets have been matched across cameras.
+            Type: ``list[TrackletGroup]``
+        annotated_detections: Stage 4 (Midline) output. Detections enriched with
+            15-point 2D midlines and half-widths. Same structure as ``detections``
+            but each Detection carries midline data.
             Type: ``list[dict[str, list[Detection]]]``
-        associated_bundles: Stage 3 (Association) output. Cross-camera matched detection
-            groups per fish, per frame. Each entry is a list of AssociationBundle objects
-            (one per identified fish), where each bundle groups detections from multiple
-            cameras and provides a triangulated 3D centroid.
-            Type: ``list[list[AssociationBundle]]``
-        tracks: Stage 4 (Tracking) output. Per-frame confirmed fish track objects with
-            persistent fish IDs and lifecycle state.
-            Type: ``list[list[FishTrack]]``
         midlines_3d: Stage 5 (Reconstruction) output. Per-frame 3D midline results.
             Each entry maps fish_id to a Spline3D (or Midline3D) object.
             Type: ``list[dict[int, Spline3D]]``
@@ -88,13 +110,13 @@ class PipelineContext:
     """
 
     frame_count: int | None = None
-    camera_ids: list[str] | None = None
-    detections: list[dict[str, list]] | None = None
-    annotated_detections: list[dict[str, list]] | None = None
-    associated_bundles: list[list] | None = None
-    tracks: list[list] | None = None
-    midlines_3d: list[dict] | None = None
-    stage_timing: dict[str, float] = field(default_factory=dict)
+    camera_ids: list | None = None
+    detections: list | None = None
+    tracks_2d: dict | None = None
+    tracklet_groups: list | None = None
+    annotated_detections: list | None = None
+    midlines_3d: list | None = None
+    stage_timing: dict = field(default_factory=dict)
 
     def get(self, field_name: str) -> object:
         """Return the value of a field, raising ValueError if it is None.

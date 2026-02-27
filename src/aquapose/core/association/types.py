@@ -1,8 +1,7 @@
-"""Stage-specific types for the Association stage (Stage 3).
+"""Domain types for the Association stage (Stage 3) and downstream consumers.
 
-Defines AssociationBundle — a cross-camera detection grouping representing
-one physical fish in a single frame, produced by the RANSAC centroid
-clustering backend.
+Defines TrackletGroup — the cross-camera identity cluster produced by Stage 3 — and
+retains AssociationBundle for reconstruction compatibility until Phase 26 replaces it.
 """
 
 from __future__ import annotations
@@ -11,15 +10,57 @@ from dataclasses import dataclass
 
 import numpy as np
 
-__all__ = ["AssociationBundle"]
+__all__ = ["AssociationBundle", "TrackletGroup"]
+
+
+# ---------------------------------------------------------------------------
+# v2.1 domain type: TrackletGroup
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TrackletGroup:
+    """Cross-camera identity cluster from Stage 3 (Association).
+
+    Groups Tracklet2D objects from multiple cameras into a single fish identity.
+    Each TrackletGroup represents one physical fish whose per-camera tracklets
+    have been matched by the Association stage (Stage 3).
+
+    The ``tracklets`` field uses a generic ``tuple`` (not ``tuple[Tracklet2D, ...]``)
+    to preserve the core/ import boundary — association types must not import
+    tracking types at runtime. The actual element type is ``Tracklet2D``; see
+    aquapose.core.tracking.types.
+
+    Attributes:
+        fish_id: Global fish identity assigned by the Association stage.
+            Unique within the batch; persistent IDs are assigned in Phase 24+.
+        tracklets: Tuple of Tracklet2D objects, one per contributing camera.
+            Type: ``tuple[Tracklet2D, ...]`` (generic tuple at runtime to avoid
+            cross-package import within core/).
+        confidence: Association confidence score. ``None`` until Phase 25/26
+            populates it with the Leiden clustering confidence.
+    """
+
+    fish_id: int
+    tracklets: tuple
+    confidence: float | None = None
+
+
+# ---------------------------------------------------------------------------
+# Legacy compatibility type: AssociationBundle
+#
+# Retained for reconstruction compatibility until Phase 26 replaces it with
+# TrackletGroup-based reconstruction. Do not use in new code.
+# ---------------------------------------------------------------------------
 
 
 @dataclass
 class AssociationBundle:
     """Cross-camera detection grouping for a single physical fish in one frame.
 
-    Produced by the Association stage (Stage 3). Each bundle represents one
-    physical fish identified by triangulating detection centroids across cameras.
+    Legacy type from v1.0. In v2.1, Stage 3 produces TrackletGroup objects.
+    AssociationBundle is retained here so reconstruction code that still
+    references it continues to import without modification until Phase 26.
 
     Unlike the v1.0 ``AssociationResult``, ``fish_idx`` is a 0-indexed
     per-frame position (not a persistent track ID). Persistent fish IDs are
@@ -41,7 +82,7 @@ class AssociationBundle:
 
     fish_idx: int
     centroid_3d: np.ndarray  # shape (3,), world coordinates
-    camera_detections: dict[str, int]  # camera_id -> detection_index
+    camera_detections: dict  # camera_id -> detection_index
     n_cameras: int
     reprojection_residual: float
     confidence: float

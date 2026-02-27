@@ -300,6 +300,8 @@ def build_stages(config: PipelineConfig) -> list:
         device=config.detection.device,
         n_points=config.midline.n_points,
         min_area=config.midline.min_area,
+        lut_config=config.lut,
+        midline_config=config.midline,
     )
 
     return [

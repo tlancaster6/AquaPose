@@ -102,10 +102,10 @@ Plans:
   2. Output tracklets each contain `camera_id`, `track_id`, `frames`, `centroids`, `bboxes`, and `frame_status` (detected vs. coasted) as a typed data structure
   3. The DetectionStage emits detections and a new TrackingStage consumes them per-camera, storing tracklets in `PipelineContext.tracks_2d`
   4. Tracks correctly coast (predict without observation) for at least the configured number of frames before being dropped
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 24-01: OC-SORT integration and per-camera TrackingStage producing typed tracklets
+- [ ] 24-01: OC-SORT wrapper, TrackingStage, config expansion, pipeline rewire, unit tests
 
 ### Phase 25: Association Scoring and Clustering
 **Goal**: Users can score all cross-camera tracklet pairs using ray-ray geometry and cluster them into global fish identity groups via Leiden algorithm with same-camera conflict constraints

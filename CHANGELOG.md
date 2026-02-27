@@ -2,6 +2,442 @@
 
 <!-- version list -->
 
+## v1.1.0-dev.2 (2026-02-27)
+
+### Bug Fixes
+
+- **16**: Accept device kwarg in YOLOBackend to match build_stages() contract
+  ([`e0964d8`](https://github.com/tlancaster6/AquaPose/commit/e0964d8ebc6333b06ec15ab2f3c168e32e72e59b))
+
+- **16**: Adjust regression test tolerances for CUDA non-determinism
+  ([`214a3c6`](https://github.com/tlancaster6/AquaPose/commit/214a3c6d377c8205891ec0ebd4da2f000fa735c6))
+
+- **16**: Regenerate golden data with v2.0 PosePipeline and relax determinism tolerance
+  ([`1b4587a`](https://github.com/tlancaster6/AquaPose/commit/1b4587abaaf528573a2a82021b1c2df2ed4a8773))
+
+- **16**: Use correct RefractiveProjectionModel constructor in 3 backends
+  ([`2f67c93`](https://github.com/tlancaster6/AquaPose/commit/2f67c931b5c88c22177e9d120e23651231fa572a))
+
+- **16**: Widen regression tolerances for observed CUDA jitter
+  ([`9f663c1`](https://github.com/tlancaster6/AquaPose/commit/9f663c16df1a2cb972497770aae61fd2c5e714d9))
+
+- **19**: Human verification fixes — CLI traceback, type coercion, smoke test logging, dead code
+  audit
+  ([`c5e230d`](https://github.com/tlancaster6/AquaPose/commit/c5e230db04ec52069175046f8d54356a02853173))
+
+- **20-05**: Replace hardcoded paths in regression conftest with env vars
+  ([`3fa5c2f`](https://github.com/tlancaster6/AquaPose/commit/3fa5c2f05f5fefb504ea5e1e2425e28485cdce45))
+
+- **cli**: Respect mode from config YAML when --mode not passed on CLI
+  ([`8c47fe9`](https://github.com/tlancaster6/AquaPose/commit/8c47fe9bc655f5f7cb1dcfffd5f66110fe450b91))
+
+- **overlay**: Build per-camera RefractiveProjectionModel instead of passing CalibrationData
+  ([`0882b96`](https://github.com/tlancaster6/AquaPose/commit/0882b96a7c50dc5805f09508cad480a295ce0324))
+
+- **overlay**: Support timestamped video filenames via prefix glob fallback
+  ([`988c3fb`](https://github.com/tlancaster6/AquaPose/commit/988c3fb3617084a2d26e7beb1a57a49be7095af4))
+
+- **overlay**: Use VideoSet for undistorted frame reading
+  ([`06df1ae`](https://github.com/tlancaster6/AquaPose/commit/06df1aeaa2da82c278fe8bf0569e67e467a3cff9))
+
+- **tracking**: Remove experimental near-claim penalty ghost suppression
+  ([`2187512`](https://github.com/tlancaster6/AquaPose/commit/2187512a9a4d22b9c14af2a21b070748e3535cf9))
+
+### Chores
+
+- Archive v2.0 phase directories to milestones/v2.0-phases/
+  ([`82d8d9b`](https://github.com/tlancaster6/AquaPose/commit/82d8d9b7485b3418e388cd4cd815e6527c991583))
+
+- Complete v2.0 Alpha milestone
+  ([`e4d6f12`](https://github.com/tlancaster6/AquaPose/commit/e4d6f124dfb36f88140e4f5965834a5827640201))
+
+- Deleting legacy scripts
+  ([`ddc2bd0`](https://github.com/tlancaster6/AquaPose/commit/ddc2bd02fc2a94b2a0a20fbccac98c6681383a13))
+
+- **14.1-01**: Align ROADMAP and REQUIREMENTS to 5-stage pipeline model
+  ([`428889b`](https://github.com/tlancaster6/AquaPose/commit/428889b00a8ac1d5889f51e7f0f14515d17385c3))
+
+- **14.1-01**: Delete redundant inbox documents superseded by guidebook
+  ([`ac41419`](https://github.com/tlancaster6/AquaPose/commit/ac41419261475d2cf7ce374436a554aaa44236e1))
+
+- **16-02**: Archive legacy diagnostic scripts to scripts/legacy/
+  ([`2569ce8`](https://github.com/tlancaster6/AquaPose/commit/2569ce87640313bbebd81de5e226fa7042ce66bd))
+
+- **20-02**: Delete dead modules, orphaned tests, and legacy scripts
+  ([`fa21b8b`](https://github.com/tlancaster6/AquaPose/commit/fa21b8b3ec390d8b80030c030ccf5591d5bb824a))
+
+- **21-01**: Mark CLI-01 through CLI-05 complete in REQUIREMENTS.md
+  ([`d994268`](https://github.com/tlancaster6/AquaPose/commit/d994268065d8c0ba89ae74216657f389df1864af))
+
+### Code Style
+
+- **20-01**: Apply ruff formatting to post-import-boundary-fix files
+  ([`e29b9cc`](https://github.com/tlancaster6/AquaPose/commit/e29b9cc6c55d0dff30a862d9bd5653078be89240))
+
+### Documentation
+
+- Add phase 16 pickup notes for next session
+  ([`df27799`](https://github.com/tlancaster6/AquaPose/commit/df2779994590e6d3593dab4a846cea786756ea2b))
+
+- Commit accumulated planning updates from prior sessions
+  ([`04c070e`](https://github.com/tlancaster6/AquaPose/commit/04c070e1a11f6a55d87e531819028b495ca7b412))
+
+- Commit debug session notes from prior sessions
+  ([`f5deb61`](https://github.com/tlancaster6/AquaPose/commit/f5deb6151a182eed3d98f3b3c4610fdfa593acf7))
+
+- Commit missed planning files for phases 17, 19, 20, 21
+  ([`37d1eb3`](https://github.com/tlancaster6/AquaPose/commit/37d1eb31a00aff4b7cfb9ab65fb36ed6d1945db9))
+
+- Create milestone v2.0 roadmap (6 phases)
+  ([`ccc0707`](https://github.com/tlancaster6/AquaPose/commit/ccc0707fed94bdcafff86279711213f2d2d2ad4f))
+
+- Create v2.0 milestone audit report
+  ([`bd327bd`](https://github.com/tlancaster6/AquaPose/commit/bd327bde3d01b8fc4e60b54428eb49df5eb4337c))
+
+- Define milestone v2.0 requirements
+  ([`8391ec6`](https://github.com/tlancaster6/AquaPose/commit/8391ec6b69c88d84883b4fc71622e9e34407462c))
+
+- Start milestone v2.0 Alpha
+  ([`b8bc331`](https://github.com/tlancaster6/AquaPose/commit/b8bc3315bea7530c06fe83132c94be6dde622fc2))
+
+- **13**: Capture phase context
+  ([`e5d16d5`](https://github.com/tlancaster6/AquaPose/commit/e5d16d56d94dc0a3d02f3db861b3e379b8392ddc))
+
+- **13-01**: Complete Stage Protocol and PipelineContext plan
+  ([`2d1d5f6`](https://github.com/tlancaster6/AquaPose/commit/2d1d5f6202c1a2d387ef0c9b7d29a2cc223e3b0f))
+
+- **13-02**: Complete config hierarchy plan
+  ([`4f5cd34`](https://github.com/tlancaster6/AquaPose/commit/4f5cd341a3b8e007969a505b90952e08857d4799))
+
+- **13-03**: Complete event system and observer protocol plan
+  ([`6278165`](https://github.com/tlancaster6/AquaPose/commit/6278165fa11f23d97d2ba6375796b5676f37b118))
+
+- **13-engine-core**: Complete plan 04 - PosePipeline orchestrator
+  ([`52a5728`](https://github.com/tlancaster6/AquaPose/commit/52a57284a445cb47961ac128e507738dfb846608))
+
+- **13-engine-core**: Create phase plan
+  ([`2b38e04`](https://github.com/tlancaster6/AquaPose/commit/2b38e04e4797e679f519b4839ae8166062dd6bee))
+
+- **14**: Capture phase context
+  ([`e57f00b`](https://github.com/tlancaster6/AquaPose/commit/e57f00b7dd04e51faba448398f689ef5792ee9db))
+
+- **14**: Create phase plan for golden data and verification framework
+  ([`4501682`](https://github.com/tlancaster6/AquaPose/commit/45016820d4ea7a696fe48ef94effec8eaee0d8e6))
+
+- **14-01**: Complete golden data generation script plan
+  ([`fb2c96b`](https://github.com/tlancaster6/AquaPose/commit/fb2c96b0e1e287a46117ad53195aa7fb13d9e59f))
+
+- **14-02**: Complete golden regression harness plan — Phase 14 done
+  ([`346002b`](https://github.com/tlancaster6/AquaPose/commit/346002b63acae236657c119896fc181cdd5b7eec))
+
+- **14.1**: Capture phase context
+  ([`2146799`](https://github.com/tlancaster6/AquaPose/commit/21467998d4a8511f140bab2ae13191aa7356610e))
+
+- **14.1-01**: Complete planning doc alignment plan — 5-stage model established
+  ([`287c9c1`](https://github.com/tlancaster6/AquaPose/commit/287c9c1f5c323751ed3250e8648a58d6d944e33f))
+
+- **14.1-02**: Complete engine 5-stage alignment plan — Phase 14.1 done
+  ([`00287db`](https://github.com/tlancaster6/AquaPose/commit/00287db567e76953d6c34924cc8ccc7a55335c3c))
+
+- **14.1-02**: Update golden test harness to clarify v1.0-to-5-stage mapping
+  ([`5399cfd`](https://github.com/tlancaster6/AquaPose/commit/5399cfde5acddaec9a98218dff1ccbb12f17b47a))
+
+- **15**: Capture phase context
+  ([`8e44efb`](https://github.com/tlancaster6/AquaPose/commit/8e44efb7a8874f793bbd2eb0d7ae61e2c19321d4))
+
+- **15**: Create 5 stage migration plans
+  ([`a4f6eb1`](https://github.com/tlancaster6/AquaPose/commit/a4f6eb1643cdf94a83ae7bc1ecf0c3a5f939c10f))
+
+- **15-01**: Complete DetectionStage migration plan — Phase 15 Plan 01 done
+  ([`b073b5a`](https://github.com/tlancaster6/AquaPose/commit/b073b5a5884a3edd410d4e343c964654d16a4430))
+
+- **15-02**: Complete MidlineStage migration plan — Phase 15 Plan 02 done
+  ([`b022e18`](https://github.com/tlancaster6/AquaPose/commit/b022e18b8ba3755db97ff2d07c418de0651db806))
+
+- **15-03**: Complete AssociationStage migration plan — Phase 15 Plan 03 done
+  ([`1ebacb6`](https://github.com/tlancaster6/AquaPose/commit/1ebacb644988ee2a8a77938006ab88e59f119dc6))
+
+- **15-03**: Mark STG-03 requirement complete in REQUIREMENTS.md
+  ([`c598f09`](https://github.com/tlancaster6/AquaPose/commit/c598f09af288d227d9fdde5baeabbd6ae84231b1))
+
+- **15-04**: Complete TrackingStage migration plan — Phase 15 Plan 04 done
+  ([`e6d714c`](https://github.com/tlancaster6/AquaPose/commit/e6d714c4fa512eb992bd54c78267125b42f418cf))
+
+- **15-04**: Mark STG-04 requirement complete in REQUIREMENTS.md
+  ([`c51a702`](https://github.com/tlancaster6/AquaPose/commit/c51a7027a4621879b84bc6c8913b6b6be01203b3))
+
+- **15-05**: Add self-check results to SUMMARY.md
+  ([`6bdea22`](https://github.com/tlancaster6/AquaPose/commit/6bdea225c24482cf56fe446ac554dfb3da9c724c))
+
+- **15-05**: Complete ReconstructionStage migration plan — Phase 15 done
+  ([`57e6c12`](https://github.com/tlancaster6/AquaPose/commit/57e6c12cf4c8e2b454f84129fe034b673d52b49d))
+
+- **16**: Add phase verification report
+  ([`d672bf1`](https://github.com/tlancaster6/AquaPose/commit/d672bf12a42224d51fd377a69486b42387cd78e7))
+
+- **16**: Capture phase context
+  ([`3966c7e`](https://github.com/tlancaster6/AquaPose/commit/3966c7ed2f0b6e7207aa24201e2c4b818ddc5071))
+
+- **16**: Plan phase — 2 plans in 2 waves
+  ([`dad385c`](https://github.com/tlancaster6/AquaPose/commit/dad385c6bd9404d9e4510b217c1cb98f9048715c))
+
+- **16-01**: Add self-check results to SUMMARY.md
+  ([`98050e7`](https://github.com/tlancaster6/AquaPose/commit/98050e7384f84626783dc377091067778f640b77))
+
+- **16-01**: Complete regression test suite plan — Phase 16 Plan 1
+  ([`823c006`](https://github.com/tlancaster6/AquaPose/commit/823c006b2bc4f95d7aa4f05d5032878dd9fe319c))
+
+- **16-02**: Complete legacy script archive plan — Phase 16 done
+  ([`0d95582`](https://github.com/tlancaster6/AquaPose/commit/0d9558260579c9b1e84903c1341e3480d0d48688))
+
+- **17**: Add plan summaries for all 5 observer plans
+  ([`7d2931b`](https://github.com/tlancaster6/AquaPose/commit/7d2931be50370d3966deaaa2f2a84f60f06ff8db))
+
+- **17**: Capture phase context
+  ([`6a3c573`](https://github.com/tlancaster6/AquaPose/commit/6a3c573d22f57ae712c0ca84463d713561ef52b8))
+
+- **18**: Add plan summaries for all 3 CLI and execution mode plans
+  ([`14c15ff`](https://github.com/tlancaster6/AquaPose/commit/14c15ffe1862d80394d2474c9491bdfa3fcf0e8e))
+
+- **18**: Capture phase context
+  ([`1a62aa3`](https://github.com/tlancaster6/AquaPose/commit/1a62aa3dc1bcffaffa26b7750671d78a160ca4b1))
+
+- **18**: Create phase plans for CLI and Execution Modes
+  ([`bf3c3bb`](https://github.com/tlancaster6/AquaPose/commit/bf3c3bb443241f93b379831222ba8db3a487bf9c))
+
+- **19**: Capture phase context
+  ([`a48b891`](https://github.com/tlancaster6/AquaPose/commit/a48b891c67135519fa8921bf8e7e6ca916013c0b))
+
+- **19**: Create phase plan for alpha refactor audit
+  ([`c7d9c15`](https://github.com/tlancaster6/AquaPose/commit/c7d9c15f622cae401de0e061c3bfbd966379a55b))
+
+- **19-01**: Complete import boundary checker plan
+  ([`87cf8ff`](https://github.com/tlancaster6/AquaPose/commit/87cf8ff0b84bb986841b2cee2b07f0232c942536))
+
+- **19-02**: Complete smoke test plan summary and state update
+  ([`ee65cb0`](https://github.com/tlancaster6/AquaPose/commit/ee65cb0a1eda2932cc2276265323bc14ef8f2c3f))
+
+- **19-03**: Complete alpha refactor audit plan
+  ([`72bbd0a`](https://github.com/tlancaster6/AquaPose/commit/72bbd0a6e06bb352fecc0dddfe38a402c32d6fb6))
+
+- **19-03**: Produce comprehensive alpha refactor audit report
+  ([`e1bcb22`](https://github.com/tlancaster6/AquaPose/commit/e1bcb22929a2a840e5df9a66e71d947eb1a6b034))
+
+- **19-04**: Triage all 7 Phase 15 bug ledger items
+  ([`c6caae9`](https://github.com/tlancaster6/AquaPose/commit/c6caae9ad75da81cdfe35785fffb53327a743d55))
+
+- **20**: Capture phase context
+  ([`1ce4a5d`](https://github.com/tlancaster6/AquaPose/commit/1ce4a5db1a1c05a2577905cb474d9c8c14b3670d))
+
+- **20**: Create phase plan - 5 plans in 2 waves
+  ([`f908bec`](https://github.com/tlancaster6/AquaPose/commit/f908becd633fb6702860877fbe302b3a972ada62))
+
+- **20-01**: Complete plan - move PipelineContext/Stage to core/context
+  ([`855d4a2`](https://github.com/tlancaster6/AquaPose/commit/855d4a209eaaf03fc7ff87953b0addd54ee22c81))
+
+- **20-02**: Complete dead module deletion plan summary and state update
+  ([`a500a20`](https://github.com/tlancaster6/AquaPose/commit/a500a208dc64bed0ee2963afb63bd2ca599f96ee))
+
+- **20-03**: Complete plan - skip_camera removal verified + build_observers extracted to engine
+  ([`ee198ae`](https://github.com/tlancaster6/AquaPose/commit/ee198aef33d4e24d4f539ba12000e94be23c9e38))
+
+- **20-04**: Complete Stage 3/4 coupling fix plan — TrackingStage consumes bundles, 514 tests pass
+  ([`c6f033a`](https://github.com/tlancaster6/AquaPose/commit/c6f033a0a43e5a1a99b37407d875223275e9d2b0))
+
+- **20-05**: Complete remaining audit remediations plan — camera discovery, diagnostics split,
+  regression env vars
+  ([`5a80c44`](https://github.com/tlancaster6/AquaPose/commit/5a80c44427c0d17ee1d4b67e497c432393fa3203))
+
+- **21**: Capture phase context
+  ([`bbfa74a`](https://github.com/tlancaster6/AquaPose/commit/bbfa74acae7070b0f1068269d99459263179d21b))
+
+- **21-01**: Complete retrospective plan — v2.0 Alpha narrative + requirements fix
+  ([`7862283`](https://github.com/tlancaster6/AquaPose/commit/786228340715b0f2f58a67c3b1364999fc787f30))
+
+- **21-01**: Write v2.0 Alpha retrospective document
+  ([`5b10ab4`](https://github.com/tlancaster6/AquaPose/commit/5b10ab43429e2da2bb92a5c51bc1ee4eecf1bcde))
+
+- **21-02**: Complete prospective plan — v2.1 requirements seed ready for /gsd:new-milestone
+  ([`a8f14c2`](https://github.com/tlancaster6/AquaPose/commit/a8f14c23b89fb1d8f8a40cd83a0c8eab81c24885))
+
+- **21-02**: Write v2.1 prospective document seeding next milestone requirements
+  ([`5fa8e1e`](https://github.com/tlancaster6/AquaPose/commit/5fa8e1ed247d05e7e4b193d7d384dcec5e450b57))
+
+- **phase-13**: Complete phase execution and verification
+  ([`14ec545`](https://github.com/tlancaster6/AquaPose/commit/14ec545da52eb0b3f855c573f785efde480b3adc))
+
+- **phase-14**: Complete phase execution and verification
+  ([`5cfaead`](https://github.com/tlancaster6/AquaPose/commit/5cfaeadfa44205d093faa048b440a279daf2aab5))
+
+- **phase-14.1**: Complete phase execution and verification
+  ([`c4dd836`](https://github.com/tlancaster6/AquaPose/commit/c4dd836fd4aea40275abcb70e64c13a3db889c03))
+
+- **phase-15**: Complete phase execution and verification
+  ([`9cb5440`](https://github.com/tlancaster6/AquaPose/commit/9cb544099f26f132679c792fb569c6836a2be39b))
+
+- **phase-16**: Mark phase complete in roadmap and state
+  ([`e5bba86`](https://github.com/tlancaster6/AquaPose/commit/e5bba86d68ce6c1ce4ff001e843e2bd07295bd47))
+
+- **phase-17**: Complete phase execution and verification
+  ([`1b04327`](https://github.com/tlancaster6/AquaPose/commit/1b04327dbe9d04ec6329c740bfeba4347a02263c))
+
+- **phase-18**: Complete phase execution and verification
+  ([`bd95881`](https://github.com/tlancaster6/AquaPose/commit/bd958815a6871a7181203055aa5e768161d319e1))
+
+- **phase-19**: Complete phase execution and verification
+  ([`f2dc4c7`](https://github.com/tlancaster6/AquaPose/commit/f2dc4c7dc88efc229c552fa8c51657e6881e7d11))
+
+- **phase-20**: Complete phase execution and verification
+  ([`f14ca59`](https://github.com/tlancaster6/AquaPose/commit/f14ca59b1459577337abb9389727b343615ad4f8))
+
+- **phase-21**: Complete phase execution and verification
+  ([`4efb18e`](https://github.com/tlancaster6/AquaPose/commit/4efb18e33aaf5959c7b956f9f98121ff64873357))
+
+- **quick-9**: Add init-config CLI command
+  ([`d861067`](https://github.com/tlancaster6/AquaPose/commit/d86106720de2e575c0cc72ea87c0330eab95da1f))
+
+- **quick-9**: Complete init-config CLI subcommand plan
+  ([`54941d7`](https://github.com/tlancaster6/AquaPose/commit/54941d74f9f217b0439ca49fdb380803a8deba0f))
+
+- **state**: Record phase 14.1 context session
+  ([`d22b42d`](https://github.com/tlancaster6/AquaPose/commit/d22b42d9294a486f133b4f56c956a2df13e3cf8a))
+
+- **state**: Record phase 19 context session
+  ([`ae17c06`](https://github.com/tlancaster6/AquaPose/commit/ae17c0665e0b50b91caee526335ca5510bd9481c))
+
+### Features
+
+- **13-01**: Create engine package with Stage Protocol and PipelineContext
+  ([`5047a49`](https://github.com/tlancaster6/AquaPose/commit/5047a49c1955f8a932eba8c2345b20721fb471f5))
+
+- **13-02**: Implement frozen config dataclass hierarchy with YAML and CLI overrides
+  ([`14245bf`](https://github.com/tlancaster6/AquaPose/commit/14245bfa22db4da417e7365f2e260326134da6c0))
+
+- **13-02**: Write unit tests for config defaults, overrides, freeze, and serialization
+  ([`4ff6c06`](https://github.com/tlancaster6/AquaPose/commit/4ff6c06e3ebdc3c95258a5611650f9205e8cf5eb))
+
+- **13-engine-core**: Implement PosePipeline orchestrator skeleton
+  ([`9ffe5fe`](https://github.com/tlancaster6/AquaPose/commit/9ffe5fec06b506bf10018f52b6eb4cfe8a0da18f))
+
+- **14-01**: Add golden data generation script and tests/golden/ directory
+  ([`ed79f27`](https://github.com/tlancaster6/AquaPose/commit/ed79f27019a3d0aa88d2871aa8362e923cde0216))
+
+- **14-02**: Add golden test package init and session-scoped fixtures
+  ([`f9aadbc`](https://github.com/tlancaster6/AquaPose/commit/f9aadbc4c47d3796f1af5fb127775662f6c73aa9))
+
+- **14-02**: Add stage interface test harness with 9 golden regression tests
+  ([`4085eb7`](https://github.com/tlancaster6/AquaPose/commit/4085eb7ed5116d606380c97c6bd2034f63036ae3))
+
+- **14.1-02**: Update engine to 5-stage model — rename configs, update PipelineContext
+  ([`ced4695`](https://github.com/tlancaster6/AquaPose/commit/ced4695bcf2e015d197aad508a8896c28775755f))
+
+- **15-01**: Create core/detection/ module with DetectionStage and YOLO backend
+  ([`65135fc`](https://github.com/tlancaster6/AquaPose/commit/65135fc06be471af3734b19b552aa2a6ade811e2))
+
+- **15-02**: Create core/midline/ module with segment-then-extract backend and stage
+  ([`07e9150`](https://github.com/tlancaster6/AquaPose/commit/07e91506e34557181b5de8ebdff2c06f088f1860))
+
+- **15-03**: Create core/association/ module with RANSAC backend and AssociationStage
+  ([`9d1937d`](https://github.com/tlancaster6/AquaPose/commit/9d1937d5f7d25b91176d17876ded7f22bf92178f))
+
+- **15-04**: Create core/tracking/ module with Hungarian backend and stage
+  ([`609b2cf`](https://github.com/tlancaster6/AquaPose/commit/609b2cffb4cf80175edbc83351a89185aec5d1df))
+
+- **15-05**: Create ReconstructionStage with triangulation/curve_optimizer backends
+  ([`392b6d2`](https://github.com/tlancaster6/AquaPose/commit/392b6d23d6e6a06fb57e598098375de04ec81b59))
+
+- **16-01**: Add e2e regression test and update golden data generator to PosePipeline
+  ([`e03d219`](https://github.com/tlancaster6/AquaPose/commit/e03d219fe73951784e7f500c4a44a1c4ccd446de))
+
+- **16-01**: Create regression test infrastructure and per-stage tests
+  ([`1e887e6`](https://github.com/tlancaster6/AquaPose/commit/1e887e69a9b3a263f78aec6d3d87f73b19956e8d))
+
+- **16-02**: Clean up v1.0 pipeline.stages test imports and fix diagnose_tracking path
+  ([`a63301a`](https://github.com/tlancaster6/AquaPose/commit/a63301a5f10d02cf6f13a65daf97397896ae1030))
+
+- **17-01**: Implement TimingObserver for pipeline profiling
+  ([`c833fae`](https://github.com/tlancaster6/AquaPose/commit/c833faedf4f87d17e130b4996feac6e830bf8551))
+
+- **17-02**: Implement HDF5ExportObserver with frame-major layout
+  ([`982e6f7`](https://github.com/tlancaster6/AquaPose/commit/982e6f7e5290249ddeb6afa661aca65d31fa43ff))
+
+- **17-03**: Implement Overlay2DObserver for 2D reprojection video
+  ([`5513d20`](https://github.com/tlancaster6/AquaPose/commit/5513d20c56fc4c6e24e9300fcfca92f19b1f7881))
+
+- **17-04**: Implement Animation3DObserver with Plotly HTML viewer
+  ([`1502b8c`](https://github.com/tlancaster6/AquaPose/commit/1502b8c8160c98c9fc6f2e5cc67e7bf296be2413))
+
+- **17-05**: Implement DiagnosticObserver for stage output capture
+  ([`9b98d3f`](https://github.com/tlancaster6/AquaPose/commit/9b98d3fff7b2db882edd90986c6f098aa9c2e224))
+
+- **18-01**: Add CLI entrypoint and ConsoleObserver
+  ([`c611205`](https://github.com/tlancaster6/AquaPose/commit/c611205f6d52139cfb9b6a15ea62d3e900f9ec78))
+
+- **18-02**: Add diagnostic and benchmark mode tests
+  ([`b770670`](https://github.com/tlancaster6/AquaPose/commit/b770670d8c983671590d076247a6c1e4dc28ece5))
+
+- **18-03**: Add synthetic execution mode with SyntheticDataStage
+  ([`62e94df`](https://github.com/tlancaster6/AquaPose/commit/62e94df96a528e46aaca3de1c503d405a20fb30e))
+
+- **19-01**: Add AST-based import boundary and structural rule checker
+  ([`6b0a2e5`](https://github.com/tlancaster6/AquaPose/commit/6b0a2e5ad7b43a1e3871023b872b1c3526083960))
+
+- **19-01**: Wire import boundary checker as pre-commit hook
+  ([`9bc8dd8`](https://github.com/tlancaster6/AquaPose/commit/9bc8dd84710be828e660ed1233b25ef443dbf9da))
+
+- **19-02**: Add pytest smoke test wrapper and fix CLI invocation
+  ([`359a396`](https://github.com/tlancaster6/AquaPose/commit/359a396024f265008cbaaffed76e85cb12ee7359))
+
+- **20-01**: Move PipelineContext and Stage from engine/stages to core/context
+  ([`d8f2e6a`](https://github.com/tlancaster6/AquaPose/commit/d8f2e6ab6d10599fd6d5c875a5d3dd8720f90a17))
+
+- **20-03**: Extract observer assembly from CLI to engine/observer_factory.py
+  ([`4634ab6`](https://github.com/tlancaster6/AquaPose/commit/4634ab6353257340c5b8d2e917e981b6716ba021))
+
+- **20-05**: Extract shared camera-video discovery, split diagnostics.py
+  ([`a3ebff5`](https://github.com/tlancaster6/AquaPose/commit/a3ebff5886d70670cfec998501b4f2378b2cd58b))
+
+- **overlay**: Add scale parameter to downsize output video (default 0.5x)
+  ([`8682425`](https://github.com/tlancaster6/AquaPose/commit/86824254d9e27520d97a1b32d384e0726b53bfe2))
+
+- **quick-9**: Add init-config CLI subcommand
+  ([`1d6eaf9`](https://github.com/tlancaster6/AquaPose/commit/1d6eaf9bd2a1a8104a5a79b27bc2884179068952))
+
+### Refactoring
+
+- **20-04**: Refactor TrackingStage to consume Stage 3 bundles as primary input
+  ([`0fe1ebd`](https://github.com/tlancaster6/AquaPose/commit/0fe1ebda02e1324950ad53fb0e2265cb7cffe646))
+
+### Testing
+
+- **13-01**: Add 7 unit tests for Stage protocol and PipelineContext
+  ([`3137e91`](https://github.com/tlancaster6/AquaPose/commit/3137e912e4d81a49bb63d065f5cebaca3f8ffddd))
+
+- **13-03**: Add 9 unit tests for event dataclasses and EventBus/Observer
+  ([`a17f3ed`](https://github.com/tlancaster6/AquaPose/commit/a17f3edd4ba426b334a91d537979074293bd249f))
+
+- **13-engine-core**: Add 8 tests for PosePipeline orchestration
+  ([`9736226`](https://github.com/tlancaster6/AquaPose/commit/9736226cedba954bce6241666bdb72c60830da84))
+
+- **15-01**: Add interface tests for DetectionStage
+  ([`c45f705`](https://github.com/tlancaster6/AquaPose/commit/c45f705aa508466e4dd21b4d6ab4b9b8faf45372))
+
+- **15-02**: Add interface tests for MidlineStage
+  ([`a3b74b8`](https://github.com/tlancaster6/AquaPose/commit/a3b74b8306214e5b14d8128840c9be189ed4daa6))
+
+- **15-03**: Add interface tests for AssociationStage
+  ([`551d5c9`](https://github.com/tlancaster6/AquaPose/commit/551d5c9412e611462c2874a97793e5f3c21a9b94))
+
+- **15-04**: Add interface tests for TrackingStage
+  ([`0cbeaf1`](https://github.com/tlancaster6/AquaPose/commit/0cbeaf160b049bd13d898dc8e800df7c576d2128))
+
+- **15-05**: Interface tests for ReconstructionStage and full pipeline smoke test
+  ([`6b37aae`](https://github.com/tlancaster6/AquaPose/commit/6b37aae58f75d898502a91c10db41bbb25a15c36))
+
+- **20-04**: Update tracking stage tests for bundle-based input
+  ([`586f4b1`](https://github.com/tlancaster6/AquaPose/commit/586f4b10d41424a8dad89d66cf7b64699200d686))
+
+
 ## v1.1.0-dev.1 (2026-02-25)
 
 ### Bug Fixes

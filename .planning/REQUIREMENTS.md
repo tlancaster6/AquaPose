@@ -10,7 +10,7 @@ Requirements for the Identity milestone. Each maps to roadmap phases.
 ### Refractive Lookup Tables
 
 - [x] **LUT-01**: User can generate a forward lookup table (pixel→ray) per camera that maps 2D pixel coordinates to 3D refracted rays via bilinear interpolation, serialized to disk for reuse
-- [ ] **LUT-02**: User can generate an inverse lookup table (voxel→pixel) that discretizes the tank volume at configurable resolution and records per-voxel camera visibility masks and projected pixel coordinates, producing camera overlap graph and ghost-point lookup
+- [x] **LUT-02**: User can generate an inverse lookup table (voxel→pixel) that discretizes the tank volume at configurable resolution and records per-voxel camera visibility masks and projected pixel coordinates, producing camera overlap graph and ghost-point lookup
 
 ### Per-Camera 2D Tracking
 
@@ -75,7 +75,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | LUT-01 | Phase 23 | Complete |
-| LUT-02 | Phase 23 | Pending |
+| LUT-02 | Phase 23 | Complete |
 | TRACK-01 | Phase 24 | Pending |
 | ASSOC-01 | Phase 25 | Pending |
 | ASSOC-02 | Phase 25 | Pending |

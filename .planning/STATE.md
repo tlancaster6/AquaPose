@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 ## Current Position
 
 Phase: 23 of 27 (v2.1 Identity — Refractive Lookup Tables)
-Plan: 1 of 2 completed in current phase — Phase 23 Plan 01 COMPLETE
-Status: Active — Phase 23 Plan 01 done (ForwardLUT); Phase 23 Plan 02 (InverseLUT) and Phase 24 (OC-SORT) can proceed
-Last activity: 2026-02-27 — Plan 23-01 complete (ForwardLUT, LutConfig, 7 unit tests)
+Plan: 2 of 2 completed in current phase — Phase 23 COMPLETE
+Status: Active — Phase 23 done (ForwardLUT + InverseLUT); Phase 24 (OC-SORT) can proceed; Phase 25 (Association) awaiting Phase 24
+Last activity: 2026-02-27 — Plan 23-02 complete (InverseLUT, camera_overlap_graph, ghost_point_lookup, 8 unit tests)
 
-Progress: [██░░░░░░░░] 20% (v2.1, 2/10 plans done)
+Progress: [███░░░░░░░] 30% (v2.1, 3/10 plans done)
 
 ## Performance Metrics
 
@@ -41,7 +41,7 @@ Progress: [██░░░░░░░░] 20% (v2.1, 2/10 plans done)
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 22-pipeline-scaffolding | 2/2 complete | 26 min | 13 min |
-| 23-refractive-lookup-tables | 1/2 in progress | 18 min | — |
+| 23-refractive-lookup-tables | 2/2 complete | 28 min | 14 min |
 | 24-27 | TBD | — | — |
 
 *Updated after each plan completion*
@@ -66,6 +66,9 @@ Key decisions entering v2.1:
 - [Phase 22-pipeline-scaffolding]: AssociationConfig and TrackingConfig stripped to stubs; _filter_fields() prevents TypeError from stale YAML keys
 - [Phase 23-01]: LutConfigLike Protocol instead of TYPE_CHECKING import: IB-003 forbids TYPE_CHECKING backdoors; Protocol with 5 LutConfig fields preserves import boundary while LutConfig satisfies it structurally at runtime
 - [Phase 23-01]: ForwardLUT stores grids as numpy float32 arrays (not torch tensors) for zero-copy .npz serialization; cast_ray() converts on-demand via torch.from_numpy()
+- [Phase 23-02]: InverseLUT uses O(1) integer grid dict for ghost_point_lookup (no KD-tree): snap point to (ix,iy,iz) via int(round()), dict lookup into voxel array
+- [Phase 23-02]: float64 for scalar .npz metadata (voxel_resolution, grid_bounds): float32 precision loss breaks equality comparisons and cache invalidation
+- [Phase 23-02]: 1e-6*resolution epsilon on np.arange stop: avoids float32 cumulative overshoot beyond z_max while including exact boundary voxels
 
 ### Pending Todos
 
@@ -79,5 +82,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed 23-refractive-lookup-tables-01-PLAN.md — ForwardLUT, LutConfig, 7 unit tests; Phase 23 Plan 02 and Phase 24 can proceed
+Stopped at: Completed 23-refractive-lookup-tables-02-PLAN.md — InverseLUT, camera_overlap_graph, ghost_point_lookup, 8 unit tests; Phase 23 complete; Phase 24 can proceed
 Resume file: None

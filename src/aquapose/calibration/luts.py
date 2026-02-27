@@ -489,16 +489,14 @@ def _build_cylindrical_voxel_grid(
     y_min = cy - radius
     y_max = cy + radius
 
-    # Generate a regular grid of candidate voxel centres
-    xs = np.arange(
-        x_min, x_max + voxel_resolution * 0.5, voxel_resolution, dtype=np.float32
-    )
-    ys = np.arange(
-        y_min, y_max + voxel_resolution * 0.5, voxel_resolution, dtype=np.float32
-    )
-    zs = np.arange(
-        z_min, z_max + voxel_resolution * 0.5, voxel_resolution, dtype=np.float32
-    )
+    # Generate a regular grid of candidate voxel centres.
+    # Use a tiny epsilon (1e-6 * resolution) as the stop tolerance so that
+    # voxels exactly on the boundary are included but no extra step beyond
+    # the boundary is added (avoids floating-point overshoot from 0.5*step).
+    _eps = voxel_resolution * 1e-6
+    xs = np.arange(x_min, x_max + _eps, voxel_resolution, dtype=np.float32)
+    ys = np.arange(y_min, y_max + _eps, voxel_resolution, dtype=np.float32)
+    zs = np.arange(z_min, z_max + _eps, voxel_resolution, dtype=np.float32)
 
     # Build full 3D meshgrid (ij indexing: x, y, z order)
     gx, gy, gz = np.meshgrid(xs, ys, zs, indexing="ij")  # each (Nx, Ny, Nz)
@@ -885,7 +883,9 @@ def save_inverse_lut(
     grid_keys = np.array(list(lut._grid_to_voxel_idx.keys()), dtype=np.int32)  # (M, 3)
     grid_vals = np.array(list(lut._grid_to_voxel_idx.values()), dtype=np.int32)  # (M,)
 
-    # grid_bounds as a flat array: x_min, x_max, y_min, y_max, z_min, z_max
+    # grid_bounds as a flat float64 array: x_min, x_max, y_min, y_max, z_min, z_max
+    # Use float64 to preserve full precision of Python floats for voxel_resolution
+    # and grid_bounds (float32 would lose ~1e-7 relative precision).
     bounds_arr = np.array(
         [
             lut.grid_bounds["x_min"],
@@ -895,7 +895,7 @@ def save_inverse_lut(
             lut.grid_bounds["z_min"],
             lut.grid_bounds["z_max"],
         ],
-        dtype=np.float32,
+        dtype=np.float64,
     )
 
     np.savez(
@@ -904,7 +904,7 @@ def save_inverse_lut(
         visibility_mask=lut.visibility_mask,
         projected_pixels=lut.projected_pixels,
         camera_ids=np.array(lut.camera_ids),
-        voxel_resolution=np.array(lut.voxel_resolution, dtype=np.float32),
+        voxel_resolution=np.array(lut.voxel_resolution, dtype=np.float64),
         grid_bounds=bounds_arr,
         grid_keys=grid_keys,
         grid_vals=grid_vals,

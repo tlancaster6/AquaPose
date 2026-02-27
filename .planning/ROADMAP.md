@@ -189,13 +189,17 @@ Plans:
 
 ### Phase 20: Post-Refactor Loose Ends
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** Remediate all findings from the Phase 19 audit (19-AUDIT.md). Fix the critical IB-003 violations, resolve warning-level items (Stage 3/4 coupling, CLI thinning, camera skip removal, dead modules), address info-level items (large file splitting, duplicated code, stale comments), and fix regression test paths. This phase closes out the v2.0 Alpha refactor.
+**Requirements**: REMEDIATE
 **Depends on:** Phase 19
-**Plans:** 0 plans
+**Plans:** 5 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 20 to break down)
+- [ ] 20-01-PLAN.md — Fix IB-003: move PipelineContext + Stage to core/context.py (wave 1)
+- [ ] 20-02-PLAN.md — Dead module cleanup: delete pipeline/, initialization/, mesh/, utils/, optimization/ (wave 1)
+- [ ] 20-03-PLAN.md — Camera skip removal + CLI thinning (wave 1)
+- [ ] 20-04-PLAN.md — Stage 3/4 coupling fix: tracking consumes association bundles (wave 2)
+- [ ] 20-05-PLAN.md — Info cleanup: shared utilities, diagnostics split, regression test paths (wave 2)
 
 ### Phase 21: Retrospective, Prospective
 

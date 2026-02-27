@@ -1,6 +1,0 @@
-path: C:/Users/tucke/PycharmProjects/AquaPose/data/yolo_fish
-train: images/train
-val: images/val
-nc: 1
-names:
-  0: fish

@@ -195,11 +195,11 @@ Plans:
 **Plans:** 5/5 plans complete
 
 Plans:
-- [ ] 20-01-PLAN.md — Fix IB-003: move PipelineContext + Stage to core/context.py (wave 1)
-- [ ] 20-02-PLAN.md — Dead module cleanup: delete pipeline/, initialization/, mesh/, utils/, optimization/ (wave 1)
-- [ ] 20-03-PLAN.md — Camera skip removal + CLI thinning (wave 1)
-- [ ] 20-04-PLAN.md — Stage 3/4 coupling fix: tracking consumes association bundles (wave 2)
-- [ ] 20-05-PLAN.md — Info cleanup: shared utilities, diagnostics split, regression test paths (wave 2)
+- [x] 20-01-PLAN.md — Fix IB-003: move PipelineContext + Stage to core/context.py (wave 1)
+- [x] 20-02-PLAN.md — Dead module cleanup: delete pipeline/, initialization/, mesh/, utils/, optimization/ (wave 1)
+- [x] 20-03-PLAN.md — Camera skip removal + CLI thinning (wave 1)
+- [x] 20-04-PLAN.md — Stage 3/4 coupling fix: tracking consumes association bundles (wave 2)
+- [x] 20-05-PLAN.md — Info cleanup: shared utilities, diagnostics split, regression test paths (wave 2)
 
 ### Phase 21: Retrospective, Prospective
 

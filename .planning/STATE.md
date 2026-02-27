@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Alpha
 status: unknown
-last_updated: "2026-02-27T02:12:49.443Z"
+last_updated: "2026-02-27T02:32:16.549Z"
 progress:
   total_phases: 10
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 32
-  completed_plans: 30
+  completed_plans: 32
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 
 ## Current Position
 
-Phase: 20 of 21 (Post-Refactor Loose Ends) — IN PROGRESS
-Plan: 4 of 5 in current phase — COMPLETE
-Status: Phase 20-04 Complete — TrackingStage reads context.associated_bundles; HungarianBackend consumes bundles; no internal RANSAC re-association; 514 tests pass
-Last activity: 2026-02-27 - Completed Phase 20 Plan 04: Fix Stage 3/4 coupling — TrackingStage now consumes AssociationBundles from Stage 3
+Phase: 20 of 21 (Post-Refactor Loose Ends) — COMPLETE
+Plan: 5 of 5 in current phase — COMPLETE
+Status: Phase 20-05 Complete — discover_camera_videos() shared utility; diagnostics.py split into midline_viz.py + triangulation_viz.py; regression env vars; 514 tests pass
+Last activity: 2026-02-27 - Completed Phase 20 Plan 05: Remaining audit remediations (AUD-004, AUD-012..018)
 
-Progress: [█████████░] 94%
+Progress: [██████████] 97%
 
 ## Performance Metrics
 
@@ -49,6 +49,7 @@ Progress: [█████████░] 94%
 | Phase 16-numerical-verification-and-legacy-cleanup P02 | 15 | 2 tasks | 7 files |
 | Phase 19-alpha-refactor-audit P04 | 2 | 1 tasks | 1 files |
 | Phase 20-post-refactor-loose-ends P02 | 30 | 1 tasks | 37 files |
+| Phase 20 P05 | 35 | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -167,6 +168,9 @@ Phase 13 decisions:
 - [Phase 20-04]: HungarianBackend.track_frame() no longer accepts detections_per_camera; bundles are the sole data input; calibration models no longer loaded
 - [Phase 20-04]: FishTracker.update_from_bundles() added — greedy nearest-3D-centroid assignment, birth from unmatched bundles, full lifecycle (probationary/confirmed/coasting/dead) and TRACK-04 dead-ID recycling preserved
 - [Phase 20-04]: discover_births() kept in tracking/associate.py as utility — no longer called during normal pipeline operation (AUD-005/AUD-006 remediated)
+- [Phase 20-05]: diagnostics.py kept as 29-LOC backward-compat re-export shim after split into midline_viz.py and triangulation_viz.py
+- [Phase 20-05]: discover_camera_videos() in io/discovery.py replaces duplicated inline glob logic in DetectionStage and MidlineStage
+- [Phase 20-05]: Regression conftest uses AQUAPOSE_VIDEO_DIR and AQUAPOSE_CALIBRATION_PATH env vars — pytest.skip() with clear message when not set; no hardcoded machine paths
 
 ### Pending Todos
 
@@ -185,5 +189,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed Phase 20-04 (TrackingStage consumes Stage 3 bundles; HungarianBackend simplified; 514 tests pass)
+Stopped at: Completed Phase 20-05 (discover_camera_videos shared utility; diagnostics.py split; regression env vars; 514 tests pass) — Phase 20 COMPLETE
 Resume file: None

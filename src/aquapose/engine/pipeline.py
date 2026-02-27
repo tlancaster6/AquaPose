@@ -7,6 +7,11 @@ artifact before any stage runs (ENG-06, ENG-08).
 The :func:`build_stages` factory is the canonical way to construct all 5 stages
 from a :class:`~aquapose.engine.config.PipelineConfig` and wire them into
 :class:`PosePipeline`.
+
+Stage 2 (TrackingStage) uses a different ``run()`` signature —
+``(context, carry) -> (context, carry)`` — because it maintains per-camera
+OC-SORT state across batches. The pipeline runner detects this stage via
+``isinstance(stage, TrackingStage)`` and dispatches accordingly.
 """
 
 from __future__ import annotations
@@ -149,18 +154,20 @@ class PosePipeline:
         context = PipelineContext()
 
         # --- 5. Execute stages in order -----------------------------------
-        # TrackingStubStage (and eventually the real TrackingStage) uses a
-        # different run() signature: (context, carry) -> (context, carry).
+        # TrackingStage uses a different run() signature:
+        # (context, carry) -> (context, carry).
         # We maintain carry state across all batches on the pipeline instance.
         carry: CarryForward | None = None
 
         try:
             for i, stage in enumerate(self._stages):
+                from aquapose.core.tracking import TrackingStage
+
                 stage_name = type(stage).__name__
                 self._bus.emit(StageStart(stage_name=stage_name, stage_index=i))
                 stage_start = time.monotonic()
-                if isinstance(stage, TrackingStubStage):
-                    context, carry = stage.run(context, carry)
+                if isinstance(stage, TrackingStage):
+                    context, carry = stage.run(context, carry)  # type: ignore[arg-type]
                 else:
                     context = stage.run(context)
                 elapsed = time.monotonic() - stage_start
@@ -199,51 +206,6 @@ class PosePipeline:
         return context
 
 
-# ---------------------------------------------------------------------------
-# Stub stages (Phase 22 placeholders)
-# ---------------------------------------------------------------------------
-
-
-class TrackingStubStage:
-    """Stub Stage 2: Per-camera 2D tracking (placeholder for Phase 24).
-
-    Writes correctly-typed but empty output to PipelineContext.tracks_2d.
-    Accepts and returns CarryForward unchanged, establishing the carry
-    interface plumbing for Phase 24 (OC-SORT).
-    Real OC-SORT implementation replaces this in Phase 24.
-
-    The ``run()`` signature accepts an optional ``carry`` argument, which
-    differs from the standard Stage Protocol. The pipeline runner detects
-    this stage via ``isinstance(stage, TrackingStubStage)`` and dispatches
-    accordingly, passing and receiving the ``CarryForward`` object.
-    """
-
-    def run(
-        self,
-        context: PipelineContext,
-        carry: CarryForward | None = None,
-    ) -> tuple[PipelineContext, CarryForward]:
-        """Run stub tracking — produces empty tracks_2d, passes carry through.
-
-        Args:
-            context: Accumulated pipeline state from the Detection stage.
-            carry: Cross-batch carry state. Created as empty default if None.
-
-        Returns:
-            Tuple of (context, carry). context.tracks_2d is set to an empty
-            dict. carry is returned unchanged (or a new default if None was
-            passed).
-
-        """
-        logger.warning("TrackingStubStage is a stub — producing empty output")
-        # Empty dict: no cameras have tracklets yet
-        context.tracks_2d = {}
-        # Pass through carry unchanged (or create default if None)
-        if carry is None:
-            carry = CarryForward()
-        return context, carry
-
-
 class AssociationStubStage:
     """Stub Stage 3: Cross-camera tracklet association (placeholder for Phase 25).
 
@@ -280,16 +242,15 @@ def build_stages(config: PipelineConfig) -> list:
     constructs each stage from its corresponding sub-config in *config*.
 
     v2.1 pipeline ordering: Detection → 2D Tracking → Association → Midline →
-    Reconstruction. Stages 2 and 3 are stubs (TrackingStubStage,
-    AssociationStubStage) that produce correctly-typed empty output until Phase 24
-    (OC-SORT Tracking) and Phase 25 (Leiden Association) replace them.
+    Reconstruction. Stage 3 is a stub (AssociationStubStage) that produces
+    correctly-typed empty output until Phase 25 (Leiden Association) replaces it.
 
     When ``config.mode == "synthetic"``, returns a 4-stage list with
     SyntheticDataStage replacing both DetectionStage and MidlineStage:
-    SyntheticDataStage → TrackingStubStage → AssociationStubStage → ReconstructionStage.
+    SyntheticDataStage → TrackingStage → AssociationStubStage → ReconstructionStage.
 
     For all other modes, returns the full 5-stage list:
-    DetectionStage → TrackingStubStage → AssociationStubStage → MidlineStage → ReconstructionStage.
+    DetectionStage → TrackingStage → AssociationStubStage → MidlineStage → ReconstructionStage.
 
     Example::
 
@@ -315,6 +276,9 @@ def build_stages(config: PipelineConfig) -> list:
         ReconstructionStage,
         SyntheticDataStage,
     )
+    from aquapose.core.tracking import TrackingStage
+
+    tracking_stage = TrackingStage(config=config.tracking)
 
     reconstruction_stage = ReconstructionStage(
         calibration_path=config.calibration_path,
@@ -333,7 +297,7 @@ def build_stages(config: PipelineConfig) -> list:
 
         return [
             synthetic_stage,
-            TrackingStubStage(),
+            tracking_stage,
             AssociationStubStage(),
             reconstruction_stage,
         ]
@@ -361,7 +325,7 @@ def build_stages(config: PipelineConfig) -> list:
 
     return [
         detection_stage,
-        TrackingStubStage(),
+        tracking_stage,
         AssociationStubStage(),
         midline_stage,
         reconstruction_stage,

@@ -85,16 +85,28 @@ class AssociationConfig:
 
 @dataclass(frozen=True)
 class TrackingConfig:
-    """Config for the 2D Tracking stage (stub in v2.1 Phase 22).
+    """Config for the 2D Tracking stage (Stage 2).
 
-    Will be populated with OC-SORT parameters in Phase 24.
+    Controls the OC-SORT tracker used for per-camera 2D fish tracking.
 
     Attributes:
-        max_coast_frames: Maximum frames to coast (predict without observation)
-            before dropping a track. Placeholder; Phase 24 adds full OC-SORT config.
+        tracker_kind: Tracker backend to use. Currently only ``"ocsort"`` is
+            implemented; ``"bytetrack"`` and ``"sort"`` are reserved for
+            future use.
+        max_coast_frames: Maximum frames to coast (Kalman predict with no
+            observation) before dropping a track. Maps to boxmot ``max_age``.
+        n_init: Minimum number of matched detection frames before a track is
+            confirmed and included in stage output. Maps to boxmot
+            ``min_hits``.
+        iou_threshold: IoU threshold for matching detections to existing tracks.
+        det_thresh: Minimum detection confidence forwarded to the tracker.
     """
 
+    tracker_kind: str = "ocsort"
     max_coast_frames: int = 30
+    n_init: int = 3
+    iou_threshold: float = 0.3
+    det_thresh: float = 0.3
 
 
 @dataclass(frozen=True)

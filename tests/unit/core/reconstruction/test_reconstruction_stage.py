@@ -434,10 +434,12 @@ def test_active_stages_importable() -> None:
     assert MidlineStage is not None
     assert ReconstructionStage is not None
 
-    # Stub stages live in engine/pipeline.py (not core/)
-    from aquapose.engine.pipeline import AssociationStubStage, TrackingStubStage
+    # AssociationStubStage lives in engine/pipeline.py (stub until Phase 25)
+    # TrackingStage lives in aquapose.core.tracking (replaced TrackingStubStage in Phase 24)
+    from aquapose.core.tracking import TrackingStage
+    from aquapose.engine.pipeline import AssociationStubStage
 
-    assert TrackingStubStage is not None
+    assert TrackingStage is not None
     assert AssociationStubStage is not None
 
 
@@ -453,10 +455,10 @@ def test_build_stages_returns_stages(tmp_path: Path) -> None:
         MidlineStage,
         ReconstructionStage,
     )
+    from aquapose.core.tracking import TrackingStage
     from aquapose.engine.config import PipelineConfig
     from aquapose.engine.pipeline import (
         AssociationStubStage,
-        TrackingStubStage,
         build_stages,
     )
 
@@ -497,7 +499,7 @@ def test_build_stages_returns_stages(tmp_path: Path) -> None:
     assert isinstance(stages, list)
     assert len(stages) == 5, f"Expected 5 stages, got {len(stages)}"
     assert isinstance(stages[0], DetectionStage)
-    assert isinstance(stages[1], TrackingStubStage)
+    assert isinstance(stages[1], TrackingStage)
     assert isinstance(stages[2], AssociationStubStage)
     assert isinstance(stages[3], MidlineStage)
     assert isinstance(stages[4], ReconstructionStage)
@@ -506,7 +508,7 @@ def test_build_stages_returns_stages(tmp_path: Path) -> None:
     from aquapose.core.context import Stage
 
     for stage in stages:
-        if not isinstance(stage, (TrackingStubStage, AssociationStubStage)):
+        if not isinstance(stage, AssociationStubStage):
             assert isinstance(stage, Stage), (
                 f"{type(stage).__name__} must satisfy Stage Protocol"
             )

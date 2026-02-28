@@ -95,41 +95,41 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DOCS-01 | — | Pending |
-| DOCS-02 | — | Pending |
-| CFG-01 | — | Pending |
-| CFG-02 | — | Pending |
-| CFG-03 | — | Pending |
-| CFG-04 | — | Pending |
-| CFG-05 | — | Pending |
-| CFG-06 | — | Pending |
-| CFG-07 | — | Pending |
-| CFG-08 | — | Pending |
-| CFG-09 | — | Pending |
-| CFG-10 | — | Pending |
-| CFG-11 | — | Pending |
-| CFG-12 | — | Pending |
-| DET-01 | — | Pending |
-| DET-02 | — | Pending |
-| DET-03 | — | Pending |
-| MID-01 | — | Pending |
-| MID-02 | — | Pending |
-| MID-03 | — | Pending |
-| MID-04 | — | Pending |
-| RECON-01 | — | Pending |
-| RECON-02 | — | Pending |
-| TRAIN-01 | — | Pending |
-| TRAIN-02 | — | Pending |
-| TRAIN-03 | — | Pending |
-| TRAIN-04 | — | Pending |
-| VIZ-01 | — | Pending |
-| VIZ-02 | — | Pending |
+| DOCS-01 | Phase 29 | Pending |
+| DOCS-02 | Phase 29 | Pending |
+| CFG-01 | Phase 30 | Pending |
+| CFG-02 | Phase 30 | Pending |
+| CFG-03 | Phase 30 | Pending |
+| CFG-04 | Phase 30 | Pending |
+| CFG-05 | Phase 30 | Pending |
+| CFG-06 | Phase 30 | Pending |
+| CFG-07 | Phase 30 | Pending |
+| CFG-08 | Phase 30 | Pending |
+| CFG-09 | Phase 30 | Pending |
+| CFG-10 | Phase 30 | Pending |
+| CFG-11 | Phase 30 | Pending |
+| CFG-12 | Phase 30 | Pending |
+| TRAIN-01 | Phase 31 | Pending |
+| TRAIN-02 | Phase 31 | Pending |
+| TRAIN-03 | Phase 31 | Pending |
+| TRAIN-04 | Phase 31 | Pending |
+| DET-01 | Phase 32 | Pending |
+| DET-02 | Phase 32 | Pending |
+| DET-03 | Phase 32 | Pending |
+| VIZ-01 | Phase 32 | Pending |
+| VIZ-02 | Phase 32 | Pending |
+| MID-01 | Phase 33 | Pending |
+| MID-02 | Phase 33 | Pending |
+| MID-03 | Phase 33 | Pending |
+| MID-04 | Phase 33 | Pending |
+| RECON-01 | Phase 33 | Pending |
+| RECON-02 | Phase 33 | Pending |
 
 **Coverage:**
 - v2.2 requirements: 29 total
-- Mapped to phases: 0
-- Unmapped: 29 (pending roadmap creation)
+- Mapped to phases: 29
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-28*
-*Last updated: 2026-02-28 after initial definition*
+*Last updated: 2026-02-28 after roadmap creation*

@@ -50,3 +50,13 @@
 
 ---
 
+
+## v2.1 Identity (Shipped: 2026-02-28)
+
+**Phases completed:** 7 phases, 12 plans, 0 tasks
+
+**Key accomplishments:**
+- (none recorded)
+
+---
+

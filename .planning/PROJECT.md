@@ -2,7 +2,7 @@
 
 ## What This Is
 
-AquaPose is a 3D fish pose estimation system that reconstructs the position, orientation, and body shape of cichlids from a 13-camera aquarium rig. Built as an event-driven computation engine with strict 3-layer architecture (Core Computation → PosePipeline → Observers), the pipeline executes 5 stages — Detection (YOLO), Midline (U-Net + skeletonization), Association (RANSAC centroid clustering), Tracking (Hungarian 3D), and Reconstruction (multi-view triangulation + B-spline fitting) — producing dense 3D trajectories and midline kinematics for behavioral research. A curve-based optimizer provides an alternative correspondence-free reconstruction backend. Invoked via `aquapose run --config path.yaml` with production, diagnostic, synthetic, and benchmark execution modes.
+AquaPose is a 3D fish pose estimation system that reconstructs the position, orientation, and body shape of cichlids from a 13-camera aquarium rig. Built as an event-driven computation engine with strict 3-layer architecture (Core Computation → PosePipeline → Observers), the pipeline executes 5 stages — Detection (YOLO), 2D Tracking (OC-SORT per-camera), Association (ray-ray scoring + Leiden clustering), Midline (U-Net + skeletonization), and Reconstruction (multi-view triangulation + B-spline fitting) — producing dense 3D trajectories and midline kinematics for behavioral research. Precomputed refractive lookup tables (forward pixel→ray and inverse voxel→pixel) eliminate per-frame refraction math during association. A curve-based optimizer provides an alternative correspondence-free reconstruction backend. Invoked via `aquapose run --config path.yaml` with production, diagnostic, synthetic, and benchmark execution modes.
 
 ## Core Value
 
@@ -50,26 +50,16 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - ✓ Golden data verification framework and regression test suite — v2.0
 - ✓ AST-based import boundary checker with pre-commit enforcement — v2.0
 
+- ✓ Precomputed refractive lookup tables (forward pixel→ray + inverse voxel→pixel) for fast association (LUT-01, LUT-02) — v2.1
+- ✓ OC-SORT 2D tracking per camera replacing 3D bundle-claiming tracker (TRACK-01) — v2.1
+- ✓ Cross-camera tracklet association via ray-ray scoring, Leiden clustering, 3D refinement (ASSOC-01/02/03) — v2.1
+- ✓ Pipeline reordering: Detection → 2D Tracking → Association → Midline → Reconstruction (PIPE-01/02/03) — v2.1
+- ✓ Tracklet and association diagnostic visualization (DIAG-01) — v2.1
+- ✓ E2E smoke tests on synthetic data (EVAL-01) — v2.1
+
 ### Active
 
-<!-- v2.1 Identity — pipeline reorder for robust cross-view correspondence -->
-
-- [ ] Precomputed refractive lookup tables (forward + inverse) for fast association
-- [ ] OC-SORT 2D tracking per camera replacing 3D bundle-claiming tracker
-- [ ] Cross-camera tracklet association via ray-ray scoring, Leiden clustering, 3D refinement
-- [ ] Pipeline reordering: Detection → 2D Tracking → Association → Midline → Reconstruction
-- [ ] Tracklet and association diagnostic visualization
-
-## Current Milestone: v2.1 Identity
-
-**Goal:** Reorder the pipeline to track in 2D first, then associate tracklets across cameras using trajectory-level geometric evidence — fixing the root cause of broken 3D reconstruction.
-
-**Target features:**
-- Precomputed refractive LUTs (pixel→ray, voxel→pixel) eliminating per-frame refraction math
-- OC-SORT per-camera 2D tracking replacing 3D bundle-claiming tracker
-- Cross-camera tracklet association (pairwise scoring, graph clustering, 3D refinement)
-- Pipeline integration (new PipelineContext fields, deferred midline, reconstruction from tracklet groups)
-- Diagnostic visualization for tracklets and associations
+(No active requirements — planning next milestone)
 
 ### Out of Scope
 
@@ -86,12 +76,13 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ## Context
 
-### Current State (v2.0 Alpha shipped)
+### Current State (v2.1 Identity shipped)
 
-- **Codebase:** 18,660 LOC source + 14,826 LOC tests across `src/aquapose/` (calibration, core/, engine/, segmentation, tracking, reconstruction, io, visualization)
-- **Architecture:** Event-driven 3-layer — Core Computation (5 stages) → PosePipeline (orchestrator) → Observers (5 side-effect handlers)
-- **Tech stack:** Python 3.11, PyTorch, PyTorch3D, scikit-image, OpenCV, h5py, ultralytics (YOLO), Click (CLI), Plotly (3D viz), hatch build system
-- **Test suite:** 514 unit tests, 7 regression tests (data-dependent), 1 E2E smoke test
+- **Codebase:** 21,389 LOC source across `src/aquapose/` (calibration, core/, engine/, segmentation, tracking, reconstruction, io, visualization)
+- **Architecture:** Event-driven 3-layer — Core Computation (5 stages) → PosePipeline (orchestrator) → Observers (6 side-effect handlers)
+- **Pipeline order:** Detection (YOLO) → 2D Tracking (OC-SORT) → Association (Leiden) → Midline (U-Net + skeletonization) → Reconstruction (triangulation + B-spline)
+- **Tech stack:** Python 3.11, PyTorch, PyTorch3D, scikit-image, OpenCV, h5py, ultralytics (YOLO), Click (CLI), Plotly (3D viz), boxmot (OC-SORT), leidenalg/igraph, hatch build system
+- **Test suite:** 554+ unit tests, 2 E2E smoke tests (synthetic), real-data tests (@slow)
 - **Two reconstruction backends:** Triangulation (primary, fast) and curve optimizer (experimental, correspondence-free) — selected via config
 - **Segmentation quality:** U-Net IoU 0.623 — sufficient for pipeline but noisy 2D midlines are the primary quality bottleneck for real data
 - **Known limitation:** Z-reconstruction uncertainty 132x larger than XY due to top-down camera geometry
@@ -131,20 +122,25 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | AquaCal as dependency, AquaMVS as reference | Avoid fragile cross-repo imports; reimplement refractive projection | ✓ Good |
 | YOLO as primary detector, MOG2 as fallback | YOLOv8n trained on 150 frames; recall 0.78 | ✓ Good |
 | U-Net over Mask R-CNN for segmentation | Lightweight (~2.5M params), trains on SAM2 pseudo-labels | ⚠️ Revisit — IoU 0.623 is bottleneck |
-| RANSAC centroid clustering for cross-view identity | Cast refractive rays, triangulate minimal subsets, score consensus | ✓ Good |
+| RANSAC centroid clustering for cross-view identity | Cast refractive rays, triangulate minimal subsets, score consensus | Superseded by Leiden clustering in v2.1 |
 | Arc-length normalized correspondence | Slender-body assumption preserves cross-view correspondence | ✓ Good |
 | Analysis-by-synthesis retained as optional route | Shelved, not deleted — available for advanced work | ✓ Good |
 | Curve optimizer as alternative to triangulation | Correspondence-free B-spline fitting via chamfer distance | — Pending real-data validation |
-| XY-only tracking cost matrix | Z uncertainty 132x larger; XY-only prevents Z-noise ID swaps | ✓ Good |
-| Population-constrained tracking | 9 fish always; dead tracks recycled to unmatched observations | ✓ Good |
+| XY-only tracking cost matrix | Z uncertainty 132x larger; XY-only prevents Z-noise ID swaps | Superseded — OC-SORT per-camera in v2.1 |
+| Population-constrained tracking | 9 fish always; dead tracks recycled to unmatched observations | Superseded — Leiden clustering handles identity in v2.1 |
 | Stage Protocol via structural typing (not ABC) | typing.Protocol with runtime_checkable — no inheritance required | ✓ Good — clean 5-stage architecture |
 | Frozen dataclasses for config (not Pydantic) | Simpler, stdlib-only, hierarchical nesting | ✓ Good — defaults→YAML→CLI→freeze works well |
 | PipelineContext in core/, not engine/ | Pure data contracts belong in core/ layer | ✓ Good — resolved IB-003 violations |
 | Observers as event subscribers (not stage hooks) | Zero coupling to stages; fault-tolerant dispatch | ✓ Good — adding/removing observers has no effect on computation |
 | Port behavior, not rewrite logic | Numerical equivalence is the acceptance bar | ✓ Good — golden data framework validates |
-| Canonical 5-stage model (not 7) | Detection, Midline, Association, Tracking, Reconstruction — aligned to guidebook | ✓ Good — simplified planning and implementation |
-| TrackingStage consumes Stage 3 bundles | Stage 3 is hard dependency; bundles-aware backend | ✓ Good — clean data flow, no re-derivation |
+| Canonical 5-stage model (not 7) | Detection, Midline, Association, Tracking, Reconstruction — aligned to guidebook | ✓ Good — reordered to Det→Track→Assoc→Mid→Recon in v2.1 |
+| TrackingStage consumes Stage 3 bundles | Stage 3 is hard dependency; bundles-aware backend | Superseded — TrackingStage is now Stage 2, consumes detections directly |
+| Pipeline reorder: track-first then associate | Frame-level RANSAC association failed; trajectory-level evidence needed | ✓ Good — root cause fix for broken 3D reconstruction |
+| OC-SORT for 2D tracking (not Hungarian) | Per-camera independence, IoU+Kalman, handles occlusion via virtual trajectories | ✓ Good — robust coasting, clean state roundtrip |
+| Leiden clustering for cross-camera association | Graph-based with must-not-link constraints; handles variable fish counts | ✓ Good — replaces population-constrained RANSAC |
+| Precomputed LUTs over per-frame refraction | Forward+inverse LUTs eliminate ~ms/frame refraction math during association | ✓ Good — enables trajectory-level scoring at scale |
+| Auto-generate LUTs on first pipeline run | No separate CLI subcommand; LUTs built lazily in AssociationStage | ✓ Good — zero setup friction |
 | Import boundary via AST checker + pre-commit | Automated enforcement prevents architectural regression | ✓ Good — 0 violations at milestone completion |
 
 ---
-*Last updated: 2026-02-27 after v2.1 Identity milestone started*
+*Last updated: 2026-02-28 after v2.1 Identity milestone completed*

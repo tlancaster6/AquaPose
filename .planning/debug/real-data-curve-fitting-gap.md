@@ -1,5 +1,5 @@
 ---
-status: investigating
+status: resolved
 trigger: "real-data-curve-fitting-gap: Curve fitting works well on synthetic (3-8mm error) but struggles on real data (mean residuals 139px, 85% low-confidence)"
 created: 2026-02-23T00:00:00Z
 updated: 2026-02-23T01:00:00Z

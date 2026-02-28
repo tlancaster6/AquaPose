@@ -1,5 +1,5 @@
 ---
-status: investigating
+status: resolved
 trigger: "9fish-coldstart-failure: Cold-start initialization catastrophically fails when n-fish=9 but works fine for 4-8 fish"
 created: 2026-02-23T00:00:00Z
 updated: 2026-02-23T00:00:00Z

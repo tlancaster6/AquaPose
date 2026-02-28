@@ -1,11 +1,11 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.2
+milestone: v1.0
 milestone_name: Backends
-status: in_progress
-last_updated: "2026-02-28T17:58:30Z"
+status: unknown
+last_updated: "2026-02-28T18:06:59.927Z"
 progress:
-  total_phases: 6
+  total_phases: 1
   completed_phases: 1
   total_plans: 2
   completed_plans: 2

@@ -151,7 +151,7 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
 | 1-9 | v1.0 | 28/28 | Complete | 2026-02-25 |
 | 13-21 | v2.0 | 34/34 | Complete | 2026-02-27 |
 | 22-28 | v2.1 | 12/12 | Complete | 2026-02-28 |
-| 29. Guidebook Audit | v2.2 | 2/2 | Complete | 2026-02-28 |
+| 29. Guidebook Audit | v2.2 | Complete    | 2026-02-28 | 2026-02-28 |
 | 30. Config and Contracts | v2.2 | 0/TBD | Not started | - |
 | 31. Training Infrastructure | v2.2 | 0/TBD | Not started | - |
 | 32. YOLO-OBB Detection Backend | v2.2 | 0/TBD | Not started | - |

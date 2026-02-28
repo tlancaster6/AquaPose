@@ -9,6 +9,7 @@ from .datasets import (
     apply_augmentation,
     stratified_split,
 )
+from .unet import train_unet
 
 __all__ = [
     "BinaryMaskDataset",
@@ -19,4 +20,5 @@ __all__ = [
     "make_loader",
     "save_best_and_last",
     "stratified_split",
+    "train_unet",
 ]

@@ -400,6 +400,38 @@ def test_extract_midlines_full_pipeline() -> None:
     assert np.all(midline.half_widths > 0)
 
 
+def test_midline2d_point_confidence_defaults_none() -> None:
+    """Midline2D.point_confidence defaults to None when not provided."""
+    points = np.zeros((15, 2), dtype=np.float32)
+    half_widths = np.ones(15, dtype=np.float32)
+    m = Midline2D(
+        points=points,
+        half_widths=half_widths,
+        fish_id=0,
+        camera_id="cam0",
+        frame_index=0,
+    )
+    assert m.point_confidence is None
+
+
+def test_midline2d_with_point_confidence() -> None:
+    """Midline2D.point_confidence stores the provided confidence array."""
+    points = np.zeros((15, 2), dtype=np.float32)
+    half_widths = np.ones(15, dtype=np.float32)
+    conf = np.ones(15, dtype=np.float32)
+    m = Midline2D(
+        points=points,
+        half_widths=half_widths,
+        fish_id=0,
+        camera_id="cam0",
+        frame_index=0,
+        point_confidence=conf,
+    )
+    assert m.point_confidence is not None
+    assert m.point_confidence.shape == (15,)
+    assert np.all(m.point_confidence == 1.0)
+
+
 def test_extract_midlines_skips_small_mask() -> None:
     """Tiny mask should cause extraction to be skipped (no cam entry)."""
     track = _MockFishTrack(fish_id=0, camera_detections={"cam0": 0})

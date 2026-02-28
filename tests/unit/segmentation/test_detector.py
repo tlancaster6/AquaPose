@@ -64,6 +64,27 @@ class TestDetection:
         assert det.confidence == 1.0
         assert det.mask.shape == (480, 640)
 
+    def test_detection_angle_defaults_none(self) -> None:
+        """angle and obb_points default to None for non-OBB detectors."""
+        det = Detection(bbox=(0, 0, 10, 10), mask=None, area=100, confidence=0.9)
+        assert det.angle is None
+        assert det.obb_points is None
+
+    def test_detection_with_obb_fields(self) -> None:
+        """Detection can be constructed with OBB angle and corner points."""
+        obb = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], dtype=np.float32)
+        det = Detection(
+            bbox=(0, 0, 10, 10),
+            mask=None,
+            area=100,
+            confidence=0.9,
+            angle=0.5,
+            obb_points=obb,
+        )
+        assert det.angle == 0.5
+        assert det.obb_points is not None
+        assert det.obb_points.shape == (4, 2)
+
 
 class TestMOG2DetectorInit:
     """Tests for MOG2Detector construction."""

@@ -206,3 +206,52 @@ def test_serialize_config_is_string() -> None:
 
     assert isinstance(result, str)
     assert len(result) > 0
+
+
+# ---------------------------------------------------------------------------
+# 9. Strict-reject: unknown fields raise ValueError
+# ---------------------------------------------------------------------------
+
+
+def test_unknown_field_raises_value_error(tmp_path: Path) -> None:
+    """Unknown field in any stage section raises ValueError with field name."""
+    yaml_content = {"detection": {"bogus_field": True}}
+    cfg_file = tmp_path / "bad_config.yaml"
+    cfg_file.write_text(yaml.dump(yaml_content))
+
+    with pytest.raises(ValueError, match="unknown field 'bogus_field'"):
+        load_config(yaml_path=cfg_file)
+
+
+def test_rename_hint_in_error_message(tmp_path: Path) -> None:
+    """Renamed field produces a 'did you mean?' hint in the error message."""
+    yaml_content = {"association": {"expect_fish_count": 5}}
+    cfg_file = tmp_path / "renamed_config.yaml"
+    cfg_file.write_text(yaml.dump(yaml_content))
+
+    with pytest.raises(ValueError, match="did you mean"):
+        load_config(yaml_path=cfg_file)
+
+
+def test_unknown_top_level_field_raises(tmp_path: Path) -> None:
+    """Unknown top-level field raises ValueError."""
+    yaml_content = {"totally_fake": 42}
+    cfg_file = tmp_path / "top_level_bad.yaml"
+    cfg_file.write_text(yaml.dump(yaml_content))
+
+    with pytest.raises(ValueError, match="unknown field 'totally_fake'"):
+        load_config(yaml_path=cfg_file)
+
+
+def test_valid_config_still_loads(tmp_path: Path) -> None:
+    """A config file with only valid fields loads without error."""
+    yaml_content = {
+        "n_animals": 3,
+        "detection": {"detector_kind": "yolo"},
+    }
+    cfg_file = tmp_path / "valid_config.yaml"
+    cfg_file.write_text(yaml.dump(yaml_content))
+
+    config = load_config(yaml_path=cfg_file)
+    assert config.n_animals == 3
+    assert config.detection.detector_kind == "yolo"

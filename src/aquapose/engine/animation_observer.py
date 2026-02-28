@@ -147,6 +147,37 @@ class Animation3DObserver:
                 )
             frames.append(go.Frame(data=frame_traces, name=str(frame_idx)))
 
+        # Compute global bounding box for fixed axis ranges.
+        all_coords: list[np.ndarray] = []
+        for frame_dict in midlines_3d:
+            if not isinstance(frame_dict, dict):
+                continue
+            for spline in frame_dict.values():
+                x, y, z = self._eval_spline(spline)
+                if x:
+                    all_coords.append(np.column_stack([x, y, z]))
+
+        if all_coords:
+            stacked = np.vstack(all_coords)
+            mins = stacked.min(axis=0)
+            maxs = stacked.max(axis=0)
+            pad = 0.05 * (maxs - mins).max()  # 5% padding
+            spans = (maxs - mins) + 2 * pad
+            max_span = spans.max()
+            aspect = {
+                "x": float(spans[0] / max_span),
+                "y": float(spans[1] / max_span),
+                "z": float(spans[2] / max_span),
+            }
+            axis_range = {
+                "x": [float(mins[0] - pad), float(maxs[0] + pad)],
+                "y": [float(mins[1] - pad), float(maxs[1] + pad)],
+                "z": [float(mins[2] - pad), float(maxs[2] + pad)],
+            }
+        else:
+            aspect = {"x": 1.0, "y": 1.0, "z": 1.0}
+            axis_range = {"x": [-1, 1], "y": [-1, 1], "z": [-1, 1]}
+
         # Assemble figure.
         fig = go.Figure(data=initial_traces, frames=frames)
 
@@ -154,10 +185,11 @@ class Animation3DObserver:
         fig.update_layout(
             title="AquaPose 3D Midline Animation",
             scene=dict(
-                aspectmode="data",
-                xaxis_title="X",
-                yaxis_title="Y",
-                zaxis_title="Z",
+                aspectmode="manual",
+                aspectratio=aspect,
+                xaxis=dict(title="X", range=axis_range["x"]),
+                yaxis=dict(title="Y", range=axis_range["y"]),
+                zaxis=dict(title="Z", range=axis_range["z"]),
             ),
             updatemenus=[
                 dict(

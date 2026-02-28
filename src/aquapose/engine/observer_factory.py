@@ -54,7 +54,7 @@ def build_observers(
     - ``"production"`` / ``"synthetic"``: ConsoleObserver + TimingObserver +
       HDF5ExportObserver.
     - ``"diagnostic"``: All production observers plus Overlay2DObserver,
-      Animation3DObserver, and DiagnosticObserver.
+      Animation3DObserver, DiagnosticObserver, and TrackletTrailObserver.
     - ``"benchmark"``: ConsoleObserver + TimingObserver only.
     - Any other mode: ConsoleObserver only.
 
@@ -81,6 +81,23 @@ def build_observers(
     if mode in ("production", "synthetic"):
         observers.append(TimingObserver(output_path=output_dir / "timing.txt"))
         observers.append(HDF5ExportObserver(output_dir=config.output_dir))
+        if mode == "synthetic":
+            observers.append(
+                Overlay2DObserver(
+                    output_dir=config.output_dir,
+                    video_dir="",
+                    calibration_path=config.calibration_path,
+                )
+            )
+            observers.append(Animation3DObserver(output_dir=config.output_dir))
+            observers.append(
+                TrackletTrailObserver(
+                    output_dir=config.output_dir,
+                    video_dir="",
+                    calibration_path=config.calibration_path,
+                    stop_frame=config.detection.stop_frame,
+                )
+            )
 
     elif mode == "diagnostic":
         observers.append(TimingObserver(output_path=output_dir / "timing.txt"))

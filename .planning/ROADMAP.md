@@ -103,11 +103,14 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
 **Depends on**: Phase 30 (config conventions, device parameter)
 **Requirements**: TRAIN-01, TRAIN-02, TRAIN-03, TRAIN-04
 **Success Criteria** (what must be TRUE):
-  1. `aquapose train --help` lists `unet`, `yolo-obb`, and `keypoint` subcommands; each subcommand accepts `--data-dir`, `--output-dir`, `--epochs`, `--device`, and `--resume` with consistent semantics
-  2. `aquapose train keypoint --resume <checkpoint>` resumes training from a checkpoint with the frozen-backbone configuration used for initial training; `--unfreeze` flag enables end-to-end fine-tuning
+  1. `aquapose train --help` lists `unet`, `yolo-obb`, and `pose` subcommands; each subcommand accepts `--data-dir`, `--output-dir`, `--epochs`, `--device`, and `--val-split` with consistent semantics
+  2. `aquapose train pose --backbone-weights <path>` loads U-Net encoder weights and freezes backbone for transfer learning; `--unfreeze` flag enables end-to-end fine-tuning
   3. Running `aquapose train unet` produces the same training behavior as the existing `segmentation/training.py` script, which is then superseded
   4. `src/aquapose/training/` module exists as a proper package with no imports from `engine/` (import boundary enforced by pre-commit hook)
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 31-01-PLAN.md — Training package scaffold, shared utilities, datasets, U-Net subcommand
+- [ ] 31-02-PLAN.md — YOLO-OBB and pose subcommands, migration cleanup
 
 ### Phase 32: YOLO-OBB Detection Backend
 **Goal**: Pipeline supports YOLO-OBB as a selectable detection model that produces rotation-aligned affine crops and OBB polygon overlays in diagnostic mode
@@ -118,7 +121,10 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
   2. Affine crops extracted from OBB detections show fish bodies axis-aligned within the crop (orientation smoke test passes for known-angle detections)
   3. A point in crop coordinates can be back-projected to full-frame pixel coordinates via the inverse transform, with round-trip error under 1 pixel
   4. Diagnostic mode renders OBB polygon overlays on detection frames and bounding box overlays (both axis-aligned and OBB) on tracklet trail frames
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 31-01-PLAN.md — Training package scaffold, shared utilities, datasets, U-Net subcommand
+- [ ] 31-02-PLAN.md — YOLO-OBB and pose subcommands, migration cleanup
 
 ### Phase 33: Keypoint Midline Backend
 **Goal**: Pipeline supports a keypoint regression backend that produces N ordered midline points with per-point confidence, and both reconstruction backends weight observations by that confidence
@@ -130,7 +136,10 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
   3. Both midline backends produce `Midline2D` instances with the same shape and field structure — the reconstruction stages require no backend-specific branching
   4. Triangulation backend uses per-point confidence as weights when confidence is present; reconstruction produces identical output to the previous version when confidence is `None`
   5. Curve optimizer backend uses per-point confidence as weights when confidence is present; reconstruction produces identical output to the previous version when confidence is `None`
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 31-01-PLAN.md — Training package scaffold, shared utilities, datasets, U-Net subcommand
+- [ ] 31-02-PLAN.md — YOLO-OBB and pose subcommands, migration cleanup
 
 ### Phase 34: Stabilization
 **Goal**: All v2.2 features work correctly on real data with tuned parameters — milestone goals are complete in practice, not just in theory
@@ -143,7 +152,10 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
   4. Basic parameter tuning is complete (confidence thresholds, NMS parameters, keypoint model quality validation)
   5. Pending todos accumulated during v2.2 are triaged (resolved, deferred, or converted to future requirements)
 **Notes**: This is an interactive process between agent and user. The first step is drafting a custom QA skill/agent that can be reused in future milestones.
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 31-01-PLAN.md — Training package scaffold, shared utilities, datasets, U-Net subcommand
+- [ ] 31-02-PLAN.md — YOLO-OBB and pose subcommands, migration cleanup
 
 ## Progress
 
@@ -154,7 +166,7 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
 | 22-28 | v2.1 | 12/12 | Complete | 2026-02-28 |
 | 29. Guidebook Audit | v2.2 | Complete    | 2026-02-28 | 2026-02-28 |
 | 30. Config and Contracts | v2.2 | 1/TBD | In progress | - |
-| 31. Training Infrastructure | v2.2 | 0/TBD | Not started | - |
+| 31. Training Infrastructure | v2.2 | 0/2 | Not started | - |
 | 32. YOLO-OBB Detection Backend | v2.2 | 0/TBD | Not started | - |
 | 33. Keypoint Midline Backend | v2.2 | 0/TBD | Not started | - |
 | 34. Stabilization | v2.2 | 0/TBD | Not started | - |

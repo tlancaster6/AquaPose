@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Backends
 status: unknown
-last_updated: "2026-02-28T20:29:40.447Z"
+last_updated: "2026-02-28T22:37:37.768Z"
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 7
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 30 — Config/Contracts (in progress, Plan 03 complete)
+**Current focus:** Phase 31 — Training Infrastructure (in progress, Plan 01 complete)
 
 ## Current Position
 
-Phase: 30 of 35 (Config/Contracts) — Plan 30-03 complete
-Plan: 30-03 complete
+Phase: 31 of 35 (Training Infrastructure) — Plan 31-01 complete
+Plan: 31-01 complete
 Status: In progress
-Last activity: 2026-02-28 - Completed quick task 10: Store 3D consensus centroids on TrackletGroup and write centroid correspondences to disk via DiagnosticObserver
+Last activity: 2026-02-28 - Completed 31-01: training/ package scaffold, common utilities, datasets, train_unet(), CLI subcommand
 
-Progress: [████░░░░░░] 42% (5/12 plans complete — Phase 29 both plans done, Phase 30 Plans 01-03 done)
+Progress: [████░░░░░░] 46% (6/12 plans complete — Phase 29 both plans done, Phase 30 Plans 01-04 done, Phase 31 Plan 01 done)
 
 ## Performance Metrics
 
@@ -42,6 +42,8 @@ Progress: [████░░░░░░] 42% (5/12 plans complete — Phase 29
 |-------|-------|-------|----------|
 | 29-guidebook-audit | 2 | 5 min | 2.5 min |
 | 30-config-and-contracts | 3/4 done | 45 min | 15 min |
+
+| 31-training-infrastructure | 1 | 11 min | 11 min |
 
 *Updated after each plan completion*
 
@@ -84,6 +86,8 @@ From 30-03 execution:
 - Generated YAML omits device and stop_frame; n_animals placeholder is string "SET_ME" (fails load_config validation)
 - project_dir resolution in load_config() uses Path.resolve() — adds drive letter on Windows; tests use tmp_path to stay cross-platform
 - synthetic section in generated YAML excludes fish_count — it propagates from n_animals at runtime
+- [Phase 31-01]: train_unet() uses data_dir convention (annotations.json + images in same dir) instead of old coco_json + image_root pair for simpler CLI interface
+- [Phase 31-01]: training/ package rewrites BinaryMaskDataset and stratified_split from segmentation/ as fresh implementations with identical public API
 
 ### Pending Todos
 
@@ -102,5 +106,5 @@ From 30-03 execution:
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Completed 30-03-PLAN.md (CLI Project Scaffold and Path Resolution)
+Stopped at: Completed 31-01-PLAN.md (Training Infrastructure Foundation)
 Resume file: None

@@ -110,7 +110,7 @@ Plans:
 **Depends on**: Phase 30 (config conventions, device parameter)
 **Requirements**: TRAIN-01, TRAIN-02, TRAIN-03, TRAIN-04
 **Success Criteria** (what must be TRUE):
-  1. `aquapose train --help` lists `unet`, `yolo-obb`, and `pose` subcommands; each subcommand accepts `--data-dir`, `--output-dir`, `--epochs`, `--device`, and `--val-split` with consistent semantics
+  1. `aquapose train --help` lists `unet`, `yolo-bbox`, `yolo-obb`, and `pose` subcommands; each subcommand accepts `--data-dir`, `--output-dir`, `--epochs`, `--device`, and `--val-split` with consistent semantics
   2. `aquapose train pose --backbone-weights <path>` loads U-Net encoder weights and freezes backbone for transfer learning; `--unfreeze` flag enables end-to-end fine-tuning
   3. Running `aquapose train unet` produces the same training behavior as the existing `segmentation/training.py` script, which is then superseded
   4. `src/aquapose/training/` module exists as a proper package with no imports from `engine/` (import boundary enforced by pre-commit hook)
@@ -164,7 +164,7 @@ Plans:
 | 22-28 | v2.1 | 12/12 | Complete | 2026-02-28 |
 | 29. Guidebook Audit | v2.2 | 2/2 | Complete | 2026-02-28 |
 | 30. Config and Contracts | v2.2 | 3/3 | Complete | 2026-02-28 |
-| 31. Training Infrastructure | v2.2 | 0/2 | Not started | - |
+| 31. Training Infrastructure | 1/2 | In Progress|  | - |
 | 32. YOLO-OBB Detection Backend | v2.2 | 0/TBD | Not started | - |
 | 33. Keypoint Midline Backend | v2.2 | 0/TBD | Not started | - |
 | 34. Stabilization | v2.2 | 0/TBD | Not started | - |

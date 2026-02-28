@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from aquapose.engine.events import Event, StageComplete
+from aquapose.engine.events import Event, PipelineComplete, StageComplete
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +112,9 @@ class DiagnosticObserver:
         print(frame_0["detections"])
     """
 
-    def __init__(self) -> None:
+    def __init__(self, output_dir: str | Path | None = None) -> None:
         self.stages: dict[str, StageSnapshot] = {}
+        self._output_dir = Path(output_dir) if output_dir is not None else None
 
     def on_event(self, event: Event) -> None:
         """Receive a dispatched event and capture stage snapshots.
@@ -121,6 +122,10 @@ class DiagnosticObserver:
         Args:
             event: The event instance from the pipeline event bus.
         """
+        if isinstance(event, PipelineComplete):
+            self._on_pipeline_complete()
+            return
+
         if not isinstance(event, StageComplete):
             return
 
@@ -142,6 +147,23 @@ class DiagnosticObserver:
         )
 
         self.stages[event.stage_name] = snapshot
+
+    def _on_pipeline_complete(self) -> None:
+        """Auto-export centroid correspondences when output_dir is configured."""
+        if self._output_dir is None:
+            return
+        if _ASSOCIATION_STAGE_NAME not in self.stages:
+            return
+        snapshot = self.stages[_ASSOCIATION_STAGE_NAME]
+        if not snapshot.tracklet_groups:
+            return
+        try:
+            out = self.export_centroid_correspondences(
+                self._output_dir / "centroid_correspondences.npz"
+            )
+            logger.info("Centroid correspondences exported to %s", out)
+        except Exception:
+            logger.warning("Failed to export centroid correspondences", exc_info=True)
 
     def export_centroid_correspondences(self, output_path: Path | str) -> Path:
         """Export 2D-to-3D centroid correspondences from the Association stage.

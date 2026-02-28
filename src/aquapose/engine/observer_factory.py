@@ -110,7 +110,7 @@ def build_observers(
             )
         )
         observers.append(Animation3DObserver(output_dir=config.output_dir))
-        observers.append(DiagnosticObserver())
+        observers.append(DiagnosticObserver(output_dir=config.output_dir))
         observers.append(
             TrackletTrailObserver(
                 output_dir=config.output_dir,
@@ -143,7 +143,7 @@ def build_observers(
         elif cls is Animation3DObserver:
             observers.append(Animation3DObserver(output_dir=config.output_dir))
         elif cls is DiagnosticObserver:
-            observers.append(DiagnosticObserver())
+            observers.append(DiagnosticObserver(output_dir=config.output_dir))
         elif cls is ConsoleObserver:
             observers.append(
                 ConsoleObserver(verbose=verbose, total_stages=total_stages)

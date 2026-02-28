@@ -5,12 +5,21 @@ from __future__ import annotations
 import json
 import random
 from pathlib import Path
+from typing import Protocol, runtime_checkable
 
 import cv2
 import numpy as np
 import pycocotools.mask as mask_util
 import torch
 from torch.utils.data import Dataset
+
+
+@runtime_checkable
+class _HasImages(Protocol):
+    """Protocol for datasets that expose a COCO ``_images`` list."""
+
+    _images: list[dict]  # type: ignore[assignment]
+
 
 # Fixed input size for U-Net training
 UNET_INPUT_SIZE = 128
@@ -78,7 +87,7 @@ def apply_augmentation(
 
 
 def stratified_split(
-    dataset: CropDataset | BinaryMaskDataset,
+    dataset: _HasImages,
     val_fraction: float = 0.2,
     seed: int = 42,
 ) -> tuple[list[int], list[int]]:
@@ -89,7 +98,8 @@ def stratified_split(
     validation and the rest for training.
 
     Args:
-        dataset: A CropDataset or BinaryMaskDataset instance to split.
+        dataset: Any dataset exposing a ``_images`` list (e.g.
+            ``CropDataset``, ``BinaryMaskDataset``, ``KeypointDataset``).
         val_fraction: Fraction of each camera's images to use for validation.
             Must be in (0, 1).
         seed: Random seed for reproducibility.

@@ -83,7 +83,12 @@ def train_yolo_obb(
 
     # Locate ultralytics output directory
     # ultralytics saves to project/name/weights/
-    weights_dir = Path(str(results.save_dir)) / "weights"
+    save_dir = (
+        results.save_dir
+        if results is not None and results.save_dir is not None
+        else output_dir / "_ultralytics" / "train"
+    )
+    weights_dir = Path(str(save_dir)) / "weights"
 
     best_src = weights_dir / "best.pt"
     last_src = weights_dir / "last.pt"

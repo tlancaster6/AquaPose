@@ -10,7 +10,7 @@ import numpy as np
 import pycocotools.mask as mask_util
 import torch
 
-from aquapose.segmentation.dataset import (
+from aquapose.training.datasets import (
     BinaryMaskDataset,
     CropDataset,
     stratified_split,

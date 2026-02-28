@@ -1,4 +1,4 @@
-"""Unit tests for U-Net training and evaluation."""
+"""Unit tests for U-Net training (migrated from segmentation.training to training.unet)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 import pycocotools.mask as mask_util
 
-from aquapose.segmentation.training import evaluate, train
+from aquapose.training.unet import train_unet
 
 
 def _create_training_fixture(
@@ -17,8 +17,10 @@ def _create_training_fixture(
     num_images: int = 3,
     variable_sizes: bool = False,
     camera_ids: list[str] | None = None,
-) -> tuple[Path, Path]:
-    """Create a minimal COCO fixture for training tests.
+) -> Path:
+    """Create a minimal COCO fixture for training tests using data_dir convention.
+
+    Creates images in tmp_path/images/ and writes annotations.json into tmp_path.
 
     Args:
         tmp_path: Temporary directory for test files.
@@ -27,10 +29,10 @@ def _create_training_fixture(
         camera_ids: Optional per-image camera_id values for stratified split tests.
 
     Returns:
-        Tuple of (coco_json_path, image_root_path).
+        data_dir (tmp_path) where annotations.json and images/ reside.
     """
     images_dir = tmp_path / "images"
-    images_dir.mkdir()
+    images_dir.mkdir(exist_ok=True)
 
     images = []
     annotations = []
@@ -39,7 +41,7 @@ def _create_training_fixture(
     base_sizes = [(64, 64), (80, 96), (72, 56), (88, 104), (60, 68)]
 
     for img_idx in range(num_images):
-        img_name = f"frame_{img_idx:03d}.jpg"
+        img_name = f"images/frame_{img_idx:03d}.jpg"
         if variable_sizes:
             h, w = base_sizes[img_idx % len(base_sizes)]
         else:
@@ -48,7 +50,7 @@ def _create_training_fixture(
         # Create image with a visible blob (not pure noise)
         img = np.zeros((h, w, 3), dtype=np.uint8)
         img[10 : h - 10, 10 : w - 10] = 200  # bright rectangle
-        cv2.imwrite(str(images_dir / img_name), img)
+        cv2.imwrite(str(tmp_path / img_name), img)
 
         img_entry: dict = {
             "id": img_idx + 1,
@@ -88,54 +90,96 @@ def _create_training_fixture(
         "categories": [{"id": 1, "name": "fish"}],
     }
 
-    coco_path = tmp_path / "coco.json"
+    coco_path = tmp_path / "annotations.json"
     with open(coco_path, "w") as f:
         json.dump(coco, f)
 
-    return coco_path, images_dir
+    return tmp_path
 
 
-def _split_coco_json(
-    coco_path: Path,
-    train_path: Path,
-    val_path: Path,
-    n_val: int = 1,
-) -> None:
-    """Split a COCO JSON into train and val files for testing."""
-    with open(coco_path) as f:
-        coco = json.load(f)
+def _create_presplit_fixture(
+    tmp_path: Path,
+    num_images: int = 4,
+) -> Path:
+    """Create a COCO fixture with pre-split train.json and val.json.
 
-    all_img_ids = [img["id"] for img in coco["images"]]
-    val_ids = set(all_img_ids[:n_val])
-    train_ids = set(all_img_ids[n_val:])
+    Args:
+        tmp_path: Temporary directory.
+        num_images: Total number of images (at least 2).
 
-    def _filter(coco_data: dict, keep_ids: set[int]) -> dict:
-        imgs = [i for i in coco_data["images"] if i["id"] in keep_ids]
-        anns = [a for a in coco_data["annotations"] if a["image_id"] in keep_ids]
+    Returns:
+        data_dir with train.json, val.json, and images/.
+    """
+    images_dir = tmp_path / "images"
+    images_dir.mkdir(exist_ok=True)
+
+    all_images = []
+    annotations = []
+    ann_id = 1
+
+    for img_idx in range(num_images):
+        img_name = f"images/frame_{img_idx:03d}.jpg"
+        h, w = 64, 64
+        img = np.zeros((h, w, 3), dtype=np.uint8)
+        img[10:54, 10:54] = 200
+        cv2.imwrite(str(tmp_path / img_name), img)
+
+        all_images.append(
+            {"id": img_idx + 1, "file_name": img_name, "width": w, "height": h}
+        )
+
+        mask = np.zeros((h, w), dtype=np.uint8)
+        mask[10:54, 10:54] = 1
+        mask_f = np.asfortranarray(mask)
+        rle = mask_util.encode(mask_f)
+
+        annotations.append(
+            {
+                "id": ann_id,
+                "image_id": img_idx + 1,
+                "category_id": 1,
+                "segmentation": {
+                    "size": rle["size"],
+                    "counts": rle["counts"].decode("utf-8"),
+                },
+                "bbox": [10, 10, 44, 44],
+                "area": float(mask_util.area(rle)),
+                "iscrowd": 0,
+            }
+        )
+        ann_id += 1
+
+    val_img_ids = {all_images[0]["id"]}
+    train_img_ids = {img["id"] for img in all_images[1:]}
+
+    def _filter(ids: set[int]) -> dict:
+        imgs = [i for i in all_images if i["id"] in ids]
+        anns = [a for a in annotations if a["image_id"] in ids]
         return {
             "images": imgs,
             "annotations": anns,
-            "categories": coco_data["categories"],
+            "categories": [{"id": 1, "name": "fish"}],
         }
 
-    with open(train_path, "w") as f:
-        json.dump(_filter(coco, train_ids), f)
-    with open(val_path, "w") as f:
-        json.dump(_filter(coco, val_ids), f)
+    with open(tmp_path / "train.json", "w") as f:
+        json.dump(_filter(train_img_ids), f)
+    with open(tmp_path / "val.json", "w") as f:
+        json.dump(_filter(val_img_ids), f)
+
+    return tmp_path
 
 
-class TestTrain:
-    """Tests for the train() function."""
+class TestTrainUnet:
+    """Tests for train_unet() using the data_dir convention."""
 
     def test_train_one_epoch(self, tmp_path: Path) -> None:
         """Train for 1 epoch and verify output model file exists."""
-        coco_path, image_root = _create_training_fixture(tmp_path)
+        data_dir = _create_training_fixture(tmp_path)
         output_dir = tmp_path / "output"
 
-        best_model = train(
-            coco_path,
-            image_root,
-            output_dir,
+        best_model = train_unet(
+            data_dir=data_dir,
+            output_dir=output_dir,
             epochs=1,
             batch_size=1,
             num_workers=0,
@@ -144,21 +188,20 @@ class TestTrain:
 
         assert isinstance(best_model, Path)
         assert best_model.exists()
-        assert (output_dir / "final_model.pth").exists()
+        assert (output_dir / "last_model.pth").exists()
 
     def test_train_uses_stratified_split(self, tmp_path: Path) -> None:
-        """train() without pre-split JSON uses stratified_split."""
-        coco_path, image_root = _create_training_fixture(
+        """train_unet() without pre-split JSON uses stratified_split."""
+        data_dir = _create_training_fixture(
             tmp_path,
             num_images=6,
             camera_ids=["cam_a", "cam_b"],
         )
         output_dir = tmp_path / "output"
 
-        best_model = train(
-            coco_path,
-            image_root,
-            output_dir,
+        best_model = train_unet(
+            data_dir=data_dir,
+            output_dir=output_dir,
             epochs=1,
             batch_size=1,
             val_split=0.33,
@@ -168,19 +211,13 @@ class TestTrain:
         assert best_model.exists()
 
     def test_train_with_presplit_json(self, tmp_path: Path) -> None:
-        """train() with train_json/val_json uses those files directly."""
-        coco_path, image_root = _create_training_fixture(tmp_path, num_images=4)
-        train_json = tmp_path / "train.json"
-        val_json = tmp_path / "val.json"
-        _split_coco_json(coco_path, train_json, val_json, n_val=1)
-
+        """train_unet() with train.json/val.json uses those files directly."""
+        data_dir = _create_presplit_fixture(tmp_path, num_images=4)
         output_dir = tmp_path / "output"
-        best_model = train(
-            coco_path,
-            image_root,
-            output_dir,
-            train_json=train_json,
-            val_json=val_json,
+
+        best_model = train_unet(
+            data_dir=data_dir,
+            output_dir=output_dir,
             epochs=1,
             batch_size=1,
             num_workers=0,
@@ -190,15 +227,12 @@ class TestTrain:
 
     def test_train_variable_size_crops(self, tmp_path: Path) -> None:
         """Training works when dataset contains crops of different sizes."""
-        coco_path, image_root = _create_training_fixture(
-            tmp_path, num_images=4, variable_sizes=True
-        )
+        data_dir = _create_training_fixture(tmp_path, num_images=4, variable_sizes=True)
         output_dir = tmp_path / "output"
 
-        best_model = train(
-            coco_path,
-            image_root,
-            output_dir,
+        best_model = train_unet(
+            data_dir=data_dir,
+            output_dir=output_dir,
             epochs=1,
             batch_size=2,
             num_workers=0,
@@ -206,51 +240,17 @@ class TestTrain:
         )
         assert best_model.exists()
 
-
-class TestEvaluate:
-    """Tests for the evaluate() function."""
-
-    def test_evaluate_returns_expected_keys(self, tmp_path: Path) -> None:
-        """Evaluate after 1-epoch training and check return dict structure."""
-        coco_path, image_root = _create_training_fixture(tmp_path)
+    def test_train_metrics_csv_created(self, tmp_path: Path) -> None:
+        """train_unet() should create a metrics.csv in output_dir."""
+        data_dir = _create_training_fixture(tmp_path)
         output_dir = tmp_path / "output"
 
-        best_model = train(
-            coco_path,
-            image_root,
-            output_dir,
+        train_unet(
+            data_dir=data_dir,
+            output_dir=output_dir,
             epochs=1,
             batch_size=1,
             num_workers=0,
             device="cpu",
         )
-
-        result = evaluate(best_model, coco_path, image_root, device="cpu")
-
-        assert "mean_iou" in result
-        assert "per_image_iou" in result
-        assert "num_images" in result
-        assert isinstance(result["mean_iou"], float)
-        assert isinstance(result["per_image_iou"], list)
-        assert isinstance(result["num_images"], int)
-        assert result["num_images"] > 0
-
-    def test_evaluate_variable_size_crops(self, tmp_path: Path) -> None:
-        """evaluate() works with datasets containing different-sized crop images."""
-        coco_path, image_root = _create_training_fixture(
-            tmp_path, num_images=4, variable_sizes=True
-        )
-        output_dir = tmp_path / "output"
-
-        best_model = train(
-            coco_path,
-            image_root,
-            output_dir,
-            epochs=1,
-            batch_size=1,
-            num_workers=0,
-            device="cpu",
-        )
-
-        result = evaluate(best_model, coco_path, image_root, device="cpu")
-        assert result["num_images"] == 4
+        assert (output_dir / "metrics.csv").exists()

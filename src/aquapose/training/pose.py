@@ -316,7 +316,7 @@ def train_pose(
         train_indices, val_indices = stratified_split(
             full_dataset,
             val_fraction=val_split,
-            seed=42,  # type: ignore[arg-type]
+            seed=42,
         )
         train_dataset = Subset(full_dataset, train_indices)
         val_dataset_base = KeypointDataset(

@@ -585,9 +585,16 @@ def load_config(
 
     # --- layer 4: resolve run_id and output_dir ---------------------------
     resolved_run_id = run_id or top_kwargs.pop("run_id", None) or _generate_run_id()
-    resolved_output_dir = top_kwargs.pop(
-        "output_dir", _default_output_dir(resolved_run_id)
-    )
+    explicit_output_dir = top_kwargs.pop("output_dir", "")
+    if explicit_output_dir:
+        resolved_output_dir = explicit_output_dir
+    elif project_dir_str:
+        # Project has a project_dir — put runs inside it.
+        resolved_output_dir = str(
+            Path(project_dir_str).expanduser().resolve() / "runs" / resolved_run_id
+        )
+    else:
+        resolved_output_dir = _default_output_dir(resolved_run_id)
 
     # --- validate n_animals (sentinel 0 means not set) --------------------
     resolved_n_animals = top_kwargs.get("n_animals", 0)

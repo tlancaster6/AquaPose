@@ -47,10 +47,10 @@ Requirements for v2.2 Backends milestone. Each maps to roadmap phases.
 
 ### Training
 
-- [ ] **TRAIN-01**: `aquapose train` CLI group provides discoverable subcommands for all trainable models (U-Net segmentation, YOLO-OBB, keypoint regression)
-- [ ] **TRAIN-02**: Training subcommands follow consistent conventions for `--data-dir`, `--output-dir`, `--epochs`, `--device`, `--resume` across all model types
-- [ ] **TRAIN-03**: Keypoint training supports frozen-backbone transfer learning from existing U-Net segmentation weights, with optional unfreeze for end-to-end fine-tuning
-- [ ] **TRAIN-04**: Existing training scripts in `scripts/` are superseded by `src/aquapose/training/` module with shared utilities
+- [x] **TRAIN-01**: `aquapose train` CLI group provides discoverable subcommands for all trainable models (U-Net segmentation, YOLO-OBB, keypoint regression)
+- [x] **TRAIN-02**: Training subcommands follow consistent conventions for `--data-dir`, `--output-dir`, `--epochs`, `--device`, `--val-split` across all model types
+- [x] **TRAIN-03**: Keypoint training supports frozen-backbone transfer learning from existing U-Net segmentation weights, with optional unfreeze for end-to-end fine-tuning
+- [x] **TRAIN-04**: Existing training scripts in `scripts/` are superseded by `src/aquapose/training/` module with shared utilities
 
 ### Visualization
 
@@ -109,10 +109,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CFG-10 | Phase 30 | Pending |
 | CFG-11 | Phase 30 | Pending |
 | CFG-12 | Phase 30 | Complete |
-| TRAIN-01 | Phase 31 | Pending |
-| TRAIN-02 | Phase 31 | Pending |
-| TRAIN-03 | Phase 31 | Pending |
-| TRAIN-04 | Phase 31 | Pending |
+| TRAIN-01 | Phase 31 | Complete |
+| TRAIN-02 | Phase 31 | Complete |
+| TRAIN-03 | Phase 31 | Complete |
+| TRAIN-04 | Phase 31 | Complete |
 | DET-01 | Phase 32 | Pending |
 | DET-02 | Phase 32 | Pending |
 | DET-03 | Phase 32 | Pending |

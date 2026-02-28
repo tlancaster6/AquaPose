@@ -257,11 +257,15 @@ class Overlay2DObserver:
                                                 if self._show_fish_id
                                                 else None
                                             )
-                                            self._draw_bbox(
+                                            obb_pts = getattr(det, "obb_points", None)
+                                            conf = getattr(det, "confidence", None)
+                                            self._draw_detection_bbox(
                                                 frames[cam_id],
                                                 bbox,
                                                 self._midline_2d_color,
+                                                obb_points=obb_pts,
                                                 fish_id=fish_id_label,
+                                                confidence=conf,
                                             )
 
                     # Scale frames down for output.
@@ -465,6 +469,88 @@ class Overlay2DObserver:
                 color,
                 1,
             )
+
+    @staticmethod
+    def _draw_detection_bbox(
+        frame: np.ndarray,
+        bbox: object,
+        color: tuple[int, int, int],
+        obb_points: np.ndarray | None = None,
+        fish_id: int | None = None,
+        confidence: float | None = None,
+        thickness: int = 2,
+    ) -> None:
+        """Draw an OBB polygon or axis-aligned bounding box with optional label.
+
+        If ``obb_points`` is provided the OBB polygon is drawn and replaces the
+        axis-aligned rectangle.  Label format is ``"{fish_id} {conf:.2f}"`` when
+        both *fish_id* and *confidence* are given, otherwise just ``"{fish_id}"``.
+
+        Args:
+            frame: BGR image to draw on (modified in-place).
+            bbox: Bounding box with x1, y1, x2, y2 attributes or
+                ``(x1, y1, x2, y2)`` tuple — used only when *obb_points* is None.
+            color: BGR color tuple.
+            obb_points: OBB corner points as ``(4, 2)`` numpy array.  When not
+                None the polygon is drawn instead of the AABB rectangle.
+            fish_id: If provided, draw fish ID text near the bounding shape.
+            confidence: Confidence score appended to the label when *fish_id* is
+                also provided.
+            thickness: Line thickness in pixels.
+        """
+        if obb_points is not None:
+            pts = obb_points.astype(np.int32).reshape((-1, 1, 2))
+            cv2.polylines(frame, [pts], isClosed=True, color=color, thickness=thickness)
+            if fish_id is not None:
+                label = (
+                    f"{fish_id} {confidence:.2f}"
+                    if confidence is not None
+                    else str(fish_id)
+                )
+                label_x = int(obb_points[:, 0].min())
+                label_y = int(obb_points[:, 1].min()) - 5
+                cv2.putText(
+                    frame,
+                    label,
+                    (label_x, label_y),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    color,
+                    1,
+                )
+        else:
+            if hasattr(bbox, "x1"):
+                x1, y1, x2, y2 = (
+                    int(bbox.x1),  # type: ignore[union-attr]
+                    int(bbox.y1),  # type: ignore[union-attr]
+                    int(bbox.x2),  # type: ignore[union-attr]
+                    int(bbox.y2),  # type: ignore[union-attr]
+                )
+            elif isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+                x1, y1, x2, y2 = (
+                    int(bbox[0]),
+                    int(bbox[1]),
+                    int(bbox[2]),
+                    int(bbox[3]),
+                )
+            else:
+                return
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
+            if fish_id is not None:
+                label = (
+                    f"{fish_id} {confidence:.2f}"
+                    if confidence is not None
+                    else str(fish_id)
+                )
+                cv2.putText(
+                    frame,
+                    label,
+                    (x1, y1 - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    color,
+                    1,
+                )
 
     @staticmethod
     def _mosaic_dims(n_cameras: int, frame_w: int, frame_h: int) -> tuple[int, int]:

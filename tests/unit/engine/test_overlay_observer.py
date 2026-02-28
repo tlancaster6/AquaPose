@@ -106,3 +106,63 @@ def test_build_mosaic_uneven_count() -> None:
     mosaic = Overlay2DObserver._build_mosaic(frames, camera_ids)
     # 3 cameras -> 2x2 grid with one empty cell.
     assert mosaic.shape == (100, 100, 3)
+
+
+def test_draw_detection_bbox_with_obb_points() -> None:
+    """_draw_detection_bbox draws an OBB polygon when obb_points is provided."""
+    frame = np.zeros((200, 200, 3), dtype=np.uint8)
+    # A rotated rectangle with four corners.
+    obb_points = np.array(
+        [[50, 80], [100, 40], [150, 80], [100, 120]], dtype=np.float32
+    )
+    color = (0, 255, 0)
+
+    Overlay2DObserver._draw_detection_bbox(
+        frame,
+        bbox=(50, 40, 150, 120),
+        color=color,
+        obb_points=obb_points,
+    )
+
+    # Frame must have non-zero pixels (polygon edges drawn).
+    assert frame.sum() > 0
+
+
+def test_draw_detection_bbox_falls_back_to_aabb() -> None:
+    """_draw_detection_bbox draws AABB rectangle when obb_points is None."""
+    frame = np.zeros((200, 200, 3), dtype=np.uint8)
+    color = (255, 0, 0)
+    bbox = (20, 30, 120, 130)
+
+    Overlay2DObserver._draw_detection_bbox(
+        frame,
+        bbox=bbox,
+        color=color,
+        obb_points=None,
+    )
+
+    # Frame must have non-zero pixels (rectangle drawn).
+    assert frame.sum() > 0
+    # Verify top-left corner is drawn (rectangle corner pixel).
+    assert frame[30, 20, 0] == 255 or frame[30, 21, 0] == 255
+
+
+def test_draw_detection_bbox_label_format() -> None:
+    """_draw_detection_bbox label shows fish_id + confidence when both provided."""
+    frame = np.zeros((200, 200, 3), dtype=np.uint8)
+    color = (0, 200, 255)
+    # Use AABB (obb_points=None) so we can predict label position.
+    bbox = (10, 30, 100, 100)
+
+    Overlay2DObserver._draw_detection_bbox(
+        frame,
+        bbox=bbox,
+        color=color,
+        obb_points=None,
+        fish_id=3,
+        confidence=0.87,
+    )
+
+    # The frame must have text pixels drawn (non-zero sum above the bbox top).
+    region = frame[0:30, 0:200]
+    assert region.sum() > 0, "Expected label text pixels above bbox"

@@ -158,7 +158,8 @@ Detection → 2D Tracking → Cross-Camera Association → Midline → Reconstru
 - Segment-then-extract: crop → segmentation model (U-Net, SAM, etc.) → skeletonize → BFS → arc-length resample to N points + half-widths
 - Direct pose estimation `(v2.2)` — keypoint midline backend (`direct_pose`):
   - U-Net encoder (frozen, reusing segmentation weights) + regression head → 6 anatomical keypoints per crop
-  - Each keypoint has a fixed `t` value in [0, 1] calibrated from full skeletons (mean cumulative arc-length fraction) — e.g. snout=0.0, pectoral fin=0.15, mid-body=0.45, caudal peduncle=0.85, tail tip=1.0
+  - Keypoints: nose, head, spine1, spine2, spine3, tail
+  - Each keypoint has a fixed `t` value in [0, 1] calibrated from full skeletons (mean cumulative arc-length fraction)
   - Output is always `np.linspace(0, 1, N)` — point #k always corresponds to the same anatomical location
   - Spline is fitted using only the observed keypoints and their fixed t values
   - Spline is evaluated only within `[t_min_observed, t_max_observed]`; output points outside that range → NaN + confidence=0 (no extrapolation)

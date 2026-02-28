@@ -27,10 +27,17 @@ class DetectionConfig:
     """Config for the detection stage.
 
     Attributes:
-        detector_kind: Detector backend to use (e.g. "yolo", "mog2").
-        model_path: Path to detector weights file (required for YOLO).
+        detector_kind: Detector backend to use (e.g. "yolo", "yolo_obb", "mog2").
+        model_path: Path to detector weights file (required for YOLO/YOLO-OBB).
             ``None`` means no path configured (caller must supply via
             ``detector_kwargs`` or construct the stage directly).
+        crop_size: Output size ``[width, height]`` in pixels for affine crops
+            produced by :func:`~aquapose.segmentation.crop.extract_affine_crop`.
+            Used by downstream stages when ``detector_kind`` is ``"yolo_obb"``.
+            Defaults to ``[256, 128]`` — wide enough for a typical elongated fish
+            body at standard frame resolutions. Stored as a list so that YAML
+            round-trips cleanly (Python tuples serialize as ``!!python/tuple``
+            which ``yaml.safe_load`` cannot parse).
         extra: Catch-all dict for detector-specific kwargs not covered above.
 
     Note:
@@ -41,6 +48,7 @@ class DetectionConfig:
 
     detector_kind: str = "yolo"
     model_path: str | None = None
+    crop_size: list[int] = field(default_factory=lambda: [256, 128])
     extra: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -587,7 +595,7 @@ def load_config(
     resolved_run_id = run_id or top_kwargs.pop("run_id", None) or _generate_run_id()
     explicit_output_dir = top_kwargs.pop("output_dir", "")
     if explicit_output_dir:
-        resolved_output_dir = explicit_output_dir
+        resolved_output_dir = str(Path(explicit_output_dir) / resolved_run_id)
     elif project_dir_str:
         # Project has a project_dir — put runs inside it.
         resolved_output_dir = str(

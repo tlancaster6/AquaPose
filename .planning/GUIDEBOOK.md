@@ -121,6 +121,8 @@ Detection → 2D Tracking → Cross-Camera Association → Midline → Reconstru
 - Cameras are processed independently — no cross-view logic here
 - Confidence threshold and NMS parameters are backend config
 - A 13-camera rig with partial overlap means most cameras will have zero or few detections per frame; this is normal, not an error
+- YOLO-OBB `(v2.2)` will be a configurable detection model producing oriented bounding boxes — each detection gains optional `angle` and `obb_points` fields for rotation-aware downstream crops
+- Affine crop utilities `(v2.2)` will support rotation-aligned crops from OBB detections and back-projection from crop coordinates to frame coordinates
 
 ### Stage 2 — 2D Tracking
 *Swappable backend: OC-SORT*
@@ -154,7 +156,13 @@ Detection → 2D Tracking → Cross-Camera Association → Midline → Reconstru
 - **In:** `tracklet_groups`, `detections`, frames
 - **Out:** `annotated_detections` — midlines for detections belonging to confirmed tracklet-groups only. Ungrouped detections are skipped entirely.
 - Segment-then-extract: crop → segmentation model (U-Net, SAM, etc.) → skeletonize → BFS → arc-length resample to N points + half-widths
-- Direct pose estimation: crop → encoder + keypoint head → N keypoint coordinates (planned, not yet implemented)
+- Direct pose estimation `(v2.2)` — keypoint midline backend (`direct_pose`):
+  - U-Net encoder (frozen, reusing segmentation weights) + regression head → 6 anatomical keypoints per crop
+  - Each keypoint has a fixed `t` value in [0, 1] calibrated from full skeletons (mean cumulative arc-length fraction) — e.g. snout=0.0, pectoral fin=0.15, mid-body=0.45, caudal peduncle=0.85, tail tip=1.0
+  - Output is always `np.linspace(0, 1, N)` — point #k always corresponds to the same anatomical location
+  - Spline is fitted using only the observed keypoints and their fixed t values
+  - Spline is evaluated only within `[t_min_observed, t_max_observed]`; output points outside that range → NaN + confidence=0 (no extrapolation)
+  - Per-point confidence from the regression head flows through to Stage 5 for confidence-weighted triangulation
 - All backends must produce the same output structure: N arc-length-sampled points with optional half-widths
 - Detections that fail midline extraction (e.g. degenerate masks) produce a flagged empty midline, not an exception
 - Cross-camera group membership (from Stage 3) provides a head-tail consistency signal — if most cameras agree on head direction, flip outliers
@@ -168,6 +176,7 @@ Detection → 2D Tracking → Cross-Camera Association → Midline → Reconstru
 - Both backends must resolve head-tail orientation before or during reconstruction
 - Single-view fish cannot be reconstructed; they appear in `dropped` with an appropriate reason
 - Output spline control point count is config, not hardcoded
+- Both triangulation and curve optimizer backends will support confidence-weighted observations `(v2.2)` — per-point confidence from the keypoint midline backend is used to weight triangulation; when confidence is None (e.g. from segment-then-extract), uniform weights are applied
 
 ### PipelineContext Data Flow
 
@@ -300,6 +309,8 @@ The full serialized config is logged as the first artifact of every run — the 
 
 Run identity: timestamp-based (`run_20260225_143022`).
 
+Planned additions `(v2.2)`: top-level `device` parameter on `PipelineConfig` propagated to all stages via `build_stages()` (eliminates per-stage device config); configurable `n_sample_points` moved to `ReconstructionConfig.n_points` with no hardcoded literals anywhere; `init-config` CLI command for scaffolding a new project config file.
+
 ---
 
 ## 12. Error Handling
@@ -344,6 +355,8 @@ Default output location: `~/aquapose/runs/{run_id}/`, overridable via `AQUAPOSE_
 Single command + flags: `aquapose run --mode diagnostic --config path.yaml`
 
 The CLI is a thin wrapper over PosePipeline. No subcommands per mode. No script may call stage functions directly, reimplement orchestration logic, or bypass stage sequencing.
+
+`aquapose train` `(v2.2)` — planned CLI group for model training (U-Net segmentation, YOLO-OBB detection, keypoint midline). Details deferred to Phase 31 (Training Infrastructure). The training subsystem must not import from `engine/` — enforced as an AST import boundary by pre-commit.
 
 ---
 

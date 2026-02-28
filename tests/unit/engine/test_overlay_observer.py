@@ -58,10 +58,15 @@ def test_draw_midline() -> None:
 
 def test_reproject_returns_correct_shape() -> None:
     """_reproject_3d_midline returns (N, 2) array with mock model."""
-    # Create mock spline with control_points.
+    # Create mock spline with control_points, knots, and degree.
     rng = np.random.RandomState(42)
     spline = SimpleNamespace(
         control_points=rng.randn(7, 3).astype(np.float32),
+        knots=np.array(
+            [0.0, 0.0, 0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 1.0],
+            dtype=np.float64,
+        ),
+        degree=3,
     )
 
     # Create mock model that returns 2D projections.

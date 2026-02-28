@@ -223,7 +223,7 @@ class TestClusterTracklets:
         with caplog.at_level(logging.WARNING):
             groups = cluster_tracklets(scores, tracks_2d, must_not_link, config)
 
-        assert any("Cluster count" in msg for msg in caplog.messages)
+        assert any("cluster count" in msg.lower() for msg in caplog.messages)
         assert len(groups) != 5
 
 

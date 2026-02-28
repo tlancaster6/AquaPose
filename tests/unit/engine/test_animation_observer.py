@@ -13,10 +13,15 @@ from aquapose.engine.observers import Observer
 
 
 def _make_spline(seed: int = 0) -> SimpleNamespace:
-    """Create a mock Spline3D with control_points."""
+    """Create a mock Spline3D with control_points, knots, and degree."""
     rng = np.random.RandomState(seed)
     return SimpleNamespace(
         control_points=rng.randn(7, 3).astype(np.float32),
+        knots=np.array(
+            [0.0, 0.0, 0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 1.0],
+            dtype=np.float64,
+        ),
+        degree=3,
     )
 
 

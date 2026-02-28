@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: Backends
 status: in_progress
-last_updated: "2026-02-28T17:51:11Z"
+last_updated: "2026-02-28T17:58:30Z"
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 29 — Guidebook Audit (plan 01 complete, plan 02 remaining)
+**Current focus:** Phase 30 — Config/Contracts (next)
 
 ## Current Position
 
-Phase: 29 of 33 (Guidebook Audit)
-Plan: 29-01 complete, 29-02 next
+Phase: 30 of 33 (Config/Contracts) — Phase 29 complete
+Plan: 29-02 complete, Phase 29 fully done
 Status: In progress
-Last activity: 2026-02-28 — Completed 29-01: Audit and Fix Stale Content in GUIDEBOOK.md
+Last activity: 2026-02-28 — Completed 29-02: Add v2.2 Planned Features to GUIDEBOOK.md
 
-Progress: [█░░░░░░░░░] 8% (1/12 plans complete — 1 phase * 2 plans in phase 29)
+Progress: [██░░░░░░░░] 17% (2/12 plans complete — Phase 29 both plans done)
 
 ## Performance Metrics
 
@@ -40,7 +40,7 @@ Progress: [█░░░░░░░░░] 8% (1/12 plans complete — 1 phase *
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 29-guidebook-audit | 1 | 2 min | 2 min |
+| 29-guidebook-audit | 2 | 5 min | 2.5 min |
 
 *Updated after each plan completion*
 
@@ -61,6 +61,11 @@ Key decisions entering v2.2 (see PROJECT.md Key Decisions for full log):
 From 29-01 execution:
 - GUIDEBOOK.md Sections 16 (Definition of Done) and 18 (Discretionary Items) deleted — roadmap has per-phase success criteria; guidebook is not the right place for discretionary items
 
+From 29-02 execution:
+- Keypoint midline NaN policy locked as architectural contract: evaluate spline only in [t_min_observed, t_max_observed], NaN + confidence=0 outside — Phase 33 implementers must treat this as authoritative
+- YOLO-OBB documented as configurable model with optional Detection fields (angle, obb_points) — no pipeline changes needed
+- Confidence-weighted triangulation: per-point confidence flows from keypoint backend to Stage 5; uniform weights when confidence is None
+
 ### Pending Todos
 
 12 pending todos from v2.1 — see .planning/todos/pending/
@@ -73,5 +78,5 @@ From 29-01 execution:
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Completed 29-01-PLAN.md (Audit and Fix Stale Content in GUIDEBOOK.md)
+Stopped at: Completed 29-02-PLAN.md (Add v2.2 Planned Features to GUIDEBOOK.md)
 Resume file: None

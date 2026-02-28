@@ -10,7 +10,7 @@ Requirements for v2.2 Backends milestone. Each maps to roadmap phases.
 ### Documentation
 
 - [x] **DOCS-01**: Guidebook reflects current v2.1 codebase state (stale references removed, architectural descriptions accurate)
-- [ ] **DOCS-02**: Guidebook documents v2.2 planned features (YOLO-OBB, keypoint midline, training CLI, project structure) in relevant sections
+- [x] **DOCS-02**: Guidebook documents v2.2 planned features (YOLO-OBB, keypoint midline, training CLI, project structure) in relevant sections
 
 ### Config and Contracts
 
@@ -96,7 +96,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | DOCS-01 | Phase 29 | Complete |
-| DOCS-02 | Phase 29 | Pending |
+| DOCS-02 | Phase 29 | Complete |
 | CFG-01 | Phase 30 | Pending |
 | CFG-02 | Phase 30 | Pending |
 | CFG-03 | Phase 30 | Pending |

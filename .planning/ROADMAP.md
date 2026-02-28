@@ -69,7 +69,7 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
 
 **Milestone Goal:** Add swappable detection and midline backends (YOLO-OBB, keypoint regression), build training infrastructure, and clean up the config system and guidebook.
 
-- [ ] **Phase 29: Guidebook Audit** — Audit and update GUIDEBOOK.md for v2.1 accuracy and v2.2 planned features
+- [x] **Phase 29: Guidebook Audit** — Audit and update GUIDEBOOK.md for v2.1 accuracy and v2.2 planned features (complete 2026-02-28)
 - [ ] **Phase 30: Config and Contracts** — Unify pipeline config, propagate device, extend Detection and Midline2D dataclasses
 - [ ] **Phase 31: Training Infrastructure** — Build `aquapose train` CLI group and `src/aquapose/training/` package (early: start training while building integration)
 - [ ] **Phase 32: YOLO-OBB Detection Backend** — Add OBB detector, affine crop utilities, and OBB overlay visualization
@@ -78,16 +78,12 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
 
 ## Phase Details
 
-### Phase 29: Guidebook Audit
+### Phase 29: Guidebook Audit — COMPLETE (2026-02-28)
 **Goal**: GUIDEBOOK.md accurately reflects the v2.1 codebase and documents v2.2 planned features, giving future Claude sessions a reliable architectural reference
 **Depends on**: Nothing (documentation work, no code dependencies)
 **Requirements**: DOCS-01, DOCS-02
-**Success Criteria** (what must be TRUE):
-  1. All stale references to superseded architecture (pre-v2.1 identity approach, old stage ordering, removed modules) are removed or corrected
-  2. Pipeline order, stage descriptions, observer list, and config hierarchy in GUIDEBOOK.md match the shipped v2.1 codebase
-  3. GUIDEBOOK.md contains sections describing v2.2 planned features: YOLO-OBB detection, keypoint midline backend, training CLI, and project structure changes
-  4. A reader following GUIDEBOOK.md can correctly identify where to add a new backend in the existing architecture
-**Plans**: TBD
+**Plans**: 2/2 complete
+**Summaries**: 29-01-SUMMARY.md, 29-02-SUMMARY.md
 
 ### Phase 30: Config and Contracts
 **Goal**: Pipeline config is unified and backward-compatible, device propagates to all stages from one top-level parameter, and Detection/Midline2D dataclasses carry the optional fields that v2.2 backends require
@@ -155,7 +151,7 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
 | 1-9 | v1.0 | 28/28 | Complete | 2026-02-25 |
 | 13-21 | v2.0 | 34/34 | Complete | 2026-02-27 |
 | 22-28 | v2.1 | 12/12 | Complete | 2026-02-28 |
-| 29. Guidebook Audit | 1/2 | In Progress|  | - |
+| 29. Guidebook Audit | v2.2 | 2/2 | Complete | 2026-02-28 |
 | 30. Config and Contracts | v2.2 | 0/TBD | Not started | - |
 | 31. Training Infrastructure | v2.2 | 0/TBD | Not started | - |
 | 32. YOLO-OBB Detection Backend | v2.2 | 0/TBD | Not started | - |

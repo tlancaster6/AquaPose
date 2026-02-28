@@ -78,6 +78,9 @@ class TrackletTrailObserver:
         fps: Output video frame rate.
         tile_scale: Downsampling factor applied to each camera tile in the
             mosaic (e.g., 0.35 for 35% of original size).
+        stop_frame: If set, stop rendering after this frame index. When
+            ``None`` (default), inherits ``config.detection.stop_frame``
+            from the pipeline context at render time.
 
     Example::
 
@@ -99,6 +102,7 @@ class TrackletTrailObserver:
         trail_length: int = 30,
         fps: float = 30.0,
         tile_scale: float = 0.35,
+        stop_frame: int | None = None,
     ) -> None:
         self._output_dir = Path(output_dir)
         self._video_dir = Path(video_dir)
@@ -106,6 +110,7 @@ class TrackletTrailObserver:
         self._trail_length = trail_length
         self._fps = fps
         self._tile_scale = tile_scale
+        self._stop_frame = stop_frame
 
     # ------------------------------------------------------------------
     # Observer protocol
@@ -316,8 +321,13 @@ class TrackletTrailObserver:
             writer: cv2.VideoWriter | None = None
 
             try:
-                with VideoSet(cam_map_single, undistortion=calib_data) as vs:
+                with VideoSet(cam_map_single, undistortion=calib_data) as vs:  # type: ignore[arg-type]
                     for frame_idx, frames in vs:
+                        if (
+                            self._stop_frame is not None
+                            and frame_idx >= self._stop_frame
+                        ):
+                            break
                         frame = frames.get(cam_id)
                         if frame is None:
                             continue
@@ -438,8 +448,10 @@ class TrackletTrailObserver:
         tile_h: int = 0
 
         try:
-            with VideoSet(camera_map, undistortion=calib_data) as vs:
+            with VideoSet(camera_map, undistortion=calib_data) as vs:  # type: ignore[arg-type]
                 for frame_idx, frames in vs:
+                    if self._stop_frame is not None and frame_idx >= self._stop_frame:
+                        break
                     # Determine tile dimensions from first real frame.
                     if tile_w == 0:
                         for cam_id in camera_ids:
@@ -599,6 +611,14 @@ class TrackletTrailObserver:
         camera_ids: list[str] = getattr(context, "camera_ids", None) or list(
             tracks_2d.keys()
         )
+
+        # Inherit stop_frame from pipeline config if not explicitly set
+        if self._stop_frame is None:
+            config = getattr(context, "config", None)
+            detection = getattr(config, "detection", None)
+            sf = getattr(detection, "stop_frame", None)
+            if sf is not None:
+                self._stop_frame = sf
 
         # Build color maps.
         fish_color_map, track_to_fish = self._build_color_map(tracklet_groups)

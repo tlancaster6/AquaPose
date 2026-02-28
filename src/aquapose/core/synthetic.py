@@ -14,7 +14,7 @@ import numpy as np
 import torch
 
 from aquapose.calibration import RefractiveProjectionModel
-from aquapose.calibration.loader import load_calibration_data
+from aquapose.calibration.loader import compute_undistortion_maps, load_calibration_data
 from aquapose.core.context import PipelineContext
 from aquapose.core.midline.types import AnnotatedDetection
 from aquapose.reconstruction.midline import Midline2D
@@ -139,13 +139,18 @@ class SyntheticDataStage:
         cal_data = load_calibration_data(self._calibration_path)
         camera_ids = cal_data.ring_cameras
 
-        # Build projection models per camera
+        # Build projection models per camera using undistorted K_new to match
+        # TriangulationBackend, which also uses K_new from compute_undistortion_maps.
+        # Using the raw cam.K (distorted) would cause synthetic 2D points to be
+        # projected in a different pixel space than what reconstruction expects,
+        # leading to epipolar distances of 100-200px and failed triangulation.
         models: dict[str, RefractiveProjectionModel] = {}
         image_sizes: dict[str, tuple[int, int]] = {}
         for cam_name in camera_ids:
             cam = cal_data.cameras[cam_name]
+            undist_maps = compute_undistortion_maps(cam)
             models[cam_name] = RefractiveProjectionModel(
-                K=cam.K,
+                K=undist_maps.K_new,
                 R=cam.R,
                 t=cam.t,
                 water_z=cal_data.water_z,
@@ -232,6 +237,8 @@ class SyntheticDataStage:
                     frame_dets[cam_name].append(det)
 
                     # Create Midline2D
+                    # Synthetic midlines use uniform 1.0 confidence (perfect
+                    # projected ground-truth, no per-point uncertainty).
                     midline = Midline2D(
                         points=pixels_np.astype(np.float32),
                         half_widths=np.full(n_points, 5.0, dtype=np.float32),
@@ -239,6 +246,7 @@ class SyntheticDataStage:
                         camera_id=cam_name,
                         frame_index=frame_idx,
                         is_head_to_tail=True,
+                        point_confidence=np.ones(n_points, dtype=np.float32),
                     )
 
                     # Create CropRegion

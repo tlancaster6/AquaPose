@@ -23,12 +23,20 @@ class Detection:
         area: Pixel area of the detected component.
         confidence: Detection confidence (always 1.0 for MOG2; placeholder
             for downstream compatibility).
+        angle: OBB rotation angle in radians, standard math convention,
+            range ``[-pi, pi]``. ``None`` for non-OBB detectors (MOG2, YOLO
+            axis-aligned). Set by YOLO-OBB backend when available.
+        obb_points: Oriented bounding box corner points, shape ``(4, 2)``,
+            clockwise from top-left of the oriented box. ``None`` for
+            non-OBB detectors. Set by YOLO-OBB backend when available.
     """
 
     bbox: tuple[int, int, int, int]
     mask: np.ndarray | None
     area: int
     confidence: float
+    angle: float | None = None
+    obb_points: np.ndarray | None = None
 
 
 class MOG2Detector:

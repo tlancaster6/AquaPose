@@ -1,8 +1,10 @@
 """2D medial axis extraction and arc-length sampling pipeline.
 
-Extracts ordered 15-point 2D midlines with half-widths from binary fish masks.
+Extracts ordered N-point 2D midlines with half-widths from binary fish masks.
 Produces Midline2D structs in full-frame pixel coordinates. Point ordering is
 arbitrary (BFS traversal); cross-camera flip alignment is handled downstream.
+Midline2D includes an optional point_confidence field (shape (N,), float32)
+for confidence-weighted triangulation; None means uniform confidence assumed.
 """
 
 from __future__ import annotations
@@ -45,6 +47,11 @@ class Midline2D:
         frame_index: Frame index within the video.
         is_head_to_tail: True when point[0] is the head end. False when
             orientation has not yet been established (first few frames).
+        point_confidence: Per-point confidence scores, shape (N,), float32,
+            values in ``[0, 1]``. ``None`` when confidence is not available
+            (e.g. segment-then-extract uses uniform 1.0s; keypoint backends
+            provide per-point model confidence). Used for confidence-weighted
+            triangulation in Stage 5.
     """
 
     points: np.ndarray
@@ -53,6 +60,7 @@ class Midline2D:
     camera_id: str
     frame_index: int
     is_head_to_tail: bool = False
+    point_confidence: np.ndarray | None = None
 
 
 # ---------------------------------------------------------------------------

@@ -276,6 +276,8 @@ class SegmentThenExtractBackend:
 
         # fish_id is -1 at this point — tracking has not yet assigned IDs.
         # Downstream stages (Association, Tracking) will replace this placeholder.
+        # Segment-then-extract always fills point_confidence with 1.0s: the
+        # skeletonization pipeline does not produce per-point uncertainty.
         return Midline2D(
             points=xy_frame,
             half_widths=hw_frame,
@@ -283,4 +285,5 @@ class SegmentThenExtractBackend:
             camera_id=cam_id,
             frame_index=frame_idx,
             is_head_to_tail=False,
+            point_confidence=np.ones(len(xy_frame), dtype=np.float32),
         )

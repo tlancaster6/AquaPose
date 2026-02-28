@@ -60,6 +60,7 @@ _LEGACY_COMPUTATION_DIRS = {
     "initialization",
     "mesh",
     "optimization",
+    "training",
 }
 
 # Forbidden import prefixes for each layer.

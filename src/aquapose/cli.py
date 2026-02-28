@@ -15,6 +15,7 @@ from aquapose.engine import (
     load_config,
 )
 from aquapose.engine.pipeline import build_stages
+from aquapose.training.cli import train_group
 
 # ---------------------------------------------------------------------------
 # CLI definition
@@ -182,6 +183,9 @@ def init_config(name: str, synthetic: bool) -> None:
     (project_dir / "config.yaml").write_text(header + yaml_content)
 
     click.echo(f"Project created at {project_dir}")
+
+
+cli.add_command(train_group)
 
 
 def main() -> None:

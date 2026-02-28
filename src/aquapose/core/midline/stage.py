@@ -348,9 +348,12 @@ class MidlineStage:
                             ):
                                 # Replace midline points with corrected version
                                 ad.midline = type(ad.midline)(
-                                    points=corrected_pts.tolist(),
+                                    points=np.asarray(corrected_pts, dtype=np.float32),
                                     half_widths=ad.midline.half_widths,
-                                    arc_length=ad.midline.arc_length,
+                                    fish_id=ad.midline.fish_id,
+                                    camera_id=ad.midline.camera_id,
+                                    frame_index=ad.midline.frame_index,
+                                    is_head_to_tail=ad.midline.is_head_to_tail,
                                 )
                                 break
 

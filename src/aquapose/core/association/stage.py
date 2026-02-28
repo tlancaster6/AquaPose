@@ -46,8 +46,12 @@ class AssociationStage:
             Context with ``tracklet_groups`` populated.
         """
         from aquapose.calibration.luts import (
+            generate_forward_luts,
+            generate_inverse_lut,
             load_forward_luts,
             load_inverse_luts,
+            save_forward_luts,
+            save_inverse_luts,
         )
         from aquapose.core.association.clustering import (
             build_must_not_link,
@@ -59,19 +63,31 @@ class AssociationStage:
         tracks_2d = context.get("tracks_2d")
         detections = context.detections
 
-        # Load LUTs from cache
-        forward_luts = None
-        inverse_lut = None
-
         calibration_path = self._config.calibration_path
-        if calibration_path:
-            forward_luts = load_forward_luts(calibration_path, self._config.lut)
-            inverse_lut = load_inverse_luts(calibration_path, self._config.lut)
-
-        if forward_luts is None or inverse_lut is None:
-            logger.warning("LUTs not available -- association producing empty groups")
+        if not calibration_path:
+            logger.warning("No calibration path -- association producing empty groups")
             context.tracklet_groups = []
             return context
+
+        # Load LUTs from cache, auto-generate on miss
+        forward_luts = load_forward_luts(calibration_path, self._config.lut)
+        inverse_lut = load_inverse_luts(calibration_path, self._config.lut)
+
+        if forward_luts is None or inverse_lut is None:
+            from aquapose.calibration.loader import load_calibration_data
+
+            logger.info(
+                "LUTs not cached -- generating (first run may take a few minutes)"
+            )
+            calibration = load_calibration_data(calibration_path)
+
+            if forward_luts is None:
+                forward_luts = generate_forward_luts(calibration, self._config.lut)
+                save_forward_luts(forward_luts, calibration_path, self._config.lut)
+
+            if inverse_lut is None:
+                inverse_lut = generate_inverse_lut(calibration, self._config.lut)
+                save_inverse_luts(inverse_lut, calibration_path, self._config.lut)
 
         # Extract detection centroids for ghost penalty
         det_centroids = _extract_centroids(detections)

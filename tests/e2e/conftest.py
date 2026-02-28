@@ -37,8 +37,6 @@ _TEST_DATA_ROOT = Path(
     os.environ.get("AQUAPOSE_TEST_DATA", Path.home() / "aquapose" / "testing")
 )
 
-_E2E_OUTPUT_DIR = Path("tests/e2e/output")
-
 
 # ---------------------------------------------------------------------------
 # Session-scoped fixtures — skip entire session if data is unavailable
@@ -90,19 +88,3 @@ def unet_weights(test_data_root: Path) -> Path:
     if not path.exists():
         pytest.skip(f"U-Net weights not found: {path}")
     return path
-
-
-# ---------------------------------------------------------------------------
-# Output directory fixture — for saving artifacts for human review
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="session")
-def e2e_output_dir() -> Path:
-    """Return the e2e test artifact output directory (creates if not exists).
-
-    Artifacts saved here (reprojection videos, HDF5 outputs) persist after
-    tests complete for human review. Contents are gitignored.
-    """
-    _E2E_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    return _E2E_OUTPUT_DIR

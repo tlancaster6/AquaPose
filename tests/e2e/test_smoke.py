@@ -8,7 +8,6 @@ Two test classes:
 
 - TestRealData: Marked @slow and @e2e. Exercises the pipeline on 4 real
   cameras with ~100 frames. Only runs with ``hatch run test-all``.
-  Saves reprojection overlay artifacts to tests/e2e/output/ for human review.
 
 Run synthetic tests only::
 
@@ -161,9 +160,6 @@ class TestRealData:
     fixtures (provided by conftest.py). Tests skip if any required file is
     missing.
 
-    Artifacts (reprojection overlay videos) are saved to tests/e2e/output/
-    for human review after the tests complete.
-
     Run with::
 
         hatch run test-all tests/e2e/test_smoke.py -v
@@ -212,7 +208,7 @@ class TestRealData:
 
     def test_real_pipeline_completes(
         self,
-        e2e_output_dir: Path,
+        tmp_path: Path,
         calibration_path: Path,
         test_video_dir: Path,
         yolo_weights: Path,
@@ -220,18 +216,16 @@ class TestRealData:
     ) -> None:
         """Real-data pipeline completes without exception on 4-camera subset.
 
-        Processes ~100 frames from 4 cameras in diagnostic mode, which
-        triggers the TrackletTrailObserver and other diagnostic observers.
-        Artifacts are saved to tests/e2e/output/<run_id>/ for human review.
+        Processes ~100 frames from 4 cameras in diagnostic mode.
 
         Args:
-            e2e_output_dir: Session-scoped output directory for artifacts.
+            tmp_path: Temporary directory for run artifacts.
             calibration_path: Path to AquaCal calibration JSON.
             test_video_dir: Path to directory with 4-camera test videos.
             yolo_weights: Path to YOLO detection model weights.
             unet_weights: Path to U-Net segmentation model weights.
         """
-        run_output_dir = e2e_output_dir / "real_data_run"
+        run_output_dir = tmp_path / "output"
         config = self._build_real_config(
             output_dir=run_output_dir,
             calibration_path=calibration_path,
@@ -259,7 +253,7 @@ class TestRealData:
 
     def test_real_output_has_3d_splines(
         self,
-        e2e_output_dir: Path,
+        tmp_path: Path,
         calibration_path: Path,
         test_video_dir: Path,
         yolo_weights: Path,
@@ -272,18 +266,14 @@ class TestRealData:
         - At least 1 non-empty frame in midlines_3d
         - At least 1 fish has splines in 3+ contiguous frames
 
-        Note: This test depends on AssociationStage having valid LUTs. If LUTs
-        are not built, tracklet_groups will be empty and no 3D output is expected.
-        If this test fails with 0 splines, run ``aquapose build-luts`` first.
-
         Args:
-            e2e_output_dir: Session-scoped output directory for artifacts.
+            tmp_path: Temporary directory for run artifacts.
             calibration_path: Path to AquaCal calibration JSON.
             test_video_dir: Path to directory with 4-camera test videos.
             yolo_weights: Path to YOLO detection model weights.
             unet_weights: Path to U-Net segmentation model weights.
         """
-        run_output_dir = e2e_output_dir / "real_data_spline_check"
+        run_output_dir = tmp_path / "output"
         config = self._build_real_config(
             output_dir=run_output_dir,
             calibration_path=calibration_path,
@@ -301,11 +291,6 @@ class TestRealData:
 
         # Count frames with at least one fish spline
         non_empty_frames = [frame_dict for frame_dict in midlines_3d if frame_dict]
-        if len(non_empty_frames) == 0 and not context.tracklet_groups:
-            pytest.skip(
-                "No 3D splines produced — LUTs not built. "
-                "Run 'aquapose build-luts' to enable association."
-            )
         assert len(non_empty_frames) >= 1, (
             "Expected at least 1 frame with 3D splines, got 0. "
             "Fish were detected and grouped but reconstruction produced nothing."
@@ -341,20 +326,3 @@ class TestRealData:
             f"Best fish (id={best_fish_id}) only had {best_run} contiguous frames. "
             f"Fish frame counts: {dict((k, len(v)) for k, v in fish_frame_sets.items())}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Known issues / non-blocking bugs
-# ---------------------------------------------------------------------------
-# The following issues were observed during Phase 28 e2e testing and are
-# non-blocking (pipeline completes but with degraded output):
-#
-# 1. AssociationStage requires pre-built LUTs (forward + inverse .npz files).
-#    Without LUTs, association produces empty tracklet_groups and no 3D output.
-#    Fix: run `aquapose build-luts --calibration <path>` before real-data tests.
-#    Tracked in: .planning/phases/28-e2e-testing/28-BUGS.md
-#
-# 2. SyntheticDataStage originally placed fish at z=0.02-0.12m (above water
-#    interface at z=1.03m). Fixed in Phase 28: fish now placed at water_z+0.05
-#    to water_z+0.35m (5-35cm below water surface).
-#    Fix applied: src/aquapose/core/synthetic.py _generate_fish_splines()

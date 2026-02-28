@@ -110,6 +110,22 @@ def draw_midline_overlay(
             frame, [pts_array], isClosed=False, color=color, thickness=thickness
         )
 
+        # Draw arrowhead at the head end (index 0), pointing forwards.
+        head = np.array(polyline_pts[0], dtype=np.float64)
+        neck = np.array(polyline_pts[1], dtype=np.float64)
+        direction = head - neck
+        length = np.linalg.norm(direction)
+        if length >= 1e-3:
+            direction /= length
+            arrow_len = max(thickness * 4.0, 8.0)
+            arrow_half_w = max(thickness * 2.0, 4.0)
+            perp = np.array([-direction[1], direction[0]])
+            tip = head + direction * arrow_len
+            left = head - perp * arrow_half_w
+            right = head + perp * arrow_half_w
+            triangle = np.array([tip, left, right], dtype=np.int32)
+            cv2.fillPoly(frame, [triangle], color)
+
     # Draw width circles at every 5th valid point
     if draw_widths and len(polyline_pts) > 0:
         # Interpolate half-widths at n_eval positions from the stored 15 samples

@@ -318,11 +318,14 @@ class Overlay2DObserver:
         color: tuple[int, int, int],
         thickness: int = 2,
     ) -> None:
-        """Draw a polyline on the frame.
+        """Draw a polyline with a head-direction arrowhead on the frame.
+
+        Points are assumed head-to-tail order (index 0 = head). A small
+        filled arrowhead is drawn at the head end pointing forwards.
 
         Args:
             frame: BGR image to draw on (modified in-place).
-            points_2d: (N, 2) array of pixel coordinates.
+            points_2d: (N, 2) array of pixel coordinates, head-to-tail.
             color: BGR color tuple.
             thickness: Line thickness in pixels.
         """
@@ -330,6 +333,28 @@ class Overlay2DObserver:
         if len(pts) < 2:
             return
         cv2.polylines(frame, [pts], isClosed=False, color=color, thickness=thickness)
+
+        # Draw arrowhead at the head end (pts[0]), pointing forwards.
+        head = pts[0].astype(np.float64)
+        neck = pts[1].astype(np.float64)
+        direction = head - neck
+        length = np.linalg.norm(direction)
+        if length < 1e-3:
+            return
+        direction /= length
+
+        # Arrow size scales with line thickness.
+        arrow_len = max(thickness * 4.0, 8.0)
+        arrow_half_w = max(thickness * 2.0, 4.0)
+
+        # Perpendicular vector.
+        perp = np.array([-direction[1], direction[0]])
+
+        tip = head + direction * arrow_len
+        left = head - perp * arrow_half_w
+        right = head + perp * arrow_half_w
+        triangle = np.array([tip, left, right], dtype=np.int32)
+        cv2.fillPoly(frame, [triangle], color)
 
     @staticmethod
     def _build_mosaic(

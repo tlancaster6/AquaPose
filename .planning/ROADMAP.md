@@ -165,7 +165,7 @@ Plans:
 | 13-21 | v2.0 | 34/34 | Complete | 2026-02-27 |
 | 22-28 | v2.1 | 12/12 | Complete | 2026-02-28 |
 | 29. Guidebook Audit | v2.2 | Complete    | 2026-02-28 | 2026-02-28 |
-| 30. Config and Contracts | 3/3 | Complete   | 2026-02-28 | - |
+| 30. Config and Contracts | 3/3 | Complete    | 2026-02-28 | - |
 | 31. Training Infrastructure | v2.2 | 0/2 | Not started | - |
 | 32. YOLO-OBB Detection Backend | v2.2 | 0/TBD | Not started | - |
 | 33. Keypoint Midline Backend | v2.2 | 0/TBD | Not started | - |

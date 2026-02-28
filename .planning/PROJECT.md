@@ -59,7 +59,17 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ### Active
 
-(No active requirements — planning next milestone)
+## Current Milestone: v2.2 Backends
+
+**Goal:** Add swappable detection and midline backends (YOLO-OBB, keypoint-based midline), build training infrastructure, and clean up config system.
+
+**Target features:**
+- Training infrastructure (`src/aquapose/training/` + CLI entry points)
+- Config system cleanup (unified params, configurable N_SAMPLE_POINTS, device propagation, init-config UX)
+- Guidebook audit and update
+- YOLO-OBB configurable detection model with affine crop and bbox overlays
+- Keypoint-based midline backend (U-Net + regression head, per-point confidence, partial midline handling)
+- Confidence-weighted reconstruction in both backends
 
 ### Out of Scope
 
@@ -143,4 +153,4 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Import boundary via AST checker + pre-commit | Automated enforcement prevents architectural regression | ✓ Good — 0 violations at milestone completion |
 
 ---
-*Last updated: 2026-02-28 after v2.1 Identity milestone completed*
+*Last updated: 2026-02-28 after v2.2 Backends milestone started*

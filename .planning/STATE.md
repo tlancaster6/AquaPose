@@ -1,104 +1,64 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: Identity
-status: unknown
-last_updated: "2026-02-28T12:59:54.078Z"
+milestone: v2.2
+milestone_name: Backends
+status: planning
+last_updated: "2026-02-28T20:00:00.000Z"
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 12
-  completed_plans: 12
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-27)
+See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 28 — E2E Testing (Plan 1 of 1 complete, awaiting human-verify checkpoint)
+**Current focus:** Defining requirements for v2.2 Backends
 
 ## Current Position
 
-Phase: 28 of 28 (v2.1 Identity — E2E Testing)
-Plan: 1 of 1 completed in current phase — Phase 28 Plan 1 COMPLETE (checkpoint:human-verify pending)
-Status: Active — Phase 28-01 done (e2e test rewrite, SyntheticDataStage z-coordinate bug fix)
-Last activity: 2026-02-27 — Plan 28-01 complete (TestSyntheticSmoke + TestRealData, conftest fixtures, SyntheticDataStage bug fix)
-
-Progress: [█████░░░░░] 50% (v2.1, 5/10 plans done)
-
-## Performance Metrics
-
-**Velocity (v2.1):**
-- Total plans completed: 4
-- Average duration: 13 min
-- Total execution time: 54 min
-
-**By Phase (v2.1):**
-
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 22-pipeline-scaffolding | 2/2 complete | 26 min | 13 min |
-| 23-refractive-lookup-tables | 2/2 complete | 28 min | 14 min |
-| 24-per-camera-2d-tracking | 1/1 complete | 14 min | 14 min |
-| 25-27 | TBD | — | — |
-| 27-diagnostic-visualization | 1/1 complete | 7 min | 7 min |
-
-*Updated after each plan completion*
-| Phase 28-e2e-testing P01 | 22 | 1 tasks | 4 files |
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-28 — Milestone v2.2 Backends started
 
 ## Accumulated Context
 
 ### Decisions
 
-Key decisions entering v2.1:
+Key decisions entering v2.2:
 
-- Pipeline reorder: Detection → 2D Tracking → Association → Midline → Reconstruction (root cause fix for broken 3D)
-- Old AssociationStage, TrackingStage, FishTracker, ransac_centroid_cluster deleted (not preserved as alternative)
-- PIPE-01 (Phase 22) is a prerequisite for all subsequent stages — scaffolding lands first
-- Phase 23 (LUTs) and Phase 24 (OC-SORT Tracking) are independent and can proceed in parallel after Phase 22
-- Phase 25 (Association) requires both Phase 23 and Phase 24 to be complete
-- Detailed algorithmic specs in .planning/milestones/v2.0-phases/21-retrospective-prospective/MS3-SPECSEED.md (for plan-phase, not roadmapper)
-- EVAL-01 regression tests deferred: pipeline reorder invalidates existing regression tests; new tests follow v2.1 stabilization
-- [Phase 22-pipeline-scaffolding]: FishTrack/TrackState moved to core/tracking/types.py (not deleted) for reconstruction/visualization compatibility until Phase 26
-- [Phase 22-pipeline-scaffolding]: TrackletGroup.tracklets uses generic tuple at runtime (not tuple[Tracklet2D]) to preserve ENG-07 import boundary within core/
-- [Phase 22-pipeline-scaffolding]: TrackingStubStage lives in engine/pipeline.py (not core/) — engine-level placeholder dispatched via isinstance check in PosePipeline.run()
-- [Phase 22-pipeline-scaffolding]: ReconstructionStage.run() early-returns empty midlines when tracklet_groups==[] (stub path); raises ValueError only when both are None
-- [Phase 22-pipeline-scaffolding]: AssociationConfig and TrackingConfig stripped to stubs; _filter_fields() prevents TypeError from stale YAML keys
-- [Phase 23-01]: LutConfigLike Protocol instead of TYPE_CHECKING import: IB-003 forbids TYPE_CHECKING backdoors; Protocol with 5 LutConfig fields preserves import boundary while LutConfig satisfies it structurally at runtime
-- [Phase 23-01]: ForwardLUT stores grids as numpy float32 arrays (not torch tensors) for zero-copy .npz serialization; cast_ray() converts on-demand via torch.from_numpy()
-- [Phase 23-02]: InverseLUT uses O(1) integer grid dict for ghost_point_lookup (no KD-tree): snap point to (ix,iy,iz) via int(round()), dict lookup into voxel array
-- [Phase 23-02]: float64 for scalar .npz metadata (voxel_resolution, grid_bounds): float32 precision loss breaks equality comparisons and cache invalidation
-- [Phase 23-02]: 1e-6*resolution epsilon on np.arange stop: avoids float32 cumulative overshoot beyond z_max while including exact boundary voxels
-- [Phase 24-01]: boxmot OcSort requires 6-column input [x1,y1,x2,y2,conf,cls] not 5-column; cls=0.0 for single-class tracking
-- [Phase 24-01]: OcSort does NOT output coasting tracks in update() result — coasting positions captured separately from active_tracks with time_since_update>0
-- [Phase 24-01]: TrackingStage uses Any-typed config to avoid circular engine->core import; deferred OcSortTracker import inside run()
-- [Phase 24-01]: TrackingStubStage removed entirely; TrackingStage now at Stage 2 in all pipeline modes
-- [Phase 27-01]: FISH_COLORS_BGR hardcoded in tracklet_trail_observer.py (not imported) to avoid tight coupling
-- [Phase 27-01]: calib_data typed as object in generation method signatures (ENG-07 boundary); cast at VideoSet callsite with type: ignore[arg-type]
-- [Phase 27-01]: _draw_trail_scaled separate from _draw_trail to keep scale factors isolated from per-camera path
-- [Phase 27-01]: TrackletTrailObserver added to diagnostic mode in observer_factory; registered as "tracklet_trail" for --add-observer
-- [Phase 28-e2e-testing]: Direct in-process PosePipeline.run() preferred over SmokeTestRunner subprocess for e2e tests
-- [Phase 28-e2e-testing]: Synthetic e2e tests NOT marked @slow -- fast CI guard running in ~30s
-- [Phase 28-e2e-testing]: [Phase 28-01] SyntheticDataStage fish z-coordinate fixed: water_z + 0.05-0.35m (was 0.02-0.12m above interface)
+- YOLO-OBB is a configurable model within detection backend (not a swappable backend) — OBB output is a superset of standard bboxes, affine crop handles rotation
+- Keypoint midline is a swappable backend alternative to segment-then-extract — fundamentally different approach (regression vs segmentation+skeletonization)
+- U-Net encoder + regression head for keypoint model — transfer learning from existing segmentation weights
+- Two training modes: frozen-backbone → unfreeze fine-tuning, OR standard pretrained-only training
+- 6 anatomical keypoints → fit 2D curve → resample to N points + per-point confidence — reconstruction backends see standard N-point midlines
+- Partial midlines: NaN + confidence=0 for unobserved regions, no extrapolation (body model deferred)
+- Per-point confidence added to Midline2D — backward compatible, segment-then-extract fills uniform confidence
+- N_SAMPLE_POINTS must be configurable (not hardcoded to 15), keypoint count inferred from model or config
+- Training infrastructure: src/aquapose/training/ with CLI entry points (aquapose train <model>), absorb existing scripts
+- device as first-level pipeline config parameter, stages keep tensors on starting device
+- stop_frame promoted to top-level config, init-config shows user-relevant fields first, --synthetic flag
+- Guidebook audit first phase — consistency with v2.1 codebase + planned v2.2 features
 
 ### Roadmap Evolution
 
-- Phase 28 added: e2e testing
+(v2.2 roadmap pending)
 
 ### Pending Todos
 
-None yet.
+- 12 pending todos from v2.1 (see .planning/todos/pending/)
 
 ### Blockers/Concerns
 
-- Phase 25 (Association) hard-depends on both Phase 23 (LUTs) and Phase 24 (Tracklets) — BOTH NOW COMPLETE, Phase 25 can proceed
-- EVAL-01 deferred: regression test suite skipped with pytestmark; rebuild post-v2.1
+- EVAL-01 deferred from v2.1: regression test suite skipped with pytestmark; rebuild with configurable N_SAMPLE_POINTS
 
 ## Session Continuity
 
-Last session: 2026-02-27
-Stopped at: Phase 28-01 Plan complete -- checkpoint:human-verify at Task 2 (real-data test verification)
-Resume file: .planning/phases/28-e2e-testing/28-01-SUMMARY.md
+Last session: 2026-02-28
+Stopped at: Milestone v2.2 initialization — defining requirements

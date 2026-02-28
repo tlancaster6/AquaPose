@@ -288,6 +288,82 @@ class TrackletTrailObserver:
     # Per-camera trail video generation
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _match_detection(
+        centroid: tuple[float, float],
+        detections: list,
+        max_distance: float = 50.0,
+    ) -> object | None:
+        """Find the detection whose bbox center is closest to *centroid*.
+
+        Args:
+            centroid: ``(u, v)`` pixel coordinate to match against.
+            detections: List of Detection objects each with a ``bbox``
+                attribute ``(x, y, w, h)``.
+            max_distance: Maximum allowed pixel distance for a match.
+
+        Returns:
+            The closest Detection, or ``None`` if none are within
+            *max_distance*.
+        """
+        best: object | None = None
+        best_dist = max_distance
+
+        for det in detections:
+            bbox = getattr(det, "bbox", None)
+            if bbox is None:
+                continue
+            cx = bbox[0] + bbox[2] / 2.0
+            cy = bbox[1] + bbox[3] / 2.0
+            dist = math.sqrt((cx - centroid[0]) ** 2 + (cy - centroid[1]) ** 2)
+            if dist < best_dist:
+                best_dist = dist
+                best = det
+
+        return best
+
+    @staticmethod
+    def _draw_detection_box(
+        frame: np.ndarray,
+        detection: object,
+        color: tuple[int, int, int],
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
+        thickness: int = 2,
+    ) -> None:
+        """Draw an OBB polygon or AABB rectangle for *detection* on *frame*.
+
+        When ``detection.obb_points`` is present, the OBB polygon is drawn
+        (scaled by *scale_x*/*scale_y*).  Otherwise the axis-aligned bbox
+        from ``detection.bbox`` is drawn.
+
+        Args:
+            frame: BGR image to draw on (modified in-place).
+            detection: Detection object with ``bbox`` and optional
+                ``obb_points`` attributes.
+            color: BGR color tuple.
+            scale_x: Horizontal scale applied to coordinates before drawing.
+            scale_y: Vertical scale applied to coordinates before drawing.
+            thickness: Line thickness in pixels.
+        """
+        obb_points = getattr(detection, "obb_points", None)
+
+        if obb_points is not None:
+            scaled = obb_points.copy().astype(np.float64)
+            scaled[:, 0] *= scale_x
+            scaled[:, 1] *= scale_y
+            pts = scaled.astype(np.int32).reshape((-1, 1, 2))
+            cv2.polylines(frame, [pts], isClosed=True, color=color, thickness=thickness)
+        else:
+            bbox = getattr(detection, "bbox", None)
+            if bbox is None:
+                return
+            x = int(bbox[0] * scale_x)
+            y = int(bbox[1] * scale_y)
+            w = int(bbox[2] * scale_x)
+            h = int(bbox[3] * scale_y)
+            cv2.rectangle(frame, (x, y), (x + w, y + h), color, thickness)
+
     def _generate_per_camera_trails(
         self,
         camera_ids: list[str],
@@ -300,6 +376,7 @@ class TrackletTrailObserver:
         *,
         frame_sizes: dict[str, tuple[int, int]] | None = None,
         n_synth_frames: int = 0,
+        detections: list[dict[str, list]] | None = None,
     ) -> None:
         """Write per-camera trail MP4 files.
 
@@ -313,6 +390,8 @@ class TrackletTrailObserver:
             diag_dir: Output directory for diagnostic videos.
             frame_sizes: camera_id -> (width, height) for synthetic fallback.
             n_synth_frames: Number of synthetic frames when no videos.
+            detections: Per-frame per-camera detection lists from context,
+                used to draw OBB/AABB boxes at the trail head.
         """
         import contextlib
 
@@ -370,6 +449,16 @@ class TrackletTrailObserver:
                                 fish_id,
                                 fish_color_map,
                             )
+                            # Draw OBB/AABB box at trail head when detections available.
+                            if detections is not None and frame_idx < len(detections):
+                                frame_dets = detections[frame_idx].get(cam_id, [])
+                                centroid = tracklet.centroids[idx_in_tracklet]  # type: ignore[index]
+                                matched = self._match_detection(
+                                    (centroid[0], centroid[1]), frame_dets
+                                )
+                                if matched is not None:
+                                    base_color = fish_color_map.get(fish_id, _GRAY_BGR)
+                                    self._draw_detection_box(frame, matched, base_color)
 
                         writer.write(frame)
             finally:
@@ -446,6 +535,7 @@ class TrackletTrailObserver:
         *,
         frame_sizes: dict[str, tuple[int, int]] | None = None,
         n_synth_frames: int = 0,
+        detections: list[dict[str, list]] | None = None,
     ) -> None:
         """Write the association mosaic MP4.
 
@@ -462,6 +552,8 @@ class TrackletTrailObserver:
             diag_dir: Output directory for the mosaic video.
             frame_sizes: camera_id -> (width, height) for synthetic fallback.
             n_synth_frames: Number of synthetic frames when no videos.
+            detections: Per-frame per-camera detection lists from context,
+                used to draw OBB/AABB boxes at the trail head (scaled to tile).
         """
         import contextlib
 
@@ -531,6 +623,23 @@ class TrackletTrailObserver:
                                 scale_x,
                                 scale_y,
                             )
+                            # Draw scaled OBB/AABB box at trail head.
+                            if detections is not None and frame_idx < len(detections):
+                                frame_dets = detections[frame_idx].get(cam_id, [])
+                                centroid = tracklet.centroids[idx_in_tracklet]  # type: ignore[index]
+                                matched = self._match_detection(
+                                    (centroid[0], centroid[1]), frame_dets
+                                )
+                                if matched is not None:
+                                    base_color = fish_color_map.get(fish_id, _GRAY_BGR)
+                                    self._draw_detection_box(
+                                        tile,
+                                        matched,
+                                        base_color,
+                                        scale_x=scale_x,
+                                        scale_y=scale_y,
+                                        thickness=1,
+                                    )
 
                         # Add camera label.
                         cv2.putText(
@@ -650,6 +759,7 @@ class TrackletTrailObserver:
         camera_ids: list[str] = getattr(context, "camera_ids", None) or list(
             tracks_2d.keys()
         )
+        detections: list[dict[str, list]] | None = getattr(context, "detections", None)
 
         # Build color maps.
         fish_color_map, track_to_fish = self._build_color_map(tracklet_groups)
@@ -711,6 +821,7 @@ class TrackletTrailObserver:
             diag_dir,
             frame_sizes=frame_sizes,
             n_synth_frames=n_synth_frames,
+            detections=detections,
         )
 
         # Generate association mosaic.
@@ -723,6 +834,7 @@ class TrackletTrailObserver:
             diag_dir,
             frame_sizes=frame_sizes,
             n_synth_frames=n_synth_frames,
+            detections=detections,
         )
 
         logger.info("TrackletTrailObserver: diagnostic videos written to %s", diag_dir)

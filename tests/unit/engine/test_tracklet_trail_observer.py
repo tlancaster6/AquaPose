@@ -269,3 +269,80 @@ def test_engine_init_exports() -> None:
     assert hasattr(engine, "TrackletTrailObserver")
     assert engine.TrackletTrailObserver is TrackletTrailObserver
     assert "TrackletTrailObserver" in engine.__all__
+
+
+# ---------------------------------------------------------------------------
+# Test 10: _draw_detection_box with OBB polygon
+# ---------------------------------------------------------------------------
+
+
+def test_draw_detection_box_obb() -> None:
+    """_draw_detection_box draws an OBB polygon when obb_points is present."""
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    frame = np.zeros((200, 200, 3), dtype=np.uint8)
+    obb_points = np.array(
+        [[50, 80], [100, 40], [150, 80], [100, 120]], dtype=np.float32
+    )
+    det = SimpleNamespace(bbox=(50, 40, 100, 80), obb_points=obb_points)
+    color = (0, 255, 0)
+
+    TrackletTrailObserver._draw_detection_box(frame, det, color)
+
+    # OBB polygon must leave non-zero pixels.
+    assert frame.sum() > 0
+
+
+# ---------------------------------------------------------------------------
+# Test 11: _draw_detection_box AABB fallback
+# ---------------------------------------------------------------------------
+
+
+def test_draw_detection_box_aabb_fallback() -> None:
+    """_draw_detection_box falls back to AABB rectangle when obb_points is None."""
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    frame = np.zeros((200, 200, 3), dtype=np.uint8)
+    det = SimpleNamespace(bbox=(20, 30, 80, 60), obb_points=None)
+    color = (255, 0, 0)
+
+    TrackletTrailObserver._draw_detection_box(frame, det, color)
+
+    # AABB rectangle must leave non-zero pixels.
+    assert frame.sum() > 0
+
+
+# ---------------------------------------------------------------------------
+# Test 12: _match_detection finds closest
+# ---------------------------------------------------------------------------
+
+
+def test_match_detection_finds_closest() -> None:
+    """_match_detection returns the detection whose bbox center is closest to centroid."""
+    from types import SimpleNamespace
+
+    # det_a: center at (100, 100); det_b: center at (200, 200)
+    det_a = SimpleNamespace(bbox=(80, 80, 40, 40))  # center = (100, 100)
+    det_b = SimpleNamespace(bbox=(180, 180, 40, 40))  # center = (200, 200)
+
+    # Centroid close to det_a
+    result = TrackletTrailObserver._match_detection((102, 98), [det_a, det_b])
+    assert result is det_a
+
+
+# ---------------------------------------------------------------------------
+# Test 13: _match_detection returns None when too far
+# ---------------------------------------------------------------------------
+
+
+def test_match_detection_returns_none_when_too_far() -> None:
+    """_match_detection returns None when all detections are beyond max_distance."""
+    from types import SimpleNamespace
+
+    det = SimpleNamespace(bbox=(500, 500, 40, 40))  # center at (520, 520)
+    result = TrackletTrailObserver._match_detection((0, 0), [det], max_distance=50.0)
+    assert result is None

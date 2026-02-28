@@ -31,15 +31,16 @@ class DetectionConfig:
         model_path: Path to detector weights file (required for YOLO).
             ``None`` means no path configured (caller must supply via
             ``detector_kwargs`` or construct the stage directly).
-        device: Device to run inference on (e.g. ``"cuda"``, ``"cpu"``).
-        stop_frame: If set, stop processing after this frame index.
         extra: Catch-all dict for detector-specific kwargs not covered above.
+
+    Note:
+        ``device`` and ``stop_frame`` have been promoted to top-level
+        :class:`PipelineConfig` fields. Passing them in ``detection:`` YAML
+        raises a :exc:`ValueError` with a "did you mean?" hint.
     """
 
     detector_kind: str = "yolo"
     model_path: str | None = None
-    device: str = "cuda"
-    stop_frame: int | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -241,6 +242,25 @@ class ReconstructionConfig:
 
 
 # ---------------------------------------------------------------------------
+# Top-level config helpers
+# ---------------------------------------------------------------------------
+
+
+def _default_device() -> str:
+    """Return the best available compute device.
+
+    Returns:
+        ``"cuda:0"`` when CUDA is available, otherwise ``"cpu"``.
+    """
+    try:
+        import torch
+
+        return "cuda:0" if torch.cuda.is_available() else "cpu"
+    except ImportError:
+        return "cpu"
+
+
+# ---------------------------------------------------------------------------
 # Top-level config
 # ---------------------------------------------------------------------------
 
@@ -255,9 +275,21 @@ class PipelineConfig:
         video_dir: Directory containing input video files.
         calibration_path: Path to the AquaCal calibration file.
         mode: Execution mode preset (production, diagnostic, synthetic, benchmark).
-        n_animals: Number of animals in the scene. Propagates to
-            ``association.expected_fish_count`` and ``synthetic.fish_count``
-            when those fields are not explicitly overridden.
+        n_animals: Number of animals in the scene. Sentinel value of 0 means
+            not set; :func:`load_config` raises :exc:`ValueError` when this is
+            0 or negative. Propagates to ``association.expected_fish_count`` and
+            ``synthetic.fish_count`` when those fields are not explicitly overridden.
+        device: Compute device for all stages (e.g. ``"cuda:0"``, ``"cpu"``).
+            Auto-detected from :func:`_default_device` when absent from YAML.
+            Propagates to DetectionStage and MidlineStage via :func:`build_stages`.
+        n_sample_points: Number of 2D midline points produced per detection and
+            used throughout the reconstruction pipeline. Default is 10. Propagates
+            to ``midline.n_points`` when that field is not explicitly overridden.
+        stop_frame: If set, stop processing after this frame index. Moved from
+            ``detection.stop_frame`` to the top level so a single parameter
+            controls early termination across all input stages.
+        project_dir: Optional project root directory for resolving relative paths.
+            Empty string means no resolution — paths are used as-is.
         detection: Detection stage config (Stage 1).
         midline: Midline stage config (Stage 2) — configures segment-then-extract backend.
         association: Association stage config (Stage 3).
@@ -275,7 +307,11 @@ class PipelineConfig:
     video_dir: str = ""
     calibration_path: str = ""
     mode: str = "production"
-    n_animals: int = 9
+    n_animals: int = 0
+    device: str = dataclasses.field(default_factory=_default_device)
+    n_sample_points: int = 10
+    stop_frame: int | None = None
+    project_dir: str = ""
     detection: DetectionConfig = dataclasses.field(default_factory=DetectionConfig)
     midline: MidlineConfig = dataclasses.field(default_factory=MidlineConfig)
     association: AssociationConfig = dataclasses.field(
@@ -394,6 +430,8 @@ def _build_stage_dict_from_dotted(
 #: Used by _filter_fields() to produce actionable error messages.
 _RENAME_HINTS: dict[str, str] = {
     "expect_fish_count": "n_animals (top-level)",
+    "device": "device (top-level)",
+    "stop_frame": "stop_frame (top-level)",
 }
 
 
@@ -529,12 +567,21 @@ def load_config(
         "output_dir", _default_output_dir(resolved_run_id)
     )
 
+    # --- validate n_animals (sentinel 0 means not set) --------------------
+    resolved_n_animals = top_kwargs.get("n_animals", 0)
+    if resolved_n_animals <= 0:
+        raise ValueError("n_animals is required and must be > 0")
+
     # --- propagate n_animals to sub-configs --------------------------------
-    n_animals = top_kwargs.get("n_animals", PipelineConfig.n_animals)
+    n_animals = resolved_n_animals
     if "expected_fish_count" not in assoc_kwargs:
         assoc_kwargs["expected_fish_count"] = n_animals
     if "fish_count" not in syn_kwargs:
         syn_kwargs["fish_count"] = n_animals
+
+    # --- propagate n_sample_points to midline.n_points --------------------
+    if "n_points" not in mid_kwargs:
+        mid_kwargs["n_points"] = top_kwargs.get("n_sample_points", 10)
 
     # --- construct & freeze -----------------------------------------------
     # Apply _filter_fields() to all stage configs and the top-level config.

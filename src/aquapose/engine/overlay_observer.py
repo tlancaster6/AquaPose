@@ -354,7 +354,7 @@ class Overlay2DObserver:
         left = head - perp * arrow_half_w
         right = head + perp * arrow_half_w
         triangle = np.array([tip, left, right], dtype=np.int32)
-        cv2.fillPoly(frame, [triangle], color)
+        cv2.fillPoly(frame, [triangle], (255, 255, 255))
 
     @staticmethod
     def _build_mosaic(

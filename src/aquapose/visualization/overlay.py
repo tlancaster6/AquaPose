@@ -124,7 +124,7 @@ def draw_midline_overlay(
             left = head - perp * arrow_half_w
             right = head + perp * arrow_half_w
             triangle = np.array([tip, left, right], dtype=np.int32)
-            cv2.fillPoly(frame, [triangle], color)
+            cv2.fillPoly(frame, [triangle], (255, 255, 255))
 
     # Draw width circles at every 5th valid point
     if draw_widths and len(polyline_pts) > 0:

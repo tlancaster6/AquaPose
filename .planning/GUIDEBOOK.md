@@ -41,22 +41,35 @@ No exceptions. No `TYPE_CHECKING` backdoors. Enforced by lint rule from the firs
 
 ```
 src/aquapose/
+  calibration/        # AquaCal loading, refractive projection, ray casting, LUTs, uncertainty
   core/               # Layer 1: pure computation modules
-    calibration/      # AquaCal loading, refractive projection, ray casting, LUTs
-    detection/        # YOLO detection, detector factory
-    segmentation/     # U-Net inference, SAM pseudo-labels, crop utilities
-    tracking/         # Per-camera 2D tracking (OC-SORT)
-    association/      # Cross-camera tracklet association (scoring, clustering, refinement)
-    midline/          # Midline extraction (segment-then-extract, direct pose)
-    reconstruction/   # Triangulation, B-spline fitting
+    association/      # Cross-camera tracklet association (scoring, clustering, refinement, types)
+    detection/        # Detection stage, types, backends/ (yolo)
+    midline/          # Midline stage, types, orientation, backends/ (segment_then_extract, direct_pose)
+    reconstruction/   # Reconstruction stage, types, backends/ (triangulation, curve_optimizer)
+    tracking/         # 2D tracking stage, types, backends/
+    context.py        # PipelineContext
+    synthetic.py      # Synthetic data generation utilities
   engine/             # Layer 2 + 3: orchestration and observability
     pipeline.py       # PosePipeline orchestrator
-    stages.py         # Stage Protocol, PipelineContext
     events.py         # Event dataclasses
     observers.py      # Observer base, attachment protocol
     config.py         # Frozen config hierarchy
-    artifacts.py      # Artifact path management
-  cli/                # Thin wrapper
+    timing.py         # Stage timing observer
+    observer_factory.py  # Factory for creating observers from config
+    console_observer.py  # Console logging observer
+    diagnostic_observer.py  # Diagnostic data capture observer
+    hdf5_observer.py  # HDF5 raw data export observer
+    overlay_observer.py    # Reprojection overlay visualization observer
+    tracklet_trail_observer.py  # 2D tracklet trail visualization observer
+    animation_observer.py  # 3D animation rendering observer
+  cli.py              # CLI entrypoint
+  io/                 # Video loading, HDF5 writing, discovery
+  reconstruction/     # Legacy: triangulation, curve_optimizer, midline
+  segmentation/       # U-Net model, training, crop, dataset, detector, pseudo-labeler
+  synthetic/          # Detection stubs, fish models, rig, scenarios, trajectory
+  tracking/           # OC-SORT wrapper
+  visualization/      # Overlay, diagnostics, midline_viz, plot3d, triangulation_viz, frames
 ```
 
 ---
@@ -227,7 +240,16 @@ Observers are synchronous by default — the pipeline blocks on each observer ca
 
 Observers may not mutate pipeline state, change stage logic, or control execution flow. They are passive consumers of events.
 
-Alpha observers: timing, raw export (HDF5), visualization, diagnostics.
+Shipped observers in `src/aquapose/engine/`:
+
+- `console_observer.py` — Console logging of pipeline progress
+- `diagnostic_observer.py` — Diagnostic data capture
+- `hdf5_observer.py` — HDF5 raw data export
+- `overlay_observer.py` — Reprojection overlay visualization
+- `tracklet_trail_observer.py` — 2D tracklet trail visualization
+- `animation_observer.py` — 3D animation rendering
+- `timing.py` — Stage timing
+- `observer_factory.py` — Factory for creating observers from config
 
 ---
 
@@ -298,28 +320,15 @@ Clean-room rebuild from scripts to event-driven pipeline. 12 phases, 28 plans. E
 ### v2.0 Alpha (shipped 2026-02-27)
 Stabilized architecture, implemented all 5 stages and 5 observers, synthetic mode, full diagnostic pipeline. 10 phases, 34 plans. Revealed that 3D reconstruction is broken due to structural cross-view correspondence failure.
 
-### v2.1 Identity (in progress)
-Pipeline reorder: Detection → 2D Tracking → Cross-Camera Association → Midline → Reconstruction. Replaces RANSAC centroid association and 3D bundle-claiming tracker with OC-SORT 2D tracking and trajectory-based tracklet association. Adds refractive LUTs for efficient geometric queries. Defers OBB detection and keypoint pose estimation to a future milestone.
+### v2.1 Identity (shipped 2026-02-28)
+Pipeline reorder to Detection → 2D Tracking → Cross-Camera Association → Midline → Reconstruction. OC-SORT per-camera 2D tracking replacing the old FishTracker. Leiden-based cross-camera tracklet association replacing RANSAC centroid clustering. Refractive LUTs (forward pixel→ray, inverse voxel→pixel) for efficient geometric queries. 7 phases, 12 plans.
+
+### v2.2 Backends (current)
+Swappable detection and midline backends: YOLO-OBB as a configurable model within the detection backend, keypoint regression as the direct_pose midline backend. Training infrastructure for YOLO-OBB and keypoint models. Config cleanup and contract enforcement. 6 phases.
 
 ---
 
-## 16. Definition of Done
-
-v2.1 Identity is complete when:
-
-- Pipeline runs in the new stage order (Detection → 2D Tracking → Association → Midline → Reconstruction)
-- Per-camera 2D tracking produces tracklets with local IDs and detected/coasted frame tags
-- Cross-camera association produces globally consistent fish IDs from tracklet-level evidence
-- Midline extraction operates only on associated tracklet-group detections
-- Reconstruction uses pre-established correspondence (no RANSAC for cross-view matching)
-- Refractive LUTs (forward and inverse) are precomputed, serialized, and reloaded
-- Diagnostic visualization shows 2D tracklet trails and association group coloring
-- Old tracking/association code (FishTracker, ransac_centroid_cluster, v2.0 AssociationStage/TrackingStage) is deleted
-- `aquapose run` produces 3D midlines from video input through the reordered pipeline
-
----
-
-## 17. Governing Principles
+## 16. Governing Principles
 
 Complexity is allowed. Entanglement is not.
 
@@ -328,22 +337,3 @@ Observability is encouraged. Pipeline duplication is forbidden.
 The pipeline is sacred. Everything else is modular.
 
 New developers extend AquaPose by attaching observers — not by writing new scripts.
-
----
-
-## 18. Discretionary Items
-
-Left to implementation judgment:
-
-- OC-SORT implementation choice (third-party package vs vendored)
-- Leiden resolution parameter tuning
-- Voxel grid resolution (default 2 cm, configurable)
-- LUT serialization format (numpy .npz, HDF5, etc.)
-- Forward LUT grid density per camera
-- Tracklet association score thresholds (s_min, τ, T_min, T_saturate)
-- Eviction threshold for 3D consistency refinement
-- Exact PipelineContext field structure and typing
-- Observer attachment mechanism (register at construction vs add/remove dynamically)
-- Compression/serialization details for config logging
-- Loading skeleton for YAML config parsing
-- Specific custom lint rules and when to introduce them

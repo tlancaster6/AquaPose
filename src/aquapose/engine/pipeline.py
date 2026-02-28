@@ -257,6 +257,15 @@ def build_stages(config: PipelineConfig) -> list:
     from aquapose.core.association import AssociationStage
     from aquapose.core.tracking import TrackingStage
 
+    STAGE_NAMES: dict[str, type] = {
+        "detection": DetectionStage,
+        "synthetic": SyntheticDataStage,
+        "tracking": TrackingStage,
+        "association": AssociationStage,
+        "midline": MidlineStage,
+        "reconstruction": ReconstructionStage,
+    }
+
     tracking_stage = TrackingStage(config=config.tracking)
 
     reconstruction_stage = ReconstructionStage(
@@ -270,6 +279,22 @@ def build_stages(config: PipelineConfig) -> list:
         n_control_points=config.reconstruction.n_control_points,
     )
 
+    def _truncate(stages: list) -> list:
+        """Truncate stage list at ``config.stop_after`` if set."""
+        if config.stop_after is None:
+            return stages
+        target_cls = STAGE_NAMES.get(config.stop_after)
+        if target_cls is None:
+            raise ValueError(
+                f"Unknown stop_after stage {config.stop_after!r}. "
+                f"Valid values: {sorted(STAGE_NAMES)}"
+            )
+        for i, stage in enumerate(stages):
+            if isinstance(stage, target_cls):
+                return stages[: i + 1]
+        # Target stage not in the list (e.g. "midline" in synthetic mode)
+        return stages
+
     # --- Synthetic mode: SyntheticDataStage replaces Detection + Midline
     if config.mode == "synthetic":
         synthetic_stage = SyntheticDataStage(
@@ -277,12 +302,14 @@ def build_stages(config: PipelineConfig) -> list:
             synthetic_config=config.synthetic,
         )
 
-        return [
-            synthetic_stage,
-            tracking_stage,
-            AssociationStage(config),
-            reconstruction_stage,
-        ]
+        return _truncate(
+            [
+                synthetic_stage,
+                tracking_stage,
+                AssociationStage(config),
+                reconstruction_stage,
+            ]
+        )
 
     # --- Production (and all other) modes: full 5-stage pipeline
     detection_stage = DetectionStage(
@@ -307,10 +334,12 @@ def build_stages(config: PipelineConfig) -> list:
         midline_config=config.midline,
     )
 
-    return [
-        detection_stage,
-        tracking_stage,
-        AssociationStage(config),
-        midline_stage,
-        reconstruction_stage,
-    ]
+    return _truncate(
+        [
+            detection_stage,
+            tracking_stage,
+            AssociationStage(config),
+            midline_stage,
+            reconstruction_stage,
+        ]
+    )

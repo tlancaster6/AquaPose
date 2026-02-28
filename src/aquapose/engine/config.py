@@ -265,6 +265,9 @@ class PipelineConfig:
         reconstruction: Reconstruction stage config (Stage 5).
         synthetic: Synthetic data generation config (synthetic mode only).
         lut: Refractive lookup table config (tank geometry and grid resolution).
+        stop_after: If set, truncate the stage list after the named stage.
+            Valid values: ``"detection"``, ``"tracking"``, ``"association"``,
+            ``"midline"``, or ``None`` (run all stages).
     """
 
     run_id: str = dataclasses.field(default="")
@@ -284,6 +287,7 @@ class PipelineConfig:
     )
     synthetic: SyntheticConfig = dataclasses.field(default_factory=SyntheticConfig)
     lut: LutConfig = dataclasses.field(default_factory=LutConfig)
+    stop_after: str | None = None
 
 
 # ---------------------------------------------------------------------------

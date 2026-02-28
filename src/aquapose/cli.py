@@ -61,12 +61,22 @@ def cli() -> None:
     ),
     help="Add observer by name (additive).",
 )
+@click.option(
+    "--stop-after",
+    "stop_after",
+    type=click.Choice(
+        ["detection", "tracking", "association", "midline"], case_sensitive=False
+    ),
+    default=None,
+    help="Stop pipeline after the named stage (skip later stages).",
+)
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Verbose output.")
 def run(
     config: str,
     mode: str | None,
     overrides: tuple[str, ...],
     extra_observers: tuple[str, ...],
+    stop_after: str | None,
     verbose: bool,
 ) -> None:
     """Run the AquaPose pipeline."""
@@ -88,9 +98,11 @@ def run(
                 except ValueError:
                     cli_overrides[key] = value
 
-    # 2. Inject mode into overrides only if explicitly provided via CLI
+    # 2. Inject mode and stop_after into overrides only if explicitly provided
     if mode is not None:
         cli_overrides["mode"] = mode
+    if stop_after is not None:
+        cli_overrides["stop_after"] = stop_after
 
     # 3. Load config
     pipeline_config = load_config(yaml_path=config, cli_overrides=cli_overrides)

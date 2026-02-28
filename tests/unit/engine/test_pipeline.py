@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from aquapose.core.context import PipelineContext
@@ -17,6 +18,7 @@ from aquapose.engine import (
     StageStart,
     load_config,
 )
+from aquapose.engine.pipeline import build_stages
 
 # ---------------------------------------------------------------------------
 # Test helpers / fixtures
@@ -205,3 +207,84 @@ def test_pipeline_context_passed_between_stages(tmp_path: Path) -> None:
     pipeline.run()
 
     assert reader.saw_detections, "Second stage must see context set by first stage"
+
+
+# ---------------------------------------------------------------------------
+# build_stages stop_after tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("stop_after", "expected_count", "expected_last"),
+    [
+        (None, 5, "ReconstructionStage"),
+        ("detection", 1, "DetectionStage"),
+        ("tracking", 2, "TrackingStage"),
+        ("association", 3, "AssociationStage"),
+        ("midline", 4, "MidlineStage"),
+    ],
+)
+def test_build_stages_stop_after(
+    stop_after: str | None,
+    expected_count: int,
+    expected_last: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """build_stages truncates the stage list when stop_after is set."""
+    from aquapose.core import (
+        DetectionStage,
+        MidlineStage,
+        ReconstructionStage,
+        SyntheticDataStage,
+    )
+    from aquapose.core.association import AssociationStage
+    from aquapose.core.tracking import TrackingStage
+
+    # Stub __init__ on all stage classes to avoid file I/O
+    for cls in (
+        DetectionStage,
+        MidlineStage,
+        ReconstructionStage,
+        SyntheticDataStage,
+        AssociationStage,
+        TrackingStage,
+    ):
+        monkeypatch.setattr(cls, "__init__", lambda self, *a, **kw: None)
+
+    config = load_config(
+        cli_overrides={
+            "mode": "production",
+            "video_dir": ".",
+            "calibration_path": ".",
+            "stop_after": stop_after,
+        },
+    )
+    stages = build_stages(config)
+    assert len(stages) == expected_count
+    assert type(stages[-1]).__name__ == expected_last
+
+
+def test_build_stages_stop_after_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
+    """build_stages raises ValueError for an unrecognized stop_after value."""
+    from aquapose.core import (
+        DetectionStage,
+        MidlineStage,
+        ReconstructionStage,
+        SyntheticDataStage,
+    )
+    from aquapose.core.association import AssociationStage
+    from aquapose.core.tracking import TrackingStage
+
+    for cls in (
+        DetectionStage,
+        MidlineStage,
+        ReconstructionStage,
+        SyntheticDataStage,
+        AssociationStage,
+        TrackingStage,
+    ):
+        monkeypatch.setattr(cls, "__init__", lambda self, *a, **kw: None)
+
+    config = load_config(cli_overrides={"stop_after": "nonexistent"})
+    with pytest.raises(ValueError, match="Unknown stop_after stage"):
+        build_stages(config)

@@ -3,10 +3,15 @@
 Provides shared machinery to crop an image region around a bounding box,
 run a segmentation model on the crop, and paste the resulting mask back
 into the full frame. Used by SAMPseudoLabeler and Mask R-CNN inference.
+
+Also provides affine crop utilities for OBB-aligned crops:
+:func:`extract_affine_crop`, :func:`invert_affine_point`, and
+:func:`invert_affine_points`.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import cv2
@@ -116,3 +121,150 @@ def paste_mask(
 
     full_mask[region.y1 : region.y2, region.x1 : region.x2] = crop_mask
     return full_mask
+
+
+# ---------------------------------------------------------------------------
+# Affine crop utilities (OBB-aligned, invertible)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AffineCrop:
+    """A rotation-aligned crop extracted via an affine warp.
+
+    The transform matrix ``M`` maps frame coordinates to crop coordinates.
+    Use :func:`invert_affine_point` or :func:`invert_affine_points` to
+    back-project crop-space predictions to frame space.
+
+    Attributes:
+        image: Cropped image array of shape ``(crop_h, crop_w, C)`` or
+            ``(crop_h, crop_w)``. Pixels outside the source frame are filled
+            with zero (letterbox padding).
+        M: Affine transform matrix of shape ``(2, 3)``, float64, mapping
+            frame coordinates to crop coordinates.
+        crop_size: Output canvas size as ``(width, height)`` in pixels.
+        frame_shape: Source frame dimensions as ``(height, width)``.
+    """
+
+    image: np.ndarray
+    M: np.ndarray
+    crop_size: tuple[int, int]
+    frame_shape: tuple[int, int]
+
+
+def extract_affine_crop(
+    frame: np.ndarray,
+    center_xy: tuple[float, float],
+    angle_math_rad: float,
+    obb_w: float,
+    obb_h: float,
+    crop_size: tuple[int, int],
+    padding_fraction: float = 0.15,
+    interpolation: int = cv2.INTER_LINEAR,
+) -> AffineCrop:
+    """Extract a rotation-aligned crop centred on an OBB detection.
+
+    Builds an affine warp that rotates the frame so the OBB's long axis is
+    horizontal, then centres the OBB centre in the crop canvas.  Pixels
+    outside the source frame are zero-filled (letterbox padding).
+
+    The ``obb_w`` and ``obb_h`` parameters are accepted for interface
+    consistency with callers that have the OBB dimensions available, but
+    the crop canvas size is controlled solely by ``crop_size``.
+    ``padding_fraction`` is reserved for future use (downstream callers
+    that want scaled crops); it does not affect the current canvas size.
+
+    Args:
+        frame: Source image of shape ``(H, W)`` or ``(H, W, C)``.
+        center_xy: OBB centre in frame pixel coordinates ``(cx, cy)``.
+        angle_math_rad: OBB orientation in standard math radians (CCW,
+            range ``[-pi, pi]``). This is the value stored in
+            :attr:`~aquapose.segmentation.detector.Detection.angle` after
+            the YOLO-OBB backend's conversion.
+        obb_w: OBB width in pixels (along the fish's long axis).
+        obb_h: OBB height in pixels (across the fish body).
+        crop_size: Output canvas size ``(width, height)`` in pixels.
+        padding_fraction: Reserved for future scaled-canvas support.
+            Currently unused — the crop canvas is always ``crop_size``.
+        interpolation: OpenCV interpolation flag for ``cv2.warpAffine``.
+            Defaults to ``cv2.INTER_LINEAR``.
+
+    Returns:
+        :class:`AffineCrop` containing the warped image, the transform
+        matrix, and metadata.
+    """
+    cx, cy = center_xy
+    crop_w, crop_h = crop_size
+
+    # Convert standard math angle (CCW, radians) -> cv2 angle (CW, degrees)
+    angle_cv2_deg = math.degrees(-angle_math_rad)
+
+    # Build a rotation matrix about the OBB centre
+    M_rot = cv2.getRotationMatrix2D((cx, cy), angle_cv2_deg, scale=1.0)
+
+    # Translate so that the OBB centre lands at the centre of the crop canvas
+    M_rot[0, 2] += crop_w / 2 - cx
+    M_rot[1, 2] += crop_h / 2 - cy
+
+    crop_image = cv2.warpAffine(
+        frame,
+        M_rot,
+        (crop_w, crop_h),
+        flags=interpolation,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
+    )
+
+    return AffineCrop(
+        image=crop_image,
+        M=M_rot,
+        crop_size=crop_size,
+        frame_shape=frame.shape[:2],
+    )
+
+
+def invert_affine_point(
+    crop_xy: tuple[float, float],
+    M: np.ndarray,
+) -> tuple[float, float]:
+    """Back-project a single crop-space point to frame coordinates.
+
+    Uses the inverse of the affine transform ``M`` produced by
+    :func:`extract_affine_crop`.  For a pure rotation + translation,
+    :func:`cv2.invertAffineTransform` is numerically exact.
+
+    Args:
+        crop_xy: Point in crop pixel coordinates ``(x, y)``.
+        M: Affine transform matrix of shape ``(2, 3)``, float64, as
+            returned by :func:`extract_affine_crop`.
+
+    Returns:
+        Corresponding point in frame pixel coordinates ``(x, y)``.
+    """
+    M_inv = cv2.invertAffineTransform(M)
+    pt = np.array([[[crop_xy[0], crop_xy[1]]]], dtype=np.float64)
+    result = cv2.transform(pt, M_inv)
+    return (float(result[0, 0, 0]), float(result[0, 0, 1]))
+
+
+def invert_affine_points(
+    crop_points: np.ndarray,
+    M: np.ndarray,
+) -> np.ndarray:
+    """Back-project multiple crop-space points to frame coordinates (batch).
+
+    Equivalent to calling :func:`invert_affine_point` for each point, but
+    more efficient for large arrays.
+
+    Args:
+        crop_points: Points in crop pixel coordinates, shape ``(N, 2)``.
+        M: Affine transform matrix of shape ``(2, 3)``, float64, as
+            returned by :func:`extract_affine_crop`.
+
+    Returns:
+        Corresponding points in frame pixel coordinates, shape ``(N, 2)``.
+    """
+    M_inv = cv2.invertAffineTransform(M)
+    pts = crop_points.reshape(1, -1, 2).astype(np.float64)
+    result = cv2.transform(pts, M_inv)
+    return result.reshape(-1, 2)

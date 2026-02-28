@@ -300,6 +300,7 @@ def build_stages(config: PipelineConfig) -> list:
         synthetic_stage = SyntheticDataStage(
             calibration_path=config.calibration_path,
             synthetic_config=config.synthetic,
+            n_points=config.n_sample_points,
         )
 
         return _truncate(
@@ -316,9 +317,9 @@ def build_stages(config: PipelineConfig) -> list:
         video_dir=config.video_dir,
         calibration_path=config.calibration_path,
         detector_kind=config.detection.detector_kind,
-        stop_frame=config.detection.stop_frame,
+        stop_frame=config.stop_frame,
         model_path=config.detection.model_path,
-        device=config.detection.device,
+        device=config.device,
     )
 
     midline_stage = MidlineStage(
@@ -327,7 +328,7 @@ def build_stages(config: PipelineConfig) -> list:
         weights_path=config.midline.weights_path,
         confidence_threshold=config.midline.confidence_threshold,
         backend=config.midline.backend,
-        device=config.detection.device,
+        device=config.device,
         n_points=config.midline.n_points,
         min_area=config.midline.min_area,
         lut_config=config.lut,

@@ -57,10 +57,12 @@ class Midline3DWriter:
         output_path: str | Path,
         max_fish: int = 9,
         chunk_frames: int = 1000,
+        n_sample_points: int = N_SAMPLE_POINTS,
     ) -> None:
         self._path = Path(output_path)
         self._max_fish = max_fish
         self._chunk_frames = chunk_frames
+        self._n_sample_points = n_sample_points
         self._buffer_idx: int = 0
 
         # Open HDF5 file and create datasets
@@ -96,7 +98,7 @@ class Midline3DWriter:
         _make("fish_id", (max_fish,), "int32", -1)
         _make("control_points", (max_fish, _N_CTRL, 3), "float32", np.nan)
         _make("arc_length", (max_fish,), "float32", np.nan)
-        _make("half_widths", (max_fish, N_SAMPLE_POINTS), "float32", np.nan)
+        _make("half_widths", (max_fish, n_sample_points), "float32", np.nan)
         _make("n_cameras", (max_fish,), "int32", 0)
         _make("mean_residual", (max_fish,), "float32", -1.0)
         _make("max_residual", (max_fish,), "float32", -1.0)
@@ -112,7 +114,7 @@ class Midline3DWriter:
             (chunk_frames, max_fish), np.nan, dtype=np.float32
         )
         self._buf_half_widths = np.full(
-            (chunk_frames, max_fish, N_SAMPLE_POINTS), np.nan, dtype=np.float32
+            (chunk_frames, max_fish, n_sample_points), np.nan, dtype=np.float32
         )
         self._buf_n_cameras = np.zeros((chunk_frames, max_fish), dtype=np.int32)
         self._buf_mean_residual = np.full(
@@ -160,7 +162,7 @@ class Midline3DWriter:
             )
             self._buf_arc_length[i, slot] = float(midline.arc_length)
             hw = midline.half_widths.astype(np.float32)
-            n_hw = min(len(hw), N_SAMPLE_POINTS)
+            n_hw = min(len(hw), self._n_sample_points)
             self._buf_half_widths[i, slot, :n_hw] = hw[:n_hw]
             self._buf_n_cameras[i, slot] = int(midline.n_cameras)
             self._buf_mean_residual[i, slot] = float(midline.mean_residual)

@@ -82,7 +82,9 @@ class ConfigCheckStage:
 
 def test_pipeline_runs_stages_in_order(tmp_path: Path) -> None:
     """Stages execute in the order A, B, C."""
-    config = load_config(run_id="test_run", cli_overrides={"output_dir": str(tmp_path)})
+    config = load_config(
+        run_id="test_run", cli_overrides={"n_animals": 3, "output_dir": str(tmp_path)}
+    )
     stages = [MockStage("A"), MockStage("B"), MockStage("C")]
     pipeline = PosePipeline(stages=stages, config=config)
     context = pipeline.run()
@@ -92,7 +94,9 @@ def test_pipeline_runs_stages_in_order(tmp_path: Path) -> None:
 
 def test_pipeline_emits_lifecycle_events(tmp_path: Path) -> None:
     """Observer receives PipelineStart, StageStart, StageComplete, PipelineComplete."""
-    config = load_config(run_id="test_run", cli_overrides={"output_dir": str(tmp_path)})
+    config = load_config(
+        run_id="test_run", cli_overrides={"n_animals": 3, "output_dir": str(tmp_path)}
+    )
     observer = RecordingObserver()
     pipeline = PosePipeline(
         stages=[MockStage("only")],
@@ -107,7 +111,9 @@ def test_pipeline_emits_lifecycle_events(tmp_path: Path) -> None:
 
 def test_pipeline_writes_config_artifact(tmp_path: Path) -> None:
     """config.yaml written to output_dir with expected run_id and mode fields."""
-    config = load_config(run_id="test_run", cli_overrides={"output_dir": str(tmp_path)})
+    config = load_config(
+        run_id="test_run", cli_overrides={"n_animals": 3, "output_dir": str(tmp_path)}
+    )
     pipeline = PosePipeline(stages=[MockStage("x")], config=config)
     pipeline.run()
 
@@ -121,7 +127,9 @@ def test_pipeline_writes_config_artifact(tmp_path: Path) -> None:
 
 def test_config_artifact_written_before_stages(tmp_path: Path) -> None:
     """config.yaml exists on disk when the first stage executes."""
-    config = load_config(run_id="test_run", cli_overrides={"output_dir": str(tmp_path)})
+    config = load_config(
+        run_id="test_run", cli_overrides={"n_animals": 3, "output_dir": str(tmp_path)}
+    )
     checker = ConfigCheckStage(output_dir=tmp_path)
     pipeline = PosePipeline(stages=[checker], config=config)
     pipeline.run()
@@ -131,7 +139,9 @@ def test_config_artifact_written_before_stages(tmp_path: Path) -> None:
 
 def test_pipeline_emits_failed_on_error(tmp_path: Path) -> None:
     """PipelineFailed emitted with correct error message when stage raises."""
-    config = load_config(run_id="test_run", cli_overrides={"output_dir": str(tmp_path)})
+    config = load_config(
+        run_id="test_run", cli_overrides={"n_animals": 3, "output_dir": str(tmp_path)}
+    )
     observer = RecordingObserver()
     pipeline = PosePipeline(
         stages=[FailingStage()],
@@ -162,7 +172,9 @@ def test_pipeline_records_stage_timing(tmp_path: Path) -> None:
         def run(self, context: PipelineContext) -> PipelineContext:
             return context
 
-    config = load_config(run_id="test_run", cli_overrides={"output_dir": str(tmp_path)})
+    config = load_config(
+        run_id="test_run", cli_overrides={"n_animals": 3, "output_dir": str(tmp_path)}
+    )
     pipeline = PosePipeline(
         stages=[FirstStage(), SecondStage()],
         config=config,
@@ -177,7 +189,9 @@ def test_pipeline_records_stage_timing(tmp_path: Path) -> None:
 
 def test_pipeline_no_observers_still_works(tmp_path: Path) -> None:
     """Pipeline completes normally with no observers attached."""
-    config = load_config(run_id="test_run", cli_overrides={"output_dir": str(tmp_path)})
+    config = load_config(
+        run_id="test_run", cli_overrides={"n_animals": 3, "output_dir": str(tmp_path)}
+    )
     pipeline = PosePipeline(stages=[MockStage("solo")], config=config)
     context = pipeline.run()
 
@@ -201,7 +215,9 @@ def test_pipeline_context_passed_between_stages(tmp_path: Path) -> None:
             self.saw_detections = context.detections is not None
             return context
 
-    config = load_config(run_id="test_run", cli_overrides={"output_dir": str(tmp_path)})
+    config = load_config(
+        run_id="test_run", cli_overrides={"n_animals": 3, "output_dir": str(tmp_path)}
+    )
     reader = ReaderStage()
     pipeline = PosePipeline(stages=[WriterStage(), reader], config=config)
     pipeline.run()
@@ -253,6 +269,7 @@ def test_build_stages_stop_after(
 
     config = load_config(
         cli_overrides={
+            "n_animals": 3,
             "mode": "production",
             "video_dir": ".",
             "calibration_path": ".",
@@ -285,6 +302,6 @@ def test_build_stages_stop_after_invalid(monkeypatch: pytest.MonkeyPatch) -> Non
     ):
         monkeypatch.setattr(cls, "__init__", lambda self, *a, **kw: None)
 
-    config = load_config(cli_overrides={"stop_after": "nonexistent"})
+    config = load_config(cli_overrides={"n_animals": 3, "stop_after": "nonexistent"})
     with pytest.raises(ValueError, match="Unknown stop_after stage"):
         build_stages(config)

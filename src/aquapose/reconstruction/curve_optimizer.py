@@ -844,10 +844,19 @@ class CurveOptimizer:
 
     Args:
         config: Optimizer configuration. Uses defaults if not provided.
+        n_sample_points: Number of sample points for residual evaluation and
+            half-width output arrays. Controlled by
+            :attr:`~aquapose.engine.config.PipelineConfig.n_sample_points`.
+            Defaults to ``N_SAMPLE_POINTS`` (15) when not provided.
     """
 
-    def __init__(self, config: CurveOptimizerConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: CurveOptimizerConfig | None = None,
+        n_sample_points: int = N_SAMPLE_POINTS,
+    ) -> None:
         self.config = config or CurveOptimizerConfig()
+        self._n_sample_points = n_sample_points
         self._warm_starts: dict[int, torch.Tensor] = {}
         self._prev_losses: dict[int, float] = {}
         self.snapshots: list[OptimizerSnapshot] = []
@@ -1624,7 +1633,7 @@ class CurveOptimizer:
 
             # Compute reprojection residuals
             spline_pts_torch = torch.from_numpy(
-                spl_obj(np.linspace(0.0, 1.0, N_SAMPLE_POINTS)).astype(np.float32)
+                spl_obj(np.linspace(0.0, 1.0, self._n_sample_points)).astype(np.float32)
             ).to(device)
 
             all_residuals: list[float] = []
@@ -1687,10 +1696,12 @@ class CurveOptimizer:
             if hw_metres_list:
                 # Assign uniform half-width array (one value per sample point)
                 hw_metres_all = np.full(
-                    N_SAMPLE_POINTS, float(np.mean(hw_metres_list)), dtype=np.float32
+                    self._n_sample_points,
+                    float(np.mean(hw_metres_list)),
+                    dtype=np.float32,
                 )
             else:
-                hw_metres_all = np.zeros(N_SAMPLE_POINTS, dtype=np.float32)
+                hw_metres_all = np.zeros(self._n_sample_points, dtype=np.float32)
 
             midline_3d = Midline3D(
                 fish_id=fid,

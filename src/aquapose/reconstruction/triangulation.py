@@ -32,7 +32,9 @@ SPLINE_KNOTS: np.ndarray = np.array(
 )
 MIN_BODY_POINTS: int = 9  # SPLINE_N_CTRL + 2
 DEFAULT_INLIER_THRESHOLD: float = 50.0  # pixels
-N_SAMPLE_POINTS: int = 15  # matches Phase 6 output
+N_SAMPLE_POINTS: int = (
+    15  # Default fallback; prefer config.n_sample_points when available
+)
 
 
 def _build_spline_knots(n_control_points: int) -> np.ndarray:
@@ -670,6 +672,13 @@ def _refine_correspondences_epipolar(
     skeleton point. Points that are too far from the epipolar curve are
     rejected (set to NaN).
 
+    The depth sampling range ``[0.01, 2.0]`` covers fish from 1 cm to 2 m
+    below the camera origin (approximately the air-water interface). This
+    supports fish at shallow depths (5 cm below the surface) through deep
+    tank positions (100+ cm). The previous range ``[0.5, 3.0]`` excluded
+    fish shallower than ~50 cm, causing all near-surface correspondences
+    to fail.
+
     Args:
         cam_midlines: Per-camera midlines for a single fish (post flip-alignment).
         models: Per-camera refractive projection models.
@@ -689,7 +698,10 @@ def _refine_correspondences_epipolar(
     ref_midline = valid_cams[ref_id]
     n_pts = len(ref_midline.points)
 
-    depth_samples = torch.linspace(0.5, 3.0, 50)
+    # Depth range covers 1 cm to 2 m below the camera origin (air-water interface).
+    # Fish at shallow depths (5-35 cm) require d < 0.5; the old range [0.5, 3.0]
+    # excluded these, causing all correspondences to fail with snap distances > 50 px.
+    depth_samples = torch.linspace(0.01, 2.0, 100)
 
     result = dict(cam_midlines)
 

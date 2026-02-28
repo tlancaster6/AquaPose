@@ -43,6 +43,13 @@ def _make_mock_calibration(
     return cal
 
 
+def _make_mock_undist_maps(cam: MagicMock) -> MagicMock:
+    """Create a mock UndistortionMaps with K_new matching the camera's K."""
+    maps = MagicMock()
+    maps.K_new = cam.K
+    return maps
+
+
 def _make_mock_projection_model() -> MagicMock:
     """Create a mock projection model that returns valid pixel coordinates."""
     model = MagicMock()
@@ -85,6 +92,10 @@ class TestSyntheticDataStageRun:
             patch(
                 "aquapose.core.synthetic.load_calibration_data",
                 return_value=mock_cal,
+            ),
+            patch(
+                "aquapose.core.synthetic.compute_undistortion_maps",
+                side_effect=lambda cam: _make_mock_undist_maps(cam),
             ),
             patch(
                 "aquapose.core.synthetic.RefractiveProjectionModel",
@@ -145,7 +156,7 @@ class TestSyntheticDataStageRun:
                 for annot in annots:
                     if annot.midline is not None:
                         assert isinstance(annot.midline, Midline2D)
-                        assert annot.midline.points.shape == (15, 2)
+                        assert annot.midline.points.shape == (10, 2)
                         found_midline = True
         assert found_midline, "No annotated detections have midlines"
 

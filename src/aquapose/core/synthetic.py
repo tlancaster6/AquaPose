@@ -110,6 +110,9 @@ class SyntheticDataStage:
     Args:
         calibration_path: Path to AquaCal calibration JSON file.
         synthetic_config: Configuration for synthetic data generation.
+        n_points: Number of midline points per fish per frame. Controlled by
+            :attr:`~aquapose.engine.config.PipelineConfig.n_sample_points`.
+            Defaults to 10 when not provided.
 
     """
 
@@ -117,9 +120,11 @@ class SyntheticDataStage:
         self,
         calibration_path: str,
         synthetic_config: SyntheticConfig,
+        n_points: int = 10,
     ) -> None:
         self._calibration_path = calibration_path
         self._config = synthetic_config
+        self._n_points = n_points
 
     def run(self, context: PipelineContext) -> PipelineContext:
         """Generate synthetic fish data and populate context fields.
@@ -163,7 +168,7 @@ class SyntheticDataStage:
         # Generate base 3D splines using the calibration water_z so fish
         # are placed below the air-water interface where refractive projection
         # produces valid pixel coordinates.
-        n_points = 15
+        n_points = self._n_points
         base_splines = _generate_fish_splines(
             self._config.fish_count,
             n_points,

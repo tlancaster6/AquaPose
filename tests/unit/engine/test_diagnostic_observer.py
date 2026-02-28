@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import numpy as np
+
+from aquapose.core.association.types import TrackletGroup
 from aquapose.core.context import PipelineContext
+from aquapose.core.tracking.types import Tracklet2D
 from aquapose.engine.diagnostic_observer import DiagnosticObserver
 from aquapose.engine.events import StageComplete
 from aquapose.engine.observers import Observer
@@ -174,6 +180,158 @@ def test_all_stages_captured_in_full_sequence() -> None:
     assert len(observer.stages) == 5
     for name in stage_names:
         assert name in observer.stages
+
+
+# ---------------------------------------------------------------------------
+# Helpers for export_centroid_correspondences tests
+# ---------------------------------------------------------------------------
+
+
+def _make_tracklet2d(
+    camera_id: str,
+    track_id: int,
+    frames: tuple[int, ...],
+    centroids: tuple[tuple[float, float], ...] | None = None,
+) -> Tracklet2D:
+    """Create a Tracklet2D with default centroid (0, 0) at each frame."""
+    if centroids is None:
+        centroids = tuple((float(f) * 10.0, float(f) * 5.0) for f in frames)
+    bboxes = tuple((0.0, 0.0, 10.0, 10.0) for _ in frames)
+    status = tuple("detected" for _ in frames)
+    return Tracklet2D(
+        camera_id=camera_id,
+        track_id=track_id,
+        frames=frames,
+        centroids=centroids,
+        bboxes=bboxes,
+        frame_status=status,
+    )
+
+
+def _make_group_with_consensus(
+    fish_id: int,
+    frames: tuple[int, ...],
+    cam_ids: tuple[str, ...],
+) -> TrackletGroup:
+    """Create a TrackletGroup with synthetic consensus_centroids."""
+    tracklets = tuple(
+        _make_tracklet2d(cam_id, i, frames) for i, cam_id in enumerate(cam_ids)
+    )
+    consensus_centroids = tuple(
+        (f, np.array([float(f), 0.0, 1.0], dtype=np.float64)) for f in frames
+    )
+    return TrackletGroup(
+        fish_id=fish_id,
+        tracklets=tracklets,
+        confidence=0.9,
+        per_frame_confidence=tuple(0.9 for _ in frames),
+        consensus_centroids=consensus_centroids,
+    )
+
+
+def _fire_association_stage(
+    observer: DiagnosticObserver, groups: list[TrackletGroup]
+) -> None:
+    """Simulate an AssociationStage StageComplete event."""
+    ctx = PipelineContext()
+    ctx.tracklet_groups = groups
+    ctx.frame_count = 1
+    observer.on_event(
+        StageComplete(
+            stage_name="AssociationStage",
+            stage_index=2,
+            elapsed_seconds=0.1,
+            context=ctx,
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tests for export_centroid_correspondences
+# ---------------------------------------------------------------------------
+
+
+def test_export_centroid_correspondences_writes_npz(tmp_path: Path) -> None:
+    """export_centroid_correspondences writes NPZ with correct arrays and shapes."""
+    observer = DiagnosticObserver()
+    frames = (0, 1, 2)
+    cam_ids = ("cam_a", "cam_b")
+    group = _make_group_with_consensus(fish_id=0, frames=frames, cam_ids=cam_ids)
+    _fire_association_stage(observer, [group])
+
+    out_path = tmp_path / "correspondences.npz"
+    result = observer.export_centroid_correspondences(out_path)
+
+    assert result.exists()
+    data = np.load(str(result), allow_pickle=True)
+
+    assert "fish_ids" in data
+    assert "frame_indices" in data
+    assert "points_3d" in data
+    assert "camera_ids" in data
+    assert "centroids_2d" in data
+
+    n = len(frames) * len(cam_ids)  # 3 frames * 2 cameras = 6 rows
+    assert data["fish_ids"].shape == (n,)
+    assert data["frame_indices"].shape == (n,)
+    assert data["points_3d"].shape == (n, 3)
+    assert data["camera_ids"].shape == (n,)
+    assert data["centroids_2d"].shape == (n, 2)
+
+    # All rows reference fish_id=0
+    assert np.all(data["fish_ids"] == 0)
+    # Both camera IDs appear
+    assert set(data["camera_ids"]) == {"cam_a", "cam_b"}
+
+
+def test_export_centroid_correspondences_raises_without_association(
+    tmp_path: Path,
+) -> None:
+    """ValueError raised when no AssociationStage snapshot is present."""
+    import pytest
+
+    observer = DiagnosticObserver()
+    # Fire a different stage, not AssociationStage
+    ctx = PipelineContext()
+    ctx.frame_count = 1
+    observer.on_event(
+        StageComplete(
+            stage_name="DetectionStage",
+            stage_index=0,
+            elapsed_seconds=0.1,
+            context=ctx,
+        )
+    )
+
+    out_path = tmp_path / "correspondences.npz"
+    with pytest.raises(ValueError, match="AssociationStage"):
+        observer.export_centroid_correspondences(out_path)
+
+
+def test_export_centroid_correspondences_skips_none_consensus(tmp_path: Path) -> None:
+    """Groups with consensus_centroids=None produce no rows (not an error)."""
+    observer = DiagnosticObserver()
+    frames = (0, 1)
+    # Group with no consensus_centroids
+    group = TrackletGroup(
+        fish_id=0,
+        tracklets=(
+            _make_tracklet2d("cam_a", 0, frames),
+            _make_tracklet2d("cam_b", 1, frames),
+        ),
+        consensus_centroids=None,
+    )
+    _fire_association_stage(observer, [group])
+
+    out_path = tmp_path / "correspondences.npz"
+    result = observer.export_centroid_correspondences(out_path)
+
+    assert result.exists()
+    data = np.load(str(result), allow_pickle=True)
+    # Zero rows — group was skipped
+    assert data["fish_ids"].shape == (0,)
+    assert data["points_3d"].shape == (0, 3)
+    assert data["centroids_2d"].shape == (0, 2)
 
 
 def test_snapshot_has_tracks_2d_and_tracklet_groups_fields() -> None:

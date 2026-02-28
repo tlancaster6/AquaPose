@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
+
+import numpy as np
 
 from aquapose.engine.events import Event, StageComplete
 
@@ -137,3 +140,97 @@ class DiagnosticObserver:
         )
 
         self.stages[event.stage_name] = snapshot
+
+    def export_centroid_correspondences(self, output_path: Path | str) -> Path:
+        """Export 2D-to-3D centroid correspondences from the Association stage.
+
+        Iterates over all TrackletGroups that have non-None ``consensus_centroids``,
+        and for each (frame_idx, point_3d) pair with a valid 3D point, collects
+        the 2D pixel centroid from each contributing tracklet that has the frame.
+        Saves results as a compressed NPZ file for calibration fine-tuning.
+
+        Args:
+            output_path: Destination file path for the NPZ output.
+
+        Returns:
+            Resolved absolute path to the written NPZ file.
+
+        Raises:
+            ValueError: If no AssociationStage snapshot is found, or if the
+                snapshot contains no tracklet groups.
+        """
+        if "AssociationStage" not in self.stages:
+            raise ValueError(
+                "No AssociationStage snapshot found. "
+                "Run the pipeline before calling export_centroid_correspondences()."
+            )
+
+        snapshot = self.stages["AssociationStage"]
+        if not snapshot.tracklet_groups:
+            raise ValueError(
+                "AssociationStage snapshot has no tracklet_groups. "
+                "Ensure the pipeline ran with a populated association stage."
+            )
+
+        fish_ids_list: list[int] = []
+        frame_indices_list: list[int] = []
+        points_3d_list: list[np.ndarray] = []
+        camera_ids_list: list[str] = []
+        centroids_2d_list: list[tuple[float, float]] = []
+
+        for group in snapshot.tracklet_groups:
+            if group.consensus_centroids is None:
+                continue
+
+            # Build per-tracklet frame-to-centroid lookup.
+            # group.tracklets is typed as generic tuple to preserve the core/ import
+            # boundary; elements are Tracklet2D at runtime (see TrackletGroup docstring).
+            tracklet_frame_maps: list[
+                tuple[object, dict[int, tuple[float, float]]]
+            ] = []
+            for tracklet in group.tracklets:  # type: ignore[union-attr]
+                frame_map: dict[int, tuple[float, float]] = {
+                    f: tracklet.centroids[i]  # type: ignore[union-attr]
+                    for i, f in enumerate(tracklet.frames)  # type: ignore[union-attr]
+                }
+                tracklet_frame_maps.append((tracklet, frame_map))
+
+            for frame_idx, point_3d in group.consensus_centroids:
+                if point_3d is None:
+                    continue
+
+                for tracklet, frame_map in tracklet_frame_maps:
+                    if frame_idx not in frame_map:
+                        continue
+                    u, v = frame_map[frame_idx]
+                    fish_ids_list.append(group.fish_id)
+                    frame_indices_list.append(frame_idx)
+                    points_3d_list.append(point_3d)
+                    camera_ids_list.append(tracklet.camera_id)  # type: ignore[union-attr]
+                    centroids_2d_list.append((u, v))
+
+        n = len(fish_ids_list)
+        fish_ids_arr = np.array(fish_ids_list, dtype=np.int64)
+        frame_indices_arr = np.array(frame_indices_list, dtype=np.int64)
+        points_3d_arr = (
+            np.stack(points_3d_list, axis=0).astype(np.float64)
+            if n > 0
+            else np.empty((0, 3), dtype=np.float64)
+        )
+        camera_ids_arr = np.array(camera_ids_list, dtype=object)
+        centroids_2d_arr = (
+            np.array(centroids_2d_list, dtype=np.float64)
+            if n > 0
+            else np.empty((0, 2), dtype=np.float64)
+        )
+
+        out = Path(output_path).resolve()
+        np.savez_compressed(
+            str(out),
+            fish_ids=fish_ids_arr,
+            frame_indices=frame_indices_arr,
+            points_3d=points_3d_arr,
+            camera_ids=camera_ids_arr,
+            centroids_2d=centroids_2d_arr,
+        )
+        return out

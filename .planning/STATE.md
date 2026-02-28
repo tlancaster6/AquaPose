@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: Backends
-status: ready_to_plan
-last_updated: "2026-02-28T20:30:00.000Z"
+status: in_progress
+last_updated: "2026-02-28T17:51:11Z"
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 29 — Guidebook Audit (ready to plan)
+**Current focus:** Phase 29 — Guidebook Audit (plan 01 complete, plan 02 remaining)
 
 ## Current Position
 
 Phase: 29 of 33 (Guidebook Audit)
-Plan: —
-Status: Ready to plan
-Last activity: 2026-02-28 — Roadmap created for v2.2 Backends (5 phases, 29 requirements)
+Plan: 29-01 complete, 29-02 next
+Status: In progress
+Last activity: 2026-02-28 — Completed 29-01: Audit and Fix Stale Content in GUIDEBOOK.md
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 8% (1/12 plans complete — 1 phase * 2 plans in phase 29)
 
 ## Performance Metrics
 
@@ -40,7 +40,7 @@ Progress: [░░░░░░░░░░] 0%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 29-guidebook-audit | 1 | 2 min | 2 min |
 
 *Updated after each plan completion*
 
@@ -58,6 +58,9 @@ Key decisions entering v2.2 (see PROJECT.md Key Decisions for full log):
 - device at top-level PipelineConfig, propagated through build_stages()
 - training/ must not import engine/ (AST import boundary enforced by pre-commit)
 
+From 29-01 execution:
+- GUIDEBOOK.md Sections 16 (Definition of Done) and 18 (Discretionary Items) deleted — roadmap has per-phase success criteria; guidebook is not the right place for discretionary items
+
 ### Pending Todos
 
 12 pending todos from v2.1 — see .planning/todos/pending/
@@ -70,5 +73,5 @@ Key decisions entering v2.2 (see PROJECT.md Key Decisions for full log):
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Roadmap created — ready to plan Phase 29
+Stopped at: Completed 29-01-PLAN.md (Audit and Fix Stale Content in GUIDEBOOK.md)
 Resume file: None

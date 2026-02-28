@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import sys
 from pathlib import Path
 
 import cv2
@@ -141,6 +142,8 @@ class TrackletTrailObserver:
             return
 
         try:
+            sys.stderr.write("Generating tracklet trail videos...\n")
+            sys.stderr.flush()
             self._generate_trail_videos(context)
         except Exception:
             logger.warning(
@@ -611,14 +614,6 @@ class TrackletTrailObserver:
         camera_ids: list[str] = getattr(context, "camera_ids", None) or list(
             tracks_2d.keys()
         )
-
-        # Inherit stop_frame from pipeline config if not explicitly set
-        if self._stop_frame is None:
-            config = getattr(context, "config", None)
-            detection = getattr(config, "detection", None)
-            sf = getattr(detection, "stop_frame", None)
-            if sf is not None:
-                self._stop_frame = sf
 
         # Build color maps.
         fish_color_map, track_to_fish = self._build_color_map(tracklet_groups)

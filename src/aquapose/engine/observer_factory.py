@@ -99,6 +99,7 @@ def build_observers(
                 output_dir=config.output_dir,
                 video_dir=config.video_dir,
                 calibration_path=config.calibration_path,
+                stop_frame=config.detection.stop_frame,
             )
         )
 
@@ -136,6 +137,7 @@ def build_observers(
                     output_dir=config.output_dir,
                     video_dir=config.video_dir,
                     calibration_path=config.calibration_path,
+                    stop_frame=config.detection.stop_frame,
                 )
             )
 

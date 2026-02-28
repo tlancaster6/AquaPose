@@ -387,6 +387,46 @@ def _build_stage_dict_from_dotted(
 
 
 # ---------------------------------------------------------------------------
+# Field validation helpers
+# ---------------------------------------------------------------------------
+
+#: Maps obsolete/renamed YAML field names to their current equivalents.
+#: Used by _filter_fields() to produce actionable error messages.
+_RENAME_HINTS: dict[str, str] = {
+    "expect_fish_count": "n_animals (top-level)",
+}
+
+
+def _filter_fields(dc_type: type, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Validate and filter kwargs to only fields present on *dc_type*.
+
+    Raises ValueError for unknown fields (strict reject). Fields in
+    _RENAME_HINTS produce a "did you mean X?" message.
+
+    Args:
+        dc_type: Target frozen dataclass type.
+        kwargs: Key-value pairs from YAML/CLI.
+
+    Returns:
+        Filtered dict containing only valid fields.
+
+    Raises:
+        ValueError: If any keys are not valid fields of *dc_type*.
+    """
+    valid = {f.name for f in dataclasses.fields(dc_type)}
+    unknown = [k for k in kwargs if k not in valid]
+    if unknown:
+        msgs = []
+        for k in unknown:
+            if k in _RENAME_HINTS:
+                msgs.append(f"unknown field {k!r} — did you mean {_RENAME_HINTS[k]!r}?")
+            else:
+                msgs.append(f"unknown field {k!r}")
+        raise ValueError(f"{dc_type.__name__}: " + "; ".join(msgs))
+    return {k: v for k, v in kwargs.items() if k in valid}
+
+
+# ---------------------------------------------------------------------------
 # Public factory
 # ---------------------------------------------------------------------------
 
@@ -496,28 +536,27 @@ def load_config(
     if "fish_count" not in syn_kwargs:
         syn_kwargs["fish_count"] = n_animals
 
-    # --- filter kwargs to only include fields present on each dataclass ----
-    # AssociationConfig and TrackingConfig are stripped-down placeholders in
-    # v2.1 Phase 22. Filter out any old YAML/CLI keys that no longer exist as
-    # dataclass fields, so stale config files don't raise TypeError.
-    def _filter_fields(dc_type: type, kwargs: dict[str, Any]) -> dict[str, Any]:
-        valid = {f.name for f in dataclasses.fields(dc_type)}
-        return {k: v for k, v in kwargs.items() if k in valid}
-
     # --- construct & freeze -----------------------------------------------
+    # Apply _filter_fields() to all stage configs and the top-level config.
+    # This provides strict reject: unknown fields raise ValueError, and
+    # known renamed fields produce a "did you mean?" hint.
+    # top_kwargs is filtered before passing to PipelineConfig since run_id
+    # and output_dir have already been popped out above.
     return PipelineConfig(
         run_id=resolved_run_id,
         output_dir=resolved_output_dir,
-        detection=DetectionConfig(**det_kwargs),
-        midline=MidlineConfig(**mid_kwargs),
+        detection=DetectionConfig(**_filter_fields(DetectionConfig, det_kwargs)),
+        midline=MidlineConfig(**_filter_fields(MidlineConfig, mid_kwargs)),
         association=AssociationConfig(
             **_filter_fields(AssociationConfig, assoc_kwargs)
         ),
         tracking=TrackingConfig(**_filter_fields(TrackingConfig, trk_kwargs)),
-        reconstruction=ReconstructionConfig(**rec_kwargs),
-        synthetic=SyntheticConfig(**syn_kwargs),
+        reconstruction=ReconstructionConfig(
+            **_filter_fields(ReconstructionConfig, rec_kwargs)
+        ),
+        synthetic=SyntheticConfig(**_filter_fields(SyntheticConfig, syn_kwargs)),
         lut=LutConfig(**_filter_fields(LutConfig, lut_kwargs)),
-        **top_kwargs,
+        **_filter_fields(PipelineConfig, top_kwargs),
     )
 
 

@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 Phase: 30 of 35 (Config/Contracts) — Plan 30-03 complete
 Plan: 30-03 complete
 Status: In progress
-Last activity: 2026-02-28 — Completed 30-03: CLI Project Scaffold and Path Resolution
+Last activity: 2026-02-28 - Completed quick task 10: Store 3D consensus centroids on TrackletGroup and write centroid correspondences to disk via DiagnosticObserver
 
 Progress: [████░░░░░░] 42% (5/12 plans complete — Phase 29 both plans done, Phase 30 Plans 01-03 done)
 
@@ -92,6 +92,12 @@ From 30-03 execution:
 ### Blockers/Concerns
 
 - OBB angle convention risk: ultralytics outputs radians clockwise in [-pi/4, 3pi/4), OpenCV uses degrees counter-clockwise — crop-orientation smoke test required before any keypoint training
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
+| 10 | Store 3D consensus centroids on TrackletGroup and write centroid correspondences to disk via DiagnosticObserver | 2026-02-28 | 10395eb | Verified | [10-store-3d-consensus-centroids-on-tracklet](./quick/10-store-3d-consensus-centroids-on-tracklet/) |
 
 ## Session Continuity
 

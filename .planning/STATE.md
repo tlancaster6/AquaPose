@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Backends
 status: unknown
-last_updated: "2026-02-28T23:03:44.133Z"
+last_updated: "2026-02-28T23:26:39Z"
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 9
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 31 — Training Infrastructure (in progress, Plans 01-02 complete)
+**Current focus:** Phase 32 — YOLO-OBB Detection Backend (Plan 32-01 complete)
 
 ## Current Position
 
-Phase: 31 of 35 (Training Infrastructure) — Plan 31-02 complete
-Plan: 31-02 complete
+Phase: 32 of 35 (YOLO-OBB Detection Backend) — Plan 32-01 complete
+Plan: 32-01 complete
 Status: In progress
-Last activity: 2026-02-28 - Completed 31-02: YOLO-OBB and pose subcommands, migration cleanup (deleted segmentation/training.py and segmentation/dataset.py)
+Last activity: 2026-02-28 - Completed 32-01: YOLOOBBBackend and affine crop utilities (extract_affine_crop, invert_affine_point/points)
 
-Progress: [█████░░░░░] 53% (7/12 plans complete — Phase 29 both plans done, Phase 30 Plans 01-04 done, Phase 31 Plans 01-02 done)
+Progress: [██████░░░░] 59% (8/12 plans complete — Phase 29 both plans done, Phase 30 Plans 01-04 done, Phase 31 Plans 01-02 done, Phase 32 Plan 01 done)
 
 ## Performance Metrics
 
@@ -44,6 +44,7 @@ Progress: [█████░░░░░] 53% (7/12 plans complete — Phase 29
 | 30-config-and-contracts | 3/4 done | 45 min | 15 min |
 
 | 31-training-infrastructure | 2 | 26 min | 13 min |
+| 32-yolo-obb-detection-backend | 1 | 18 min | 18 min |
 
 *Updated after each plan completion*
 
@@ -95,13 +96,19 @@ From 31-02 execution:
 - segmentation/training.py and segmentation/dataset.py deleted; segmentation/__init__.py cleaned of training re-exports
 - test_training.py migrated to train_unet(data_dir=...) convention; old evaluate() not ported (no equivalent)
 
+From 32-01 execution:
+- crop_size stored as list[int] not tuple[int,int] — Python tuples serialize as !!python/tuple in PyYAML which yaml.safe_load cannot parse
+- OBB angle conversion (negate) happens once in YOLOOBBBackend.detect() — Detection.angle is always standard math CCW radians after that
+- extract_affine_crop() uses cv2.BORDER_CONSTANT=0 for zero-fill letterboxing; crop canvas size is always crop_size regardless of obb_w/obb_h
+- invert_affine_point/invert_affine_points round-trip error < 1px confirmed for 6 angles including 0, pi/4, pi/2, -pi/3, pi/6, -pi
+
 ### Pending Todos
 
 12 pending todos from v2.1 — see .planning/todos/pending/
 
 ### Blockers/Concerns
 
-- OBB angle convention risk: ultralytics outputs radians clockwise in [-pi/4, 3pi/4), OpenCV uses degrees counter-clockwise — crop-orientation smoke test required before any keypoint training
+- OBB angle convention risk RESOLVED: YOLOOBBBackend.detect() negates ultralytics CW angle to standard math CCW — verified by unit test
 
 ### Quick Tasks Completed
 
@@ -112,5 +119,5 @@ From 31-02 execution:
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Completed 31-02-PLAN.md (YOLO-OBB and Pose Training Subcommands)
+Stopped at: Completed 32-01-PLAN.md (YOLO-OBB Backend and Affine Crop Utilities)
 Resume file: None

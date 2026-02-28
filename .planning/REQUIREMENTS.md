@@ -29,9 +29,9 @@ Requirements for v2.2 Backends milestone. Each maps to roadmap phases.
 
 ### Detection
 
-- [ ] **DET-01**: Pipeline supports YOLO-OBB as a configurable detection model selectable via `detector_kind: yolo_obb` in config
-- [ ] **DET-02**: OBB detections produce rotation-aligned affine crops suitable for downstream segmentation and keypoint models
-- [ ] **DET-03**: Affine crop utilities support back-projection from crop coordinates to full-frame pixel coordinates via inverse transform
+- [x] **DET-01**: Pipeline supports YOLO-OBB as a configurable detection model selectable via `detector_kind: yolo_obb` in config
+- [x] **DET-02**: OBB detections produce rotation-aligned affine crops suitable for downstream segmentation and keypoint models
+- [x] **DET-03**: Affine crop utilities support back-projection from crop coordinates to full-frame pixel coordinates via inverse transform
 
 ### Midline
 
@@ -113,9 +113,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TRAIN-02 | Phase 31 | Complete |
 | TRAIN-03 | Phase 31 | Complete |
 | TRAIN-04 | Phase 31 | Complete |
-| DET-01 | Phase 32 | Pending |
-| DET-02 | Phase 32 | Pending |
-| DET-03 | Phase 32 | Pending |
+| DET-01 | Phase 32 | Complete |
+| DET-02 | Phase 32 | Complete |
+| DET-03 | Phase 32 | Complete |
 | VIZ-01 | Phase 32 | Pending |
 | VIZ-02 | Phase 32 | Pending |
 | MID-01 | Phase 33 | Pending |

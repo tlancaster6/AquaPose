@@ -14,7 +14,7 @@ from torch.utils.data import Dataset, Subset
 from aquapose.segmentation.model import _UNet
 
 from .common import EarlyStopping, MetricsLogger, make_loader, save_best_and_last
-from .datasets import stratified_split
+from .datasets import _load_image, stratified_split
 
 # Fixed input size — matches U-Net training pipeline
 _INPUT_SIZE = 128
@@ -158,14 +158,12 @@ class KeypointDataset(Dataset):  # type: ignore[type-arg]
         sz = self._input_size
 
         # Load and resize image
-        img_path = self._image_root / img_info["file_name"]
-        image = cv2.imread(str(img_path))
-        if image is None:
-            h = img_info.get("height", sz)
-            w = img_info.get("width", sz)
-            image = np.zeros((h, w, 3), dtype=np.uint8)
+        image = _load_image(
+            self._image_root / img_info["file_name"],
+            img_info.get("height", sz),
+            img_info.get("width", sz),
+        )
         orig_h, orig_w = image.shape[:2]
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image_resized = cv2.resize(image, (sz, sz), interpolation=cv2.INTER_LINEAR)
 
         image_tensor = torch.from_numpy(image_resized).permute(2, 0, 1).float() / 255.0
@@ -409,7 +407,7 @@ def train_pose(
         logger.log(epoch + 1, train_loss=avg_loss, val_error=val_error)
 
         _, best_error = save_best_and_last(
-            model, output_dir, val_error, best_error, metric_name="val_error_loss"
+            model, output_dir, val_error, best_error, mode="min"
         )
 
         if early_stopper.step(val_error):

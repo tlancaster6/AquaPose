@@ -113,20 +113,24 @@ def save_best_and_last(
     output_dir: Path,
     metric: float,
     best_metric: float,
-    metric_name: str,
+    metric_name: str = "",
+    *,
+    mode: str | None = None,
 ) -> tuple[Path, float]:
     """Save the model checkpoint, updating best if metric improved.
 
     Saves ``last_model.pth`` unconditionally. Saves ``best_model.pth`` when
-    the metric improves. Improvement direction: metrics named "loss" (or
-    containing "loss") are minimized; all others are maximized.
+    the metric improves.
 
     Args:
         model: The PyTorch model to save.
         output_dir: Directory for checkpoints.
         metric: Current epoch metric value.
         best_metric: Best metric seen so far.
-        metric_name: Name of the metric (determines comparison direction).
+        metric_name: Deprecated — use ``mode`` instead.
+        mode: ``"min"`` if lower is better, ``"max"`` if higher is better.
+            Defaults to ``"min"`` when ``metric_name`` contains ``"loss"``
+            or ``"error"``, ``"max"`` otherwise.
 
     Returns:
         Tuple of (best_model_path, updated_best_metric).
@@ -139,7 +143,11 @@ def save_best_and_last(
 
     torch.save(model.state_dict(), last_path)
 
-    minimize = "loss" in metric_name.lower()
+    if mode is None:
+        name_lower = metric_name.lower()
+        minimize = "loss" in name_lower or "error" in name_lower
+    else:
+        minimize = mode == "min"
     improved = metric < best_metric if minimize else metric > best_metric
 
     if improved:

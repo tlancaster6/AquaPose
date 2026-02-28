@@ -129,16 +129,65 @@ def stratified_split(
     return train_indices, val_indices
 
 
-class CropDataset(Dataset):  # type: ignore[type-arg]
-    """Dataset loading COCO-format annotations at native crop resolution.
+def _load_image(path: Path, fallback_h: int = 256, fallback_w: int = 256) -> np.ndarray:
+    """Load an image as RGB, returning a black fallback if the file is missing.
 
-    Each sample is an ``(image_tensor, target_dict)`` tuple compatible
-    with torchvision Mask R-CNN training.
+    Args:
+        path: Path to the image file.
+        fallback_h: Height of fallback image if file cannot be read.
+        fallback_w: Width of fallback image if file cannot be read.
+
+    Returns:
+        RGB uint8 array of shape (H, W, 3).
+    """
+    image = cv2.imread(str(path))
+    if image is None:
+        return np.zeros((fallback_h, fallback_w, 3), dtype=np.uint8)
+    return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+
+def _decode_annotations(
+    anns: list[dict],  # type: ignore[type-arg]
+) -> tuple[list[np.ndarray], list[list[float]]]:
+    """Decode RLE masks and convert COCO bboxes from [x,y,w,h] to [x1,y1,x2,y2].
+
+    Args:
+        anns: List of COCO annotation dicts with ``segmentation`` and ``bbox``.
+
+    Returns:
+        Tuple of (masks, boxes) where masks is a list of uint8 arrays and
+        boxes is a list of [x1, y1, x2, y2] float lists.
+    """
+    masks: list[np.ndarray] = []
+    boxes: list[list[float]] = []
+    for ann in anns:
+        seg = ann["segmentation"]
+        if isinstance(seg, dict) and "counts" in seg:
+            rle = {
+                "size": seg["size"],
+                "counts": (
+                    seg["counts"].encode("utf-8")
+                    if isinstance(seg["counts"], str)
+                    else seg["counts"]
+                ),
+            }
+            mask = mask_util.decode(rle).astype(np.uint8)  # pyright: ignore[reportArgumentType]
+            masks.append(mask)
+        bx, by, bw, bh = ann["bbox"]
+        boxes.append([bx, by, bx + bw, by + bh])
+    return masks, boxes
+
+
+class _CocoDataset(Dataset):  # type: ignore[type-arg]
+    """Base class for COCO-format datasets.
+
+    Handles JSON loading, image/annotation indexing, and the ``_HasImages``
+    protocol (exposing ``_images`` for ``stratified_split``).
 
     Args:
         coco_json: Path to COCO-format annotation JSON file.
         image_root: Root directory containing the source images.
-        augment: Whether to apply data augmentation (flips, rotation, jitter).
+        augment: Whether to apply data augmentation.
     """
 
     def __init__(
@@ -156,7 +205,6 @@ class CropDataset(Dataset):  # type: ignore[type-arg]
         self._images: list[dict] = coco["images"]  # type: ignore[assignment]
         self._categories: list[dict] = coco.get("categories", [])  # type: ignore[assignment]
 
-        # Build annotation index: image_id -> list of annotation dicts
         self._ann_index: dict[int, list[dict]] = {}  # type: ignore[assignment]
         for ann in coco["annotations"]:
             img_id = ann["image_id"]
@@ -165,6 +213,19 @@ class CropDataset(Dataset):  # type: ignore[type-arg]
     def __len__(self) -> int:
         """Return the number of images in the dataset."""
         return len(self._images)
+
+
+class CropDataset(_CocoDataset):
+    """Dataset loading COCO-format annotations at native crop resolution.
+
+    Each sample is an ``(image_tensor, target_dict)`` tuple compatible
+    with torchvision Mask R-CNN training.
+
+    Args:
+        coco_json: Path to COCO-format annotation JSON file.
+        image_root: Root directory containing the source images.
+        augment: Whether to apply data augmentation (flips, rotation, jitter).
+    """
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Load image and annotations at native resolution, optionally augment.
@@ -180,43 +241,19 @@ class CropDataset(Dataset):  # type: ignore[type-arg]
         img_info = self._images[idx]
         img_id = img_info["id"]
 
-        # Load image at native resolution
-        img_path = self._image_root / img_info["file_name"]
-        image = cv2.imread(str(img_path))
-        if image is None:
-            h = img_info.get("height", 256)
-            w = img_info.get("width", 256)
-            image = np.zeros((h, w, 3), dtype=np.uint8)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = _load_image(
+            self._image_root / img_info["file_name"],
+            img_info.get("height", 256),
+            img_info.get("width", 256),
+        )
         img_h, img_w = image.shape[:2]
 
-        # Get annotations for this image
         anns = self._ann_index.get(img_id, [])
+        masks, boxes = _decode_annotations(anns)
 
-        # Decode masks and bboxes
-        masks: list[np.ndarray] = []
-        boxes: list[list[float]] = []
-        for ann in anns:
-            seg = ann["segmentation"]
-            if isinstance(seg, dict) and "counts" in seg:
-                rle = {
-                    "size": seg["size"],
-                    "counts": (
-                        seg["counts"].encode("utf-8")
-                        if isinstance(seg["counts"], str)
-                        else seg["counts"]
-                    ),
-                }
-                mask = mask_util.decode(rle).astype(np.uint8)  # pyright: ignore[reportArgumentType]
-                masks.append(mask)
-            bx, by, bw, bh = ann["bbox"]
-            boxes.append([bx, by, bx + bw, by + bh])
-
-        # Apply augmentation
         if self._augment and masks:
             image, masks, boxes = apply_augmentation(image, masks, boxes)
 
-        # Convert to tensors
         image_tensor = torch.from_numpy(image).permute(2, 0, 1).float() / 255.0
 
         if boxes:
@@ -237,7 +274,7 @@ class CropDataset(Dataset):  # type: ignore[type-arg]
         return image_tensor, target
 
 
-class BinaryMaskDataset(Dataset):  # type: ignore[type-arg]
+class BinaryMaskDataset(_CocoDataset):
     """Dataset for U-Net binary segmentation on fish crops.
 
     Returns ``(image, mask)`` tensors resized to 128x128. All per-instance
@@ -249,31 +286,6 @@ class BinaryMaskDataset(Dataset):  # type: ignore[type-arg]
         image_root: Root directory containing the source images.
         augment: Whether to apply data augmentation (flips, rotation, jitter).
     """
-
-    def __init__(
-        self,
-        coco_json: Path,
-        image_root: Path,
-        augment: bool = False,
-    ) -> None:
-        self._image_root = Path(image_root)
-        self._augment = augment
-
-        with open(coco_json) as f:
-            coco = json.load(f)
-
-        self._images: list[dict] = coco["images"]  # type: ignore[assignment]
-        self._categories: list[dict] = coco.get("categories", [])  # type: ignore[assignment]
-
-        # Build annotation index: image_id -> list of annotation dicts
-        self._ann_index: dict[int, list[dict]] = {}  # type: ignore[assignment]
-        for ann in coco["annotations"]:
-            img_id = ann["image_id"]
-            self._ann_index.setdefault(img_id, []).append(ann)
-
-    def __len__(self) -> int:
-        """Return the number of images in the dataset."""
-        return len(self._images)
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         """Load image and merged binary mask, resize to 128x128.
@@ -290,41 +302,19 @@ class BinaryMaskDataset(Dataset):  # type: ignore[type-arg]
         img_id = img_info["id"]
         sz = UNET_INPUT_SIZE
 
-        # Load image
-        img_path = self._image_root / img_info["file_name"]
-        image = cv2.imread(str(img_path))
-        if image is None:
-            h = img_info.get("height", 256)
-            w = img_info.get("width", 256)
-            image = np.zeros((h, w, 3), dtype=np.uint8)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = _load_image(
+            self._image_root / img_info["file_name"],
+            img_info.get("height", 256),
+            img_info.get("width", 256),
+        )
 
-        # Get annotations and decode masks
         anns = self._ann_index.get(img_id, [])
-        masks: list[np.ndarray] = []
-        boxes: list[list[float]] = []
-        for ann in anns:
-            seg = ann["segmentation"]
-            if isinstance(seg, dict) and "counts" in seg:
-                rle = {
-                    "size": seg["size"],
-                    "counts": (
-                        seg["counts"].encode("utf-8")
-                        if isinstance(seg["counts"], str)
-                        else seg["counts"]
-                    ),
-                }
-                mask = mask_util.decode(rle).astype(np.uint8)  # pyright: ignore[reportArgumentType]
-                masks.append(mask)
-            bx, by, bw, bh = ann["bbox"]
-            boxes.append([bx, by, bx + bw, by + bh])
+        masks, boxes = _decode_annotations(anns)
 
-        # Apply augmentation at native resolution before resize
         if self._augment and masks:
             image, masks, boxes = apply_augmentation(image, masks, boxes)
 
         # Merge all instance masks into a single binary mask
-        # Use current image dims (may differ from original after rotation)
         cur_h, cur_w = image.shape[:2]
         if masks:
             merged = np.zeros((cur_h, cur_w), dtype=np.uint8)
@@ -333,11 +323,9 @@ class BinaryMaskDataset(Dataset):  # type: ignore[type-arg]
         else:
             merged = np.zeros((cur_h, cur_w), dtype=np.uint8)
 
-        # Resize to fixed size
         image_resized = cv2.resize(image, (sz, sz), interpolation=cv2.INTER_LINEAR)
         mask_resized = cv2.resize(merged, (sz, sz), interpolation=cv2.INTER_NEAREST)
 
-        # Convert to tensors
         image_tensor = torch.from_numpy(image_resized).permute(2, 0, 1).float() / 255.0
         mask_tensor = torch.from_numpy(mask_resized).unsqueeze(0).float()
 

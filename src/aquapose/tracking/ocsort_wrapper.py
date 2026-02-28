@@ -153,6 +153,11 @@ class OcSortTracker:
         Returns:
             boxmot OcSort tracker instance.
         """
+        # Suppress boxmot's per-instance SUCCESS log spam (boxmot uses loguru).
+        from loguru import logger as loguru_logger
+
+        loguru_logger.disable("boxmot")
+
         from boxmot import OcSort
 
         return OcSort(

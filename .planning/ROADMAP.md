@@ -70,7 +70,7 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
 **Milestone Goal:** Add swappable detection and midline backends (YOLO-OBB, keypoint regression), build training infrastructure, and clean up the config system and guidebook.
 
 - [x] **Phase 29: Guidebook Audit** — Audit and update GUIDEBOOK.md for v2.1 accuracy and v2.2 planned features (complete 2026-02-28)
-- [x] **Phase 30: Config and Contracts** — Unify pipeline config, propagate device, extend Detection and Midline2D dataclasses (Plans 01-02 complete) (completed 2026-02-28)
+- [x] **Phase 30: Config and Contracts** — Unify pipeline config, propagate device, extend Detection and Midline2D dataclasses (3/3 plans complete) (completed 2026-02-28)
 - [ ] **Phase 31: Training Infrastructure** — Build `aquapose train` CLI group and `src/aquapose/training/` package (early: start training while building integration)
 - [ ] **Phase 32: YOLO-OBB Detection Backend** — Add OBB detector, affine crop utilities, and OBB overlay visualization
 - [ ] **Phase 33: Keypoint Midline Backend** — Implement DirectPoseBackend pipeline integration and confidence-weighted reconstruction
@@ -83,9 +83,12 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
 **Depends on**: Nothing (documentation work, no code dependencies)
 **Requirements**: DOCS-01, DOCS-02
 **Plans**: 2/2 complete
+Plans:
+- [x] 29-01-PLAN.md — Audit and update GUIDEBOOK.md for v2.1 accuracy
+- [x] 29-02-PLAN.md — Add v2.2 planned feature inline tags
 **Summaries**: 29-01-SUMMARY.md, 29-02-SUMMARY.md
 
-### Phase 30: Config and Contracts
+### Phase 30: Config and Contracts — COMPLETE (2026-02-28)
 **Goal**: Pipeline config is unified and backward-compatible, device propagates to all stages from one top-level parameter, and Detection/Midline2D dataclasses carry the optional fields that v2.2 backends require
 **Depends on**: Phase 29
 **Requirements**: CFG-01, CFG-02, CFG-03, CFG-04, CFG-05, CFG-06, CFG-07, CFG-08, CFG-09, CFG-10, CFG-11, CFG-12
@@ -95,8 +98,12 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
   3. Existing v2.1 YAML config files load without error after config schema changes (backward compatibility via universal `_filter_fields()`)
   4. `aquapose init-config <name>` creates a ready-to-use project directory with correctly ordered YAML fields and optional `--synthetic` flag for synthetic config section
   5. `Detection` and `Midline2D` dataclasses carry their new optional fields (`angle`, `obb_points`, `point_confidence`) and all existing code paths treat absent fields as `None` without modification
-**Plans**: 1/TBD (30-01-SUMMARY.md complete)
-**Summaries**: 30-01-SUMMARY.md
+**Plans**: 3/3 complete
+Plans:
+- [x] 30-01-PLAN.md — Dataclass extensions and strict config validation
+- [x] 30-02-PLAN.md — Config field promotion and propagation
+- [x] 30-03-PLAN.md — init-config rewrite and path resolution
+**Summaries**: 30-01-SUMMARY.md, 30-02-SUMMARY.md, 30-03-SUMMARY.md
 
 ### Phase 31: Training Infrastructure
 **Goal**: All model training is accessible through a single `aquapose train` CLI group with consistent conventions, replacing disconnected scripts — built early so model training can begin while pipeline integration proceeds
@@ -121,10 +128,7 @@ Plans:
   2. Affine crops extracted from OBB detections show fish bodies axis-aligned within the crop (orientation smoke test passes for known-angle detections)
   3. A point in crop coordinates can be back-projected to full-frame pixel coordinates via the inverse transform, with round-trip error under 1 pixel
   4. Diagnostic mode renders OBB polygon overlays on detection frames and bounding box overlays (both axis-aligned and OBB) on tracklet trail frames
-**Plans**: 2 plans
-Plans:
-- [ ] 31-01-PLAN.md — Training package scaffold, shared utilities, datasets, U-Net subcommand
-- [ ] 31-02-PLAN.md — YOLO-OBB and pose subcommands, migration cleanup
+**Plans**: TBD
 
 ### Phase 33: Keypoint Midline Backend
 **Goal**: Pipeline supports a keypoint regression backend that produces N ordered midline points with per-point confidence, and both reconstruction backends weight observations by that confidence
@@ -136,10 +140,7 @@ Plans:
   3. Both midline backends produce `Midline2D` instances with the same shape and field structure — the reconstruction stages require no backend-specific branching
   4. Triangulation backend uses per-point confidence as weights when confidence is present; reconstruction produces identical output to the previous version when confidence is `None`
   5. Curve optimizer backend uses per-point confidence as weights when confidence is present; reconstruction produces identical output to the previous version when confidence is `None`
-**Plans**: 2 plans
-Plans:
-- [ ] 31-01-PLAN.md — Training package scaffold, shared utilities, datasets, U-Net subcommand
-- [ ] 31-02-PLAN.md — YOLO-OBB and pose subcommands, migration cleanup
+**Plans**: TBD
 
 ### Phase 34: Stabilization
 **Goal**: All v2.2 features work correctly on real data with tuned parameters — milestone goals are complete in practice, not just in theory
@@ -152,10 +153,7 @@ Plans:
   4. Basic parameter tuning is complete (confidence thresholds, NMS parameters, keypoint model quality validation)
   5. Pending todos accumulated during v2.2 are triaged (resolved, deferred, or converted to future requirements)
 **Notes**: This is an interactive process between agent and user. The first step is drafting a custom QA skill/agent that can be reused in future milestones.
-**Plans**: 2 plans
-Plans:
-- [ ] 31-01-PLAN.md — Training package scaffold, shared utilities, datasets, U-Net subcommand
-- [ ] 31-02-PLAN.md — YOLO-OBB and pose subcommands, migration cleanup
+**Plans**: TBD
 
 ## Progress
 
@@ -164,8 +162,8 @@ Plans:
 | 1-9 | v1.0 | 28/28 | Complete | 2026-02-25 |
 | 13-21 | v2.0 | 34/34 | Complete | 2026-02-27 |
 | 22-28 | v2.1 | 12/12 | Complete | 2026-02-28 |
-| 29. Guidebook Audit | v2.2 | Complete    | 2026-02-28 | 2026-02-28 |
-| 30. Config and Contracts | 3/3 | Complete    | 2026-02-28 | - |
+| 29. Guidebook Audit | v2.2 | 2/2 | Complete | 2026-02-28 |
+| 30. Config and Contracts | v2.2 | 3/3 | Complete | 2026-02-28 |
 | 31. Training Infrastructure | v2.2 | 0/2 | Not started | - |
 | 32. YOLO-OBB Detection Backend | v2.2 | 0/TBD | Not started | - |
 | 33. Keypoint Midline Backend | v2.2 | 0/TBD | Not started | - |

@@ -2,6 +2,277 @@
 
 <!-- version list -->
 
+## v1.1.0-dev.3 (2026-02-28)
+
+### Bug Fixes
+
+- Adaptive t_saturate for short runs and increase midline detection tolerance
+  ([`2e825c8`](https://github.com/tlancaster6/AquaPose/commit/2e825c8875c128916cafef413321eabd0e7c1aca))
+
+- Auto-generate LUTs on cache miss, fix Midline2D reconstruction
+  ([`b413b51`](https://github.com/tlancaster6/AquaPose/commit/b413b5115d82ca391060f5c3f91d8c749a78582f))
+
+- Make reconstruction and visualization honor configurable n_control_points
+  ([`a9d61ca`](https://github.com/tlancaster6/AquaPose/commit/a9d61ca8d26b24eb11d4adaec7cd0f836b71ec9a))
+
+- Pass stop_frame to TrackletTrailObserver via observer_factory
+  ([`5923879`](https://github.com/tlancaster6/AquaPose/commit/59238795b777899c645ea231dad042c67076a368))
+
+- Stabilize 3D animation axes and remove DiagnosticObserver from CLI modes
+  ([`ab1cdd9`](https://github.com/tlancaster6/AquaPose/commit/ab1cdd9551818a9d07cf40676ecb9cf8b69de401))
+
+- Suppress boxmot loguru spam in OcSortTracker._create_tracker
+  ([`02f422a`](https://github.com/tlancaster6/AquaPose/commit/02f422a125d8fd1f226c8ef34a347111c875d23a))
+
+- TrackletTrailObserver respects stop_frame parameter
+  ([`272e221`](https://github.com/tlancaster6/AquaPose/commit/272e22161103c1618d52ab791d6e1c63eed02f77))
+
+- Update stale docstring and requirements checkboxes for v2.1 completion
+  ([`2de236b`](https://github.com/tlancaster6/AquaPose/commit/2de236b96a5bddd58122955d11f7a82a1a39635a))
+
+- Update stale test mocks for spline knots/degree and warning message
+  ([`4609295`](https://github.com/tlancaster6/AquaPose/commit/4609295ba424497abbe48ee2ca67a523c8cd4be6))
+
+- Use white for midline head arrowhead to distinguish from body
+  ([`7199dea`](https://github.com/tlancaster6/AquaPose/commit/7199deabe79c5ce377ad329911d20253e2c29a12))
+
+- **26**: Revise plans based on checker feedback
+  ([`12b7c47`](https://github.com/tlancaster6/AquaPose/commit/12b7c47aae68fe5ca4b4f79b31669a1919892bf6))
+
+- **28**: Skip golden tests referencing deleted v1.0 modules
+  ([`4396f71`](https://github.com/tlancaster6/AquaPose/commit/4396f71ce86c7697fede1a51ed68b8d278b6d6a0))
+
+- **e2e**: Remove invalid device kwarg from MidlineConfig, skip spline test without LUTs
+  ([`0b6a5fa`](https://github.com/tlancaster6/AquaPose/commit/0b6a5faa33066f663f1fe130596bad2f761f2032))
+
+### Chores
+
+- Complete v2.1 Identity milestone
+  ([`a38512d`](https://github.com/tlancaster6/AquaPose/commit/a38512db354d516d8a93e3b7dd1bbd621ed5d2ad))
+
+- Remove 10 stale inbox documents superseded by GUIDEBOOK and shipped code
+  ([`ce84dc8`](https://github.com/tlancaster6/AquaPose/commit/ce84dc862bf28ac6af5b0d8b57c503c53ddb9a52))
+
+### Documentation
+
+- Capture todo - Add per-stage diagnostic visualizations
+  ([`72af988`](https://github.com/tlancaster6/AquaPose/commit/72af988966493f789c8c0bdbd70614ed905b637c))
+
+- Capture todo - Add project_dir base path to pipeline config
+  ([`95fa900`](https://github.com/tlancaster6/AquaPose/commit/95fa9003a99d844fba9292124daa272ac80965a3))
+
+- Capture todo - Audit and update GUIDEBOOK.md
+  ([`52a2044`](https://github.com/tlancaster6/AquaPose/commit/52a2044a9cc83778492ad4ed4e634f6ad24af941))
+
+- Capture todo - Clean up and reorganize pipeline config schema
+  ([`f3e3480`](https://github.com/tlancaster6/AquaPose/commit/f3e3480b7495587afb4f67587afb303cc3ba6092))
+
+- Capture todo - Improve midline orientation logic for segment-then-extract backend
+  ([`4944b10`](https://github.com/tlancaster6/AquaPose/commit/4944b107ae7bb3173aaae6ec97985aa2710ee1e7))
+
+- Capture todo - Regenerate golden regression test data for v2.1
+  ([`1aec990`](https://github.com/tlancaster6/AquaPose/commit/1aec99072094560a79ca547d864b16c69aa85e96))
+
+- Close todo - Windowed velocity smoothing (superseded by OC-SORT)
+  ([`064f6b5`](https://github.com/tlancaster6/AquaPose/commit/064f6b54e5bdebb1197ee292e39c0e7200b92380))
+
+- Create milestone v2.1 roadmap (6 phases)
+  ([`39d4949`](https://github.com/tlancaster6/AquaPose/commit/39d4949baa4c6b92bca6dad04702c5adb75a28b9))
+
+- Define milestone v2.1 requirements
+  ([`c30150b`](https://github.com/tlancaster6/AquaPose/commit/c30150b4cd955ddc3c3cb434a98d95b49af4698c))
+
+- Refine v2.1 prospective, add association design spec, update guidebook
+  ([`1812095`](https://github.com/tlancaster6/AquaPose/commit/18120954bef7ee6a03a6e1d613295eedd7c8b104))
+
+- Start milestone v2.1 Identity
+  ([`b4c488e`](https://github.com/tlancaster6/AquaPose/commit/b4c488edd6861590d88678ab7999366ca9239a5b))
+
+- Update Phase 22 plans with CarryForward and test_writer.py additions
+  ([`3c26ff1`](https://github.com/tlancaster6/AquaPose/commit/3c26ff145ef50ded24e044675580cc043c36f2a5))
+
+- V2.1 milestone audit — all requirements satisfied, tech debt only
+  ([`00675df`](https://github.com/tlancaster6/AquaPose/commit/00675dfe44c4a54090a47e474885de62b20c2ef4))
+
+- **22**: Capture phase context
+  ([`ec247c2`](https://github.com/tlancaster6/AquaPose/commit/ec247c230c642af20f73ddc3c4b71a74498af1e2))
+
+- **22**: Create phase plan for pipeline scaffolding
+  ([`31e8afb`](https://github.com/tlancaster6/AquaPose/commit/31e8afbedd12cdb7cb0cdbc40666247896ff81b4))
+
+- **22-01**: Complete domain types and legacy deletion plan
+  ([`25c6d7b`](https://github.com/tlancaster6/AquaPose/commit/25c6d7bea4b885cf51831504f03d26a1adc0d55a))
+
+- **22-02**: Complete stub stages and pipeline rewire plan
+  ([`057f042`](https://github.com/tlancaster6/AquaPose/commit/057f0427d566f20f4d7e00fa40fbd9256d10d8de))
+
+- **23**: Capture phase context
+  ([`1d706db`](https://github.com/tlancaster6/AquaPose/commit/1d706dbac4770daeeb37448c007142104079cb1e))
+
+- **23-01**: Complete forward LUT plan - SUMMARY.md, STATE.md, ROADMAP.md
+  ([`18d674d`](https://github.com/tlancaster6/AquaPose/commit/18d674deb1d63d4fccff8d76b4459a0570c8b119))
+
+- **23-02**: Complete InverseLUT plan - SUMMARY.md, STATE.md, ROADMAP.md
+  ([`1b286ff`](https://github.com/tlancaster6/AquaPose/commit/1b286ff00ea3fb67abc6bfedbf9a9b2e4475c14b))
+
+- **24**: Capture phase context
+  ([`f057d22`](https://github.com/tlancaster6/AquaPose/commit/f057d22d0d7e2ef7753febb7dc26eec17fc764e3))
+
+- **24**: Create phase plan for per-camera 2D tracking
+  ([`bc4b724`](https://github.com/tlancaster6/AquaPose/commit/bc4b7244b0b4792e6e5d86a83de3761c15df5a0b))
+
+- **24-01**: Complete per-camera 2D tracking plan — SUMMARY.md, STATE.md, ROADMAP.md
+  ([`58391a1`](https://github.com/tlancaster6/AquaPose/commit/58391a16349b491b0fa8a7388b44564b903ad359))
+
+- **25**: Add phase verification
+  ([`11b24cd`](https://github.com/tlancaster6/AquaPose/commit/11b24cd40c690366ddbda07be78249642c12b116))
+
+- **25**: Capture phase context
+  ([`2ff2fc3`](https://github.com/tlancaster6/AquaPose/commit/2ff2fc32a3d10189684e2cd953270e64375c07d0))
+
+- **25**: Capture phase context
+  ([`99d8057`](https://github.com/tlancaster6/AquaPose/commit/99d80572d3bef6e79324d62a40f9dd41221842fb))
+
+- **25**: Create phase plans for association scoring and clustering
+  ([`495ce1b`](https://github.com/tlancaster6/AquaPose/commit/495ce1b79470e4ea71fb1731621c6281b499ab68))
+
+- **25-01**: Complete pairwise scoring plan — SUMMARY.md, ROADMAP.md
+  ([`6c500c7`](https://github.com/tlancaster6/AquaPose/commit/6c500c7eb228e56d8bce52fc2f7f97a95e14961c))
+
+- **26**: Add phase verification
+  ([`2d27723`](https://github.com/tlancaster6/AquaPose/commit/2d2772374661691aef0337388146f4bc1849c84d))
+
+- **26**: Capture phase context
+  ([`fbe4587`](https://github.com/tlancaster6/AquaPose/commit/fbe45873a26064077d3d708a3b4dbb2b10d96d4c))
+
+- **26-01**: Complete cluster refinement plan -- SUMMARY.md, ROADMAP.md
+  ([`7f659fe`](https://github.com/tlancaster6/AquaPose/commit/7f659fe117f66b722d816c594a3cdf60d3a3fa4d))
+
+- **26-02**: Complete midline orientation plan -- SUMMARY.md, ROADMAP.md
+  ([`8eb04fe`](https://github.com/tlancaster6/AquaPose/commit/8eb04fefbc5d5047d3f60950c69a1f7d1c833bb4))
+
+- **26-03**: Add summary, mark phase 26 complete in ROADMAP
+  ([`64bcd74`](https://github.com/tlancaster6/AquaPose/commit/64bcd74ebe1ced61d38a81828a44b96e061e64d5))
+
+- **27**: Add phase verification, mark phase 27 complete
+  ([`734cb6e`](https://github.com/tlancaster6/AquaPose/commit/734cb6ed3b97d0cb51ec706ee2becd0f7e60598d))
+
+- **27**: Capture phase context
+  ([`74f3c27`](https://github.com/tlancaster6/AquaPose/commit/74f3c27d809b470f27405f65f3f8ddc368b777ba))
+
+- **27**: Create phase plan
+  ([`ec3cd4e`](https://github.com/tlancaster6/AquaPose/commit/ec3cd4e0f72024449a8b10f2d4be7cdc6696142b))
+
+- **27-01**: Complete TrackletTrailObserver plan -- SUMMARY.md, STATE.md, ROADMAP.md
+  ([`fac098d`](https://github.com/tlancaster6/AquaPose/commit/fac098d6450d838c3f61191a4ccce253d396c0e0))
+
+- **28**: Add synthetic data approach to context
+  ([`503352c`](https://github.com/tlancaster6/AquaPose/commit/503352c74c55bcb914467fd9861ffa15c398a4ef))
+
+- **28**: Capture phase context
+  ([`4a9eb4f`](https://github.com/tlancaster6/AquaPose/commit/4a9eb4fc03cf96223a7838cdb24ab44842438c30))
+
+- **28**: Create phase plan for e2e testing
+  ([`1354cb5`](https://github.com/tlancaster6/AquaPose/commit/1354cb514b9d3f1c57a1611e52a4b4fff2b24a91))
+
+- **28-01**: Complete e2e test plan -- checkpoint at human-verify task
+  ([`0e7c632`](https://github.com/tlancaster6/AquaPose/commit/0e7c632864379bf5ac174f856b6ed07fa4f72758))
+
+- **phase-22**: Complete phase execution and verification
+  ([`0d151f7`](https://github.com/tlancaster6/AquaPose/commit/0d151f7af58b353f1698f8940dfb22e5b10ffade))
+
+- **phase-23**: Complete phase execution and verification
+  ([`8a41673`](https://github.com/tlancaster6/AquaPose/commit/8a4167364c120deb191dc7a0dd1d8ebebdce3b31))
+
+- **phase-24**: Complete phase execution
+  ([`9016bbe`](https://github.com/tlancaster6/AquaPose/commit/9016bbebc4fa96bcfdf8abd00710c63320644c94))
+
+- **state**: Record phase 28 context session
+  ([`1dcc50e`](https://github.com/tlancaster6/AquaPose/commit/1dcc50ea745746d61fba794b386c458bad497821))
+
+### Features
+
+- Add --stop-after CLI option for partial pipeline runs
+  ([`820fd6f`](https://github.com/tlancaster6/AquaPose/commit/820fd6ff15267e4fd780e56d30d83d257e9b704d))
+
+- Add top-level n_animals config field with propagation to sub-configs
+  ([`40c62df`](https://github.com/tlancaster6/AquaPose/commit/40c62df198992f33832dd8a8c1a887ff91ad2b76))
+
+- Draw head-direction arrowhead on midline overlays
+  ([`7481f0c`](https://github.com/tlancaster6/AquaPose/commit/7481f0c1450288b01794b396143112c4c6571cb0))
+
+- **22-01**: Define Tracklet2D, TrackletGroup, CarryForward domain types
+  ([`3a014fa`](https://github.com/tlancaster6/AquaPose/commit/3a014fa19b15f61fc8dc32db9be39fac6872edcf))
+
+- **22-01**: Delete legacy tracking/association code and update consumers
+  ([`634efc7`](https://github.com/tlancaster6/AquaPose/commit/634efc706c98006be5bdf9172f2d9db77b3e2ca5))
+
+- **22-02**: Adapt all affected tests to new 5-stage pipeline structure
+  ([`5475a0a`](https://github.com/tlancaster6/AquaPose/commit/5475a0a53c1e32ae6a4c4c713a185d200473c461))
+
+- **22-02**: Add TrackingStubStage/AssociationStubStage, rewire build_stages() to 5-stage order
+  ([`6b7a2c2`](https://github.com/tlancaster6/AquaPose/commit/6b7a2c2426a1819358d3472e60932b26afd6ef66))
+
+- **23-01**: Add ForwardLUT class, generate_forward_luts(), LutConfig
+  ([`afde176`](https://github.com/tlancaster6/AquaPose/commit/afde1762b7b7a9fb0bff4b0cb4c11c2fb1f0a88b))
+
+- **23-02**: Implement InverseLUT with voxel grid, overlap graph, ghost-point lookup
+  ([`1079dca`](https://github.com/tlancaster6/AquaPose/commit/1079dcacfd524639c241c1c14f180e23c2ef0ac1))
+
+- **24-01**: Add boxmot dependency and OcSortTracker wrapper
+  ([`04b36cf`](https://github.com/tlancaster6/AquaPose/commit/04b36cf16aaedbcee92c0ac0c07de7bdf16eacc0))
+
+- **24-01**: Implement TrackingStage, expand TrackingConfig, rewire pipeline
+  ([`e303255`](https://github.com/tlancaster6/AquaPose/commit/e303255cd774dbe11a7384d91f38e793a89cc1a3))
+
+- **25-01**: Implement pairwise cross-camera tracklet affinity scoring
+  ([`670ab3b`](https://github.com/tlancaster6/AquaPose/commit/670ab3b8a61584ca6ff921d30b3788b151eb2568))
+
+- **25-02**: Implement Leiden clustering, fragment merging, and AssociationStage
+  ([`d9cbab7`](https://github.com/tlancaster6/AquaPose/commit/d9cbab707dabf37da9084374b16685784c82b57a))
+
+- **26-01**: Add refinement config fields and per_frame_confidence to TrackletGroup
+  ([`b3285da`](https://github.com/tlancaster6/AquaPose/commit/b3285da226a6fc1803ed583b7b32bde642e28075))
+
+- **26-01**: Implement refine_clusters() with eviction and wire into AssociationStage
+  ([`cd783de`](https://github.com/tlancaster6/AquaPose/commit/cd783deb2bdd8580bae6377662a2b3bad24df3eb))
+
+- **26-02**: Implement head-tail orientation resolver with 3-signal combination
+  ([`dd4f553`](https://github.com/tlancaster6/AquaPose/commit/dd4f553b45126269204cf7cbdebbbbee391a061e))
+
+- **26-02**: Update MidlineStage for tracklet-group filtering and orientation resolution
+  ([`8546017`](https://github.com/tlancaster6/AquaPose/commit/85460173744f04a8bdee2619fdf10ff00bc7de34))
+
+- **26-03**: Rewrite ReconstructionStage for tracklet-group camera membership and fish-first HDF5
+  ([`fda7fae`](https://github.com/tlancaster6/AquaPose/commit/fda7fae15d06eab07270c90e9163357c0df8311d))
+
+- **27-01**: Implement TrackletTrailObserver with per-camera trails and association mosaic
+  ([`8354744`](https://github.com/tlancaster6/AquaPose/commit/83547448dd736653602e4b812c947dff670b2d70))
+
+- **27-01**: Wire TrackletTrailObserver into factory, exports, and unit tests
+  ([`b00d7ac`](https://github.com/tlancaster6/AquaPose/commit/b00d7ac77abd5a4686c2cda1c343253e127a0cd3))
+
+- **28-01**: Rewrite e2e tests and fix synthetic fish placement
+  ([`b7adf90`](https://github.com/tlancaster6/AquaPose/commit/b7adf90d69b3f2652fceded5e752f31983f9517f))
+
+### Refactoring
+
+- **e2e**: Remove persistent output, use tmp_path for all artifacts
+  ([`64a7f78`](https://github.com/tlancaster6/AquaPose/commit/64a7f782b805d96fa3c54eea6a3589a96404787c))
+
+- **e2e**: Resolve test data from ~/aquapose/testing/
+  ([`182b0ae`](https://github.com/tlancaster6/AquaPose/commit/182b0aeb342dc9939fb8b81c44597972ca307f86))
+
+### Testing
+
+- **23-01**: Add unit tests for ForwardLUT generation, interpolation, serialization
+  ([`ffa9b95`](https://github.com/tlancaster6/AquaPose/commit/ffa9b958b85e6f9346dc624db4d302d59d78cda4))
+
+- **23-02**: Add 8 InverseLUT unit tests covering voxel grid, visibility, overlap graph,
+  serialization
+  ([`d37bf80`](https://github.com/tlancaster6/AquaPose/commit/d37bf808687849c5fd559832e6c57ee00ab105bc))
+
+
 ## v1.1.0-dev.2 (2026-02-27)
 
 ### Bug Fixes

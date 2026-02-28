@@ -136,6 +136,7 @@ def refine_clusters(
                     tracklets=(t,),
                     confidence=0.1,
                     per_frame_confidence=None,
+                    consensus_centroids=None,
                 )
             )
 
@@ -168,6 +169,9 @@ def refine_clusters(
                 tracklets=tuple(kept_tracklets),
                 confidence=mean_conf,
                 per_frame_confidence=tuple(per_frame_conf),
+                consensus_centroids=tuple(
+                    (f, cleaned_consensus.get(f)) for f in frame_list
+                ),
             )
         )
 
@@ -179,6 +183,7 @@ def refine_clusters(
             tracklets=singleton.tracklets,
             confidence=singleton.confidence,
             per_frame_confidence=singleton.per_frame_confidence,
+            consensus_centroids=singleton.consensus_centroids,
         )
 
     refined.extend(evicted_singletons)

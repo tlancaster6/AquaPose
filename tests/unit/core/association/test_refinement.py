@@ -376,3 +376,91 @@ class TestMultipleGroups:
         assert result[0].per_frame_confidence is not None
         assert result[1].fish_id == 1
         assert result[1] is group_b
+
+
+class TestConsensusCentroids:
+    """Test consensus_centroids field on TrackletGroup after refinement."""
+
+    def test_consensus_centroids_populated_after_refinement(self) -> None:
+        """Refined group has non-None consensus_centroids tuple of (frame, point) pairs."""
+        frames = (0, 1, 2)
+        group = TrackletGroup(
+            fish_id=0,
+            tracklets=(
+                _make_tracklet("cam_a", 0, frames),
+                _make_tracklet("cam_b", 1, frames),
+                _make_tracklet("cam_c", 2, frames),
+            ),
+        )
+        luts = _converging_luts()
+        config = MockRefinementConfig()
+        result = refine_clusters([group], luts, config)
+
+        refined = result[0]
+        assert refined.consensus_centroids is not None
+        assert isinstance(refined.consensus_centroids, tuple)
+        # One entry per frame in the union
+        assert len(refined.consensus_centroids) == len(frames)
+        for frame_idx, point_3d in refined.consensus_centroids:
+            assert isinstance(frame_idx, int)
+            assert frame_idx in frames
+            # With 3 converging cameras, we expect valid 3D points for all frames
+            if point_3d is not None:
+                assert isinstance(point_3d, np.ndarray)
+                assert point_3d.shape == (3,)
+
+    def test_consensus_centroids_none_for_skipped_groups(self) -> None:
+        """Groups below min_cameras have consensus_centroids=None (unchanged)."""
+        frames = (0, 1, 2)
+        group = TrackletGroup(
+            fish_id=0,
+            tracklets=(
+                _make_tracklet("cam_a", 0, frames),
+                _make_tracklet("cam_b", 1, frames),
+            ),
+            confidence=0.8,
+        )
+        luts = _converging_luts()
+        config = MockRefinementConfig(min_cameras_refine=3)
+        result = refine_clusters([group], luts, config)
+
+        # Group skipped; consensus_centroids stays at its original value (None)
+        assert result[0].consensus_centroids is None
+
+    def test_consensus_centroids_none_for_evicted_singletons(self) -> None:
+        """Evicted singleton groups have consensus_centroids=None."""
+        frames = (0, 1, 2)
+        luts = _converging_luts()
+        luts["cam_outlier"] = _divergent_lut()
+
+        group = TrackletGroup(
+            fish_id=0,
+            tracklets=(
+                _make_tracklet("cam_a", 0, frames),
+                _make_tracklet("cam_b", 1, frames),
+                _make_tracklet("cam_c", 2, frames),
+                _make_tracklet("cam_outlier", 99, frames),
+            ),
+        )
+        config = MockRefinementConfig()
+        result = refine_clusters([group], luts, config)
+
+        singletons = [g for g in result if len(g.tracklets) == 1]
+        assert len(singletons) == 1
+        assert singletons[0].consensus_centroids is None
+
+    def test_consensus_centroids_none_when_disabled(self) -> None:
+        """refinement_enabled=False leaves consensus_centroids as None."""
+        frames = (0, 1, 2)
+        group = TrackletGroup(
+            fish_id=0,
+            tracklets=(
+                _make_tracklet("cam_a", 0, frames),
+                _make_tracklet("cam_b", 1, frames),
+                _make_tracklet("cam_c", 2, frames),
+            ),
+        )
+        config = MockRefinementConfig(refinement_enabled=False)
+        result = refine_clusters([group], {}, config)
+
+        assert result[0].consensus_centroids is None

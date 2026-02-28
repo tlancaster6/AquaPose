@@ -42,12 +42,21 @@ class TrackletGroup:
         per_frame_confidence: Per-frame confidence values aligned with the
             union of all constituent tracklets' frame ranges. ``None`` until
             refinement runs. Each element is a float in [0, 1].
+        consensus_centroids: Per-frame 3D consensus centroids from refinement
+            triangulation. Stored as a tuple of ``(frame_idx, point_3d)`` pairs,
+            where ``point_3d`` is a numpy array of shape (3,) in world coordinates,
+            or ``None`` when fewer than 2 rays were available for that frame.
+            ``None`` when refinement was skipped (group below ``min_cameras_refine``),
+            refinement is disabled, or the group is an evicted singleton.
+            Type: ``tuple[tuple[int, np.ndarray | None], ...]`` (declared as
+            generic ``tuple`` to match existing field style).
     """
 
     fish_id: int
     tracklets: tuple
     confidence: float | None = None
     per_frame_confidence: tuple | None = None
+    consensus_centroids: tuple | None = None
 
 
 # ---------------------------------------------------------------------------

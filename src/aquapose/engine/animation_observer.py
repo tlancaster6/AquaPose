@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +12,6 @@ import plotly.graph_objects as go
 import scipy.interpolate
 
 from aquapose.engine.events import Event, PipelineComplete
-from aquapose.reconstruction.triangulation import SPLINE_K, SPLINE_KNOTS
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,8 @@ class Animation3DObserver:
             return
 
         try:
+            sys.stderr.write("Generating 3D animation...\n")
+            sys.stderr.flush()
             fig = self._build_figure(midlines_3d)
             self._write_html(fig, self._output_dir / "animation_3d.html")
             logger.info(
@@ -233,9 +235,11 @@ class Animation3DObserver:
             return [], [], []
 
         cp = np.asarray(control_points, dtype=np.float64)
+        knots = spline.knots
+        degree = spline.degree
         try:
             bspl = scipy.interpolate.BSpline(
-                SPLINE_KNOTS.astype(np.float64), cp, SPLINE_K
+                np.asarray(knots, dtype=np.float64), cp, degree
             )
             t_vals = np.linspace(0.0, 1.0, self._n_eval_points)
             pts = bspl(t_vals)  # shape (N, 3)

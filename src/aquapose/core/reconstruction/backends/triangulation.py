@@ -13,6 +13,7 @@ from typing import Any
 
 from aquapose.reconstruction.triangulation import (
     DEFAULT_INLIER_THRESHOLD,
+    SPLINE_N_CTRL,
     Midline3D,
     MidlineSet,
     triangulate_midlines,
@@ -38,6 +39,7 @@ class TriangulationBackend:
             correspondence refinement.
         max_depth: Maximum allowed fish depth below the water surface (metres).
             None disables the upper depth bound.
+        n_control_points: Number of B-spline control points per midline.
 
     Raises:
         FileNotFoundError: If *calibration_path* does not exist.
@@ -49,11 +51,13 @@ class TriangulationBackend:
         inlier_threshold: float = DEFAULT_INLIER_THRESHOLD,
         snap_threshold: float = 20.0,
         max_depth: float | None = None,
+        n_control_points: int = SPLINE_N_CTRL,
     ) -> None:
         self._calibration_path = Path(calibration_path)
         self._inlier_threshold = inlier_threshold
         self._snap_threshold = snap_threshold
         self._max_depth = max_depth
+        self._n_control_points = n_control_points
 
         # Eagerly load calibration — fail-fast on missing file
         self._models = self._load_models(self._calibration_path)
@@ -82,6 +86,7 @@ class TriangulationBackend:
             inlier_threshold=self._inlier_threshold,
             snap_threshold=self._snap_threshold,
             max_depth=self._max_depth,
+            n_control_points=self._n_control_points,
         )
 
     @staticmethod

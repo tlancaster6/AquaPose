@@ -34,6 +34,30 @@ MIN_BODY_POINTS: int = 9  # SPLINE_N_CTRL + 2
 DEFAULT_INLIER_THRESHOLD: float = 50.0  # pixels
 N_SAMPLE_POINTS: int = 15  # matches Phase 6 output
 
+
+def _build_spline_knots(n_control_points: int) -> np.ndarray:
+    """Build a clamped cubic B-spline knot vector for the given control point count.
+
+    Args:
+        n_control_points: Number of B-spline control points.
+
+    Returns:
+        Knot vector of length ``n_control_points + SPLINE_K + 1``.
+    """
+    n_interior = n_control_points - SPLINE_K - 1
+    if n_interior < 0:
+        n_interior = 0
+    interior = np.linspace(0.0, 1.0, n_interior + 2)[1:-1]
+    knots = np.concatenate(
+        [
+            np.zeros(SPLINE_K + 1),
+            interior,
+            np.ones(SPLINE_K + 1),
+        ]
+    )
+    return knots.astype(np.float64)
+
+
 # Minimum angle (degrees) between two ray directions before their pairwise
 # triangulation is considered ill-conditioned and skipped.  Rays more nearly
 # parallel than this threshold produce wildly inaccurate DLT solutions.
@@ -346,29 +370,36 @@ def _triangulate_body_point(
 def _fit_spline(
     u_param: np.ndarray,
     pts_3d: np.ndarray,
+    knots: np.ndarray | None = None,
+    min_body_points: int | None = None,
 ) -> tuple[np.ndarray, float] | None:
-    """Fit a fixed 7-control-point cubic B-spline to 3D body positions.
+    """Fit a cubic B-spline to 3D body positions.
 
-    Uses scipy.interpolate.make_lsq_spline with the fixed SPLINE_KNOTS
-    interior knot vector. Requires at least MIN_BODY_POINTS observations.
+    Uses scipy.interpolate.make_lsq_spline with the provided knot vector.
 
     Args:
         u_param: Arc-length parameter values in [0, 1], shape (M,), float64.
             Must be strictly increasing.
         pts_3d: 3D point positions, shape (M, 3), float64.
+        knots: B-spline knot vector. Defaults to module-level SPLINE_KNOTS.
+        min_body_points: Minimum observations required. Defaults to
+            module-level MIN_BODY_POINTS.
 
     Returns:
         Tuple of (control_points, arc_length) where control_points has shape
-        (7, 3), float32 and arc_length is the numerical integral of the spline
-        curve length. Returns None if too few points or spline fitting fails.
+        (n_ctrl, 3), float32 and arc_length is the numerical integral of the
+        spline curve length. Returns None if too few points or fitting fails.
     """
-    if len(u_param) < MIN_BODY_POINTS:
+    if knots is None:
+        knots = SPLINE_KNOTS
+    if min_body_points is None:
+        min_body_points = MIN_BODY_POINTS
+
+    if len(u_param) < min_body_points:
         return None
 
     try:
-        spl = scipy.interpolate.make_lsq_spline(
-            u_param, pts_3d, SPLINE_KNOTS, k=SPLINE_K
-        )
+        spl = scipy.interpolate.make_lsq_spline(u_param, pts_3d, knots, k=SPLINE_K)
     except (ValueError, np.linalg.LinAlgError) as exc:
         # Schoenberg-Whitney condition violation or singular matrix
         logger.debug("Spline fitting failed: %s", exc)
@@ -508,11 +539,13 @@ def _align_midline_orientations(
     if n_cams < 2:
         return cam_midlines
 
-    # Sample head, mid, tail for chord-length comparison
-    sample_indices = [0, N_SAMPLE_POINTS // 2, N_SAMPLE_POINTS - 1]
-
     ref_id = cam_ids[0]
     ref_ml = cam_midlines[ref_id]
+
+    # Sample head, mid, tail for chord-length comparison
+    # Use actual midline size (may differ from N_SAMPLE_POINTS if configured)
+    n_pts = len(ref_ml.points)
+    sample_indices = [0, n_pts // 2, n_pts - 1]
     ref_model = models[ref_id]
 
     result = dict(cam_midlines)
@@ -713,6 +746,7 @@ def triangulate_midlines(
     inlier_threshold: float = DEFAULT_INLIER_THRESHOLD,
     snap_threshold: float = 20.0,
     max_depth: float | None = None,
+    n_control_points: int = SPLINE_N_CTRL,
 ) -> dict[int, Midline3D]:
     """Triangulate 2D midlines from multiple cameras into 3D B-spline midlines.
 
@@ -753,12 +787,19 @@ def triangulate_midlines(
             is enforced — only the water_z lower bound applies.  Set this
             to the physical tank depth to catch above-water outliers that
             survive Layer 1/2.
+        n_control_points: Number of B-spline control points. Determines
+            the knot vector and minimum body point requirement
+            (``n_control_points + 2``).
 
     Returns:
         Dict mapping fish_id to Midline3D. Only includes fish with sufficient
         valid body points for spline fitting.
     """
     results: dict[int, Midline3D] = {}
+
+    # Build spline parameters from n_control_points
+    spline_knots = _build_spline_knots(n_control_points)
+    min_body_points = n_control_points + 2
 
     # Derive water_z once from the model collection (all cameras share it)
     water_z: float = next(iter(models.values())).water_z
@@ -770,6 +811,11 @@ def triangulate_midlines(
         cam_midlines = _refine_correspondences_epipolar(
             cam_midlines, models, snap_threshold=snap_threshold
         )
+
+        # Derive point count from actual midline data (may differ from
+        # N_SAMPLE_POINTS when midline.n_points is configured differently)
+        n_body_points = len(next(iter(cam_midlines.values())).points)
+
         valid_indices: list[int] = []
         pts_3d_list: list[np.ndarray] = []
         per_point_residuals: list[float] = []
@@ -778,7 +824,7 @@ def triangulate_midlines(
         per_point_hw_px: list[float] = []  # avg half-width in pixels across inliers
         per_point_depths: list[float] = []  # depth in metres below water
 
-        for i in range(N_SAMPLE_POINTS):
+        for i in range(n_body_points):
             # Gather pixel observations and half-widths for body point i
             pixels: dict[str, torch.Tensor] = {}
             hw_px_list: list[float] = []
@@ -825,22 +871,24 @@ def triangulate_midlines(
             depth_m = max(0.0, point_z - water_z)
             per_point_depths.append(depth_m)
 
-        if len(valid_indices) < MIN_BODY_POINTS:
+        if len(valid_indices) < min_body_points:
             logger.debug(
                 "Fish %d skipped: only %d valid body points (need %d)",
                 fish_id,
                 len(valid_indices),
-                MIN_BODY_POINTS,
+                min_body_points,
             )
             continue
 
         # Build arc-length parameter: preserve original positions, do NOT re-normalize
         u_param = np.array(
-            [i / (N_SAMPLE_POINTS - 1) for i in valid_indices], dtype=np.float64
+            [i / (n_body_points - 1) for i in valid_indices], dtype=np.float64
         )
         pts_3d_arr = np.stack(pts_3d_list, axis=0)  # shape (M, 3)
 
-        spline_result = _fit_spline(u_param, pts_3d_arr)
+        spline_result = _fit_spline(
+            u_param, pts_3d_arr, knots=spline_knots, min_body_points=min_body_points
+        )
         if spline_result is None:
             logger.debug("Fish %d skipped: spline fitting failed", fish_id)
             continue
@@ -863,8 +911,8 @@ def triangulate_midlines(
             hw_m = _pixel_half_width_to_metres(hw_px, depth_m, focal_px)
             hw_metres_valid.append(hw_m)
 
-        # Interpolate half-widths for all 15 body positions (including invalid ones)
-        hw_metres_all = np.zeros(N_SAMPLE_POINTS, dtype=np.float32)
+        # Interpolate half-widths for all body positions (including invalid ones)
+        hw_metres_all = np.zeros(n_body_points, dtype=np.float32)
         if len(valid_indices) >= 2:
             fill_bounds: tuple[float, float] = (hw_metres_valid[0], hw_metres_valid[-1])
             interp = scipy.interpolate.interp1d(
@@ -874,7 +922,7 @@ def triangulate_midlines(
                 bounds_error=False,
                 fill_value=fill_bounds,  # type: ignore[arg-type]
             )
-            u_all = np.linspace(0.0, 1.0, N_SAMPLE_POINTS)
+            u_all = np.linspace(0.0, 1.0, n_body_points)
             hw_metres_all = interp(u_all).astype(np.float32)
         elif len(valid_indices) == 1:
             hw_metres_all[:] = hw_metres_valid[0]
@@ -883,12 +931,12 @@ def triangulate_midlines(
         # camera and compare against observed 2D midline points.  This measures
         # the quality of the smoothed reconstruction, not raw per-point noise.
         spline_obj = scipy.interpolate.BSpline(
-            SPLINE_KNOTS, control_points.astype(np.float64), SPLINE_K
+            spline_knots, control_points.astype(np.float64), SPLINE_K
         )
-        u_sample = np.linspace(0.0, 1.0, N_SAMPLE_POINTS)
+        u_sample = np.linspace(0.0, 1.0, n_body_points)
         spline_pts_3d = torch.from_numpy(
             spline_obj(u_sample).astype(np.float32)
-        )  # (N_SAMPLE_POINTS, 3)
+        )  # (n_body_points, 3)
 
         all_residuals: list[float] = []
         cam_residuals: dict[str, float] = {}
@@ -897,9 +945,9 @@ def triangulate_midlines(
             proj_px, valid = models[cid].project(spline_pts_3d)
             proj_np = proj_px.detach().cpu().numpy()
             valid_np = valid.detach().cpu().numpy()
-            obs_pts = cam_midlines[cid].points  # (N_SAMPLE_POINTS, 2)
+            obs_pts = cam_midlines[cid].points  # (n_body_points, 2)
             cam_errs: list[float] = []
-            for j in range(N_SAMPLE_POINTS):
+            for j in range(n_body_points):
                 if (
                     valid_np[j]
                     and not np.any(np.isnan(proj_np[j]))
@@ -923,7 +971,7 @@ def triangulate_midlines(
             fish_id=fish_id,
             frame_index=frame_index,
             control_points=control_points,
-            knots=SPLINE_KNOTS.astype(np.float32),
+            knots=spline_knots.astype(np.float32),
             degree=SPLINE_K,
             arc_length=arc_length,
             half_widths=hw_metres_all,

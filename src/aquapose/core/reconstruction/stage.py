@@ -91,6 +91,7 @@ class ReconstructionStage:
             combined_kwargs["inlier_threshold"] = inlier_threshold
             combined_kwargs["snap_threshold"] = snap_threshold
             combined_kwargs["max_depth"] = max_depth
+            combined_kwargs["n_control_points"] = n_control_points
         self._backend = get_backend(backend, **combined_kwargs)
 
     def run(self, context: PipelineContext) -> PipelineContext:

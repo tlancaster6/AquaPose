@@ -47,6 +47,7 @@ tests/
 ## Common Pitfalls
 
 - **CUDA tensors → numpy**: Always use `.cpu().numpy()`, never bare `.numpy()`. Projection and model functions may return CUDA tensors.
+- **Running tests**: Always use `hatch run test` (which excludes `@slow` and `@e2e`). Never use `pytest` directly with `-k` for quick confirmation — it bypasses the slow-test exclusion and can pick up GPU/data-dependent tests that take minutes.
 
 ## Domain Conventions
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import sys
 from pathlib import Path
 
 import cv2
@@ -11,7 +12,6 @@ import numpy as np
 import scipy.interpolate
 
 from aquapose.engine.events import Event, PipelineComplete
-from aquapose.reconstruction.triangulation import SPLINE_K, SPLINE_KNOTS
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +88,8 @@ class Overlay2DObserver:
             if context is None:
                 return
             try:
+                sys.stderr.write("Generating reprojection overlay videos...\n")
+                sys.stderr.flush()
                 self._generate_overlays(context)
             except Exception:
                 logger.warning("Overlay generation failed", exc_info=True)
@@ -279,9 +281,11 @@ class Overlay2DObserver:
             return None
 
         cp = np.asarray(control_points, dtype=np.float64)
+        knots = spline.knots
+        degree = spline.degree
         try:
             bspl = scipy.interpolate.BSpline(
-                SPLINE_KNOTS.astype(np.float64), cp, SPLINE_K
+                np.asarray(knots, dtype=np.float64), cp, degree
             )
             t_vals = np.linspace(0.0, 1.0, 50)
             pts_3d = bspl(t_vals)  # shape (50, 3)

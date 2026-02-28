@@ -269,12 +269,16 @@ def cluster_tracklets(
                 )
                 fish_id += 1
 
-    # Diagnostic warning
-    if len(groups) != config.expected_fish_count:
+    # Diagnostic warning (ignore singletons — orphan tracklets are expected)
+    n_multi = sum(1 for g in groups if len(g.tracklets) > 1)
+    n_single = len(groups) - n_multi
+    if n_multi != config.expected_fish_count:
         logger.warning(
-            "Cluster count %d != expected fish count %d",
-            len(groups),
+            "Non-singleton cluster count %d != expected fish count %d "
+            "(%d singletons excluded)",
+            n_multi,
             config.expected_fish_count,
+            n_single,
         )
 
     return groups

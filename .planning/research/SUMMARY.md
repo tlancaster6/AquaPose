@@ -1,217 +1,237 @@
 # Project Research Summary
 
-**Project:** AquaPose
-**Domain:** Multi-view 3D fish pose estimation via refractive multi-view triangulation (with shelved analysis-by-synthesis alternative)
-**Researched:** 2026-02-21
-**Confidence:** MEDIUM-HIGH (primary pipeline uses well-understood geometry; refractive camera model validated; shelved analysis-by-synthesis path retained as fallback)
+**Project:** AquaPose v2.2 Backends
+**Domain:** 3D fish pose estimation — swappable ML backends, training infrastructure, config cleanup
+**Researched:** 2026-02-28
+**Confidence:** HIGH
 
 ## Executive Summary
 
-AquaPose is a research-grade multi-view system for reconstructing the full 3D midline and body shape of cichlid fish from 12 synchronized overhead cameras (13th top-down camera excluded for poor mask quality). The domain has no direct comparators — existing tools (DLC+Anipose, DANNCE, SLEAP) handle multi-view reconstruction but assume standard pinhole cameras in air and output keypoints, not body shape. AquaPose's three distinguishing innovations are: (1) physically correct refractive projection through the air-water interface integrated into both ray casting and forward projection, (2) a 3D midline spline reconstructed from triangulated medial axes across views rather than discrete keypoints, and (3) centroid-based RANSAC cross-view identity assignment with Hungarian tracking in 3D space. The recommended build order is strict: calibration and refractive projection validation must precede any reconstruction work, and single-fish validation must precede multi-fish extension.
+AquaPose v2.2 adds three capabilities to an already-shipped, production-quality pipeline: a YOLO-OBB detection backend that provides fish orientation angles directly from the detector, a keypoint regression head that replaces noisy skeletonization with direct ordered-coordinate prediction, and a unified training CLI that consolidates four disconnected scripts into one discoverable `aquapose train` command group. The existing architecture — a 3-layer event-driven system (Core → PosePipeline → Observers) with 5 pipeline stages and a frozen-dataclass config — accommodates all of these additions cleanly via its backend registry pattern and optional-field dataclass extension pattern. No new runtime dependencies are required; the only version change is bumping `ultralytics>=8.0` to `>=8.1` for OBB support.
 
-The primary reconstruction pipeline is direct triangulation: 2D medial axis extraction from segmentation masks, arc-length correspondence across views, RANSAC multi-view triangulation per body point, and 3D cubic B-spline fitting. An optional Levenberg-Marquardt refinement stage jointly optimizes the 3D spline against all 2D observations using the refractive forward projection model. This replaces the original analysis-by-synthesis approach (differentiable mesh rendering via PyTorch3D + Adam optimization), which took 30+ minutes per second of video and is now shelved but retained as a fallback.
+The recommended build order follows a strict dependency hierarchy driven by the codebase's own contracts. Foundation work comes first: config cleanup (device propagation, configurable `n_sample_points`, universal `_filter_fields()`) and backward-compatible extensions to the `Detection` and `Midline2D` dataclasses must land before any new backends are written. Detection backend and keypoint model development can then proceed in parallel. Confidence-weighted triangulation depends only on the `Midline2D.point_confidence` field added in the foundation phase, so it too can proceed in parallel with the backend work. Training infrastructure is fully independent and can be developed alongside or after the backend work.
 
-The recommended stack centers on PyTorch 2.4.1 with CUDA 12.1 for calibration, refractive projection, and segmentation (U-Net). The reconstruction path itself is scipy/numpy/scikit-image — no differentiable rendering framework is required for the primary pipeline. PyTorch3D is retained only for the shelved analysis-by-synthesis path.
-
-The most critical risk for scientific validity remains the camera geometry: 12 top-down cameras with nearly parallel optical axes create a degenerate Z-reconstruction problem. This has been quantified (see Z-uncertainty report) and must be tracked as a per-point quality metric. A secondary risk is medial axis instability on noisy masks — the current U-Net produces masks at IoU ~0.62, which requires morphological smoothing before skeletonization to avoid skeleton wobble.
+The highest-risk area is coordinate system handling: the OBB angle convention (radians, clockwise, range `[-pi/4, 3pi/4)`) differs from OpenCV's `minAreaRect` output (degrees, `(-90, 0]`), and keypoint coordinates must be transformed from crop space back to frame space before being stored in `Midline2D.points`. Both errors are silent — pipeline execution succeeds but 3D reconstruction produces garbage. The mitigation is mandatory smoke tests at each coordinate boundary before any model training begins.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The stack is organized around PyTorch for calibration, refractive projection, and segmentation inference. The reconstruction pipeline itself uses standard scientific Python (scipy, numpy, scikit-image) and does not require differentiable rendering. Detection uses YOLOv8 with U-Net binary segmentation on cropped detections; SAM2 is used offline for pseudo-label generation only and is not in the inference path.
+The v2.2 milestone requires no new top-level dependencies. All new capabilities use the existing dependency set. The only change to `pyproject.toml` is a version bump for `ultralytics` to `>=8.1` to guarantee OBB model availability. `tqdm`, useful for training progress display, is available as a transitive dependency of `ultralytics` and should be imported without being added as an explicit dependency.
 
 **Core technologies:**
-- Python 3.11 + PyTorch 2.4.1 + CUDA 12.1: For calibration, refractive projection, U-Net segmentation inference
-- scikit-image >= 0.22: `skeletonize` for medial axis extraction, morphological operations for mask smoothing
-- scipy >= 1.13: `splprep` / B-spline fitting for 3D midline, `least_squares` for optional LM refinement, `linear_sum_assignment` for Hungarian assignment, `distance_transform_edt` for half-width estimation
-- OpenCV 4.13 (headless): MOG2 background subtraction, video I/O, 2D overlays, morphological preprocessing
-- h5py >= 3.11: Primary output format for per-frame pose trajectories
-- rerun-sdk >= 0.22: Primary debugging and QA visualization; synchronized multi-camera 2D + 3D
-- YOLOv8 (ultralytics): Object detection for fish bounding boxes
-- U-Net (custom, MobileNetV3-Small encoder): Binary mask segmentation on cropped detections
+- PyTorch (latest stable): U-Net inference, keypoint regression head, YOLO — no longer pinned to 2.4.1; primary pipeline has no PyTorch3D coupling
+- ultralytics >=8.1: YOLO standard bbox and YOLO-OBB detection; OBB support added in 8.1.0
+- scikit-image >=0.22: skeletonization for pseudo-label generation, midline arc-length resampling
+- scipy >=1.13: spline fitting, Levenberg-Marquardt refinement, Hungarian assignment
+- opencv-python >=4.8: `cv2.getRotationMatrix2D` + `cv2.warpAffine` for affine crop extraction
+- click >=8.1: all CLI surface including new `aquapose train` subgroup
+- boxmot >=11.0 + leidenalg >=0.10: OC-SORT and Leiden (unchanged from v2.1)
 
-**Shelved-pipeline-only dependencies (not required for primary reconstruction):**
-- PyTorch3D 0.7.9 (source install): Differentiable silhouette renderer for analysis-by-synthesis path
-- kornia >= 0.7: Differentiable Lovasz-hinge IoU loss for analysis-by-synthesis path
-
-**Critical version constraint:** PyTorch is pinned at 2.4.1 for compatibility with the shelved PyTorch3D path. If the shelved path is formally abandoned, this constraint can be relaxed.
+**What NOT to add:** albumentations (use torchvision.transforms.v2), timm (torchvision MobileNetV3-Small is sufficient), mmdet/mmpose (complex install), segmentation_models_pytorch (custom U-Net already exists), PyTorch Lightning (simple loops don't justify trainer abstraction), Pydantic (frozen dataclasses decided in v2.0).
 
 ### Expected Features
 
-AquaPose is a research tool, not a product. "Users" are the research team itself and the downstream behavioral biology pipeline. Table stakes are features whose absence makes the system scientifically invalid; differentiators constitute the novel research contribution.
+**Must have (table stakes — ship in v2.2):**
+- `YOLOOBBDetector` + `make_detector("yolo_obb", ...)` — OBB backend drop-in with `Detection.angle` field
+- `extract_obb_crop(frame, xywhr)` — returns `(crop, M_inv)` for keypoint back-projection
+- `UNetKeypointHead` — attaches to frozen MobileNetV3-Small encoder; outputs `(N_points, 3)` in crop coordinates
+- `Midline2D.point_confidence: np.ndarray | None = None` — backward-compatible; None = uniform weights
+- Confidence-weighted DLT path in `triangulation.py` — weighted when confidences present, falls back gracefully
+- `aquapose train` Click group with `unet`, `yolo-obb`, `keypoint` subcommands replacing scripts/
+- `src/aquapose/training/` module with `common.py`, `unet.py`, `yolo_obb.py`, `keypoint.py`
+- `N_SAMPLE_POINTS` moved to `ReconstructionConfig.n_points` (default 15)
+- `device: str = "cuda"` at top-level `PipelineConfig`, propagated through `build_stages()`
 
-**Must have (table stakes):**
-- Refractive camera model with physically correct Snell's law projection — the foundation; without this the multi-view geometry is invalid
-- Direct 3D midline triangulation from multi-view medial axes — the primary reconstruction mechanism
-- Per-fish per-frame 3D midline reconstruction — the v1 deliverable
-- Multi-view silhouette extraction pipeline (YOLOv8 + U-Net) — produces the inputs to the reconstruction pipeline
-- Cross-view holdout validation with reprojection IoU metric — required for scientific credibility
-- Per-frame 3D trajectory output (position, orientation, curvature) in HDF5/CSV — enables downstream biological analysis
-- Video I/O for multi-camera synchronized frame extraction
+**Should have (add after core validated):**
+- Partial midline confidence gating (defer until keypoint head quality is known)
+- OBB polygon overlay in diagnostic observer
+- `init-config` CLI UX improvements (YAML schema comments)
 
-**Should have (competitive / v1.x):**
-- Width-profile reconstruction (half-width spline from distance transforms) — enables body shape analysis
-- Multi-fish detection and parallel per-fish reconstruction — v2 deliverable
-- Centroid-based RANSAC identity with Hungarian 3D tracking — the cross-view identity mechanism
-- Occlusion handling with temporal continuity in 3D — required for robust multi-fish tracking
-- Optional LM refinement stage for joint reprojection optimization — adds robustness to arc-length correspondence errors
+**Defer (v2.3+):**
+- Keypoint pseudo-label auto-generation pipeline
+- OBB fine-tuning on fish-specific dataset
+- Confidence calibration (temperature scaling)
+- Multi-task joint segmentation + keypoint loss
+- Encoder fine-tuning with keypoint head (freeze encoder entirely in v2.2)
 
-**Defer (v2+):**
-- Full-day continuous tracking (hours-long recordings with identity persistence)
-- Behavioral feature extraction library (tail-beat frequency, curvature, inter-fish distance, approach angle)
-- Sex-differentiated shape model (requires labeled morphometric training data)
-- Batch processing infrastructure for full experimental dataset
-- Shape-signature identity via body plan decomposition (original v2 Re-ID mechanism)
-
-**Explicit anti-features (do not build):**
-- Real-time processing — batch offline processing; real-time is not a goal
-- GUI annotation tool — use Label Studio + supervision for format conversion
-- Monocular (single-camera) reconstruction — geometrically ill-posed; biases architecture away from multi-view
-- Appearance-based Re-ID — centroid-based 3D identity is the primary mechanism; appearance Re-ID adds complexity without clear benefit
+**Anti-features to avoid:**
+- Heatmap-based keypoint regression — 4px quantization at 128x128 is unacceptable for ~50px fish
+- `OBBDetection` subclass — breaks all isinstance checks; extend `Detection` with optional fields instead
+- Real-time 13-camera OBB inference — batch mode only per project constraints
+- Separate `aquapose-train` entrypoint — keep under unified `aquapose` CLI
 
 ### Architecture Approach
 
-The system is organized as a strict linear pipeline: Detection & Segmentation --> Cross-View Identity --> Midline Extraction --> 3D Triangulation & Spline Fitting --> (Optional LM Refinement) --> Output. The critical architectural decision is how arc-length correspondence enables cross-view triangulation without explicit feature matching: fish are slender bodies with a single dominant axis, so the normalized arc-length parameterization of the 2D medial axis projection is approximately preserved across views. This assumption breaks down for significantly curved fish viewed from very different angles, which is handled by RANSAC per body point and view-angle weighting.
+The v2.2 additions slot into the existing 3-layer architecture without structural changes. The backend registry pattern (`get_backend(kind, **kwargs)`) handles the new OBB detection backend and already has a stub for the direct-pose midline backend. The `training/` package is a new peer module at the `segmentation/` level — it is explicitly forbidden from importing `engine/` to avoid circular initialization. All new ML model classes live in `segmentation/` (e.g., `keypoint_model.py`), geometric utilities live in `segmentation/crop.py`, and backend orchestration lives in the appropriate `core/` backend directory.
 
-**Major components:**
-1. CalibrationLoader + RefractiveProjector — parses AquaCal JSON; exposes per-camera refractive ray casting (2D -> 3D ray) and forward projection (3D -> 2D pixel); PyTorch-based for differentiability where needed
-2. YOLODetector + UNetSegmentor — YOLOv8 producing bounding boxes, U-Net producing binary masks per crop; shared crop utilities for coordinate transforms
-3. CrossViewIdentifier — per-frame RANSAC over centroid rays across cameras; clusters rays into fish identities; produces (camera_id, detection_id) -> fish_id mapping plus 3D centroid per fish
-4. HungarianTracker — frame-to-frame 3D centroid assignment via scipy `linear_sum_assignment`; persistent fish IDs across frames
-5. MedialAxisExtractor — morphological smoothing, `skeletonize`, distance transform half-width, longest-path BFS pruning, head-tail disambiguation via 3D centroid projection
-6. ArcLengthSampler — cumulative arc-length normalization to [0,1]; resampling at N fixed positions (e.g., N=15); produces cross-view point correspondences
-7. RANSACTriangulator — per body point RANSAC over camera subsets; refractive ray intersection; view-angle weighting to downweight foreshortened views; outputs N 3D points + residuals per fish
-8. SplineFitter — `scipy.interpolate.splprep` for 3D midline B-spline (5-8 control points); separate 1D spline for width profile
-9. LMRefiner (optional) — `scipy.optimize.least_squares` with method='lm'; jointly optimizes spline control points against all 2D medial axis observations via refractive forward projection; warm-starts from SplineFitter output
-10. TrajectoryWriter + Visualizer — h5py HDF5 output; rerun-sdk for live QA; OpenCV for 2D overlays
+**Major components (new and modified):**
+1. `segmentation/keypoint_model.py` (NEW) — `KeypointModel`: frozen MobileNetV3-Small encoder + direct regression head outputting `(B, N, 3)` in crop coordinates
+2. `segmentation/crop.py` (EXTENDED) — `compute_obb_crop_region()`, `extract_affine_crop()`, `untransform_points_from_obb()` shared by both detection overlay and midline backend
+3. `core/detection/backends/yolo_obb.py` (NEW) — `YOLOOBBBackend` wrapping `YOLOOBBDetector`; produces `Detection` with `angle` set
+4. `core/midline/backends/direct_pose.py` (MODIFIED) — replaces `NotImplementedError` stub with full `DirectPoseBackend`
+5. `reconstruction/triangulation.py` (MODIFIED) — adds weighted DLT path scaling rows by `sqrt(point_confidence)` before SVD
+6. `engine/config.py` (MODIFIED) — `device` propagation, `n_points` in `ReconstructionConfig`, universal `_filter_fields()`
+7. `src/aquapose/training/` (NEW PACKAGE) — `TrainingConfig`, `KeypointDataset`, `train_unet`, `train_keypoint`, `train_yolo_obb`
+8. `cli.py` (EXTENDED) — `aquapose train` group, `aquapose init-config` command
 
-**Key patterns:**
-- Warm-start every frame from the previous frame's spline (reduces LM iterations from ~20 to ~5 when used)
-- Batch triangulations across body points into vectorized calls (~15 points x ~8 fish = 120 triangulations/frame)
-- Design for N fish from day one — all function signatures accept lists; parallelize across fish within a frame
-- Cross-view holdout: withhold 1-2 cameras from triangulation; evaluate reprojection error on them as a generalization metric
-- Gate optional LM refinement on triangulation residual — skip when RANSAC residuals are below threshold
+**Import boundary (enforced by AST pre-commit hook):**
+- `training/` → `core/`, `segmentation/`, `reconstruction/` (NOT `engine/`)
+- `cli.py` → `engine/` AND `training/` (the single fan-in point)
 
 ### Critical Pitfalls
 
-1. **Non-differentiable refractive projection** — Implementing the refractive model using numpy or scipy breaks gradient flow for any component that needs it (LM Jacobians via autograd, forward projection in the optional refiner). The refractive projection has been reimplemented in PyTorch. This is less critical than in the shelved pipeline since the primary reconstruction path does not require differentiable gradients through the full chain, but the forward projection model must still be correct for reprojection scoring in RANSAC and the optional LM refiner.
+1. **OBB angle convention mismatch** — ultralytics outputs radians clockwise in `[-pi/4, 3pi/4)`, OpenCV `minAreaRect` outputs degrees counter-clockwise in `(-90, 0]`. Always extract angle from `result.obb.xywhr[..., 4]` and convert via `angle_deg = radians * 180 / pi`. Add a crop-orientation smoke test (known-angle detection → affine crop → visually axis-aligned fish) before any keypoint model training begins.
 
-2. **Depth-independent refraction model** — Using OpenCV's standard distortion model to approximate refraction produces systematic depth-dependent errors (fish near tank floor reproject worse than near-surface fish). The error is a consistent 3D bias, not noise, and invalidates reconstruction. Implement full per-ray Snell's law projection tracing through air-glass-water interface with correct refractive indices.
+2. **Keypoint coordinates returned in crop-local space** — the keypoint head outputs `(x, y)` in `[0, crop_w] x [0, crop_h]`. Without calling `_crop_to_frame()` (scale + translate) before constructing `Midline2D`, all midline points cluster near frame origin and triangulation silently produces 3D points near the camera. Add assertion: `midline.points[:, 0].min() > crop_region.x1 - 20` for every non-None midline.
 
-3. **Arc-length correspondence errors on curved fish** — The arc-length parameterization assumes the 2D medial axis projection preserves body-position correspondence across views. This breaks down when a curved fish is viewed from angles where foreshortening compresses the arc-length mapping unevenly. Cameras viewing along the fish's body axis are the worst offenders. Mitigations: RANSAC per body point rejects cameras with bad correspondence; view-angle weighting downweights foreshortened views; optional LM refinement jointly optimizes across all views. If these mitigations are insufficient, epipolar-guided correspondence refinement is a future upgrade path.
+3. **`N_SAMPLE_POINTS` scatter across consumers** — `io/midline_writer.py`, `visualization/triangulation_viz.py`, and `reconstruction/curve_optimizer.py` all hardcode or import `N_SAMPLE_POINTS = 15`. A config change that updates `MidlineConfig.n_points` but not these modules silently produces truncated HDF5 datasets and misfiring visualization guards. Audit and replace all bare `15` literals with the constant before any point-count changes.
 
-4. **Top-down camera Z-weakness not quantified** — 12 cameras with nearly parallel optical axes create degenerate Z reconstruction. 2D reprojection error can look excellent while Z is wrong by centimeters. This has been quantified analytically (see Z-uncertainty report). Report X, Y, Z errors separately — never report only aggregate reprojection error.
+4. **Config backward compatibility breakage** — `_filter_fields()` is applied to `AssociationConfig` and `TrackingConfig` but NOT to `DetectionConfig`, `MidlineConfig`, or `ReconstructionConfig`. Adding any new field without a default to the latter three will break all existing user YAML files at load time. Apply `_filter_fields()` universally and add a pinned v2.1 YAML regression test before any other config schema changes.
 
-5. **Medial axis instability on noisy masks** — The current U-Net produces masks at IoU ~0.62, well below the 0.90 target. Noisy mask boundaries cause skeleton wobble, spurious branches, and shifted midline positions. Mitigations: morphological closing + opening with adaptive kernel before skeletonization; longest-path BFS pruning to discard spurious branches; RANSAC triangulation rejects outlier body points. Monitor skeleton quality as segmentation improves.
-
-6. **Single-fish architecture blocking v2 extension** — Building v1 with global state (one mask, one optimizer, one mesh object) requires a full rewrite at v2. Design for N fish from day one: per-fish state, batch-first operations, detection returning a list of per-fish masks even when length is 1.
+5. **Arc-length mismatch from variable-length keypoint output** — triangulation uses arc-length index `i` as the cross-camera correspondence key. A keypoint backend that omits low-confidence points produces a different-length midline, shifting the arc-length mapping and silently corrupting 3D reconstruction. The keypoint backend must always produce exactly `n_points` outputs, padding with the last known position and marking padded points as low-confidence. Enforce with `assert midline.points.shape == (n_points, 2)` in `MidlineStage.run()`.
 
 ## Implications for Roadmap
 
-Based on combined research, the build order is indicated by strict data dependencies and the need for validation gates before proceeding:
+Based on research, the architecture's dependency graph dictates the following phase structure. Foundation work gates everything else. Detection backend and keypoint model development can overlap. Training infrastructure is fully independent.
 
-### Phase 1: Calibration and Refractive Geometry Foundation (Complete)
-**Rationale:** Everything downstream depends on a working, validated RefractiveProjector. No reconstruction code is scientifically meaningful until the camera model is correct.
-**Delivers:** CalibrationLoader parsing AquaCal JSON; RefractiveProjector implementing per-ray Snell's law in PyTorch; ray casting (2D -> 3D ray) and forward projection (3D -> 2D pixel); unit tests covering central rays and edge-field rays at 30-48 deg incidence; validation showing < 1px reprojection error on known 3D points; quantified Z-uncertainty bounds for the 12-camera top-down geometry.
-**Status:** Complete. Refractive projection reimplemented in PyTorch. Z-uncertainty quantified analytically.
+### Phase 1: Config and Contract Foundation
 
-### Phase 2: Segmentation Pipeline (Complete)
-**Rationale:** Segmentation produces the masks that drive every downstream phase. It was built and validated independently of the reconstruction pipeline.
-**Delivers:** YOLOv8-based fish detection with bounding boxes; U-Net binary segmentation on cropped detections (MobileNetV3-Small encoder, ~2.5M params, 128x128 input); SAM2-based pseudo-label generation for training data; per-frame binary masks per camera per fish.
-**Status:** Complete. Best val IoU 0.623 — below 0.90 target but accepted to unblock downstream phases. Morphological smoothing required before skeletonization.
-**Uses:** YOLOv8 (ultralytics), custom U-Net, SAM2 (offline), OpenCV
+**Rationale:** Config cleanup (`device` propagation, `n_sample_points` centralization, universal `_filter_fields()`) and backward-compatible dataclass extensions (`Detection.angle`, `Midline2D.point_confidence`) have no dependencies and unblock every subsequent phase. If device propagation is not in place before new backends are added, each backend invents its own device default and tensor-device mismatches appear mid-pipeline. If `_filter_fields()` is not applied universally, any new config field added in a later phase will break user YAML files with no graceful error.
 
-### Phase 3: Fish Mesh Model (Complete, Shelved)
-**Rationale:** The parametric fish mesh (midline spline + swept ellipse cross-sections) was built as part of the original analysis-by-synthesis pipeline. It is complete but shelved — the primary pipeline uses direct triangulation instead of differentiable mesh rendering.
-**Delivers:** FishMeshBuilder producing watertight triangle meshes from FishState {p, psi, kappa, s}; midline spline + swept ellipses.
-**Status:** Complete, shelved. Retained as fallback if direct triangulation proves insufficient.
+**Delivers:** A stable, backward-compatible contract layer that all v2.2 features build on.
 
-### Phase 4: Per-Fish Reconstruction via Analysis-by-Synthesis (Shelved)
-**Rationale:** The original v1 core — differentiable mesh rendering + Adam optimization against silhouette IoU. Shelved due to 30+ min/sec runtime and replaced by the direct triangulation pipeline (Phases 5-7+).
-**Delivers:** (When shelved pipeline was active) RefractiveRenderer, SoftSilhouetteShader, multi-objective loss, PoseOptimizer.
-**Status:** Shelved. Code retained. See `.planning/inbox/fish-reconstruction-pivot.md` for pivot rationale.
+**Addresses:**
+- `N_SAMPLE_POINTS` moved to `ReconstructionConfig.n_points` (default 15)
+- `device: str = "cuda"` at top-level `PipelineConfig`, propagated in `load_config()`
+- `_filter_fields()` applied universally to all stage configs
+- `Detection.angle: float | None = None`, `Detection.obb_points: np.ndarray | None = None`
+- `Midline2D.point_confidence: np.ndarray | None = None`
+- `aquapose init-config` CLI command
 
-### Phase 5: Cross-View Identity & 3D Tracking (New)
-**Rationale:** All downstream reconstruction stages require knowing which mask in camera A corresponds to which mask in camera B. This is a prerequisite for medial axis triangulation.
-**Delivers:** CrossViewIdentifier using RANSAC over centroid rays across cameras; (camera_id, detection_id) -> fish_id mapping; 3D centroid per fish; HungarianTracker for persistent fish IDs across frames via 3D centroid assignment.
-**Addresses features:** Cross-view identity, persistent 3D tracking [table stakes for multi-fish]
-**Uses:** Existing refractive ray casting code, scipy (Hungarian assignment)
+**Avoids:** Pitfalls A8 (device propagation), A9 (Midline2D contract change), A10 (config backward compat), A3 (N_SAMPLE_POINTS scatter).
 
-### Phase 6: 2D Medial Axis & Arc-Length Sampling (New)
-**Rationale:** Extracts the 2D midline representation from segmentation masks and establishes cross-view point correspondences via normalized arc-length. This is the input to multi-view triangulation.
-**Delivers:** MedialAxisExtractor (morphological smoothing, skeletonize, distance transform half-width, BFS pruning, head-tail disambiguation); ArcLengthSampler (cumulative arc-length normalization, fixed-N resampling).
-**Addresses features:** 2D midline extraction, cross-view correspondence [table stakes for reconstruction]
-**Uses:** scikit-image (skeletonize, morphology), scipy (distance_transform_edt)
+**Research flag:** Standard patterns — no additional research needed. Frozen dataclass config system is well-understood from live codebase.
 
-### Phase 7+: 3D Triangulation, Spline Fitting, Output (TBD)
-**Rationale:** The core reconstruction: triangulate corresponding body points across views, fit a 3D spline, optionally refine via LM. Detailed phase planning TBD.
-**Delivers:** RANSACTriangulator, SplineFitter, optional LMRefiner, TrajectoryWriter, visualization and validation.
-**Uses:** Existing refractive ray intersection code, scipy (splprep, least_squares), h5py, rerun-sdk
+---
+
+### Phase 2: YOLO-OBB Detection Backend
+
+**Rationale:** OBB detection is the first visible capability. It enables affine crop extraction, which the keypoint backend (Phase 3) depends on. OBB NMS threshold tuning (parallel fish suppression) must be validated on real video before any keypoint training data is collected. Building detection first allows auditing detection quality through the existing skeletonize midline backend before the keypoint head is added.
+
+**Delivers:** `YOLOOBBDetector`, `YOLOOBBBackend`, affine crop utilities, OBB polygon overlay. The existing pipeline runs end-to-end with OBB crops and the skeletonize midline backend — detection quality is auditable before the keypoint head is built.
+
+**Addresses:**
+- `YOLOOBBDetector` + `make_detector("yolo_obb", ...)` factory branch
+- `compute_obb_crop_region()`, `extract_affine_crop()`, `untransform_points_from_obb()` in `segmentation/crop.py`
+- `YOLOOBBBackend` in `core/detection/backends/yolo_obb.py`
+- OBB polygon overlay in `engine/overlay_observer.py`
+
+**Uses:** ultralytics >=8.1, OpenCV `cv2.warpAffine` with `cv2.BORDER_REPLICATE`, existing backend registry pattern.
+
+**Avoids:** Pitfalls A1 (OBB angle convention — crop-orientation smoke test before training), A4 (OBB NMS parallel fish — detection count regression test on schooling frames), A5 (affine crop border artifacts — use `cv2.BORDER_REPLICATE` not `cv2.BORDER_CONSTANT`).
+
+**Research flag:** Standard patterns — ultralytics OBB API is HIGH confidence from official docs; OpenCV affine crop is canonical. No additional research needed.
+
+---
+
+### Phase 3: Keypoint Regression Midline Backend
+
+**Rationale:** Depends on affine crop utilities from Phase 2 and the `Midline2D.point_confidence` field from Phase 1. The `DirectPoseBackend` stub already exists but raises `NotImplementedError` — this phase implements it. Keypoint model training data (pseudo-labels) is generated from the existing skeletonizer output, so no new annotation tooling is needed.
+
+**Delivers:** `KeypointModel` (`segmentation/keypoint_model.py`), `DirectPoseBackend` (full implementation replacing stub), confidence-weighted DLT in `triangulation.py`. The pipeline can run fully with the keypoint midline backend end-to-end.
+
+**Addresses:**
+- `UNetKeypointHead` — direct coordinate regression, `(B, N, 3)` output with sigmoid-activated x/y/confidence
+- `DirectPoseBackend.process_frame()` — produces `AnnotatedDetection` with `Midline2D(point_confidence=...)`
+- Confidence-weighted DLT: scale RANSAC rows by `sqrt(point_confidence)` before SVD
+- `CurveOptimizerBackend` confidence weighting (weighted Chamfer distance)
+
+**Uses:** PyTorch `nn.Module`, existing MobileNetV3-Small encoder weights, scikit-image skeletonizer for pseudo-label generation.
+
+**Avoids:** Pitfalls A2 (crop-to-frame coordinate transform — assertion after every backend call), A11 (arc-length mismatch — enforce fixed `n_points` output contract with `assert midline.points.shape == (n_points, 2)`), A5 (border artifacts — inherited fix from Phase 2).
+
+**Research flag:** Direct regression vs heatmap decision is resolved (direct regression wins at 128x128, 4px heatmap quantization is unacceptable). Wing Loss vs MSE: MSE is sufficient for a first pass. No additional research needed beyond STACK.md content.
+
+---
+
+### Phase 4: Training Infrastructure
+
+**Rationale:** The `aquapose train` CLI and `training/` package are fully independent of all other v2.2 features. They can be developed in parallel with Phases 2 and 3 if capacity allows. Deferring to Phase 4 ensures the ML architecture (Phase 3) is locked before the training CLI is built around it, avoiding rework if the keypoint head API changes.
+
+**Delivers:** `src/aquapose/training/` package (`unet.py`, `keypoint.py`, `yolo_obb.py`, `dataset.py`, `config.py`), `aquapose train unet / keypoint / yolo-obb` subcommands. Replaces four disconnected scripts in `scripts/` with a documented, discoverable interface.
+
+**Addresses:**
+- `KeypointDataset` — OBB crop + keypoint annotation loading with temporal-segment train/val split
+- `train_unet()` — migrated from `segmentation/training.py`
+- `train_keypoint_head()` — new training loop with MSE loss, confidence gating, checkpoint saving
+- `aquapose train` Click group registered under existing CLI
+
+**Uses:** click (existing), PyTorch bare training loop (no Lightning), tqdm via ultralytics transitive dep.
+
+**Avoids:** Pitfalls A6 (augmentation spatial consistency — use torchvision keypoint-aware transforms for all geometric augmentations), A7 (train/val temporal leakage — split by contiguous clip with gap, not random frames), A12 (import boundary violation — `training/` must not import from `engine/`).
+
+**Research flag:** Training CLI patterns are standard Click subcommands — no additional research needed. The train/val split strategy (temporal segments) is resolved in PITFALLS.md. Verify torchvision v2 keypoint-aware transform API during implementation.
+
+---
 
 ### Phase Ordering Rationale
 
-- **Calibration first:** The RefractiveProjector is a shared dependency for every subsequent phase; errors here compound downstream.
-- **Segmentation second:** Masks are required by all reconstruction stages; building and validating segmentation early saves calendar time.
-- **Cross-view identity before midline extraction:** Medial axis extraction and arc-length correspondence require knowing which masks correspond to the same physical fish across cameras.
-- **Midline extraction before triangulation:** The triangulation stage consumes cross-view point correspondences produced by arc-length sampling.
-- **Single-fish before multi-fish:** The feature dependency graph is explicit — multi-fish tracking requires reliable single-fish reconstruction.
-- **Output and validation integrated with reconstruction:** The 3D evaluation framework (cross-view holdout, per-axis error reporting) is built alongside reconstruction, not as a separate phase.
+- **Config and dataclass contracts first:** `Midline2D.point_confidence` and `Detection.angle` are prerequisites for Phases 2 and 3. Doing this in Phase 1 means subsequent phases all build on stable interfaces rather than simultaneously modifying shared types.
+- **OBB detection before keypoint backend:** Affine crop utilities (`segmentation/crop.py`) are written once in Phase 2 and reused by Phase 3. Building the keypoint backend first would require implementing the same utilities speculatively.
+- **Keypoint backend before training infrastructure:** The `KeypointModel` API (input/output shapes, `n_points` parameter) must be stable before `training/keypoint.py` and `training/dataset.py` are written. If the model API changes, the training loop changes.
+- **Training infrastructure last (or parallel):** It is fully decoupled and can be developed in parallel with Phases 2 and 3 if capacity allows, or deferred to Phase 4 without blocking the pipeline.
 
 ### Research Flags
 
-Phases likely needing deeper research during planning:
-- **Phase 5 (Cross-View Identity):** RANSAC clustering of refractive rays for identity assignment; tuning inlier thresholds for this rig's geometry.
-- **Phase 6 (Medial Axis):** Skeleton stability at current mask quality (IoU ~0.62); adaptive morphological kernel sizing; head-tail disambiguation reliability.
-- **Phase 7+ (Triangulation):** Arc-length correspondence accuracy on curved fish; view-angle weighting calibration; LM refinement convergence behavior.
+Phases needing deeper research during planning:
 
-Phases with standard patterns (skip research-phase):
-- **Phase 1 (Calibration):** Complete. Refractive projection reimplemented in PyTorch.
-- **Phase 2 (Segmentation):** Complete. YOLOv8 + U-Net trained and validated.
+- **Phase 3 (Keypoint Backend) — partial midline handling:** The correct threshold for `point_confidence` gating and the `MIN_BODY_POINTS` floor value are empirically determined. Set conservatively in v2.2 and tune based on real reconstruction quality. This is deferred from the v2.2 MVP per FEATURES.md.
+- **Phase 4 (Training) — OBB label conversion:** The existing fish bbox labels are axis-aligned rectangles. Converting to OBB label format requires either re-annotation or automated conversion via per-detection skeletonization. This conversion step is not detailed in any research file and should be scoped during Phase 2 or 4 planning.
+
+Phases with standard patterns (skip additional research):
+
+- **Phase 1 (Config/Contracts):** Frozen dataclass extension and `load_config()` patterns are fully documented in the live codebase.
+- **Phase 2 (OBB Detection):** ultralytics OBB API is HIGH confidence from official docs; OpenCV affine transforms are canonical.
+- **Phase 3 (Keypoint Model):** Direct regression at 128x128 is the resolved recommendation; no alternative approaches need investigation.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Primary pipeline uses scipy/numpy/scikit-image — mature, well-documented, no version fragility. PyTorch3D version pinning only matters for shelved pipeline. U-Net + YOLOv8 are stable. |
-| Features | MEDIUM-HIGH | Table stakes and anti-features are HIGH confidence. The novel contribution (refractive triangulation with arc-length correspondence) is well-grounded in geometry but untested on this rig at current mask quality. |
-| Architecture | HIGH | Direct triangulation pipeline is well-understood geometry. Build order derives from clear data dependencies. The pivot proposal (`.planning/inbox/fish-reconstruction-pivot.md`) is the authoritative pipeline design document. |
-| Pitfalls | MEDIUM | Core optics pitfalls (refractive distortion, Z-weakness) are HIGH confidence from peer-reviewed literature. Arc-length correspondence errors on curved fish are MEDIUM — mitigations exist (RANSAC, view-angle weighting) but need empirical validation. Medial axis instability at IoU ~0.62 is a known risk with known mitigations. |
+| Stack | HIGH | All stack decisions use existing or well-documented libraries; only version bump is ultralytics >=8.1, verified against official OBB release notes and GitHub discussions |
+| Features | HIGH | Existing codebase fully inspected; all interface contracts (Detection, Midline2D, backend registry) are known ground truth; OBB/keypoint approaches verified against official docs and literature |
+| Architecture | HIGH | Based on live codebase analysis, not speculation; all integration points, import boundaries, and build order derived from actual code |
+| Pitfalls | HIGH | OBB angle convention verified against ultralytics GitHub issues #13003 and #16235; all other pitfalls derived from direct codebase inspection of actual construction sites and consumers |
 
-**Overall confidence:** MEDIUM-HIGH
+**Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Z-uncertainty budget:** The theoretical Z reconstruction uncertainty for this specific rig has been quantified analytically. The practical impact on midline triangulation quality at operating depth needs validation against physical reference data.
-- **Arc-length correspondence accuracy on curved fish:** The normalized arc-length parameterization assumes projection preserves body-position correspondence. This assumption degrades for curved fish viewed from different angles. The degree of degradation at this rig's camera geometry needs empirical characterization.
-- **Medial axis stability at current mask quality (IoU ~0.62):** Noisy mask boundaries cause skeleton wobble and spurious branches. Morphological smoothing mitigates this, but the residual error propagated into triangulation needs quantification.
-- **Shape-signature discriminability:** It is unknown whether shape parameters estimated for each fish are sufficiently distinct to serve as a biometric identifier. This is deferred to v2 but remains the core scientific bet for persistent identity.
-- **Female detection under worst-case conditions:** YOLOv8/U-Net recall for stationary female fish has not been measured under all lighting conditions. This is the most likely operational failure mode for Phase 2.
+- **Keypoint head quality floor:** The target accuracy for the keypoint regression head is not specified. The current U-Net achieves IoU 0.623 (accepted below target to unblock downstream). Plans should include a validation gate: if mean keypoint error exceeds a threshold, fall back to the skeletonize backend for the affected camera-frame.
+- **OBB training label conversion:** Existing fish bbox labels are axis-aligned. Converting to OBB 4-corner format for fine-tuning requires a defined process (re-annotation or automated conversion). Scope during Phase 2 or 4 planning.
+- **`segmentation/training.py` disposition:** The research recommends `training/unet.py` either wraps or replaces `segmentation/training.py`. The deprecation/migration plan should be decided at the start of Phase 4 to avoid silent dual-maintenance.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- PyTorch3D INSTALL.md — version compatibility matrix (PyTorch 2.4.1 + PyTorch3D 0.7.9 confirmed): https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md
-- PyTorch3D renderer docs — SoftSilhouetteShader, MeshRasterizer, batched API: https://pytorch3d.readthedocs.io/en/latest/modules/renderer/mesh/rasterizer.html
-- AquaPose proposed_pipeline.md — original project spec (see `.planning/inbox/proposed_pipeline.md`)
-- **AquaPose reconstruction pivot proposal — authoritative pipeline design document (see `.planning/inbox/fish-reconstruction-pivot.md`)**
-- Refractive Two-View Reconstruction for Underwater 3D Vision (IJCV 2019) — refractive model correctness requirements: https://link.springer.com/article/10.1007/s11263-019-01218-9
-- Multi-animal pose estimation and tracking with DeepLabCut (Nature Methods 2022) — competitor baseline: https://www.nature.com/articles/s41592-022-01443-0
-- WaterMask: Instance Segmentation for Underwater Imagery (ICCV 2023) — underwater segmentation precedent: https://openaccess.thecvf.com/content/ICCV2023/papers/Lian_WaterMask_Instance_Segmentation_for_Underwater_Imagery_ICCV_2023_paper.pdf
-- OpenCV MOG2 documentation: https://docs.opencv.org/4.x/d1/dc5/tutorial_background_subtraction.html
+- Ultralytics OBB Task Documentation: https://docs.ultralytics.com/tasks/obb/ — OBB output format, xywhr convention, angle range
+- Ultralytics OBB Datasets Overview: https://docs.ultralytics.com/datasets/obb/ — label format (4-corner normalized)
+- Ultralytics issue #13003 "Is the angle value given by OBB correct?": https://github.com/ultralytics/ultralytics/issues/13003 — angle convention mismatch
+- Ultralytics issue #16235 "YOLOv8-OBB angle conversion": https://github.com/ultralytics/ultralytics/issues/16235 — angle convention mismatch
+- OpenCV Affine Transformations Tutorial: https://docs.opencv.org/4.x/d4/d61/tutorial_warp_affine.html — getRotationMatrix2D + warpAffine
+- Click Entry Points Documentation: https://click.palletsprojects.com/en/latest/entry-points/ — CLI group/subgroup patterns
+- Live codebase (all modules): authoritative ground truth for all interfaces, dataclasses, config structure, import boundaries
 
 ### Secondary (MEDIUM confidence)
-- A Calibration Tool for Refractive Underwater Vision (arXiv 2024) — port tilt estimation, refractive calibration: https://arxiv.org/abs/2405.18018
-- VoGE: Differentiable Volume Renderer for Analysis-by-Synthesis (OpenReview) — confirms analysis-by-synthesis pattern (shelved pipeline): https://openreview.net/forum?id=AdPJb9cud_Y
-- SOD-SORT: Multi-fish tracking with EKF + Hungarian — confirms tracking pattern: https://arxiv.org/html/2507.06400v3
-- vmTracking: multi-animal pose tracking (PLOS Biology 2025): https://pmc.ncbi.nlm.nih.gov/articles/PMC11845028/
-- PyTorch3D GitHub issues #1626, #905, #1855 — soft rasterizer hyperparameter behavior (shelved pipeline): https://github.com/facebookresearch/pytorch3d/issues/1626
-- Adventures with Differentiable Mesh Rendering (Andrew Chan blog) — practical implementation gotchas (shelved pipeline)
+- Learnable Triangulation of Human Pose (SAIC-violet): https://saic-violet.github.io/learnable-triangulation/ — confidence-weighted algebraic triangulation pattern for weighted DLT
+- DLT Triangulation: Why Optimize? (arXiv 1907.11917): https://arxiv.org/pdf/1907.11917 — weighted vs unweighted DLT tradeoffs
+- Boosting integral-based pose estimation (ScienceDirect 2024): https://www.sciencedirect.com/science/article/abs/pii/S0893608024004489 — comparison of heatmap vs integral vs direct regression at varying resolutions
+- Integral Human Pose Regression (ECCV 2018): https://openaccess.thecvf.com/content_ECCV_2018/papers/Xiao_Sun_Integral_Human_Pose_ECCV_2018_paper.pdf — integral regression alternative
 
 ### Tertiary (LOW confidence)
-- Shape-signature identity for fish Re-ID — no direct precedent found; extrapolated from SMAL-based shape Re-ID for quadrupeds. Deferred to v2.
-- PyTorch3D source build stability against PyTorch 2.5-2.10 — community reports in GitHub issues; no official confirmation. Relevant only if shelved pipeline is reactivated.
+- SimCC paper (ECCV 2022): https://github.com/leeyegy/SimCC — coordinate classification; rejected for this use case at 128x128 input size
 
 ---
-*Research completed: 2026-02-19; updated for reconstruction pivot: 2026-02-21*
+*Research completed: 2026-02-28*
 *Ready for roadmap: yes*

@@ -1,470 +1,438 @@
 # Pitfalls Research
 
-**Domain:** 3D fish pose estimation via direct triangulation (medial axis → arc-length → RANSAC triangulation → spline fitting)
-**Researched:** 2026-02-19 (updated 2026-02-21 for pipeline pivot)
-**Confidence:** MEDIUM — core optics/math pitfalls are HIGH confidence from literature; multi-fish extension pitfalls are MEDIUM from analogous animal tracking work; some implementation specifics are LOW and flagged
+**Domain:** Adding YOLO-OBB, keypoint midline backend, training infrastructure, and config cleanup to an existing multi-view 3D fish pose estimation pipeline (v2.2 Backends milestone)
+**Researched:** 2026-02-28
+**Confidence:** HIGH — codebase directly inspected for all integration points; OBB angle convention verified against ultralytics GitHub issues #13003, #16235 and official docs; existing pitfalls from prior research retained below.
 
-> **Pipeline pivot note:** AquaPose pivoted from analysis-by-synthesis (differentiable mesh rendering + Adam optimization) to a direct triangulation pipeline. Pitfalls marked **[SHELVED PIPELINE]** apply only to the original analysis-by-synthesis approach and are retained for reference. All other pitfalls apply to the primary (direct triangulation) pipeline or both pipelines.
+> **Scope note:** This file covers two tiers of pitfalls. The first section ("v2.2 Integration Pitfalls") is new research specific to adding OBB detection, keypoint regression, and training infrastructure to the existing system. The second section ("Foundation Pitfalls") preserves the original project-wide pitfalls from v1.0/v2.0/v2.1 research that remain relevant.
 
 ---
 
-## Critical Pitfalls
+## v2.2 Integration Pitfalls
 
-### Pitfall 1: Treating Refractive Distortion as Depth-Independent *(both pipelines)*
+These pitfalls are specific to adding the v2.2 feature set to the existing pipeline. They involve coordinate system mismatches, contract changes, and config system fragility when integrating new components with existing consumers.
+
+---
+
+### Pitfall A1: OBB Angle Convention Mismatch Between Extraction and Affine Crop
 
 **What goes wrong:**
-The refractive projection through a flat air-water port is depth-dependent — the 2D image coordinates of a 3D point depend on its Z value, not just its XY position. Systems that model refraction as a fixed pixel-wise correction (e.g., a static distortion map or polynomial warp applied once at calibration time) will produce systematic 3D reconstruction errors that grow with distance from calibration depth. The error is not random noise — it introduces a consistent bias in triangulated 3D positions.
+Ultralytics YOLO-OBB outputs angles in **radians** in the range `[-pi/4, 3pi/4)`, using a **clockwise** convention (angle=0 means no rotation, positive angle rotates clockwise). Code that assumes degrees, counter-clockwise, or the `[0, pi/2)` range produced by OpenCV `minAreaRect` will generate affine crops rotated by the wrong amount — often 90 degrees off — silently producing valid-looking but misoriented crops. The fish body appears horizontal when it should be diagonal. The keypoint model trained on correctly oriented crops receives garbage input at inference time.
 
 **Why it happens:**
-Developers import standard camera calibration pipelines (OpenCV, COLMAP) that use pinhole + radial/tangential distortion. These models absorb refractive distortion into the distortion coefficients, but those coefficients are fit at a fixed effective depth and will be wrong at other depths. The mistake is treating refraction like lens distortion when it is geometrically distinct.
+Three separate angle representations coexist in this ecosystem. OpenCV `minAreaRect()` returns angles in degrees in `(-90, 0]`. Ultralytics OBB model outputs radians in `[-pi/4, 3pi/4)` (clockwise). Label format (`xyxyxyxy` corners) is angle-free; conversion via `minAreaRect` introduces the OpenCV degree convention. When training labels are prepared with OpenCV and the model is queried via ultralytics, developers assume both use the same convention. There is a documented inconsistency between the `[0, pi/2)` range used in label conversion and the `[-pi/4, 3pi/4)` range of model predictions (ultralytics issues #13003 and #16235).
 
 **How to avoid:**
-Implement a full per-ray refractive projection: trace each camera ray through the air-glass-water interface using Snell's law, applying n_air=1.0, n_glass≈1.5, n_water≈1.333, and the measured glass thickness and flat port position. This must happen inside the projection function itself, not as a pre/post warp. The Newton-Raphson solver approach (10 fixed iterations for differentiability) is correct — do not shortcut to a lookup table unless you verify it at multiple depths.
+- Always extract angle from `result.obb.xywhr` (not re-derived from `xyxyxyxy`) and confirm units are radians before passing to `cv2.getRotationMatrix2D`.
+- Convert: `angle_deg = float(box.xywhr[0, 4]) * 180 / math.pi` — this is clockwise from horizontal.
+- Add an explicit smoke test before any keypoint model training: given a synthetic fish at a known angle, verify the affine crop has the fish axis aligned with the crop horizontal.
+- Never mix `minAreaRect` angles with ultralytics OBB angles in the same pipeline step without an explicit conversion guard.
 
 **Warning signs:**
-- Reprojection error that varies systematically with fish depth (fish near bottom of tank reproject worse than fish near water surface)
-- 3D reconstructions that look plausible from above but collapse in Z
-- Calibration error that is low but reconstruction accuracy that is poor when verified with a known-3D reference object at multiple depths
+- Affine-cropped images consistently look sideways or upside-down relative to the OBB overlay drawn from the same detection.
+- Keypoint model outputs confidences near 0.5 uniformly across all body points (random-looking, indicating random orientation input).
+- OBB overlay on the full frame looks correct but the crop-based visualization looks wrong.
 
 **Phase to address:**
-Camera model and calibration phase (before any pose optimization is attempted). Validate with a 3D target at 3+ known depths before proceeding. Applies to both the primary triangulation pipeline (refractive ray casting) and the shelved analysis-by-synthesis pipeline (refractive projection).
+YOLO-OBB detection backend phase. Add a crop-orientation smoke test before any keypoint model training begins.
 
 ---
 
-### Pitfall 2: All-Top-Down Camera Configuration Creates Pathologically Weak Z-Reconstruction *(both pipelines)*
+### Pitfall A2: Keypoint Coordinates Returned in Crop-Local Space, Consumed as Frame-Global
 
 **What goes wrong:**
-13 cameras all looking straight down share nearly parallel optical axes. This is a degenerate multi-view geometry for reconstructing depth (Z). Triangulation uncertainty scales with baseline/depth ratio and with the sine of the angle between rays. With all cameras looking down, the angle between any two rays to a point is small, making Z reconstruction extremely noisy compared to XY. A 1px reprojection error can translate to centimeters of Z error at tank depth.
+A keypoint regression head operating on a 128x128 crop returns points in crop coordinates `(0..crop_w, 0..crop_h)`. If those coordinates are stored directly into `Midline2D.points` without applying the `CropRegion` inverse transform (scale + translate), all downstream consumers receive midline points clustered near the image origin rather than at the actual fish position. Reconstruction will fail silently: triangulation attempts to triangulate near `(0, 0)` in each view, producing 3D points near the camera, not the fish. The `AnnotatedDetection` and HDF5 writer accept any `Midline2D` without checking coordinate plausibility.
 
 **Why it happens:**
-The experimental setup was designed for overhead observation (biological constraints), not for optimal 3D geometry. The weakness is inherent, not a coding error. It becomes a critical pitfall when developers validate reprojection error in 2D (which looks fine) but never validate 3D reconstruction accuracy in Z directly.
+The existing `segment_then_extract` backend explicitly calls `_crop_to_frame()` before returning a `Midline2D`. A keypoint backend author implementing inference-then-return may return points immediately after argmax or soft-argmax without noticing the coordinate system obligation. `Midline2D` has no field that records whether points are in frame or crop space — the contract is implicit in the docstring ("Full-frame pixel coordinates") and is never enforced at runtime.
 
 **How to avoid:**
-- Quantify the theoretical Z uncertainty bound given the actual camera baselines and operating depth before writing any optimization code. If Z uncertainty is 5x worse than XY, the system must be designed to account for this.
-- Add Z-regularization in the pose optimizer — prior on fish Z-position from water depth constraints (fish cannot be above the water surface or below the tank floor).
-- During evaluation, always report separate X, Y, Z errors on held-out ground truth, not just aggregate reprojection error.
-- Consider whether the parametric fish model can provide implicit Z constraints via silhouette size (apparent size is a depth cue even from above).
+- The keypoint backend **must** call `_crop_to_frame()` (or an equivalent) before constructing `Midline2D`. This function in `reconstruction/midline.py` handles the resize scale from model input size (128x128) to actual crop dimensions, then translates by `crop_region.x1, crop_region.y1`.
+- Add an integration test: `midline.points[:, 0].min() > crop_region.x1 - 10` and `midline.points[:, 1].min() > crop_region.y1 - 10` for every non-None midline.
+- Consider a runtime assertion in `MidlineStage.run()` after each backend call: verify points fall within detection bbox expanded by some margin.
 
 **Warning signs:**
-- Reprojection error looks good (< 2px) but 3D keypoint positions fluctuate by centimeters frame-to-frame in Z
-- Optimizer converges easily on XY but oscillates on Z
-- Z estimates correlate with fish buoyancy behavior only weakly
+- Midline visualization overlays show all points clustered at `(0,0)` or top-left of the frame.
+- Triangulation produces 3D points with X and Y near zero regardless of fish position.
+- `AnnotatedDetection.midline.points.mean(axis=0)` is far from `detection.bbox` centroid.
 
 **Phase to address:**
-Geometry validation phase (Phase 1) — already resolved. Z/XY anisotropy quantified at 132x. Z-accuracy budget established before committing to the triangulation approach.
+Keypoint midline backend phase, at the coordinate transform step. Verify with a frame-space coordinate assertion before integration testing.
 
 ---
 
-### Pitfall 3: Silhouette-Only Fitting Converges to Wrong Local Minimum — **[SHELVED PIPELINE]**
-
-> **Shelved pipeline only.** This pitfall applies to the original analysis-by-synthesis approach. In the primary triangulation pipeline, the equivalent risk is arc-length correspondence errors on curved fish (see Pitfall 12).
+### Pitfall A3: Changing Midline2D Point Count Breaks HDF5 Writer, Curve Optimizer, and Visualization
 
 **What goes wrong:**
-Analysis-by-synthesis with silhouette loss is highly non-convex. A rendered silhouette that matches the observed silhouette area and rough shape can correspond to many different 3D poses (front-back flips, yaw ambiguities, depth-scale confounds). The optimizer converges to whichever basin of attraction contains the initialization. For top-down cameras, a fish rotated 180° around its vertical axis produces nearly the same silhouette from above. Gradient-based optimization cannot escape once trapped.
+`N_SAMPLE_POINTS = 15` is hardcoded in `reconstruction/triangulation.py` and imported by `io/midline_writer.py`, which pre-allocates HDF5 datasets with shape `(N, max_fish, 15)`. The curve optimizer (`reconstruction/curve_optimizer.py`) also imports `N_SAMPLE_POINTS` directly. Visualization code in `visualization/triangulation_viz.py:514` and `visualization/midline_viz.py:615` has bare `if n_skel < 15:` guards. If a keypoint backend produces a different point count, the HDF5 writer silently truncates with `n_hw = min(len(hw), N_SAMPLE_POINTS)`. If a user sets `midline.n_points = 20` via YAML, only `MidlineStage` and its backends respect it — the HDF5 writer, curve optimizer, and visualization stay at 15.
 
 **Why it happens:**
-Silhouette loss is an area-overlap metric (IoU or binary cross-entropy on masks). It is smooth but nearly flat in regions where the silhouette topology does not change, providing weak gradient signal. The problem is compounded by the top-down camera geometry: head/tail orientation is ambiguous from above.
+`n_points=15` is a config parameter in `MidlineConfig` that flows through `MidlineStage.__init__()` → `get_backend()` → backends. But the HDF5 writer, curve optimizer, and visualization modules import the constant directly rather than receiving it from config. They do not observe `MidlineConfig.n_points`. This is a pre-existing partial wiring that becomes a landmine when v2.2 adds a keypoint backend.
 
 **How to avoid:**
-- Never initialize pose from random or zero values. Use a detector (even a simple bounding-box center + tank-floor Z prior) to seed XY, and use optical flow or frame-to-frame tracking to seed orientation.
-- Add keypoint loss alongside silhouette loss if even coarse keypoints (e.g., head tip, tail tip) can be detected. A single reliable keypoint breaks most head-tail ambiguities.
-- Implement multi-start optimization for the first frame of each fish track, sampling 4-8 orientation initializations and selecting the one with lowest loss.
-- Use temporal smoothness regularization across frames to resist single-frame escapes into wrong basins.
+- Do not change `n_points` from 15 in v2.2 unless all consumers are audited first.
+- If configurable point count is needed, add `n_sample_points` to `ReconstructionConfig` and thread it through `Midline3DWriter` and the curve optimizer constructor.
+- Remove all bare `15` literals from visualization code — use the `N_SAMPLE_POINTS` constant.
+- Add a CI check: `grep -rn "< 15\b\|== 15\b" src/aquapose/visualization/` should return zero matches after the config cleanup phase.
+- The keypoint backend should use the same `n_points` parameter passed to it by `MidlineStage` — no independent hardcoding inside the backend.
 
 **Warning signs:**
-- Fish pose estimates flip 180° between consecutive frames
-- Loss converges to the same value from very different initializations (plateau, not a minimum)
-- Visual overlay of rendered mesh on image looks like the wrong fish half
+- HDF5 `half_widths` dataset has trailing NaN columns when n_points differs from 15.
+- Visualization skeleton-length check fires at a threshold that disagrees with the backend minimum.
+- `Midline3D.half_widths.shape[0]` is not 15 but downstream analysis indexes `[:15]` silently.
 
 **Phase to address:**
-Pose optimizer design phase. Multi-start must be built in from the start, not retrofitted.
+Config cleanup phase (scatter audit). Keypoint backend phase (ensure backend receives and uses the same n_points). The HDF5 writer fix should precede reconstruction integration.
 
 ---
 
-### Pitfall 4: Newton-Raphson Fixed-Iteration Solver Fails Near Flat Port Edges (Grazing Angles) *(both pipelines)*
+### Pitfall A4: OBB NMS Suppresses Overlapping Fish Differently from AABB NMS
 
 **What goes wrong:**
-The Newton-Raphson solver for the refractive projection equation is initialized assuming the ray hits the flat port at a moderate angle. Near the edges of a wide-angle camera's field of view, rays approach the flat port at steep angles (approaching the critical angle for total internal reflection, ~48.6° from normal for water-glass). At these grazing angles:
-1. The refracted angle changes rapidly for small changes in incident angle (Snell's law becomes steep)
-2. Newton-Raphson convergence slows dramatically or oscillates
-3. 10 fixed iterations may be insufficient to converge to required accuracy
-
-Beyond the critical angle, total internal reflection occurs and no physical solution exists — the solver will return a nonsense result silently.
+OBB NMS uses rotated IoU rather than axis-aligned IoU. For fish that are nearly parallel and close (common schooling behavior), rotated IoU is significantly higher than AABB IoU even when the fish are distinct individuals — because elongated boxes sharing the same orientation have large overlap. OBB NMS with the same `iou_threshold=0.45` used for AABB will suppress one of two nearby parallel fish, silently reducing detection count. Downstream tracking loses a fish, Association stage gets fewer tracklets, and reconstruction drops a fish from the 3D output without error.
 
 **Why it happens:**
-A fixed iteration count was chosen for differentiability (to allow backpropagation through the solver). The iteration count was calibrated for well-behaved central rays. Edge cases are not checked at runtime.
+The existing `YOLODetector` uses `iou_threshold=0.45` tuned for axis-aligned boxes. Developers test with solo or spaced fish and see correct results, but schooling cases only appear in full recordings. The AABB threshold is not the right starting point for OBB.
 
 **How to avoid:**
-- During development, log the residual after 10 iterations for all projected points. If any residual exceeds a threshold (e.g., 0.1px equivalent), the iteration count or initialization needs adjustment.
-- Mask out pixels near the theoretical field-of-view limit (calculate the critical angle for your specific n_water, n_glass, glass thickness). Flag projected points outside this boundary as invalid rather than using their result.
-- Add a convergence check even if you use fixed iterations: if `|f(x_10)| > epsilon`, mark that reprojection as unreliable and exclude from loss computation.
-- Test the solver explicitly with rays at 30°, 40°, 45°, 48° incidence angle and verify residuals.
+- Use a higher OBB `iou_threshold` (0.60–0.70) as the starting point for elongated fish; 0.45 is too aggressive for aligned orientations.
+- Test with frames that have at least 2 parallel fish within 100px of each other — this is the stress case.
+- After deploying OBB detection, compare per-frame detection counts against the existing YOLO AABB baseline on the same video segment.
 
 **Warning signs:**
-- Reprojection error is much higher for fish near tank edges than fish near center
-- Optimizer gradients become NaN or extremely large for edge-region observations
-- Rendered silhouettes are distorted or clipped near image boundaries
+- Per-frame detection count is lower than expected, especially in schooling frames.
+- Fish pairs that are visually distinct in the frame are missing one member.
+- OC-SORT shows coasting tracks in frames where fish are grouped.
 
 **Phase to address:**
-Custom refractive projection layer implementation (the very first technical component). Validate with an analytical test suite before using in any optimization.
+YOLO-OBB detection backend phase. Include a detection count regression test against the existing AABB backend on a reference frame set.
 
 ---
 
-### Pitfall 5: MOG2 Background Subtraction Fails on Female Fish (Low-Contrast, Similar Coloring to Background) *(partially resolved)*
+### Pitfall A5: Affine Crop Produces Black Border Artifacts That Confuse Segmentor and Keypoint Model
 
 **What goes wrong:**
-Female zebrafish (or similarly colored species) have lower visual contrast against the tank substrate than males. MOG2 models each pixel as a mixture of Gaussians for the background. When foreground fish have pixel intensities within 2-3 standard deviations of the background model, MOG2 incorrectly absorbs them into the background. The fish becomes invisible to detection. Additionally:
-- Cast shadows from top-down lighting appear as separate foreground blobs (value=127 in MOG2), creating ghost detections
-- Slow-moving or stationary fish are absorbed into the background model within seconds (MOG2 history parameter effect)
-- Fish that school together create merged blobs that a simple instance-count heuristic misinterprets as one fish
+An affine rotation crop (used to de-rotate the fish to horizontal) fills areas outside the original image with `borderValue=0` (black) when using `cv2.warpAffine`. If the fish is near a frame edge, up to 30–40% of the crop may be black border. The U-Net segmentor, trained on natural crops without large black regions, may predict foreground probability in the black area (treating it as dark water or a fish body). The keypoint model may regress keypoints into the black padding region. `_check_skip_mask` may also incorrectly fire "boundary-clipped" on artificial black borders.
 
 **Why it happens:**
-MOG2 was designed for pedestrian/vehicle detection in outdoor scenes with high contrast objects. Aquatic settings combine low contrast with dynamic backgrounds (water ripple, lighting flicker), which confuses the Gaussian mixture update.
-
-**Mitigation status:**
-YOLO has been added as an alternative detector (`make_detector("yolo", model_path=...)`), which is less susceptible to low-contrast and stationary-fish dropout than MOG2. MOG2 is retained as a fallback. The general concern about detection recall for low-contrast fish remains relevant regardless of detector choice.
+`extract_crop()` in `segmentation/crop.py` is a simple rectangle slice with no border artifacts. Affine-rotated crops using `cv2.warpAffine` introduce hard black edges at rotation boundaries. Developers testing on fish in the tank center (far from edges) never observe the artifact.
 
 **How to avoid:**
-- Enable MOG2's shadow detection (`detectShadows=True`) and threshold at value>127 to exclude shadows before extracting contours.
-- Tune `history` (frames in background model) explicitly — default 500 frames may be too long or too short depending on frame rate. For stationary fish, reduce history.
-- Add frame-differencing as a fallback: when MOG2 foreground area drops below expected total fish area, cross-check against an inter-frame difference mask.
-- For female fish specifically, consider running detection in a color space where the fish-background contrast is higher (e.g., saturation channel if females have color variance the background does not).
-- Validate detection recall separately for male vs. female fish before deploying the full pipeline.
-- Prefer YOLO-based detection for production use; MOG2 is a useful preprocessing step but not a reliable primary detector.
+- Use `cv2.BORDER_REPLICATE` or `cv2.BORDER_REFLECT` instead of `cv2.BORDER_CONSTANT` in all `warpAffine` calls. Replicated borders are semantically neutral (background-like) rather than black.
+- Test with a detection whose bbox is within 50px of the frame edge. Verify the affine crop has no all-zero rows or columns inside the fish region.
 
 **Warning signs:**
-- Detection count drops below expected fish count during certain tank lighting conditions
-- Ghost blobs appear where fish shadows fall, not where fish bodies are
-- "Stationary" fish disappear from detection when they stop moving for > N seconds
+- Masks for fish near frame edges include large rectangular black regions.
+- `_check_skip_mask` reports "boundary-clipped" on affine crops that aren't near actual frame boundaries.
+- Keypoint confidence is systematically lower for fish observed by cameras that see the tank wall.
 
 **Phase to address:**
-Detection module phase (Phase 2). YOLO added as mitigation; remaining risk is general detection recall validation.
+YOLO-OBB affine crop implementation within the midline backend phase.
 
 ---
 
-### Pitfall 6: Flat Refractive Port Normal Assumed Perfect — Tilt Creates Unmodeled Asymmetric Distortion *(both pipelines)*
+### Pitfall A6: Training Augmentation Breaks Spatial Consistency Between Image and Keypoint Labels
 
 **What goes wrong:**
-The refractive projection model assumes the flat port glass is perfectly perpendicular to the camera optical axis. In practice, the port may be tilted by even 1-2°. A tilted flat port breaks the radial symmetry of refractive distortion: the distortion becomes asymmetric, with more bending on one side of the image than the other. A model that assumes perfect alignment will have systematic reprojection errors that are directionally biased — harder to diagnose because they look like calibration noise rather than a model error.
+Standard image augmentation (horizontal flip, random crop, perspective warp) applied to the image without applying the exact same transform to keypoint coordinates produces mismatched labels. The keypoint model learns from image patches where the fish is flipped left-right but the label says "head is at the left end." Training loss decreases normally (the model memorizes a random mapping) but inference orientation is systematically wrong. This is particularly insidious because the loss looks healthy.
 
 **Why it happens:**
-Tank camera mounting hardware has finite precision. The port normal is typically assumed to be aligned during calibration, not measured. Published papers often assume alignment and show good results on controlled lab setups but this assumption is violated in production.
+Image augmentation libraries have two modes: image-only and image+annotations. Albumentations, torchvision, and imgaug all support keypoint-aware transforms but require explicitly registering keypoints as `KeypointParams` or similar. If a developer extends the existing `BinaryMaskDataset` pattern by adding augmentation at the image level without registering keypoints, the geometric transforms are applied to images only.
 
 **How to avoid:**
-- Treat the flat port normal as an additional calibration parameter (2 angles: tilt in X, tilt in Y). Estimate it during the calibration procedure using a calibration target at multiple depths.
-- Use the open-source refractive calibration toolbox (arxiv 2405.18018) which explicitly handles port tilt estimation.
-- After calibration, visually inspect the residual distortion map: if residuals are radially symmetric, alignment is good; if they have a systematic directional component, port tilt exists.
+- Use Albumentations with `KeypointParams(format="xy", remove_invisible=False)` so all geometric transforms (flip, rotate, crop, warp) apply to both image and keypoint labels simultaneously.
+- Non-geometric augmentations (brightness, contrast, blur, noise) are safe to apply to the image only.
+- Add a visual validation step: augment a batch, overlay keypoints on the augmented image, and confirm alignment before training for more than a few epochs.
 
 **Warning signs:**
-- Reprojection errors are systematically higher on one side of the image than the other
-- Adding higher-order polynomial distortion terms reduces error but still has a directional component
-- Calibration accuracy varies depending on which half of the image the calibration target occupies
+- Training loss decreases to a low value but validation keypoint metrics are poor.
+- Head-end prediction accuracy is near 50% (random) despite good total loss.
+- Flipped fish in augmented frames have keypoints that do not match the flip.
 
 **Phase to address:**
-Camera calibration phase. Port tilt must be estimated before pose optimization begins.
+Training infrastructure phase. Validate augmentation pipeline visually before any model training begins.
 
 ---
 
-## Moderate Pitfalls
-
-### Pitfall 7: Soft Rasterizer Hyperparameters Require Per-Setup Tuning — **[SHELVED PIPELINE]**
-
-> **Shelved pipeline only.** The primary triangulation pipeline does not use differentiable rendering. Retained for reference if analysis-by-synthesis is revisited.
+### Pitfall A7: Train/Val Split Leakage With Temporally Correlated Pseudo-Label Frames
 
 **What goes wrong:**
-PyTorch3D's soft rasterizer has three critical hyperparameters: `sigma` (blur radius, controls silhouette softness), `gamma` (aggregation weight temperature), and `faces_per_pixel`. The optimal values depend on fish size in pixels, camera distance, and mesh resolution. Values that work for a 100px fish silhouette will produce over-blurred gradients for a 400px fish or under-blurred gradients that behave like hard rasterization (no gradient at silhouette boundary). Most implementations copy values from PyTorch3D tutorials without validating them for their specific geometry.
-
-**How to avoid:**
-- Before optimization, render test images with candidate sigma values and visualize the gradient magnitude map. Sigma should produce visible (non-zero) gradients within ~5% of the silhouette boundary.
-- Set sigma proportional to expected fish apparent diameter (in pixels) divided by mesh face count, as a starting heuristic.
-- Run a sweep over {sigma, gamma} on a single frame before committing to values for the full dataset.
-
-**Warning signs:**
-- Optimizer loss decreases but rendered silhouette does not visually improve
-- Gradient norm is zero or near-zero for most of the optimization
-- Results are sensitive to minor changes in initial pose (symptom of gradient being too narrow)
-
-**Phase to address:**
-Differentiable rendering integration phase.
-
----
-
-### Pitfall 8: Cross-Section Profile Self-Calibration Overfits to Individual Fish Variance — **[SHELVED PIPELINE]**
-
-> **Shelved pipeline only.** In the primary triangulation pipeline, width profiles come from the distance transform on masks, not from optimization. Retained for reference if analysis-by-synthesis is revisited.
-
-**What goes wrong:**
-Self-calibrating the parametric fish cross-section profile from data means the shape model will reflect the specific fish in the calibration set. If calibration fish are all from the same sex, size class, or developmental stage, the model will not generalize to other fish. More critically, if the optimization jointly estimates fish pose AND cross-section profile, gradient will flow partly into shape updates that "explain away" pose error — the shape adapts to compensate for pose mistakes, creating a coupled failure mode where neither shape nor pose is correctly estimated.
-
-**How to avoid:**
-- Separate shape calibration from pose estimation: freeze cross-section profile while optimizing pose, and vice versa. Only alternate between them (EM-style) rather than jointly optimizing.
-- Include fish from multiple individuals, both sexes, and size ranges in the shape calibration set.
-- Add a shape regularization loss penalizing deviation from prior cross-section measurements (biological prior on fish proportions).
-- After calibration, test shape generalization by holding out fish and measuring fit quality on held-out individuals.
-
-**Warning signs:**
-- Shape parameters drift significantly over the course of a video sequence
-- Individual fish within the same tank are assigned very different cross-section profiles
-- Adding more shape flexibility improves training loss but degrades pose accuracy on held-out frames
-
-**Phase to address:**
-Shape model calibration phase, before multi-fish scaling.
-
----
-
-### Pitfall 9: Single-Fish Architecture Does Not Isolate State Per Fish — Prevents Clean 9-Fish Extension *(both pipelines)*
-
-**What goes wrong:**
-V1 builds a single-fish pipeline with global state: one background model, one detector, one set of calibration results. When extending to 9 fish, this architecture forces a full rewrite rather than a scaled-out instantiation. Specific failure points in the primary pipeline:
-- Identity association that assumes a fixed fish count or fixed ordering across cameras
-- Triangulation functions that process one fish at a time instead of batching across N fish
-- Midline extraction that returns a single skeleton rather than a list of per-fish midlines
-- Detection/segmentation that returns one mask per camera rather than N per-fish masks per camera
-
-**How to avoid:**
-- Design the pipeline to pass lists of per-fish data structures from the start, even if the list always has length 1 in v1.
-- Abstract the detection step to return a list of per-fish masks, and carry fish identity through midline extraction and triangulation.
-- Vectorize triangulation across fish (batch dimension) rather than looping in Python.
-
-**Warning signs:**
-- Function signatures that take single mask/midline/pose rather than lists
-- Global state (camera calibration, background model) mutated during processing
-- "Quick" decisions to handle multi-fish "later" without specifying the extension interface
-
-**Phase to address:**
-Core architecture design. Interface contracts must support N fish before any implementation begins.
-
----
-
-### Pitfall 10: Optimizer Applies Gradient Updates to Rotation Representation That Introduces Gimbal Lock or Discontinuities — **[SHELVED PIPELINE]**
-
-> **Shelved pipeline only.** The primary triangulation pipeline does not use an explicit rotation representation — fish orientation is derived from the reconstructed midline spline. Retained for reference if analysis-by-synthesis or optional LM refinement with rotation parameters is revisited.
-
-**What goes wrong:**
-Representing fish 3D orientation as Euler angles in PyTorch and applying Adam updates will hit gimbal lock singularities at certain orientations (e.g., fish oriented directly at a camera). More subtly, if the optimizer drives an angle through 180°, the parameter space wraps but gradient descent does not know this — the loss appears to increase (optimizer sees a discontinuity) even as the physically correct orientation passes through.
-
-**How to avoid:**
-- Use 6D rotation representation (a pair of 3D vectors) or quaternions (with normalization after each step) rather than Euler angles. PyTorch3D provides `so3_exponential_map` and `axis_angle_to_matrix` utilities.
-- For fish swimming in a tank (constrained environment), validate that the chosen rotation parameterization has no singularities within the physically reachable pose space.
-
-**Warning signs:**
-- Loss spikes at specific fish orientations that should be smooth
-- Gradient norm becomes very large at certain frames
-- Optimizer requires much smaller learning rate to be stable
-
-**Phase to address:**
-Pose optimizer design phase.
-
----
-
-### Pitfall 11: Reprojection Error Used as Only Validation Metric — Masks 3D Reconstruction Failures *(both pipelines)*
-
-**What goes wrong:**
-Reprojection error (average 2D pixel distance between projected estimate and observed keypoint) is necessary but not sufficient. With 13 top-down cameras and weak Z reconstruction, a system can achieve < 2px reprojection error while having centimeter-scale errors in 3D. This is because the cameras collectively over-constrain XY (good average reprojection) while under-constraining Z — the Z errors are distributed across cameras and partially cancel in the reprojection average.
-
-**How to avoid:**
-- Place a physical object with known 3D coordinates in the tank and measure 3D reconstruction accuracy directly (not reprojection). Use this as the primary accuracy metric during calibration validation.
-- Report reconstruction error in all three axes separately.
-- Use temporal consistency as a proxy metric: frame-to-frame 3D pose velocity should be biologically plausible (fish do not teleport 5 cm between frames at 30fps).
-
-**Warning signs:**
-- Reprojection error looks excellent during development but outputs are unusable for biological analysis
-- Z-coordinate estimates correlate with tank water level or camera mounting changes (spurious correlations)
-- Users of the system report that fish body measurements from 3D poses are inconsistent with manual measurements
-
-**Phase to address:**
-Evaluation framework design (must be defined before any results are reported). Define the 3D accuracy metric and the measurement procedure in the geometry validation phase.
-
----
-
-### Pitfall 12: Arc-Length Correspondence Errors on Curved Fish *(primary pipeline)*
-
-**What goes wrong:**
-Arc-length normalization assumes the midline projection preserves parameterization across views. For a significantly curved fish viewed from very different angles, foreshortening compresses the arc-length mapping unevenly. Body point t=0.5 in one camera may not correspond to t=0.5 in another. This creates systematic triangulation errors at body points away from the head/tail endpoints, producing a reconstructed midline with kinks or bulges at high-curvature regions.
+Pseudo-labels are generated from consecutive video frames. If the train/val split is done by randomly shuffling individual frames, consecutive frames from the same sequence appear in both train and val. The model memorizes fish trajectories rather than generalizing. Validation loss looks excellent from early epochs, the model appears well-trained, but it fails on held-out clips because it has memorized specific fish positions and orientations rather than learned general appearance.
 
 **Why it happens:**
-A 2D projection of a 3D curve does not preserve arc-length proportions. Two cameras at different azimuthal angles see different foreshortening of the fish body. The further the fish curves out of a flat plane, the worse the mismatch.
+The existing `BinaryMaskDataset` draws from a list of `(image, mask)` pairs without temporal structure awareness. A random 80/20 frame-level split leaks: frames t=100 and t=101 are nearly identical, so the model sees t=100 in train and t=101 in val, which is functionally train data.
 
 **How to avoid:**
-- Use RANSAC per body point during triangulation to reject outlier camera contributions where foreshortening is severe.
-- Implement view-angle weighting: downweight cameras whose optical axis is nearly parallel to the fish body axis (where foreshortening is worst).
-- Consider iterative refinement: triangulate an initial midline, then re-project to update the arc-length correspondence before a second triangulation pass.
+- Split by contiguous temporal segment, not by individual frame. Hold out a full contiguous clip (different recording session or a non-overlapping temporal window) as the val set.
+- If only one recording is available, split by non-overlapping temporal windows with a gap: e.g., frames 0–200 train, frames 200–250 val (with a 50-frame buffer, not random selection from the pool).
 
 **Warning signs:**
-- Triangulation residual correlates with fish curvature (straight fish triangulate well, curved fish have high residuals)
-- Reconstructed midline has kinks or inflection points at high-curvature regions
-- Per-camera reprojection error is systematically higher for cameras looking along the fish body axis
+- Val loss matches train loss almost exactly from early epochs onward.
+- Model accuracy degrades significantly when tested on a different recording.
+- Keypoint metrics on val are much better than on a held-out clip.
 
 **Phase to address:**
-Triangulation (Phase 7).
+Training infrastructure phase, before pseudo-label dataset construction.
 
 ---
 
-### Pitfall 13: Medial Axis Instability on Noisy Masks *(primary pipeline)*
+### Pitfall A8: Device Propagation Failure When Multiple New Backends Each Default to "cuda"
 
 **What goes wrong:**
-`skeletonize` / `medial_axis` on masks with IoU ~0.62 produces unstable, branchy skeletons that wobble frame-to-frame. Mask boundary noise (from imperfect segmentation) creates spurious skeleton branches that survive basic pruning. The resulting midline is too noisy for reliable arc-length parameterization, and temporal jitter in the skeleton translates directly into jittery 3D reconstruction.
+`MidlineStage` defaults `device="cuda"`. `DetectionConfig` defaults `device="cuda"`. A new OBB backend will add another device parameter. If each component has its own device default rather than inheriting from a single source, two failure modes arise: (1) CPU-only machines fail at construction with "CUDA is not available" unless the user knows to set `device=cpu` in YAML; (2) if the OBB detector (ultralytics auto-selects device) ends up on CPU while the U-Net stays on GPU, tensors from different stages end up on different devices and inference fails mid-frame with a confusing error.
 
 **Why it happens:**
-Medial axis computation is topologically sensitive to boundary perturbations. A single pixel bump on the mask boundary can create a new skeleton branch. At IoU ~0.62, mask boundaries have significant noise relative to the fish width.
+The current `PipelineConfig` has no single top-level `device` field — each sub-config (`DetectionConfig.device`, `MidlineConfig` via `MidlineStage`) has its own default. A `device` set at `detection.device=cpu` does not propagate to `midline` device.
 
 **How to avoid:**
-- Apply morphological smoothing (closing then opening) before skeletonization, with adaptive kernel radius proportional to the mask minor-axis width.
-- Prune skeleton branches by length threshold relative to the main axis length (discard branches shorter than ~15% of the longest path).
-- Validate skeleton stability: for the same fish in consecutive frames, skeleton length should not vary by more than ~10-15%.
-- Consider distance-transform-based midline extraction as an alternative to topological skeletonization.
+- Add a single `device: str = "cuda"` field at the top level of `PipelineConfig`.
+- In `load_config()`, propagate `top_kwargs["device"]` to `det_kwargs` and `mid_kwargs` if those sub-configs do not explicitly override device.
+- In the training CLI, default to `"cuda" if torch.cuda.is_available() else "cpu"` rather than hardcoding "cuda".
+- Add a test: construct the full pipeline with `device="cpu"` and verify no model tensor ends up on CUDA.
 
 **Warning signs:**
-- Skeleton length varies >20% between frames for the same fish
-- Many spurious branches remain after pruning
-- Arc-length parameterization produces inconsistent body-point positions frame-to-frame
+- `RuntimeError: Tensors are on different devices` appearing in the midline backend after adding an OBB crop step.
+- CI failures with "CUDA is not available" even though tests are expected to be CPU-only.
+- The OBB detector works (ultralytics auto-selects CPU) but the U-Net fails (explicit device="cuda").
 
 **Phase to address:**
-Midline Extraction (Phase 6).
+Config cleanup phase. Top-level device propagation should precede any new backend addition so new backends inherit it correctly.
 
 ---
 
-### Pitfall 14: Head-Tail Ambiguity in Arc-Length Parameterization *(primary pipeline)*
+### Pitfall A9: Adding Fields to Midline2D Without Defaults Breaks All Construction Sites
 
 **What goes wrong:**
-Arc-length normalization does not inherently know which end of the skeleton is the head. If head/tail assignment is inconsistent across cameras for the same fish, the correspondence mapping is reversed: body point t=0.2 (near head) in one camera corresponds to t=0.8 (near tail) in another. Triangulation of these mismatched points produces garbage 3D positions — the reconstructed midline collapses or crosses itself.
+`Midline2D` currently has no `confidence` or `per_point_confidence` field. Adding a field to this dataclass without a default value causes `TypeError` at all construction sites. `Midline2D` is constructed in at least 4 locations: `SegmentThenExtractBackend._extract_midline_from_mask()`, `MidlineExtractor.extract_midlines()` (legacy), `core/synthetic.py`, and any new keypoint backend. The HDF5 writer already expects `is_low_confidence: bool` on `Midline3D` (`midline_writer.py:168`) — if the equivalent is not added to `Midline2D` and threaded through `AnnotatedDetection`, the writer always writes `False`.
 
 **Why it happens:**
-A skeleton extracted from a 2D mask has two endpoints. Without additional information, either end could be the head. Different camera views may resolve this ambiguity differently (e.g., head is on the left in one camera, on the right in another).
+`Midline2D` is defined in `reconstruction/midline.py` and re-exported from two `core/` type modules. Its construction is scattered. The field addition looks trivial but has wide blast radius.
 
 **How to avoid:**
-- Project the 3D centroid from the identity/tracking stage into each camera view and assign the skeleton endpoint closer to the centroid-adjacent region as a consistent anchor.
-- Use a width heuristic as fallback: the wider end of the fish is typically the head (measure distance-transform width at each skeleton endpoint).
-- Validate consistency: after head-tail assignment, verify that the head endpoint is on the same physical side of the fish across all cameras by checking reprojection of the assigned head point.
+- Add `per_point_confidence: np.ndarray | None = None` with a default (keyword-only, not positional) so existing construction sites work without modification.
+- Audit all construction sites before the field addition: `grep -rn "Midline2D(" src/aquapose/`.
+- Update the reconstruction backend to check `per_point_confidence is not None` and apply confidence weighting only when present (backward compatible).
 
 **Warning signs:**
-- Triangulated midline crosses itself or has impossible geometry
-- Reconstructed fish length is much shorter than expected (head and tail are being averaged together)
-- Head-tail assignment flips between consecutive frames for the same camera
+- `TypeError: __init__() missing 1 required positional argument` at any `Midline2D()` call site after adding a field without a default.
+- The HDF5 `is_low_confidence` dataset is all-False even when the keypoint backend flags low confidence.
+- Triangulation uses uniform weights even when per-point confidence data is available.
 
 **Phase to address:**
-Midline Extraction (Phase 6).
+Keypoint midline backend phase, as a prerequisite to confidence-weighted reconstruction.
 
 ---
 
-## Technical Debt Patterns
+### Pitfall A10: Config Backward Compatibility — New Fields Without Defaults Break Existing YAML Files
+
+**What goes wrong:**
+When new fields are added to `DetectionConfig`, `MidlineConfig`, or `ReconstructionConfig` without default values, existing YAML config files that do not include those fields cause `TypeError` at load time. The existing `load_config()` has a `_filter_fields()` helper that strips unknown keys for `AssociationConfig` and `TrackingConfig`, but it is **not** applied to `DetectionConfig`, `MidlineConfig`, or `ReconstructionConfig`. Adding new required fields to those dataclasses — or removing old fields — silently breaks all existing YAML configs.
+
+**Why it happens:**
+The `_filter_fields()` safety net is partial by accident — it was added to fix an issue with `AssociationConfig` and `TrackingConfig` during v2.1 refactoring but was never applied universally. `DetectionConfig(**det_kwargs)` and `MidlineConfig(**mid_kwargs)` receive raw dicts from YAML without filtering.
+
+**How to avoid:**
+- Apply `_filter_fields()` to ALL stage config dataclasses in `load_config()`, not just association and tracking.
+- All new config fields must have defaults — never add a required field to an existing production dataclass.
+- If a field is renamed, keep the old name as a deprecated alias in the YAML loading layer for at least one milestone.
+- After any config schema change, test `load_config(yaml_path=pinned_v21_yaml)` in CI against a representative saved YAML file.
+
+**Warning signs:**
+- `TypeError: __init__() missing 1 required positional argument` when loading an existing YAML after a dataclass change.
+- Researchers who saved working YAML configs from v2.1 find they no longer work after upgrading.
+- CI tests pass with hardcoded test configs but user-generated configs fail.
+
+**Phase to address:**
+Config cleanup phase. Apply `_filter_fields()` universally and add a pinned YAML regression test before any other config schema changes.
+
+---
+
+### Pitfall A11: Reconstruction Assumes Midlines Have Consistent Point Count — Keypoint Backend Must Not Vary It
+
+**What goes wrong:**
+The triangulation backend uses arc-length position `t[i]` as the correspondence key across cameras: body point at arc-length index `i` in camera A is matched to body point at index `i` in camera B. This works only when both cameras produce midlines with the same number of points sampled at the same arc-length positions (`t = linspace(0, 1, n_points)`). A keypoint backend that returns a variable number of points (e.g., 13 high-confidence points for an occluded fish) produces a mismatched arc-length mapping. Point `t[i]` on the 13-point midline corresponds to a different body position than `t[i]` on the 15-point midline, corrupting triangulation silently.
+
+**Why it happens:**
+The segment-then-extract backend always produces exactly `n_points` points (or `None`). A keypoint backend author may decide to omit low-confidence points to "improve quality," not realizing that the correspondence constraint requires a fixed point count.
+
+**How to avoid:**
+- The keypoint backend must always produce exactly `n_points` output points, regardless of per-point confidence. Store confidence per point but never omit points.
+- If partial midlines are desired (e.g., only head-side points visible), pad to `n_points` with the last known position and mark the padded points as low-confidence in `per_point_confidence`.
+- Add a contract assertion in `MidlineStage.run()`: `assert midline.points.shape == (n_points, 2)` for every non-None midline.
+
+**Warning signs:**
+- Triangulation produces 3D midlines with incorrect curvature (S-shaped when the fish is straight).
+- `midline.points.shape[0]` varies frame-to-frame for the same fish.
+- Reconstruction succeeds with 2 cameras but fails with 4+ cameras (more cameras expose the mismatch).
+
+**Phase to address:**
+Keypoint midline backend phase, during output format definition. The n_points contract must be locked before reconstruction integration.
+
+---
+
+### Pitfall A12: Import Boundary Violation — New training/ Module Must Not Import from engine/
+
+**What goes wrong:**
+The AST-based import boundary checker enforces that `core/` never imports from `engine/`. A new `src/aquapose/training/` module that imports training utilities from `engine/config.py` (which is in engine/) will violate the import boundary and fail the pre-commit hook. If developers work around this by adding `training/` to the boundary checker's allowlist without thought, they may inadvertently permit circular imports.
+
+**Why it happens:**
+Training infrastructure naturally wants access to config (for hyperparameters) and possibly to pipeline stages (for data generation). The easy path is to import from wherever the class lives. The correct path is to either have `training/` depend only on `core/` and stdlib, or to explicitly declare that `training/` is allowed to depend on `engine/` as a top-level module.
+
+**How to avoid:**
+- Decide before implementation: is `training/` a peer of `engine/` (allowed to import from engine/) or a consumer of `core/` only? Document this in the import boundary checker config.
+- If `training/` needs `PipelineConfig`, import it from `engine/config.py` explicitly and declare the allowance in the boundary checker.
+- Run `hatch run pre-commit run --all-files` after adding any new import in `training/` — do not wait until the module is complete.
+
+**Warning signs:**
+- Pre-commit fails with "import boundary violation: training imports from engine".
+- Workarounds like `TYPE_CHECKING` guards proliferating in `training/` to avoid import errors.
+- Circular import at runtime when `training/` is imported.
+
+**Phase to address:**
+Training infrastructure phase, before writing any training module code.
+
+---
+
+## Technical Debt Patterns (v2.2 Specific)
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Use standard OpenCV calibration without refractive model | Faster calibration implementation | Systematic depth-dependent 3D errors; requires full rework | Never for underwater setups |
-| Fixed-iteration Newton-Raphson without convergence check | Differentiable backward pass, simpler code | Silent failures at edge rays produce bad gradients | Only if field of view is verified to exclude near-critical-angle rays |
-| Skip mask morphological smoothing before skeletonization | Faster pipeline, fewer parameters | Unstable skeletons, spurious branches, jittery midlines | Only if mask IoU > 0.90 |
-| Naive DLT triangulation without RANSAC | Simpler implementation | Outlier cameras corrupt 3D points; no robustness to mask errors | Only for initial prototyping with known-good masks |
-| Skip head-tail consistency check across cameras | Fewer heuristics to tune | Reversed arc-length mapping produces garbage triangulation | Never — must validate head-tail consistency |
-| Skip female-specific detection validation | Faster integration testing | Silently drops detections for half the experimental fish | Never if females are in the experimental population |
-| Report reprojection error as primary metric | Easy to compute, familiar | Masks Z-axis failures completely | Only as a secondary metric alongside 3D reconstruction error |
-| Python loop over fish/body-points for triangulation | Easier to debug | O(N*K) Python overhead; unusable at 9 fish × 20 body points × 30fps | Only for single-fish prototyping |
-| ~~Euler angle rotation representation~~ | ~~Familiar, easy to debug~~ | ~~Gimbal lock~~ | *Shelved pipeline only* |
-| ~~Single global optimizer for all 9 fish~~ | ~~Simpler code initially~~ | ~~One fish destabilizes others~~ | *Shelved pipeline only* |
-| ~~Optimize shape and pose jointly from start~~ | ~~One optimization loop~~ | ~~Shape compensates for pose errors~~ | *Shelved pipeline only* |
+| Leaving bare `15` literals in visualization code | No refactor needed now | Any n_points change silently breaks visualization | Never — replace with `N_SAMPLE_POINTS` constant in v2.2 cleanup |
+| OBB backend config in `DetectionConfig.extra` dict | No new config fields | OBB params undocumented, not type-checked, not validated | Only as a temporary shim during development; add proper fields before shipping |
+| Confidence as `None` in segment-then-extract backend after adding `per_point_confidence` field | No change to existing backend | Reconstruction cannot confidence-weight existing backend output | Acceptable for v2.2 if reconstruction checks for None |
+| No `_filter_fields()` on `DetectionConfig`/`MidlineConfig` | Less code in load_config | Any YAML from v2.1 breaks on new field additions | Never — apply filter universally in v2.2 config cleanup |
+| Separate `device` fields per sub-config | Each stage independently configurable | Device mismatch errors mid-pipeline; no single override point | Acceptable only if top-level propagation is implemented |
+| Training CLI invents its own config loading | Faster initial implementation | Two config systems diverge; YAML files not interchangeable | Never — reuse `load_config()` from engine/config.py |
 
 ---
 
-## Integration Gotchas
+## Integration Gotchas (v2.2 Specific)
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| scikit-image `skeletonize` | Run on raw mask without smoothing | Apply morphological closing+opening before skeletonization; prune branches by length |
-| scipy `splprep` / `splev` | Fit spline to noisy skeleton points without filtering | Pre-filter skeleton points; use smoothing parameter `s > 0`; validate spline length is biologically plausible |
-| Crop-to-frame coordinate transforms | Forget to undo crop offset when projecting midline points back to full frame | Maintain crop origin (x0, y0) and apply inverse transform before any cross-camera correspondence |
-| OpenCV MOG2 / YOLO detection | Use default parameters in production | Tune for tank-specific conditions; validate on worst-case fish (females, stationary); prefer YOLO for production |
-| Snell's law solver (custom) | Test only with central-field rays | Include edge-field rays at 40-48° incidence in the unit test suite |
-| Multi-view triangulation | Use linear least squares on all cameras equally | Weight contributions by reprojection confidence; use RANSAC; down-weight edge-of-frame observations |
-| ~~PyTorch3D soft rasterizer~~ | ~~Copy default sigma/gamma from tutorials~~ | *Shelved pipeline only* |
-| ~~PyTorch3D batched meshes~~ | ~~Use single Meshes object~~ | *Shelved pipeline only* |
-| ~~Rotation gradients in PyTorch~~ | ~~Euler angles with direct Adam update~~ | *Shelved pipeline only* |
+| OBB → CropRegion | Deriving CropRegion from OBB corners using their axis-aligned bounding box | Use OBB `xywhr` to compute affine rotation matrix; CropRegion describes the axis-aligned bounding box of the rotated crop in frame space |
+| OBB angle → affine crop | Using `cv2.minAreaRect` on OBB corners to re-derive angle (introduces degree/OpenCV convention) | Use `result.obb.xywhr[..., 4]` (radians, clockwise) directly |
+| Keypoint → Midline2D | Storing crop-space coordinates directly in `Midline2D.points` | Always call `_crop_to_frame()` from `reconstruction/midline.py` before constructing `Midline2D` |
+| Training CLI → config system | Adding a new Click command that re-implements config loading from scratch | Reuse `load_config()` from `engine/config.py`; add training-specific fields to an extension of `PipelineConfig` if needed |
+| New midline backend → MidlineStage | Implementing OBB crop logic directly in the stage | Follow the `SegmentThenExtractBackend` pattern: backend class implements `process_frame()`, registered in `core/midline/backends/__init__.py:get_backend()`, stage stays thin |
+| Per-point confidence → HDF5 | Adding a new HDF5 dataset without updating `Midline3DWriter` | The writer pre-allocates datasets at `open()` — new fields require updating `_make()` calls in the constructor; existing files cannot be appended to with new schema |
 
 ---
 
-## Performance Traps
+## "Looks Done But Isn't" Checklist (v2.2 Specific)
 
-| Trap | Symptoms | Prevention | When It Breaks |
-|------|----------|------------|----------------|
-| Python loops over fish/body-points for triangulation | N*K times slower than vectorized; frame rate unusable | Vectorize triangulation: batch across body points and fish using numpy/scipy broadcasting | At > 3 fish × 20 body points per frame |
-| Recomputing camera visibility mask from scratch each frame | Redundant computation when camera set is static | Cache the valid-camera set per fish identity; only update when fish moves significantly | At 13 cameras × 9 fish × 30fps |
-| Running `skeletonize` on full-resolution masks | Skeletonization is O(pixels); unnecessarily slow on 1080p crops | Downsample mask to working resolution before skeletonization; scale midline points back up | At > 512px crop dimension |
-| Storing all camera views in memory simultaneously | OOM error at 13 cameras × 1080p | Downsample images before processing; process cameras in streaming fashion if memory-constrained | At 13 cameras × full resolution |
-| Re-extracting masks every frame without caching | Duplicate detection+segmentation work when masks haven't changed | Cache detection/segmentation results; only re-run when frame changes | Any batch processing over video sequences |
-| ~~Rendering 9 fish sequentially in Python loop~~ | ~~9x slower~~ | *Shelved pipeline only* |
-| ~~Re-computing refractive projection Jacobian numerically~~ | ~~100x slower~~ | *Shelved pipeline only* |
-
----
-
-## "Looks Done But Isn't" Checklist
-
-- [ ] **Refractive projection:** Validate that reprojection error is consistent across tank depth (near-surface vs. near-floor) — if error varies by depth, the model is not truly depth-aware
-- [ ] **Camera calibration:** Place a physical object at 3+ known depths and measure 3D reconstruction accuracy, not just reprojection error
-- [ ] **Detection recall:** Measure detection recall separately for (a) males, (b) females, (c) stationary fish, (d) fish near tank edges
-- [ ] **Newton-Raphson solver:** Log convergence residuals at iteration 10 for all rays; verify < 0.1px equivalent residual for rays within the valid field of view
-- [ ] **Medial axis stability:** For the same fish in consecutive frames, skeleton length should not vary by more than ~10-15%; verify after morphological smoothing
-- [ ] **Arc-length correspondence accuracy:** Triangulate a known straight object and verify body-point correspondence is correct; then test on a curved fish and check for kinks
-- [ ] **Coordinate transform crop-to-frame:** Verify that midline points extracted from crops are correctly transformed back to full-frame coordinates before cross-camera triangulation
-- [ ] **Head-tail consistency:** Verify that head endpoint is assigned to the same physical end of the fish across all cameras for the same frame
-- [ ] **Multi-fish extension interface:** Verify that the v1 single-fish code accepts a list-of-length-1 and that no function signature assumes exactly-one fish
-- [ ] **Z-axis accuracy:** Report X, Y, Z errors separately on a 3D ground truth target — do not report only aggregate reprojection error
+- [ ] **OBB backend registered:** `make_detector("yolo-obb", ...)` in `segmentation/detector.py` returns a `YOLOOBBBackend` — verify the factory handles the new kind string.
+- [ ] **Affine crop orientation tested:** Given a known-angle detection, verify the affine-cropped image has the fish axis aligned to horizontal — visual check, not just "no exception raised."
+- [ ] **Keypoint coordinate transform verified:** `midline.points[:, 0].min() > crop_region.x1 - 20` for every non-None midline produced by the keypoint backend.
+- [ ] **Config filter universal:** `_filter_fields()` applied to `DetectionConfig`, `MidlineConfig`, `ReconstructionConfig` — not just `AssociationConfig` and `TrackingConfig`.
+- [ ] **n_points contract enforced:** `assert midline.points.shape == (config.midline.n_points, 2)` in `MidlineStage.run()` after each backend call.
+- [ ] **HDF5 schema versioned if changed:** If `Midline3DWriter` gains new datasets, the HDF5 file has a schema version attribute so downstream analysis tools can detect format changes.
+- [ ] **Training CLI uses shared config:** `aquapose train` loads via `load_config()` — not a separate config class invented for training.
+- [ ] **Import boundary clean:** After adding `src/aquapose/training/`, `hatch run pre-commit run --all-files` reports 0 import boundary violations.
+- [ ] **OBB NMS threshold tested on parallel fish:** Run on at least one frame with 2 adjacent parallel fish and verify both are detected with the chosen `iou_threshold`.
+- [ ] **Pinned YAML regression test:** Loading a saved v2.1 YAML with the new config schema raises no `TypeError`.
 
 ---
 
-## Recovery Strategies
+## Recovery Strategies (v2.2 Specific)
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Depth-independent refraction model | HIGH | Rewrite projection layer, recalibrate cameras, re-run all experiments |
-| Top-down Z-weakness not quantified early | MEDIUM | Add Z-regularization; add held-out 3D accuracy metric; may not fully recover without adding oblique cameras |
-| Newton-Raphson failure at edge rays | LOW-MEDIUM | Add convergence check and invalid-ray mask; rerun affected frames |
-| MOG2 female fish dropout | LOW-MEDIUM | Switch to YOLO detector (already available); validate recall |
-| Port tilt unmodeled | MEDIUM | Re-estimate port tilt as calibration parameter; recalibrate; re-run |
-| Single-fish architecture can't extend to 9 | HIGH | Requires refactoring core pipeline with batch-first interfaces |
-| Arc-length correspondence errors on curved fish | MEDIUM | Add RANSAC per body point; implement view-angle weighting; may need iterative refinement |
-| Medial axis instability on noisy masks | LOW-MEDIUM | Add morphological smoothing before skeletonization; tune kernel size; validate stability |
-| Head-tail ambiguity | LOW | Add width heuristic + centroid projection for head-tail assignment; reprocess affected frames |
-| ~~Silhouette local minima~~ | ~~MEDIUM~~ | *Shelved pipeline only* |
-| ~~Euler angle gimbal lock~~ | ~~LOW~~ | *Shelved pipeline only* |
+| OBB angle convention mismatch discovered after training keypoint model | HIGH | Re-generate all affine crops with correct angle convention, retrain from scratch — no post-hoc correction exists |
+| Keypoint coordinates in crop space discovered in production | MEDIUM | Add `_crop_to_frame()` call in backend and re-run inference — no retraining needed |
+| n_points mismatch in HDF5 file | MEDIUM | Write migration script that reads old HDF5, pads/truncates half_widths to 15, writes new file |
+| Config backward compat broken by new required field | LOW | Add default value to the new field and release a patch — existing YAMLs work again without user changes |
+| Train/val temporal leakage discovered after training | HIGH | Re-split by temporal segment and retrain — metrics from leaky split are unreliable |
+| Device mismatch error mid-pipeline | LOW | Add device propagation to `load_config()`, no model changes needed |
 
 ---
 
-## Pitfall-to-Phase Mapping
+## Pitfall-to-Phase Mapping (v2.2 Specific)
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| P1: Depth-independent refraction model | Phase 1 — Camera model & calibration | Reprojection error flat across Z-depth range; 3D accuracy at 3+ depths |
-| P2: Top-down Z-weakness | Phase 1 — Geometry validation (resolved) | Theoretical uncertainty bounds calculated (132x Z/XY anisotropy) |
-| P4: Newton-Raphson edge instability | Phase 1 — Refractive projection layer | Residual-at-iteration-10 unit tests pass for all ray angles in FOV |
-| P5: MOG2/detection dropout | Phase 2 — Detection module | Per-sex, per-behavior detection recall > 95%; YOLO as primary detector |
-| P6: Port tilt unmodeled | Phase 1 — Camera calibration | Directional residual map shows radial (not directional) symmetry |
-| P9: Single-fish architecture blocks N-fish | Core architecture design | All functions accept N-fish lists; batch-first reviewed before implementation |
-| P11: Reprojection-only validation | Evaluation framework | 3D accuracy metric defined with physical ground truth measurement protocol |
-| P12: Arc-length correspondence errors | Phase 7 — Triangulation | RANSAC per body point; residual does not correlate with fish curvature |
-| P13: Medial axis instability | Phase 6 — Midline extraction | Skeleton length stable (< 15% variation) across consecutive frames |
-| P14: Head-tail ambiguity | Phase 6 — Midline extraction | Head endpoint consistent across all cameras for same fish/frame |
-| Identity swap in multi-fish | Multi-fish extension phase | Track continuity > 95% across simulated occlusion events |
-| ~~P3: Silhouette local minima~~ | *Shelved pipeline* | — |
-| ~~P7: Soft rasterizer hyperparameters~~ | *Shelved pipeline* | — |
-| ~~P8: Shape/pose coupling~~ | *Shelved pipeline* | — |
-| ~~P10: Rotation gimbal lock~~ | *Shelved pipeline* | — |
+| A1: OBB angle convention mismatch | YOLO-OBB detection backend | Smoke test: known-angle detection → affine crop → axis-aligned fish |
+| A2: Keypoint coordinates in crop space | Keypoint midline backend | Integration test: assert points within detection bbox |
+| A3: N_SAMPLE_POINTS scatter | Config cleanup | Grep for bare `15` literals in visualization; assert zero |
+| A4: OBB NMS suppressing parallel fish | YOLO-OBB detection backend | Detection count regression test vs AABB baseline on schooling frames |
+| A5: Affine crop border artifacts | YOLO-OBB affine crop step | Test: detection within 50px of frame edge produces valid crop |
+| A6: Augmentation spatial inconsistency | Training infrastructure | Visual overlay check: augmented image + transformed keypoints aligned |
+| A7: Train/val temporal leakage | Training infrastructure | Hold out a full contiguous clip as val; val loss diverges from train |
+| A8: Device propagation failure | Config cleanup | Test: construct pipeline with `device="cpu"`, no CUDA tensors anywhere |
+| A9: Midline2D contract change | Keypoint midline backend | All construction sites updated; no positional-arg `TypeError` |
+| A10: Config backward compat breakage | Config cleanup | Load pinned v2.1 YAML after any schema change — no `TypeError` |
+| A11: Arc-length mismatch (variable n_points) | Keypoint midline backend | Assert `midline.points.shape == (n_points, 2)` in `MidlineStage.run()` |
+| A12: Import boundary violation | Training infrastructure | `hatch run pre-commit run --all-files` = 0 violations after each new import |
+
+---
+
+---
+
+## Foundation Pitfalls (Retained from v1.0–v2.1 Research)
+
+*These pitfalls from prior research remain relevant to the overall system.*
+
+---
+
+### Pitfall 1: Treating Refractive Distortion as Depth-Independent
+
+**What goes wrong:** Refractive projection through a flat air-water port is depth-dependent. Systems that model refraction as a fixed pixel-wise correction produce systematic 3D errors that grow with distance from calibration depth. **Status:** Addressed in v1.0 via `RefractiveProjectionModel` with per-ray Snell's law tracing.
+
+**Phase to address:** Camera model and calibration phase (resolved).
+
+---
+
+### Pitfall 2: All-Top-Down Camera Configuration Creates Weak Z-Reconstruction
+
+**What goes wrong:** 13 cameras all looking straight down share nearly parallel optical axes. Z-reconstruction uncertainty is 132x larger than XY. **Status:** Quantified in v1.0; XY-only tracking cost matrix applied in early versions, superseded by OC-SORT per-camera in v2.1.
+
+**Phase to address:** Geometry validation phase (resolved; 132x Z/XY anisotropy documented).
+
+---
+
+### Pitfall 3: MOG2 Background Subtraction Fails on Low-Contrast Female Fish
+
+**What goes wrong:** Female cichlids have lower visual contrast against tank substrate. MOG2 absorbs slow/stationary fish into the background model. **Status:** YOLO added as primary detector; MOG2 retained as fallback. Detection recall for females remains a known limitation.
+
+**Phase to address:** Detection module phase (mitigated via YOLO).
+
+---
+
+### Pitfall 4: Arc-Length Correspondence Errors on Curved Fish
+
+**What goes wrong:** Arc-length normalization assumes the midline projection preserves parameterization across views. For significantly curved fish viewed from different angles, foreshortening compresses the arc-length mapping unevenly, creating triangulation errors at body points away from the head/tail endpoints.
+
+**How to avoid:** RANSAC per body point during triangulation; view-angle weighting. **Status:** Partially mitigated by RANSAC + view-angle weighting in `triangulate_midlines()`.
+
+**Phase to address:** Triangulation (active concern for reconstruction quality).
+
+---
+
+### Pitfall 5: Medial Axis Instability on Noisy Masks (IoU ~0.62)
+
+**What goes wrong:** `skeletonize` on masks with boundary noise produces unstable, branchy skeletons that wobble frame-to-frame. **Status:** Mitigated by `_adaptive_smooth()` with morphological closing/opening and adaptive kernel radius. The keypoint backend, if implemented correctly, bypasses this entirely.
+
+**Phase to address:** Midline extraction (partially mitigated; keypoint backend is the intended long-term fix).
+
+---
+
+### Pitfall 6: Head-Tail Ambiguity in Arc-Length Parameterization
+
+**What goes wrong:** Without orientation information, the skeleton may be ordered tail-to-head in some cameras and head-to-tail in others, corrupting arc-length correspondence. **Status:** Addressed in v2.1 via `resolve_orientation()` using cross-camera geometry, velocity, and temporal prior signals.
+
+**Phase to address:** Midline extraction (resolved in v2.1).
 
 ---
 
 ## Sources
 
-- [A Calibration Tool for Refractive Underwater Vision (arXiv 2405.18018)](https://arxiv.org/html/2405.18018v1) — MEDIUM confidence; peer-reviewed, current (2024)
-- [Refractive Two-View Reconstruction for Underwater 3D Vision (IJCV 2019)](https://link.springer.com/article/10.1007/s11263-019-01218-9) — HIGH confidence; established result
-- [Analysis of Refraction-Parameter Deviation on Underwater Stereo-Vision (Remote Sensing 2024)](https://www.mdpi.com/2072-4292/16/17/3286) — MEDIUM confidence
-- [Adventures with Differentiable Mesh Rendering (Andrew Chan blog)](https://andrewkchan.dev/posts/diff-render.html) — MEDIUM confidence; practical implementation experience
-- [PyTorch3D differentiable rendering GitHub issues #1626, #905, #1855](https://github.com/facebookresearch/pytorch3d/issues/1626) — MEDIUM confidence; official issue tracker
-- [Multi-animal pose estimation and tracking with DeepLabCut (Nature Methods 2022)](https://www.nature.com/articles/s41592-022-01443-0) — HIGH confidence; peer-reviewed
-- [vmTracking enables highly accurate multi-animal pose tracking (PLOS Biology 2025)](https://pmc.ncbi.nlm.nih.gov/articles/PMC11845028/) — HIGH confidence; peer-reviewed, current
-- [Expose Camouflage in the Water: Underwater Camouflaged Instance Segmentation (arXiv 2510.17585)](https://arxiv.org/abs/2510.17585) — MEDIUM confidence; preprint 2025
-- [WaterMask: Instance Segmentation for Underwater Imagery (ICCV 2023)](https://openaccess.thecvf.com/content/ICCV2023/papers/Lian_WaterMask_Instance_Segmentation_for_Underwater_Imagery_ICCV_2023_paper.pdf) — HIGH confidence; peer-reviewed
-- [Differentiable Rendering: A Survey (arXiv 2006.12057)](https://arxiv.org/pdf/2006.12057) — HIGH confidence; comprehensive survey
-- [Flat port total internal reflection field of view limit (ResearchGate diagram)](https://www.researchgate.net/figure/In-a-flat-port-the-maximum-field-of-view-is-limited-by-the-total-internal-reflection_fig3_289496840) — MEDIUM confidence
-- [OpenCV MOG2 background subtraction documentation](https://docs.opencv.org/4.x/d1/dc5/tutorial_background_subtraction.html) — HIGH confidence; official docs
+- Ultralytics YOLO OBB documentation: [Oriented Bounding Boxes Object Detection](https://docs.ultralytics.com/tasks/obb/)
+- Ultralytics issue #13003 "Is the angle value given by OBB correct?": [GitHub](https://github.com/ultralytics/ultralytics/issues/13003)
+- Ultralytics issue #16235 "YOLOv8-OBB angle conversion": [GitHub](https://github.com/ultralytics/ultralytics/issues/16235)
+- PyTorch mixed precision training: [What Every User Should Know About Mixed Precision Training in PyTorch](https://pytorch.org/blog/what-every-user-should-know-about-mixed-precision-training-in-pytorch/)
+- Direct codebase inspection: `src/aquapose/reconstruction/midline.py`, `core/midline/types.py`, `core/midline/stage.py`, `core/midline/backends/segment_then_extract.py`, `engine/config.py`, `io/midline_writer.py`, `reconstruction/triangulation.py`, `segmentation/crop.py`, `segmentation/detector.py`, `core/context.py`
+- Prior project pitfalls research: 2026-02-19 / 2026-02-21 (v1.0–v2.1)
 
 ---
-*Pitfalls research for: AquaPose — 3D fish pose estimation via direct triangulation (primary) / analysis-by-synthesis (shelved)*
-*Researched: 2026-02-19 | Updated: 2026-02-21 (pipeline pivot)*
+*Pitfalls research for: v2.2 Backends — YOLO-OBB, keypoint midline, training infrastructure, config cleanup*
+*Researched: 2026-02-28*

@@ -12,6 +12,8 @@ from aquapose.engine.events import Event, StageComplete
 
 logger = logging.getLogger(__name__)
 
+_ASSOCIATION_STAGE_NAME = "AssociationStage"
+
 # PipelineContext field names that hold per-frame data (list-typed, indexed by frame).
 # detections, annotated_detections, and midlines_3d are all list[...] indexed by frame.
 _PER_FRAME_FIELDS = (
@@ -159,13 +161,13 @@ class DiagnosticObserver:
             ValueError: If no AssociationStage snapshot is found, or if the
                 snapshot contains no tracklet groups.
         """
-        if "AssociationStage" not in self.stages:
+        if _ASSOCIATION_STAGE_NAME not in self.stages:
             raise ValueError(
                 "No AssociationStage snapshot found. "
                 "Run the pipeline before calling export_centroid_correspondences()."
             )
 
-        snapshot = self.stages["AssociationStage"]
+        snapshot = self.stages[_ASSOCIATION_STAGE_NAME]
         if not snapshot.tracklet_groups:
             raise ValueError(
                 "AssociationStage snapshot has no tracklet_groups. "

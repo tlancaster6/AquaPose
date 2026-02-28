@@ -1,4 +1,4 @@
-"""Scenario presets for targeted FishTracker failure mode evaluation.
+"""Scenario presets for targeted tracker failure mode evaluation.
 
 Each scenario function returns a (TrajectoryConfig, NoiseConfig) tuple
 configured to stress-test a specific tracker failure mode. All scenarios

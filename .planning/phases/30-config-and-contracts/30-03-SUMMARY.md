@@ -114,6 +114,18 @@ None - no external service configuration required.
 - Phase 31 (Training Infra) can use this project layout when documenting training workflows
 - CFG-06 through CFG-09 requirements fulfilled
 
+## Self-Check: PASSED
+
+- FOUND: src/aquapose/cli.py
+- FOUND: src/aquapose/engine/config.py
+- FOUND: tests/unit/engine/test_cli.py
+- FOUND: tests/unit/engine/test_config.py
+- FOUND: .planning/phases/30-config-and-contracts/30-03-SUMMARY.md
+- FOUND commit: 9c0beec (feat: rewrite init-config CLI)
+- FOUND commit: a2df1d5 (feat: project_dir path resolution)
+- FOUND commit: e71ef91 (docs: plan metadata)
+- All 582 tests pass
+
 ---
 *Phase: 30-config-and-contracts*
 *Completed: 2026-02-28*

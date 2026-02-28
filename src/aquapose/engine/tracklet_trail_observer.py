@@ -106,7 +106,7 @@ class TrackletTrailObserver:
         stop_frame: int | None = None,
     ) -> None:
         self._output_dir = Path(output_dir)
-        self._video_dir = Path(video_dir)
+        self._video_dir = Path(video_dir) if video_dir else None
         self._calibration_path = Path(calibration_path)
         self._trail_length = trail_length
         self._fps = fps
@@ -297,6 +297,9 @@ class TrackletTrailObserver:
         camera_map: dict[str, Path],
         calib_data: object,
         diag_dir: Path,
+        *,
+        frame_sizes: dict[str, tuple[int, int]] | None = None,
+        n_synth_frames: int = 0,
     ) -> None:
         """Write per-camera trail MP4 files.
 
@@ -308,24 +311,39 @@ class TrackletTrailObserver:
             camera_map: camera_id -> video Path.
             calib_data: CalibrationData for VideoSet undistortion.
             diag_dir: Output directory for diagnostic videos.
+            frame_sizes: camera_id -> (width, height) for synthetic fallback.
+            n_synth_frames: Number of synthetic frames when no videos.
         """
+        import contextlib
+
         from aquapose.io.video import VideoSet
+        from aquapose.visualization.frames import synthetic_frame_iter
+
+        use_synthetic = not camera_map and frame_sizes is not None
 
         for cam_id in camera_ids:
-            if cam_id not in camera_map:
+            if not use_synthetic and cam_id not in camera_map:
                 continue
             cam_lookup = frame_lookup.get(cam_id, {})
             if not cam_lookup:
                 # No tracklets for this camera — skip.
                 continue
 
-            cam_map_single = {cam_id: camera_map[cam_id]}
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
             writer: cv2.VideoWriter | None = None
 
+            if use_synthetic:
+                assert frame_sizes is not None  # narrowed by use_synthetic guard
+                ctx_mgr = contextlib.nullcontext(
+                    synthetic_frame_iter([cam_id], frame_sizes, n_synth_frames)
+                )
+            else:
+                cam_map_single = {cam_id: camera_map[cam_id]}
+                ctx_mgr = VideoSet(cam_map_single, undistortion=calib_data)  # type: ignore[arg-type]
+
             try:
-                with VideoSet(cam_map_single, undistortion=calib_data) as vs:  # type: ignore[arg-type]
-                    for frame_idx, frames in vs:
+                with ctx_mgr as frame_iter:
+                    for frame_idx, frames in frame_iter:
                         if (
                             self._stop_frame is not None
                             and frame_idx >= self._stop_frame
@@ -425,6 +443,9 @@ class TrackletTrailObserver:
         camera_map: dict[str, Path],
         calib_data: object,
         diag_dir: Path,
+        *,
+        frame_sizes: dict[str, tuple[int, int]] | None = None,
+        n_synth_frames: int = 0,
     ) -> None:
         """Write the association mosaic MP4.
 
@@ -439,10 +460,17 @@ class TrackletTrailObserver:
             camera_map: camera_id -> video Path.
             calib_data: CalibrationData for VideoSet undistortion.
             diag_dir: Output directory for the mosaic video.
+            frame_sizes: camera_id -> (width, height) for synthetic fallback.
+            n_synth_frames: Number of synthetic frames when no videos.
         """
-        from aquapose.io.video import VideoSet
+        import contextlib
 
-        if not camera_map:
+        from aquapose.io.video import VideoSet
+        from aquapose.visualization.frames import synthetic_frame_iter
+
+        use_synthetic = not camera_map and frame_sizes is not None
+
+        if not camera_map and not use_synthetic:
             return
 
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
@@ -450,9 +478,17 @@ class TrackletTrailObserver:
         tile_w: int = 0
         tile_h: int = 0
 
+        if use_synthetic:
+            assert frame_sizes is not None  # narrowed by use_synthetic guard
+            ctx_mgr = contextlib.nullcontext(
+                synthetic_frame_iter(camera_ids, frame_sizes, n_synth_frames)
+            )
+        else:
+            ctx_mgr = VideoSet(camera_map, undistortion=calib_data)  # type: ignore[arg-type]
+
         try:
-            with VideoSet(camera_map, undistortion=calib_data) as vs:  # type: ignore[arg-type]
-                for frame_idx, frames in vs:
+            with ctx_mgr as frame_iter:
+                for frame_idx, frames in frame_iter:
                     if self._stop_frame is not None and frame_idx >= self._stop_frame:
                         break
                     # Determine tile dimensions from first real frame.
@@ -626,21 +662,39 @@ class TrackletTrailObserver:
 
         # Resolve video paths.
         camera_map: dict[str, Path] = {}
-        for cam_id in camera_ids:
-            video_path = self._video_dir / f"{cam_id}.mp4"
-            if not video_path.exists():
-                matches = sorted(self._video_dir.glob(f"{cam_id}-*.mp4"))
-                if matches:
-                    video_path = matches[0]
-                else:
-                    continue
-            camera_map[cam_id] = video_path
+        if self._video_dir is not None:
+            from aquapose.io.discovery import discover_camera_videos
 
+            all_videos = discover_camera_videos(self._video_dir)
+            camera_map = {
+                cid: p for cid, p in all_videos.items() if cid in set(camera_ids)
+            }
+
+        # Resolve frame sizes from calibration for synthetic fallback.
+        frame_sizes: dict[str, tuple[int, int]] | None = None
         if not camera_map:
-            logger.warning(
-                "TrackletTrailObserver: no video files found in %s", self._video_dir
-            )
-            return
+            frame_sizes = {
+                cam_id: calib_data.cameras[cam_id].image_size
+                for cam_id in camera_ids
+                if cam_id in calib_data.cameras
+            }
+            if not frame_sizes:
+                logger.warning(
+                    "TrackletTrailObserver: no video files or calibration data in %s",
+                    self._video_dir,
+                )
+                return
+
+        # Compute total frame count for synthetic fallback.
+        n_synth_frames: int = 0
+        if not camera_map:
+            all_frame_indices = [
+                fi for cam_lookup in frame_lookup.values() for fi in cam_lookup
+            ]
+            if all_frame_indices:
+                n_synth_frames = max(all_frame_indices) + 1
+            if self._stop_frame is not None:
+                n_synth_frames = min(n_synth_frames, self._stop_frame)
 
         # Create output directory.
         diag_dir = self._output_dir / "observers" / "diagnostics"
@@ -655,11 +709,20 @@ class TrackletTrailObserver:
             camera_map,
             calib_data,
             diag_dir,
+            frame_sizes=frame_sizes,
+            n_synth_frames=n_synth_frames,
         )
 
         # Generate association mosaic.
         self._generate_association_mosaic(
-            camera_ids, frame_lookup, fish_color_map, camera_map, calib_data, diag_dir
+            camera_ids,
+            frame_lookup,
+            fish_color_map,
+            camera_map,
+            calib_data,
+            diag_dir,
+            frame_sizes=frame_sizes,
+            n_synth_frames=n_synth_frames,
         )
 
         logger.info("TrackletTrailObserver: diagnostic videos written to %s", diag_dir)

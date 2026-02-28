@@ -66,7 +66,7 @@ class Overlay2DObserver:
         midline_2d_color: tuple[int, int, int] = _DEFAULT_MIDLINE_2D_COLOR,
     ) -> None:
         self._output_dir = Path(output_dir)
-        self._video_dir = Path(video_dir)
+        self._video_dir = Path(video_dir) if video_dir else None
         self._calibration_path = Path(calibration_path)
         self._mosaic = mosaic
         self._per_camera = per_camera
@@ -110,7 +110,12 @@ class Overlay2DObserver:
             return
 
         # Load calibration and build per-camera projection models.
-        from aquapose.calibration.loader import load_calibration_data
+        # Use K_new (undistorted intrinsics) to match the reconstruction backend
+        # and VideoSet, which undistorts frames before returning them.
+        from aquapose.calibration.loader import (
+            compute_undistortion_maps,
+            load_calibration_data,
+        )
         from aquapose.calibration.projection import RefractiveProjectionModel
         from aquapose.io.video import VideoSet
 
@@ -119,8 +124,9 @@ class Overlay2DObserver:
         for cam_id in camera_ids:
             if cam_id in calib_data.cameras:
                 cam = calib_data.cameras[cam_id]
+                undist_maps = compute_undistortion_maps(cam)
                 models[cam_id] = RefractiveProjectionModel(
-                    K=cam.K,
+                    K=undist_maps.K_new,
                     R=cam.R,
                     t=cam.t,
                     water_z=calib_data.water_z,
@@ -130,57 +136,79 @@ class Overlay2DObserver:
                 )
 
         # Resolve video paths for each camera.
-        # Supports both exact "{cam_id}.mp4" and prefix-match "{cam_id}-*.mp4"
-        # (e.g. timestamped filenames like "e3v829d-20260218T145915-150429.mp4").
         camera_map: dict[str, Path] = {}
-        for cam_id in camera_ids:
-            video_path = self._video_dir / f"{cam_id}.mp4"
-            if not video_path.exists():
-                matches = sorted(self._video_dir.glob(f"{cam_id}-*.mp4"))
-                if matches:
-                    video_path = matches[0]
-                else:
-                    continue
-            camera_map[cam_id] = video_path
+        if self._video_dir is not None:
+            from aquapose.io.discovery import discover_camera_videos
 
-        if not camera_map:
-            logger.warning("No video files found in %s", self._video_dir)
-            return
+            all_videos = discover_camera_videos(self._video_dir)
+            camera_map = {
+                cid: p for cid, p in all_videos.items() if cid in set(camera_ids)
+            }
 
         n_frames = len(midlines_3d)
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Use VideoSet for synchronized, undistorted frame reading.
-        with VideoSet(camera_map, undistortion=calib_data) as video_set:
-            # Frame dimensions from calibration (undistortion preserves size).
-            first_cam = calib_data.cameras[next(iter(camera_map))]
-            frame_w, frame_h = first_cam.image_size
+        # Build frame source: real videos or synthetic black frames.
+        if camera_map:
+            frame_source_ctx = VideoSet(camera_map, undistortion=calib_data)
+        else:
+            from aquapose.visualization.frames import synthetic_frame_iter
 
-            # Set up video writers.
-            mosaic_writer = None
-            per_cam_writers: dict[str, cv2.VideoWriter] = {}
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            frame_sizes = {
+                cam_id: calib_data.cameras[cam_id].image_size
+                for cam_id in camera_ids
+                if cam_id in calib_data.cameras
+            }
+            if not frame_sizes:
+                logger.warning("No video files or calibration data for overlay")
+                return
+            frame_source_ctx = None  # signal to use synthetic iter below
 
-            # Compute scaled output dimensions.
-            out_w = int(frame_w * self._scale)
-            out_h = int(frame_h * self._scale)
+        # Frame dimensions from calibration (undistortion preserves size).
+        first_cam_id = next(
+            (cid for cid in camera_ids if cid in calib_data.cameras), None
+        )
+        if first_cam_id is None:
+            logger.warning("No calibration data for any camera")
+            return
+        frame_w, frame_h = calib_data.cameras[first_cam_id].image_size
 
-            if self._mosaic:
-                mosaic_h, mosaic_w = self._mosaic_dims(len(camera_ids), out_w, out_h)
-                mosaic_path = self._output_dir / "overlay_mosaic.mp4"
-                mosaic_writer = cv2.VideoWriter(
-                    str(mosaic_path), fourcc, self._fps, (mosaic_w, mosaic_h)
+        # Set up video writers.
+        mosaic_writer = None
+        per_cam_writers: dict[str, cv2.VideoWriter] = {}
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+
+        # Compute scaled output dimensions.
+        out_w = int(frame_w * self._scale)
+        out_h = int(frame_h * self._scale)
+
+        if self._mosaic:
+            mosaic_h, mosaic_w = self._mosaic_dims(len(camera_ids), out_w, out_h)
+            mosaic_path = self._output_dir / "overlay_mosaic.mp4"
+            mosaic_writer = cv2.VideoWriter(
+                str(mosaic_path), fourcc, self._fps, (mosaic_w, mosaic_h)
+            )
+
+        if self._per_camera:
+            for cam_id in camera_map or frame_sizes:
+                cam_path = self._output_dir / f"overlay_{cam_id}.mp4"
+                per_cam_writers[cam_id] = cv2.VideoWriter(
+                    str(cam_path), fourcc, self._fps, (out_w, out_h)
                 )
 
-            if self._per_camera:
-                for cam_id in camera_map:
-                    cam_path = self._output_dir / f"overlay_{cam_id}.mp4"
-                    per_cam_writers[cam_id] = cv2.VideoWriter(
-                        str(cam_path), fourcc, self._fps, (out_w, out_h)
-                    )
+        # Choose frame iterator.
+        import contextlib
 
-            try:
-                for frame_idx, frames in video_set:
+        if frame_source_ctx is not None:
+            ctx_mgr = frame_source_ctx
+        else:
+            ctx_mgr = contextlib.nullcontext(
+                synthetic_frame_iter(camera_ids, frame_sizes, n_frames)
+            )
+
+        try:
+            with ctx_mgr as frame_iter:
+                for frame_idx, frames in frame_iter:
                     if frame_idx >= n_frames:
                         break
 
@@ -252,11 +280,11 @@ class Overlay2DObserver:
                     for cam_id, writer in per_cam_writers.items():
                         if cam_id in frames:
                             writer.write(frames[cam_id])
-            finally:
-                if mosaic_writer is not None:
-                    mosaic_writer.release()
-                for writer in per_cam_writers.values():
-                    writer.release()
+        finally:
+            if mosaic_writer is not None:
+                mosaic_writer.release()
+            for writer in per_cam_writers.values():
+                writer.release()
 
         logger.info("Overlay videos written to %s", self._output_dir)
 

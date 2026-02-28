@@ -2,8 +2,8 @@
 
 Converts TrajectoryResult (multi-fish 3D paths) into SyntheticDataset objects
 containing per-frame, per-camera Detection instances compatible with
-FishTracker.update(). Supports configurable miss rates, false positive rates,
-and centroid jitter.
+TrackingStage / OcSortTracker. Supports configurable miss rates, false positive
+rates, and centroid jitter.
 """
 
 from __future__ import annotations
@@ -93,7 +93,7 @@ class SyntheticFrame:
     Attributes:
         frame_index: Frame number (0-based).
         detections_per_camera: Dict mapping camera ID to list of Detection
-            objects. Format is identical to FishTracker.update() input.
+            objects. Format is identical to TrackingStage input.
         ground_truth: Dict mapping camera ID to list of GroundTruthEntry,
             one entry per fish that had a valid projection in that camera.
     """
@@ -147,7 +147,7 @@ def generate_detection_dataset(
     Projects each fish's 3D position through every camera at every frame using
     RefractiveProjectionModel.project. Applies configurable miss rates, centroid
     jitter, and false positive generation to produce a realistic synthetic
-    detection stream compatible with FishTracker.update().
+    detection stream compatible with TrackingStage / OcSortTracker.
 
     Args:
         trajectory: Multi-fish 3D trajectory from generate_trajectories().

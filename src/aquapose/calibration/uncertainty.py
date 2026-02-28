@@ -176,6 +176,8 @@ def build_rig_from_calibration(
 
     for name in sorted(cal.cameras.keys()):
         cam = cal.cameras[name]
+        # Intentionally uses raw cam.K (not K_new) — uncertainty analysis
+        # characterizes the original calibration, not the undistorted model.
         model = RefractiveProjectionModel(
             K=cam.K,
             R=cam.R,

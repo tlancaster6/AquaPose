@@ -149,10 +149,14 @@ def refine_clusters(
             refined.append(group)
             continue
 
-        # Re-triangulate cleaned cluster for updated confidence
-        cleaned_consensus = _compute_frame_consensus(
-            frame_list, tuple(kept_tracklets), forward_luts
-        )
+        # Re-triangulate cleaned cluster for updated confidence.
+        # Skip if no tracklets were evicted — consensus is unchanged.
+        if evicted_tracklets:
+            cleaned_consensus = _compute_frame_consensus(
+                frame_list, tuple(kept_tracklets), forward_luts
+            )
+        else:
+            cleaned_consensus = frame_consensus
         per_frame_conf = _compute_per_frame_confidence(
             frame_list,
             tuple(kept_tracklets),

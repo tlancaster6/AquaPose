@@ -5,6 +5,7 @@ render 3D animations of midlines in tank coordinates, and generate
 per-stage diagnostic visualizations for the reconstruction pipeline.
 """
 
+from .frames import synthetic_frame_iter
 from .midline_viz import (
     TrackSnapshot,
     vis_claiming_overlay,
@@ -34,6 +35,7 @@ __all__ = [
     "plot_3d_frame",
     "render_3d_animation",
     "render_overlay_video",
+    "synthetic_frame_iter",
     "vis_arclength_histogram",
     "vis_claiming_overlay",
     "vis_confidence_histogram",

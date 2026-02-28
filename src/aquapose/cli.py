@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 import sys
 from pathlib import Path
 from typing import Any
@@ -11,7 +10,6 @@ import click
 import yaml
 
 from aquapose.engine import (
-    PipelineConfig,
     PosePipeline,
     build_observers,
     load_config,
@@ -139,33 +137,51 @@ def run(
 
 
 @cli.command("init-config")
+@click.argument("name")
 @click.option(
-    "--output",
-    "-o",
-    default="aquapose.yaml",
-    type=click.Path(),
-    help="Output file path (default: aquapose.yaml).",
-)
-@click.option(
-    "--force",
+    "--synthetic",
     is_flag=True,
     default=False,
-    help="Overwrite existing file.",
+    help="Include a synthetic section in the generated config.",
 )
-def init_config(output: str, force: bool) -> None:
-    """Generate a default template YAML config file with all pipeline defaults."""
-    output_path = Path(output)
-    if output_path.exists() and not force:
-        raise click.ClickException(
-            f"'{output}' already exists. Use --force to overwrite."
-        )
-    config = PipelineConfig()
-    data = dataclasses.asdict(config)
-    for key in ("run_id", "output_dir"):
-        data.pop(key, None)
-    yaml_content = yaml.dump(data, default_flow_style=False, sort_keys=True)
-    output_path.write_text(yaml_content)
-    click.echo(f"Config written to {output}")
+def init_config(name: str, synthetic: bool) -> None:
+    """Create a new AquaPose project directory scaffold with a starter config.
+
+    NAME is the project name. Creates ~/aquapose/projects/<name>/ with
+    config.yaml and subdirectories: runs/, models/, geometry/, videos/.
+    """
+    project_dir = Path("~/aquapose/projects").expanduser() / name
+    if project_dir.exists():
+        raise click.ClickException(f"'{project_dir}' already exists.")
+
+    # Create directory structure
+    project_dir.mkdir(parents=True, exist_ok=False)
+    for subdir in ("runs", "models", "geometry", "videos"):
+        (project_dir / subdir).mkdir()
+
+    # Build ordered config dict (user-relevant order, not alphabetical)
+    data: dict[str, Any] = {}
+    # --- Paths (edited first by users) ---
+    data["project_dir"] = str(project_dir)
+    data["video_dir"] = "videos/"
+    data["calibration_path"] = "geometry/calibration.json"
+    data["output_dir"] = "runs/"
+    # --- Core parameters ---
+    data["n_animals"] = "SET_ME"  # required -- must be an integer
+    # --- Detection ---
+    data["detection"] = {"detector_kind": "yolo", "model_path": "models/best.pt"}
+    # --- Midline ---
+    data["midline"] = {"weights_path": "models/unet_best.pth"}
+    # --- Synthetic (only with --synthetic) ---
+    if synthetic:
+        data["synthetic"] = {"frame_count": 30, "noise_std": 0.0, "seed": 42}
+
+    # Write config.yaml with brief comment header
+    header = "# AquaPose pipeline config\n# See documentation for advanced options\n\n"
+    yaml_content = yaml.dump(data, default_flow_style=False, sort_keys=False)
+    (project_dir / "config.yaml").write_text(header + yaml_content)
+
+    click.echo(f"Project created at {project_dir}")
 
 
 def main() -> None:

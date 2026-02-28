@@ -333,50 +333,113 @@ class TestBenchmarkMode:
 class TestInitConfig:
     """Tests for the init-config subcommand."""
 
-    def test_init_config_creates_default_file(
-        self, runner: click.testing.CliRunner
-    ) -> None:
-        with runner.isolated_filesystem():
-            result = runner.invoke(cli, ["init-config"])
-            assert result.exit_code == 0
-            config_path = Path("aquapose.yaml")
-            assert config_path.exists()
-            content = config_path.read_text()
-            assert "detection" in content
-            assert "midline" in content
-            assert "association" in content
-            assert "tracking" in content
-            assert "reconstruction" in content
+    @pytest.fixture(autouse=False)
+    def patch_home(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        """Redirect ~ to tmp_path by patching HOME/USERPROFILE env vars."""
+        home_str = str(tmp_path)
+        monkeypatch.setenv("HOME", home_str)
+        monkeypatch.setenv("USERPROFILE", home_str)
+        return tmp_path
 
-    def test_init_config_custom_output(self, runner: click.testing.CliRunner) -> None:
-        with runner.isolated_filesystem():
-            result = runner.invoke(cli, ["init-config", "-o", "custom.yaml"])
-            assert result.exit_code == 0
-            assert Path("custom.yaml").exists()
-
-    def test_init_config_refuses_overwrite(
-        self, runner: click.testing.CliRunner
+    def test_init_config_creates_project_directory(
+        self,
+        runner: click.testing.CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        with runner.isolated_filesystem():
-            Path("aquapose.yaml").write_text("original: content\n")
-            result = runner.invoke(cli, ["init-config"])
-            assert result.exit_code != 0
-            assert Path("aquapose.yaml").read_text() == "original: content\n"
+        """init-config creates project dir with config.yaml and 4 subdirectories."""
+        home_str = str(tmp_path)
+        monkeypatch.setenv("HOME", home_str)
+        monkeypatch.setenv("USERPROFILE", home_str)
+        result = runner.invoke(cli, ["init-config", "test1"])
+        assert result.exit_code == 0, result.output
+        project_dir = tmp_path / "aquapose" / "projects" / "test1"
+        assert project_dir.exists()
+        assert (project_dir / "config.yaml").exists()
+        assert (project_dir / "runs").is_dir()
+        assert (project_dir / "models").is_dir()
+        assert (project_dir / "geometry").is_dir()
+        assert (project_dir / "videos").is_dir()
 
-    def test_init_config_force_overwrites(
-        self, runner: click.testing.CliRunner
+    def test_init_config_yaml_field_order(
+        self,
+        runner: click.testing.CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        with runner.isolated_filesystem():
-            Path("aquapose.yaml").write_text("original: content\n")
-            result = runner.invoke(cli, ["init-config", "--force"])
-            assert result.exit_code == 0
-            content = Path("aquapose.yaml").read_text()
-            assert "detection" in content
+        """Generated config.yaml has user-relevant field ordering."""
+        home_str = str(tmp_path)
+        monkeypatch.setenv("HOME", home_str)
+        monkeypatch.setenv("USERPROFILE", home_str)
+        runner.invoke(cli, ["init-config", "test1"])
+        project_dir = tmp_path / "aquapose" / "projects" / "test1"
+        import yaml as _yaml
+
+        content = (project_dir / "config.yaml").read_text()
+        parsed = _yaml.safe_load(content)
+        keys = list(parsed.keys())
+        assert keys.index("project_dir") < keys.index("video_dir")
+        assert keys.index("video_dir") < keys.index("n_animals")
+        assert keys.index("n_animals") < keys.index("detection")
+
+    def test_init_config_with_synthetic_flag(
+        self,
+        runner: click.testing.CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """--synthetic flag adds synthetic section without fish_count."""
+        home_str = str(tmp_path)
+        monkeypatch.setenv("HOME", home_str)
+        monkeypatch.setenv("USERPROFILE", home_str)
+        result = runner.invoke(cli, ["init-config", "test2", "--synthetic"])
+        assert result.exit_code == 0, result.output
+        project_dir = tmp_path / "aquapose" / "projects" / "test2"
+        import yaml as _yaml
+
+        content = (project_dir / "config.yaml").read_text()
+        parsed = _yaml.safe_load(content)
+        assert "synthetic" in parsed
+        assert "fish_count" not in parsed["synthetic"]
+
+    def test_init_config_refuses_existing_directory(
+        self,
+        runner: click.testing.CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """init-config fails with non-zero exit if project directory already exists."""
+        home_str = str(tmp_path)
+        monkeypatch.setenv("HOME", home_str)
+        monkeypatch.setenv("USERPROFILE", home_str)
+        target = tmp_path / "aquapose" / "projects" / "test1"
+        target.mkdir(parents=True)
+        result = runner.invoke(cli, ["init-config", "test1"])
+        assert result.exit_code != 0
+        assert "already exists" in result.output
+
+    def test_init_config_no_synthetic_by_default(
+        self,
+        runner: click.testing.CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """By default (no --synthetic), synthetic key is absent from config.yaml."""
+        home_str = str(tmp_path)
+        monkeypatch.setenv("HOME", home_str)
+        monkeypatch.setenv("USERPROFILE", home_str)
+        runner.invoke(cli, ["init-config", "test3"])
+        project_dir = tmp_path / "aquapose" / "projects" / "test3"
+        import yaml as _yaml
+
+        content = (project_dir / "config.yaml").read_text()
+        parsed = _yaml.safe_load(content)
+        assert "synthetic" not in parsed
 
     def test_init_config_help(self, runner: click.testing.CliRunner) -> None:
         result = runner.invoke(cli, ["init-config", "--help"])
         assert result.exit_code == 0
-        assert "--output" in result.output
+        assert "NAME" in result.output
 
 
 class TestSyntheticMode:

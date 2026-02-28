@@ -71,7 +71,7 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
 
 - [x] **Phase 29: Guidebook Audit** — Audit and update GUIDEBOOK.md for v2.1 accuracy and v2.2 planned features (complete 2026-02-28)
 - [x] **Phase 30: Config and Contracts** — Unify pipeline config, propagate device, extend Detection and Midline2D dataclasses (3/3 plans complete) (completed 2026-02-28)
-- [ ] **Phase 31: Training Infrastructure** — Build `aquapose train` CLI group and `src/aquapose/training/` package (early: start training while building integration)
+- [x] **Phase 31: Training Infrastructure** — Build `aquapose train` CLI group and `src/aquapose/training/` package (early: start training while building integration) (completed 2026-02-28)
 - [ ] **Phase 32: YOLO-OBB Detection Backend** — Add OBB detector, affine crop utilities, and OBB overlay visualization
 - [ ] **Phase 33: Keypoint Midline Backend** — Implement DirectPoseBackend pipeline integration and confidence-weighted reconstruction
 - [ ] **Phase 34: Stabilization** — Interactive QA, bug fixes, parameter tuning, real-data validation, cleanup
@@ -164,7 +164,7 @@ Plans:
 | 22-28 | v2.1 | 12/12 | Complete | 2026-02-28 |
 | 29. Guidebook Audit | v2.2 | 2/2 | Complete | 2026-02-28 |
 | 30. Config and Contracts | v2.2 | 3/3 | Complete | 2026-02-28 |
-| 31. Training Infrastructure | 1/2 | In Progress|  | - |
+| 31. Training Infrastructure | 2/2 | Complete   | 2026-02-28 | - |
 | 32. YOLO-OBB Detection Backend | v2.2 | 0/TBD | Not started | - |
 | 33. Keypoint Midline Backend | v2.2 | 0/TBD | Not started | - |
 | 34. Stabilization | v2.2 | 0/TBD | Not started | - |

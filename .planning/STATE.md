@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Backends
 status: unknown
-last_updated: "2026-02-28T22:37:37.768Z"
+last_updated: "2026-02-28T22:54:12Z"
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 31 — Training Infrastructure (in progress, Plan 01 complete)
+**Current focus:** Phase 31 — Training Infrastructure (in progress, Plans 01-02 complete)
 
 ## Current Position
 
-Phase: 31 of 35 (Training Infrastructure) — Plan 31-01 complete
-Plan: 31-01 complete
+Phase: 31 of 35 (Training Infrastructure) — Plan 31-02 complete
+Plan: 31-02 complete
 Status: In progress
-Last activity: 2026-02-28 - Completed 31-01: training/ package scaffold, common utilities, datasets, train_unet(), CLI subcommand
+Last activity: 2026-02-28 - Completed 31-02: YOLO-OBB and pose subcommands, migration cleanup (deleted segmentation/training.py and segmentation/dataset.py)
 
-Progress: [████░░░░░░] 46% (6/12 plans complete — Phase 29 both plans done, Phase 30 Plans 01-04 done, Phase 31 Plan 01 done)
+Progress: [█████░░░░░] 53% (7/12 plans complete — Phase 29 both plans done, Phase 30 Plans 01-04 done, Phase 31 Plans 01-02 done)
 
 ## Performance Metrics
 
@@ -43,7 +43,7 @@ Progress: [████░░░░░░] 46% (6/12 plans complete — Phase 29
 | 29-guidebook-audit | 2 | 5 min | 2.5 min |
 | 30-config-and-contracts | 3/4 done | 45 min | 15 min |
 
-| 31-training-infrastructure | 1 | 11 min | 11 min |
+| 31-training-infrastructure | 2 | 26 min | 13 min |
 
 *Updated after each plan completion*
 
@@ -89,6 +89,12 @@ From 30-03 execution:
 - [Phase 31-01]: train_unet() uses data_dir convention (annotations.json + images in same dir) instead of old coco_json + image_root pair for simpler CLI interface
 - [Phase 31-01]: training/ package rewrites BinaryMaskDataset and stratified_split from segmentation/ as fresh implementations with identical public API
 
+From 31-02 execution:
+- _PoseModel borrows enc0-enc4 only from _UNet; decoder replaced by regression head (AdaptiveAvgPool2d → flatten → Linear → ReLU → Linear → Sigmoid)
+- stratified_split broadened to _HasImages Protocol so KeypointDataset qualifies without circular import
+- segmentation/training.py and segmentation/dataset.py deleted; segmentation/__init__.py cleaned of training re-exports
+- test_training.py migrated to train_unet(data_dir=...) convention; old evaluate() not ported (no equivalent)
+
 ### Pending Todos
 
 12 pending todos from v2.1 — see .planning/todos/pending/
@@ -106,5 +112,5 @@ From 30-03 execution:
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Completed 31-01-PLAN.md (Training Infrastructure Foundation)
+Stopped at: Completed 31-02-PLAN.md (YOLO-OBB and Pose Training Subcommands)
 Resume file: None

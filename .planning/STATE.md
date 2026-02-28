@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Backends
 status: in_progress
-last_updated: "2026-02-28T19:55:00.000Z"
+last_updated: "2026-02-28T21:30:00.000Z"
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 12
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State
@@ -18,30 +18,30 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 30 — Config/Contracts (in progress, Plan 01 complete)
+**Current focus:** Phase 30 — Config/Contracts (in progress, Plan 02 complete)
 
 ## Current Position
 
-Phase: 30 of 35 (Config/Contracts) — Plan 30-01 complete
-Plan: 30-01 complete
+Phase: 30 of 35 (Config/Contracts) — Plan 30-02 complete
+Plan: 30-02 complete
 Status: In progress
-Last activity: 2026-02-28 — Completed 30-01: Extend Dataclasses and Universalize Config Validation
+Last activity: 2026-02-28 — Completed 30-02: Config Promotion and Propagation
 
-Progress: [██░░░░░░░░] 25% (3/12 plans complete — Phase 29 both plans done, Phase 30 Plan 01 done)
+Progress: [███░░░░░░░] 33% (4/12 plans complete — Phase 29 both plans done, Phase 30 Plans 01-02 done)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1 (this milestone)
-- Average duration: 9 min
-- Total execution time: 9 min
+- Total plans completed: 2 (this milestone)
+- Average duration: 15 min
+- Total execution time: 30 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 29-guidebook-audit | 2 | 5 min | 2.5 min |
-| 30-config-and-contracts | 1/4 done | 9 min | 9 min |
+| 30-config-and-contracts | 2/4 done | 30 min | 15 min |
 
 *Updated after each plan completion*
 
@@ -70,8 +70,14 @@ From 29-02 execution:
 From 30-01 execution:
 - Detection.angle uses standard math radians [-pi, pi]; YOLO-OBB backend (Plan 32) handles angle convention conversion at the boundary
 - segment_then_extract always fills point_confidence=1.0 — locked contract, skeletonization has no per-point uncertainty model
-- _RENAME_HINTS excludes detection.device and detection.stop_frame — those fields still exist on DetectionConfig and will be moved in Plan 02
 - _filter_fields() now applied to all 8 config types with strict reject; unknown fields raise ValueError
+
+From 30-02 execution:
+- device auto-detected via _default_device() using torch.cuda.is_available(); defaults to cuda:0 when GPU present
+- n_sample_points default is 10 (not 15); propagates to midline.n_points in load_config() unless midline.n_points explicitly set
+- n_animals sentinel is 0; load_config() raises ValueError when resolved_n_animals <= 0
+- device and stop_frame removed from DetectionConfig; _RENAME_HINTS updated with did-you-mean hints
+- N_SAMPLE_POINTS=15 kept as module-level fallback constant; all pipeline modules accept n_sample_points as constructor parameter
 
 ### Pending Todos
 
@@ -79,11 +85,10 @@ From 30-01 execution:
 
 ### Blockers/Concerns
 
-- EVAL-01 deferred from v2.1: E2E regression tests skip due to pytestmark; rebuild with configurable N_SAMPLE_POINTS (CFG-02 in Phase 30 resolves this)
 - OBB angle convention risk: ultralytics outputs radians clockwise in [-pi/4, 3pi/4), OpenCV uses degrees counter-clockwise — crop-orientation smoke test required before any keypoint training
 
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Completed 30-01-PLAN.md (Extend Dataclasses and Universalize Config Validation)
+Stopped at: Completed 30-02-PLAN.md (Config Promotion and Propagation)
 Resume file: None

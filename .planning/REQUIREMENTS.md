@@ -14,10 +14,10 @@ Requirements for v2.2 Backends milestone. Each maps to roadmap phases.
 
 ### Config and Contracts
 
-- [ ] **CFG-01**: Pipeline accepts a single top-level `device` parameter that propagates to all stages, eliminating per-stage device configuration
-- [ ] **CFG-02**: Midline sample point count (`n_sample_points`) is configurable via pipeline config with no hardcoded constants remaining in any module
-- [ ] **CFG-03**: Fish count is a single unified parameter (no duplicate `expect_fish_count`/`n_animals` fields)
-- [ ] **CFG-04**: `stop_frame` is a top-level pipeline parameter, not nested within a stage-specific config section
+- [x] **CFG-01**: Pipeline accepts a single top-level `device` parameter that propagates to all stages, eliminating per-stage device configuration
+- [x] **CFG-02**: Midline sample point count (`n_sample_points`) is configurable via pipeline config with no hardcoded constants remaining in any module
+- [x] **CFG-03**: Fish count is a single unified parameter (no duplicate `expect_fish_count`/`n_animals` fields)
+- [x] **CFG-04**: `stop_frame` is a top-level pipeline parameter, not nested within a stage-specific config section
 - [x] **CFG-05**: All stage configs use `_filter_fields()` so that existing YAML files load without error after schema changes
 - [ ] **CFG-06**: `init-config` creates a project directory scaffold under `~/aquapose/projects/<name>/` with sensible default paths and required subdirectories
 - [ ] **CFG-07**: Config paths resolve relative to `project_dir`, allowing portable project layouts; absolute paths override when provided
@@ -25,7 +25,7 @@ Requirements for v2.2 Backends milestone. Each maps to roadmap phases.
 - [ ] **CFG-09**: `init-config` orders YAML fields by user relevance (paths and animal count first, stage-specific parameters after) rather than alphabetically
 - [x] **CFG-10**: Detection dataclass carries optional rotation angle so that OBB orientation flows to downstream stages
 - [x] **CFG-11**: Midline2D dataclass carries optional per-point confidence so that reconstruction can weight observations; None means uniform confidence
-- [ ] **CFG-12**: Pipeline runs end-to-end in both CPU and CUDA device modes, verified by E2E tests
+- [x] **CFG-12**: Pipeline runs end-to-end in both CPU and CUDA device modes, verified by E2E tests
 
 ### Detection
 
@@ -97,10 +97,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | DOCS-01 | Phase 29 | Complete |
 | DOCS-02 | Phase 29 | Complete |
-| CFG-01 | Phase 30 | Pending |
-| CFG-02 | Phase 30 | Pending |
-| CFG-03 | Phase 30 | Pending |
-| CFG-04 | Phase 30 | Pending |
+| CFG-01 | Phase 30 | Complete |
+| CFG-02 | Phase 30 | Complete |
+| CFG-03 | Phase 30 | Complete |
+| CFG-04 | Phase 30 | Complete |
 | CFG-05 | Phase 30 | Pending |
 | CFG-06 | Phase 30 | Pending |
 | CFG-07 | Phase 30 | Pending |
@@ -108,7 +108,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CFG-09 | Phase 30 | Pending |
 | CFG-10 | Phase 30 | Pending |
 | CFG-11 | Phase 30 | Pending |
-| CFG-12 | Phase 30 | Pending |
+| CFG-12 | Phase 30 | Complete |
 | TRAIN-01 | Phase 31 | Pending |
 | TRAIN-02 | Phase 31 | Pending |
 | TRAIN-03 | Phase 31 | Pending |

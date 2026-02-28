@@ -561,6 +561,28 @@ def load_config(
         lut_kwargs = _merge_stage_config(lut_kwargs, cli_nested.get("lut", {}))
         top_kwargs = _merge_stage_config(top_kwargs, cli_nested.get("__top__", {}))
 
+    # --- layer 3.5: resolve project_dir-relative paths -------------------
+    # Resolve relative path fields relative to project_dir when set.
+    # This runs BEFORE run_id/output_dir resolution so output_dir gets
+    # resolved relative to project_dir when it's a relative path.
+    project_dir_str = top_kwargs.get("project_dir", "")
+    if project_dir_str:
+        project_dir = Path(project_dir_str).expanduser().resolve()
+        # Resolve top-level path fields
+        for key in ("video_dir", "calibration_path", "output_dir"):
+            val = top_kwargs.get(key, "")
+            if val and not Path(val).is_absolute():
+                top_kwargs[key] = str(project_dir / val)
+        # Resolve sub-config path fields
+        for sub_kwargs, field_names in [
+            (det_kwargs, ["model_path"]),
+            (mid_kwargs, ["weights_path"]),
+        ]:
+            for fname in field_names:
+                val = sub_kwargs.get(fname, "")
+                if val and not Path(val).is_absolute():
+                    sub_kwargs[fname] = str(project_dir / val)
+
     # --- layer 4: resolve run_id and output_dir ---------------------------
     resolved_run_id = run_id or top_kwargs.pop("run_id", None) or _generate_run_id()
     resolved_output_dir = top_kwargs.pop(

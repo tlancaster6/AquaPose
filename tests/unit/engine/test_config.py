@@ -338,3 +338,58 @@ def test_stop_frame_in_detection_raises_with_hint(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="did you mean"):
         load_config(yaml_path=cfg_file)
+
+
+# ---------------------------------------------------------------------------
+# 11. project_dir path resolution
+# ---------------------------------------------------------------------------
+
+
+def test_project_dir_resolves_relative_paths(tmp_path: Path) -> None:
+    """Relative path fields resolve relative to project_dir when project_dir is set."""
+    # Use tmp_path as project_dir so it's an existing absolute path on all platforms.
+    fake_project = str(tmp_path)
+    yaml_content = {
+        "n_animals": 3,
+        "project_dir": fake_project,
+        "video_dir": "videos/",
+        "calibration_path": "geometry/cal.json",
+    }
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(yaml_content))
+
+    config = load_config(yaml_path=cfg_file)
+    expected_video_dir = str(Path(fake_project).resolve() / "videos/")
+    expected_cal_path = str(Path(fake_project).resolve() / "geometry/cal.json")
+    assert config.video_dir == expected_video_dir
+    assert config.calibration_path == expected_cal_path
+
+
+def test_project_dir_does_not_modify_absolute_paths(tmp_path: Path) -> None:
+    """Absolute path fields are not modified when project_dir is set."""
+    fake_project = str(tmp_path)
+    # Use another tmp subdir as an absolute path for video_dir
+    abs_video_dir = str(tmp_path / "abs_videos")
+    yaml_content = {
+        "n_animals": 3,
+        "project_dir": fake_project,
+        "video_dir": abs_video_dir,
+    }
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(yaml_content))
+
+    config = load_config(yaml_path=cfg_file)
+    assert config.video_dir == abs_video_dir
+
+
+def test_empty_project_dir_skips_resolution(tmp_path: Path) -> None:
+    """Without project_dir, relative paths are used as-is (no resolution)."""
+    yaml_content = {
+        "n_animals": 3,
+        "video_dir": "relative/path",
+    }
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(yaml_content))
+
+    config = load_config(yaml_path=cfg_file)
+    assert config.video_dir == "relative/path"

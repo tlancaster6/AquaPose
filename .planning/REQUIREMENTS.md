@@ -18,15 +18,15 @@ Requirements for the Identity milestone. Each maps to roadmap phases.
 
 ### Cross-Camera Association
 
-- [ ] **ASSOC-01**: User can score all tracklet pairs across adjacent cameras using ray-ray closest-point distance (from LUT-01) aggregated over shared frames, with ghost-point penalty (from LUT-02) checking consistency against the wider camera network
-- [ ] **ASSOC-02**: User can cluster tracklets into global fish identity groups via connected components + Leiden algorithm with must-not-link constraints (same-camera tracklets with detection-backed temporal overlap cannot share a cluster), with same-camera fragment merging
-- [ ] **ASSOC-03**: User can refine clusters via per-frame 3D triangulation and reprojection error checking, evicting tracklets with consistently high error, and emitting per-frame confidence estimates
+- [x] **ASSOC-01**: User can score all tracklet pairs across adjacent cameras using ray-ray closest-point distance (from LUT-01) aggregated over shared frames, with ghost-point penalty (from LUT-02) checking consistency against the wider camera network
+- [x] **ASSOC-02**: User can cluster tracklets into global fish identity groups via connected components + Leiden algorithm with must-not-link constraints (same-camera tracklets with detection-backed temporal overlap cannot share a cluster), with same-camera fragment merging
+- [x] **ASSOC-03**: User can refine clusters via per-frame 3D triangulation and reprojection error checking, evicting tracklets with consistently high error, and emitting per-frame confidence estimates
 
 ### Pipeline Integration
 
 - [x] **PIPE-01**: PipelineContext fields reflect new stage ordering (tracks_2d, tracklet_groups), CarryForward carries per-camera 2D track state, and build_stages() wires the new 5-stage order
-- [ ] **PIPE-02**: Midline extraction runs after association (Stage 4), processing only detections belonging to confirmed tracklet-groups, with head-tail consistency from cross-camera group membership
-- [ ] **PIPE-03**: Reconstruction reads from tracklet_groups and annotated_detections, triangulating using only cameras known to observe each fish per frame (no RANSAC for cross-view matching)
+- [x] **PIPE-02**: Midline extraction runs after association (Stage 4), processing only detections belonging to confirmed tracklet-groups, with head-tail consistency from cross-camera group membership
+- [x] **PIPE-03**: Reconstruction reads from tracklet_groups and annotated_detections, triangulating using only cameras known to observe each fish per frame (no RANSAC for cross-view matching)
 
 ### Diagnostic Tooling
 
@@ -77,12 +77,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LUT-01 | Phase 23 | Complete |
 | LUT-02 | Phase 23 | Complete |
 | TRACK-01 | Phase 24 | Complete |
-| ASSOC-01 | Phase 25 | Pending |
-| ASSOC-02 | Phase 25 | Pending |
-| ASSOC-03 | Phase 26 | Pending |
+| ASSOC-01 | Phase 25 | Complete |
+| ASSOC-02 | Phase 25 | Complete |
+| ASSOC-03 | Phase 26 | Complete |
 | PIPE-01 | Phase 22 | Complete |
-| PIPE-02 | Phase 26 | Pending |
-| PIPE-03 | Phase 26 | Pending |
+| PIPE-02 | Phase 26 | Complete |
+| PIPE-03 | Phase 26 | Complete |
 | DIAG-01 | Phase 27 | Complete |
 
 **Coverage:**

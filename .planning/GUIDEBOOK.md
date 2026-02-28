@@ -215,6 +215,41 @@ A **configurable model** is a choice within a backend — a different trained mo
 
 The test: if swapping it in changes the internal data flow or intermediate representations, it's a new backend. If it just changes what model gets loaded, it's config.
 
+### Backend Registration
+
+Each stage with swappable backends has a `backends/` sub-package under `core/<stage>/`. The stage's factory function (typically in the stage's `__init__.py`) reads the backend key from config and imports the appropriate implementation:
+
+```python
+# core/midline/__init__.py (simplified)
+def build_midline_stage(config: MidlineConfig) -> MidlineStage:
+    backend_key = config.midline_backend  # e.g. "segment_then_extract"
+    module = importlib.import_module(f"aquapose.core.midline.backends.{backend_key}")
+    return module.build(config)
+```
+
+All backends for a stage must produce the same output types — defined in the stage's `types.py`. The engine never knows which backend ran; it only sees the typed output.
+
+**Adding a new backend — worked example: YOLO-OBB detection**
+
+YOLO-OBB is a **configurable model** (not a new backend) because oriented bounding boxes use the same detection data flow as axis-aligned boxes. The change is in what the model outputs, not in how detection integrates with the rest of the pipeline.
+
+Steps to add it:
+
+1. Add `core/detection/backends/yolo_obb.py` implementing the detector interface — loads the OBB model, runs inference, converts results to `Detection` objects.
+2. Extend `Detection` with optional fields `angle: float | None` and `obb_points: np.ndarray | None` `(v2.2)` — backends that don't produce OBB data leave these as `None`; downstream stages that don't need them ignore them.
+3. Register in the detector factory under the key `yolo_obb`:
+   ```python
+   _DETECTOR_REGISTRY = {
+       "yolo": YoloDetector,
+       "yolo_obb": YoloObbDetector,  # added here
+   }
+   ```
+4. Select via config: `detector_kind: yolo_obb`.
+
+No other files change. The engine, pipeline, and all observers are unaffected because `Detection` remains the output type and the new fields are optional.
+
+**Adding a genuinely new backend** (e.g., a transformer-based midline estimator) follows the same pattern but requires a new `backends/<name>.py` under the relevant stage directory and registration in that stage's factory. The backend must satisfy the stage's output `types.py` contract exactly.
+
 ---
 
 ## 9. Event System

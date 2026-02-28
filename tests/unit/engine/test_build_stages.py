@@ -292,3 +292,29 @@ class TestTrackingStageDirectly:
             stage_types = [type(s) for s in stages]
             assert TrackingStage in stage_types
             assert AssociationStage in stage_types
+
+
+class TestBuildStagesConfigDevice:
+    """Tests for build_stages config.device propagation."""
+
+    def test_build_stages_uses_config_device(self) -> None:
+        """build_stages with device='cpu' constructs without error."""
+        config = PipelineConfig(
+            mode="synthetic",
+            calibration_path="/fake/cal.json",
+            device="cpu",
+        )
+        with (
+            patch("aquapose.core.DetectionStage"),
+            patch("aquapose.core.MidlineStage"),
+            patch("aquapose.core.SyntheticDataStage") as mock_syn,
+            patch("aquapose.core.ReconstructionStage"),
+        ):
+            from aquapose.engine.pipeline import build_stages
+
+            stages = build_stages(config)
+            assert len(stages) == 4
+            mock_syn.assert_called_once()
+            # Verify n_points (config.n_sample_points=10) was passed to SyntheticDataStage
+            call_kwargs = mock_syn.call_args[1]
+            assert call_kwargs.get("n_points") == config.n_sample_points

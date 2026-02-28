@@ -14,6 +14,7 @@ import pytest
 import yaml
 
 from aquapose.engine.config import (
+    PipelineConfig,
     load_config,
     serialize_config,
 )
@@ -258,3 +259,82 @@ def test_valid_config_still_loads(tmp_path: Path) -> None:
     config = load_config(yaml_path=cfg_file)
     assert config.n_animals == 3
     assert config.detection.detector_kind == "yolo"
+
+
+# ---------------------------------------------------------------------------
+# 10. Config promotion: device, n_sample_points, stop_frame, n_animals
+# ---------------------------------------------------------------------------
+
+
+def test_device_auto_detected() -> None:
+    """PipelineConfig() device is a non-empty string (either 'cuda:0' or 'cpu')."""
+    config = PipelineConfig()
+    assert isinstance(config.device, str)
+    assert len(config.device) > 0
+    assert config.device in ("cuda:0", "cpu")
+
+
+def test_n_sample_points_default_is_10() -> None:
+    """PipelineConfig() n_sample_points defaults to 10."""
+    config = PipelineConfig()
+    assert config.n_sample_points == 10
+
+
+def test_n_sample_points_propagates_to_midline(tmp_path: Path) -> None:
+    """n_sample_points in YAML propagates to midline.n_points when not explicitly set."""
+    yaml_content = {"n_animals": 3, "n_sample_points": 8}
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(yaml_content))
+
+    config = load_config(yaml_path=cfg_file)
+    assert config.midline.n_points == 8
+
+
+def test_midline_n_points_overrides_top_level(tmp_path: Path) -> None:
+    """Explicit midline.n_points wins over n_sample_points propagation."""
+    yaml_content = {"n_animals": 3, "n_sample_points": 8, "midline": {"n_points": 12}}
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(yaml_content))
+
+    config = load_config(yaml_path=cfg_file)
+    assert config.midline.n_points == 12
+
+
+def test_stop_frame_at_top_level(tmp_path: Path) -> None:
+    """stop_frame at top level is read correctly."""
+    yaml_content = {"n_animals": 3, "stop_frame": 100}
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(yaml_content))
+
+    config = load_config(yaml_path=cfg_file)
+    assert config.stop_frame == 100
+
+
+def test_n_animals_required_raises_when_missing(tmp_path: Path) -> None:
+    """load_config() without n_animals raises ValueError with descriptive message."""
+    yaml_content = {"mode": "production"}
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(yaml_content))
+
+    with pytest.raises(ValueError, match="n_animals is required"):
+        load_config(yaml_path=cfg_file)
+
+
+def test_device_in_detection_raises_with_hint(tmp_path: Path) -> None:
+    """device in detection sub-config raises ValueError with 'did you mean' hint."""
+    yaml_content = {"n_animals": 3, "detection": {"device": "cpu"}}
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(yaml_content))
+
+    with pytest.raises(ValueError, match="did you mean"):
+        load_config(yaml_path=cfg_file)
+
+
+def test_stop_frame_in_detection_raises_with_hint(tmp_path: Path) -> None:
+    """stop_frame in detection sub-config raises ValueError with 'did you mean' hint."""
+    yaml_content = {"n_animals": 3, "detection": {"stop_frame": 100}}
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(yaml_content))
+
+    with pytest.raises(ValueError, match="did you mean"):
+        load_config(yaml_path=cfg_file)

@@ -23,6 +23,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import torch
 
 from aquapose.engine.config import (
     PipelineConfig,
@@ -50,39 +51,52 @@ class TestSyntheticSmoke:
         self,
         output_dir: Path,
         calibration_path: Path,
+        device: str = "cpu",
     ) -> PipelineConfig:
         """Construct a PipelineConfig for synthetic mode.
 
         Args:
             output_dir: Temporary directory for run artifacts.
             calibration_path: Path to the AquaCal calibration JSON.
+            device: Compute device string (e.g. ``"cpu"`` or ``"cuda:0"``).
 
         Returns:
             Frozen PipelineConfig with synthetic mode and default SyntheticConfig.
         """
         return load_config(
             cli_overrides={
+                "n_animals": 3,
                 "mode": "synthetic",
                 "calibration_path": str(calibration_path),
                 "output_dir": str(output_dir),
+                "device": device,
             }
         )
 
+    # Build device list: always CPU, add CUDA if available
+    _DEVICES = ["cpu"] + (["cuda:0"] if torch.cuda.is_available() else [])
+
+    @pytest.mark.parametrize("device", _DEVICES)
     def test_synthetic_pipeline_completes(
         self,
         tmp_path: Path,
         calibration_path: Path,
+        device: str,
     ) -> None:
-        """Synthetic pipeline completes without exception.
+        """Synthetic pipeline completes without exception on the given device.
 
-        Builds a synthetic config, runs the pipeline, and asserts no
-        exception is raised. This is a pure smoke test -- no output assertions.
+        CPU variant always runs. CUDA variant only included when a GPU is
+        available (auto-detected via torch.cuda.is_available()).
 
         Args:
             tmp_path: Pytest temporary directory for run artifacts.
             calibration_path: Session-scoped calibration file path.
+            device: Compute device string (``"cpu"`` or ``"cuda:0"``).
         """
-        config = self._build_synthetic_config(tmp_path, calibration_path)
+        config = self._build_synthetic_config(tmp_path, calibration_path, device=device)
+        assert config.device == device, (
+            f"Expected config.device={device!r}, got {config.device!r}"
+        )
         stages = build_stages(config)
         pipeline = PosePipeline(stages=stages, config=config)
         # If this raises, the test fails with the exception traceback.
@@ -95,7 +109,7 @@ class TestSyntheticSmoke:
     ) -> None:
         """Synthetic pipeline produces expected output fields.
 
-        Runs the synthetic pipeline and validates that:
+        Runs the synthetic pipeline on CPU and validates that:
         - context.tracks_2d is populated with at least 1 camera that has tracklets
         - context.tracklet_groups is not None (may be empty if LUTs not cached)
         - context.midlines_3d is not None (may be empty if no groups formed)
@@ -110,7 +124,7 @@ class TestSyntheticSmoke:
             tmp_path: Pytest temporary directory for run artifacts.
             calibration_path: Session-scoped calibration file path.
         """
-        config = self._build_synthetic_config(tmp_path, calibration_path)
+        config = self._build_synthetic_config(tmp_path, calibration_path, device="cpu")
         stages = build_stages(config)
         pipeline = PosePipeline(stages=stages, config=config)
         context = pipeline.run()
@@ -189,15 +203,16 @@ class TestRealData:
         """
         return load_config(
             cli_overrides={
+                "n_animals": 9,
                 "mode": "diagnostic",
                 "calibration_path": str(calibration_path),
                 "video_dir": str(video_dir),
                 "output_dir": str(output_dir),
+                "device": "cpu",
+                "stop_frame": stop_frame,
                 "detection": {
                     "detector_kind": "yolo",
                     "model_path": str(yolo_weights),
-                    "stop_frame": stop_frame,
-                    "device": "cpu",
                 },
                 "midline": {
                     "weights_path": str(unet_weights),

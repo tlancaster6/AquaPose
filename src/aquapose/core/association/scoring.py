@@ -132,6 +132,8 @@ def score_tracklet_pair(
     inverse_lut: InverseLUT,
     detections: list[dict[str, list[tuple[float, float]]]],
     config: AssociationConfigLike,
+    *,
+    frame_count: int | None = None,
 ) -> float:
     """Score a single cross-camera tracklet pair.
 
@@ -239,8 +241,11 @@ def score_tracklet_pair(
     # Mean ghost ratio
     mean_ghost = float(np.mean(ghost_ratios)) if ghost_ratios else 0.0
 
-    # Overlap reliability
-    w = min(t_shared, config.t_saturate) / config.t_saturate
+    # Overlap reliability — cap t_saturate at actual run length for short runs
+    effective_saturate = (
+        min(config.t_saturate, frame_count) if frame_count else config.t_saturate
+    )
+    w = min(t_shared, effective_saturate) / effective_saturate
 
     # Combined score
     score = f * (1.0 - mean_ghost) * w
@@ -261,6 +266,8 @@ def score_all_pairs(
     inverse_lut: InverseLUT,
     detections: list[dict[str, list[tuple[float, float]]]],
     config: AssociationConfigLike,
+    *,
+    frame_count: int | None = None,
 ) -> dict[tuple[TrackletKey, TrackletKey], float]:
     """Score all cross-camera tracklet pairs using camera adjacency filtering.
 
@@ -297,7 +304,13 @@ def score_all_pairs(
             for tb in tracklets_b:
                 total_pairs += 1
                 s = score_tracklet_pair(
-                    ta, tb, forward_luts, inverse_lut, detections, config
+                    ta,
+                    tb,
+                    forward_luts,
+                    inverse_lut,
+                    detections,
+                    config,
+                    frame_count=frame_count,
                 )
                 if s >= config.score_min:
                     key_a: TrackletKey = (ta.camera_id, ta.track_id)

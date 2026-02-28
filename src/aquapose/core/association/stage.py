@@ -93,12 +93,14 @@ class AssociationStage:
         det_centroids = _extract_centroids(detections)
 
         # Step 1: Score all pairs
+        frame_count = len(detections) if detections else None
         scores = score_all_pairs(
             tracks_2d,
             forward_luts,
             inverse_lut,
             det_centroids,
             self._config.association,
+            frame_count=frame_count,
         )
 
         # Step 2-3: Build constraints and cluster

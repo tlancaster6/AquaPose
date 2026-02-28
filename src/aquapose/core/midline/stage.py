@@ -184,9 +184,16 @@ class MidlineStage:
                 len(tracklet_groups),  # type: ignore[arg-type]
             )
             # Build tracklet-detection index for filtering
+            det_tolerance = (
+                self._midline_config.detection_tolerance
+                if self._midline_config is not None
+                and hasattr(self._midline_config, "detection_tolerance")
+                else 50.0
+            )
             group_det_index = _build_group_detection_index(
                 tracklet_groups,
                 detections,  # type: ignore[arg-type]
+                tolerance=det_tolerance,
             )
         else:
             logger.warning(
@@ -386,6 +393,7 @@ class _DefaultOrientationConfig:
 def _build_group_detection_index(
     tracklet_groups: list,
     detections: list[dict[str, list]],
+    tolerance: float = 50.0,
 ) -> dict[int, dict[str, set[int]]]:
     """Build a frame-indexed lookup of which detections belong to tracklet groups.
 
@@ -418,7 +426,9 @@ def _build_group_detection_index(
                 det_list = frame_dets[cam_id]
 
                 # Find closest detection by centroid
-                best_idx = _find_closest_detection_idx(det_list, centroid)
+                best_idx = _find_closest_detection_idx(
+                    det_list, centroid, tolerance=tolerance
+                )
                 if best_idx is not None:
                     if frame_idx not in index:
                         index[frame_idx] = {}
@@ -432,7 +442,7 @@ def _build_group_detection_index(
 def _find_closest_detection_idx(
     det_list: list,
     centroid: tuple[float, float],
-    tolerance: float = 5.0,
+    tolerance: float = 50.0,
 ) -> int | None:
     """Find the detection index closest to a tracklet centroid.
 

@@ -66,6 +66,9 @@ class MidlineConfig:
             is implemented; "direct_pose" is a planned stub.
         n_points: Number of midline points to produce per detection.
         min_area: Minimum mask area (pixels) required to attempt midline extraction.
+        detection_tolerance: Maximum pixel distance for matching a tracklet
+            centroid to a detection. OC-SORT Kalman predictions can drift
+            10-30px from raw centroids during coast/recovery. Default 50.0.
         speed_threshold: Minimum pixel-per-frame speed for velocity signal in
             head-tail orientation. Below this, velocity is ignored. Default 2.0.
         orientation_weight_geometric: Weight for cross-camera geometric vote
@@ -81,6 +84,7 @@ class MidlineConfig:
     backend: str = "segment_then_extract"
     n_points: int = 15
     min_area: int = 300
+    detection_tolerance: float = 50.0
     speed_threshold: float = 2.0
     orientation_weight_geometric: float = 1.0
     orientation_weight_velocity: float = 0.5

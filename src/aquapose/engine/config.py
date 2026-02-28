@@ -107,6 +107,7 @@ class AssociationConfig:
         t_saturate: Frame count at which overlap reliability saturates. Default 100.
         early_k: Number of initial frames for early termination check. Default 10.
         expected_fish_count: Number of fish in the tank (fixed). Default 9.
+            Auto-populated from top-level ``n_animals`` when not explicitly set.
         ghost_pixel_threshold: Max pixel distance for a detection to count as
             "supporting" in ghost penalty. Default 50.0.
         min_shared_voxels: Minimum shared voxels for camera pair adjacency.
@@ -189,6 +190,7 @@ class SyntheticConfig:
 
     Attributes:
         fish_count: Number of synthetic fish to generate.
+            Auto-populated from top-level ``n_animals`` when not explicitly set.
         frame_count: Number of frames to simulate.
         noise_std: Standard deviation of Gaussian noise added to 2D
             projections (pixels). 0 = no noise.
@@ -253,6 +255,9 @@ class PipelineConfig:
         video_dir: Directory containing input video files.
         calibration_path: Path to the AquaCal calibration file.
         mode: Execution mode preset (production, diagnostic, synthetic, benchmark).
+        n_animals: Number of animals in the scene. Propagates to
+            ``association.expected_fish_count`` and ``synthetic.fish_count``
+            when those fields are not explicitly overridden.
         detection: Detection stage config (Stage 1).
         midline: Midline stage config (Stage 2) — configures segment-then-extract backend.
         association: Association stage config (Stage 3).
@@ -267,6 +272,7 @@ class PipelineConfig:
     video_dir: str = ""
     calibration_path: str = ""
     mode: str = "production"
+    n_animals: int = 9
     detection: DetectionConfig = dataclasses.field(default_factory=DetectionConfig)
     midline: MidlineConfig = dataclasses.field(default_factory=MidlineConfig)
     association: AssociationConfig = dataclasses.field(
@@ -478,6 +484,13 @@ def load_config(
     resolved_output_dir = top_kwargs.pop(
         "output_dir", _default_output_dir(resolved_run_id)
     )
+
+    # --- propagate n_animals to sub-configs --------------------------------
+    n_animals = top_kwargs.get("n_animals", PipelineConfig.n_animals)
+    if "expected_fish_count" not in assoc_kwargs:
+        assoc_kwargs["expected_fish_count"] = n_animals
+    if "fish_count" not in syn_kwargs:
+        syn_kwargs["fish_count"] = n_animals
 
     # --- filter kwargs to only include fields present on each dataclass ----
     # AssociationConfig and TrackingConfig are stripped-down placeholders in

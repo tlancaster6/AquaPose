@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Backends
 status: unknown
-last_updated: "2026-02-28T23:26:39Z"
+last_updated: "2026-02-28T23:43:03.118Z"
 progress:
-  total_phases: 4
-  completed_phases: 3
-  total_plans: 9
-  completed_plans: 8
+  total_phases: 5
+  completed_phases: 4
+  total_plans: 11
+  completed_plans: 9
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 32 — YOLO-OBB Detection Backend (Plan 32-01 complete)
+**Current focus:** Phase 32 — YOLO-OBB Detection Backend (Plan 32-02 complete)
 
 ## Current Position
 
-Phase: 32 of 35 (YOLO-OBB Detection Backend) — Plan 32-01 complete
-Plan: 32-01 complete
+Phase: 32 of 35 (YOLO-OBB Detection Backend) — Plan 32-02 complete
+Plan: 32-02 complete
 Status: In progress
-Last activity: 2026-02-28 - Completed 32-01: YOLOOBBBackend and affine crop utilities (extract_affine_crop, invert_affine_point/points)
+Last activity: 2026-02-28 - Completed 32-02: OBB Visualization Extensions (Overlay2DObserver + TrackletTrailObserver OBB polygon rendering)
 
-Progress: [██████░░░░] 59% (8/12 plans complete — Phase 29 both plans done, Phase 30 Plans 01-04 done, Phase 31 Plans 01-02 done, Phase 32 Plan 01 done)
+Progress: [███████░░░] 64% (9/14 plans complete — Phase 29 both plans done, Phase 30 Plans 01-04 done, Phase 31 Plans 01-02 done, Phase 32 Plans 01-02 done)
 
 ## Performance Metrics
 
@@ -44,7 +44,7 @@ Progress: [██████░░░░] 59% (8/12 plans complete — Phase 29
 | 30-config-and-contracts | 3/4 done | 45 min | 15 min |
 
 | 31-training-infrastructure | 2 | 26 min | 13 min |
-| 32-yolo-obb-detection-backend | 1 | 18 min | 18 min |
+| 32-yolo-obb-detection-backend | 2 | 36 min | 18 min |
 
 *Updated after each plan completion*
 
@@ -101,6 +101,7 @@ From 32-01 execution:
 - OBB angle conversion (negate) happens once in YOLOOBBBackend.detect() — Detection.angle is always standard math CCW radians after that
 - extract_affine_crop() uses cv2.BORDER_CONSTANT=0 for zero-fill letterboxing; crop canvas size is always crop_size regardless of obb_w/obb_h
 - invert_affine_point/invert_affine_points round-trip error < 1px confirmed for 6 angles including 0, pi/4, pi/2, -pi/3, pi/6, -pi
+- [Phase 32-yolo-obb-detection-backend]: OBB polygon replaces AABB in both visualization observers; _match_detection uses centroid-to-bbox-center distance; detections accessed via getattr for graceful degradation
 
 ### Pending Todos
 
@@ -119,5 +120,5 @@ From 32-01 execution:
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Completed 32-01-PLAN.md (YOLO-OBB Backend and Affine Crop Utilities)
+Stopped at: Completed 32-02-PLAN.md (OBB Visualization Extensions)
 Resume file: None

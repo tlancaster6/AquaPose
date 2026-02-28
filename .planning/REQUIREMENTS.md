@@ -54,8 +54,8 @@ Requirements for v2.2 Backends milestone. Each maps to roadmap phases.
 
 ### Visualization
 
-- [ ] **VIZ-01**: Diagnostic mode renders OBB polygon overlays on detection frames
-- [ ] **VIZ-02**: Tracklet trail visualization includes bounding box overlays (both axis-aligned and OBB when available)
+- [x] **VIZ-01**: Diagnostic mode renders OBB polygon overlays on detection frames
+- [x] **VIZ-02**: Tracklet trail visualization includes bounding box overlays (both axis-aligned and OBB when available)
 
 ## Future Requirements
 
@@ -116,8 +116,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DET-01 | Phase 32 | Complete |
 | DET-02 | Phase 32 | Complete |
 | DET-03 | Phase 32 | Complete |
-| VIZ-01 | Phase 32 | Pending |
-| VIZ-02 | Phase 32 | Pending |
+| VIZ-01 | Phase 32 | Complete |
+| VIZ-02 | Phase 32 | Complete |
 | MID-01 | Phase 33 | Pending |
 | MID-02 | Phase 33 | Pending |
 | MID-03 | Phase 33 | Pending |

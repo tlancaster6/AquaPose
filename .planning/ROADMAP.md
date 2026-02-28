@@ -70,7 +70,7 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
 **Milestone Goal:** Add swappable detection and midline backends (YOLO-OBB, keypoint regression), build training infrastructure, and clean up the config system and guidebook.
 
 - [x] **Phase 29: Guidebook Audit** — Audit and update GUIDEBOOK.md for v2.1 accuracy and v2.2 planned features (complete 2026-02-28)
-- [ ] **Phase 30: Config and Contracts** — Unify pipeline config, propagate device, extend Detection and Midline2D dataclasses (Plans 01-02 complete)
+- [x] **Phase 30: Config and Contracts** — Unify pipeline config, propagate device, extend Detection and Midline2D dataclasses (Plans 01-02 complete) (completed 2026-02-28)
 - [ ] **Phase 31: Training Infrastructure** — Build `aquapose train` CLI group and `src/aquapose/training/` package (early: start training while building integration)
 - [ ] **Phase 32: YOLO-OBB Detection Backend** — Add OBB detector, affine crop utilities, and OBB overlay visualization
 - [ ] **Phase 33: Keypoint Midline Backend** — Implement DirectPoseBackend pipeline integration and confidence-weighted reconstruction
@@ -165,7 +165,7 @@ Plans:
 | 13-21 | v2.0 | 34/34 | Complete | 2026-02-27 |
 | 22-28 | v2.1 | 12/12 | Complete | 2026-02-28 |
 | 29. Guidebook Audit | v2.2 | Complete    | 2026-02-28 | 2026-02-28 |
-| 30. Config and Contracts | v2.2 | 1/TBD | In progress | - |
+| 30. Config and Contracts | 3/3 | Complete   | 2026-02-28 | - |
 | 31. Training Infrastructure | v2.2 | 0/2 | Not started | - |
 | 32. YOLO-OBB Detection Backend | v2.2 | 0/TBD | Not started | - |
 | 33. Keypoint Midline Backend | v2.2 | 0/TBD | Not started | - |

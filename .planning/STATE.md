@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Backends
 status: in_progress
-last_updated: "2026-02-28T21:30:00.000Z"
+last_updated: "2026-02-28T20:22:00.000Z"
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 12
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 30 — Config/Contracts (in progress, Plan 02 complete)
+**Current focus:** Phase 30 — Config/Contracts (in progress, Plan 03 complete)
 
 ## Current Position
 
-Phase: 30 of 35 (Config/Contracts) — Plan 30-02 complete
-Plan: 30-02 complete
+Phase: 30 of 35 (Config/Contracts) — Plan 30-03 complete
+Plan: 30-03 complete
 Status: In progress
-Last activity: 2026-02-28 — Completed 30-02: Config Promotion and Propagation
+Last activity: 2026-02-28 — Completed 30-03: CLI Project Scaffold and Path Resolution
 
-Progress: [███░░░░░░░] 33% (4/12 plans complete — Phase 29 both plans done, Phase 30 Plans 01-02 done)
+Progress: [████░░░░░░] 42% (5/12 plans complete — Phase 29 both plans done, Phase 30 Plans 01-03 done)
 
 ## Performance Metrics
 
@@ -41,7 +41,7 @@ Progress: [███░░░░░░░] 33% (4/12 plans complete — Phase 29
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 29-guidebook-audit | 2 | 5 min | 2.5 min |
-| 30-config-and-contracts | 2/4 done | 30 min | 15 min |
+| 30-config-and-contracts | 3/4 done | 45 min | 15 min |
 
 *Updated after each plan completion*
 
@@ -79,6 +79,12 @@ From 30-02 execution:
 - device and stop_frame removed from DetectionConfig; _RENAME_HINTS updated with did-you-mean hints
 - N_SAMPLE_POINTS=15 kept as module-level fallback constant; all pipeline modules accept n_sample_points as constructor parameter
 
+From 30-03 execution:
+- init-config CLI uses positional <name> arg (not --output/-o); creates ~/aquapose/projects/<name>/ scaffold
+- Generated YAML omits device and stop_frame; n_animals placeholder is string "SET_ME" (fails load_config validation)
+- project_dir resolution in load_config() uses Path.resolve() — adds drive letter on Windows; tests use tmp_path to stay cross-platform
+- synthetic section in generated YAML excludes fish_count — it propagates from n_animals at runtime
+
 ### Pending Todos
 
 12 pending todos from v2.1 — see .planning/todos/pending/
@@ -90,5 +96,5 @@ From 30-02 execution:
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Completed 30-02-PLAN.md (Config Promotion and Propagation)
+Stopped at: Completed 30-03-PLAN.md (CLI Project Scaffold and Path Resolution)
 Resume file: None

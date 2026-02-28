@@ -19,10 +19,10 @@ Requirements for v2.2 Backends milestone. Each maps to roadmap phases.
 - [x] **CFG-03**: Fish count is a single unified parameter (no duplicate `expect_fish_count`/`n_animals` fields)
 - [x] **CFG-04**: `stop_frame` is a top-level pipeline parameter, not nested within a stage-specific config section
 - [x] **CFG-05**: All stage configs use `_filter_fields()` so that existing YAML files load without error after schema changes
-- [ ] **CFG-06**: `init-config` creates a project directory scaffold under `~/aquapose/projects/<name>/` with sensible default paths and required subdirectories
-- [ ] **CFG-07**: Config paths resolve relative to `project_dir`, allowing portable project layouts; absolute paths override when provided
-- [ ] **CFG-08**: `init-config --synthetic` includes the synthetic config section; omitted by default
-- [ ] **CFG-09**: `init-config` orders YAML fields by user relevance (paths and animal count first, stage-specific parameters after) rather than alphabetically
+- [x] **CFG-06**: `init-config` creates a project directory scaffold under `~/aquapose/projects/<name>/` with sensible default paths and required subdirectories
+- [x] **CFG-07**: Config paths resolve relative to `project_dir`, allowing portable project layouts; absolute paths override when provided
+- [x] **CFG-08**: `init-config --synthetic` includes the synthetic config section; omitted by default
+- [x] **CFG-09**: `init-config` orders YAML fields by user relevance (paths and animal count first, stage-specific parameters after) rather than alphabetically
 - [x] **CFG-10**: Detection dataclass carries optional rotation angle so that OBB orientation flows to downstream stages
 - [x] **CFG-11**: Midline2D dataclass carries optional per-point confidence so that reconstruction can weight observations; None means uniform confidence
 - [x] **CFG-12**: Pipeline runs end-to-end in both CPU and CUDA device modes, verified by E2E tests
@@ -102,10 +102,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CFG-03 | Phase 30 | Complete |
 | CFG-04 | Phase 30 | Complete |
 | CFG-05 | Phase 30 | Pending |
-| CFG-06 | Phase 30 | Pending |
-| CFG-07 | Phase 30 | Pending |
-| CFG-08 | Phase 30 | Pending |
-| CFG-09 | Phase 30 | Pending |
+| CFG-06 | Phase 30 | Complete |
+| CFG-07 | Phase 30 | Complete |
+| CFG-08 | Phase 30 | Complete |
+| CFG-09 | Phase 30 | Complete |
 | CFG-10 | Phase 30 | Pending |
 | CFG-11 | Phase 30 | Pending |
 | CFG-12 | Phase 30 | Complete |

@@ -88,7 +88,7 @@ Full details: see Phase Details section below for v2.2
 **⚠ Cross-cutting concern — Coordinate spaces:** Full-image ↔ crop-space conversions are a pervasive source of error, especially with OBB affine warps. Mismatches between training-time and inference-time crop preparation cause silent accuracy failures. Every phase must explicitly verify coordinate round-trips at each boundary (training labels, inference output, back-projection to full frame). Existing crop utilities should be reused with extreme care.
 
 - [x] **Phase 35: Codebase Cleanup** — Remove custom U-Net, SAM2 pipeline, old midline backends, MOG2 backend, and legacy training CLI commands (completed 2026-03-01)
-- [ ] **Phase 36: Training Wrappers** — Add NDJSON seg data converter and YOLO-seg/pose training wrappers following existing yolo_obb.py pattern
+- [x] **Phase 36: Training Wrappers** — Add NDJSON seg data converter and YOLO-seg/pose training wrappers following existing yolo_obb.py pattern (completed 2026-03-01)
 - [ ] **Phase 37: Pipeline Integration** — Implement YOLOSegBackend and YOLOPoseBackend as selectable midline backends with instance matching and config support
 
 ## Phase Details
@@ -167,34 +167,25 @@ Plans:
 
 ---
 
-### Phase 35: Codebase Cleanup
+### Phase 35: Codebase Cleanup — COMPLETE (2026-03-01)
 **Goal**: The codebase contains no custom U-Net, SAM2 pseudo-label, old midline backend, MOG2 detection, or legacy training CLI code — only Ultralytics-based models and the new training wrappers remain, leaving a clean foundation for v3.0 backends
 **Depends on**: Nothing (cleanup precedes building)
 **Requirements**: CLEAN-01, CLEAN-02, CLEAN-03, CLEAN-04, CLEAN-05
-**Success Criteria** (what must be TRUE):
-  1. `segmentation/model.py`, `_UNet`, `_PoseModel`, and `BinaryMaskDataset` are deleted; no import of these symbols exists anywhere in the codebase
-  2. SAM2 pseudo-label generation code is removed; the only path from raw video to training data is COCO JSON → NDJSON conversion
-  3. Custom model code (UNetSegmentor, _PoseModel) removed from `segment_then_extract` and `direct_pose` backends; both backends stubbed as no-ops pending Phase 37 YOLO model wiring
-  4. MOG2 detection backend is removed; the only registered detection backends are `yolo` and `yolo_obb`
-  5. `train_unet` and `train_pose` CLI commands are removed from the `aquapose train` group; `aquapose train --help` no longer lists them
-**Plans**: 2 plans
+**Plans**: 2/2 complete
 Plans:
-- [ ] 35-01-PLAN.md — Remove custom models, SAM2, MOG2, and old training CLI
-- [ ] 35-02-PLAN.md — Stub midline backends as no-ops, correct planning docs
+- [x] 35-01-PLAN.md — Remove custom models, SAM2, MOG2, and old training CLI
+- [x] 35-02-PLAN.md — Stub midline backends as no-ops, correct planning docs
+**Summaries**: 35-01-SUMMARY.md, 35-02-SUMMARY.md (in progress)
 
-### Phase 36: Training Wrappers
+### Phase 36: Training Wrappers — COMPLETE (2026-03-01)
 **Goal**: A COCO-to-NDJSON segmentation data converter and training wrappers for YOLO26n-seg and YOLO26n-pose are available from the CLI, following the same pattern as the existing `yolo_obb.py` training wrapper
 **Depends on**: Phase 35 (clean codebase, no legacy training commands to conflict)
 **Requirements**: DATA-01, TRAIN-01, TRAIN-02
-**Success Criteria** (what must be TRUE):
-  1. Running the seg data converter with a COCO segmentation JSON produces a directory of NDJSON files matching the schema that `scripts/build_yolo_training_data.py` produces for OBB and pose — `hatch run python scripts/build_yolo_training_data.py --mode seg` or equivalent
-  2. `aquapose train seg --data-dir <path> --output-dir <path> --epochs <n>` launches a YOLO26n-seg training run and saves weights to the output directory
-  3. `aquapose train pose --data-dir <path> --output-dir <path> --epochs <n>` launches a YOLO26n-pose training run and saves weights to the output directory
-  4. Both training wrappers accept the same flags (`--epochs`, `--device`, `--imgsz`, `--batch`) with identical semantics to the existing `yolo-obb` subcommand
-**Plans**: 2 plans
+**Plans**: 2/2 complete
 Plans:
-- [ ] 36-01-PLAN.md — Add --mode seg to build_yolo_training_data.py (COCO polygon converter)
-- [ ] 36-02-PLAN.md — YOLO-seg and YOLO-pose training wrappers with CLI subcommands
+- [x] 36-01-PLAN.md — Add --mode seg to build_yolo_training_data.py (COCO polygon converter)
+- [x] 36-02-PLAN.md — YOLO-seg and YOLO-pose training wrappers with CLI subcommands
+**Summaries**: 36-02-SUMMARY.md
 
 ### Phase 37: Pipeline Integration
 **Goal**: The pipeline supports `yolo_seg` and `yolo_pose` as selectable midline backends; running either end-to-end produces `Midline2D` objects compatible with the reconstruction stages, with fish identities correctly linked from tracked detections to model outputs
@@ -220,6 +211,6 @@ Plans:
 | 32. YOLO-OBB Detection Backend | v2.2 | 2/2 | Complete | 2026-02-28 |
 | 33. Keypoint Midline Backend | v2.2 | 2/2 | Complete | 2026-03-01 |
 | 33.1. Keypoint Training Data Augmentation | v2.2 | 1/1 | Complete | 2026-03-01 |
-| 35. Codebase Cleanup | 2/2 | Complete    | 2026-03-01 | - |
-| 36. Training Wrappers | v3.0 | 0/TBD | Not started | - |
+| 35. Codebase Cleanup | v3.0 | 2/2 | Complete | 2026-03-01 |
+| 36. Training Wrappers | v3.0 | 2/2 | Complete | 2026-03-01 |
 | 37. Pipeline Integration | v3.0 | 0/TBD | Not started | - |

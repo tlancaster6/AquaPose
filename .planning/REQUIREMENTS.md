@@ -21,8 +21,8 @@ Requirements for Ultralytics Unification milestone. Each maps to roadmap phases.
 
 ### Training
 
-- [ ] **TRAIN-01**: YOLO-seg training wrapper callable from CLI, following existing yolo_obb.py pattern
-- [ ] **TRAIN-02**: YOLO-pose training wrapper callable from CLI, following existing yolo_obb.py pattern
+- [x] **TRAIN-01**: YOLO-seg training wrapper callable from CLI, following existing yolo_obb.py pattern
+- [x] **TRAIN-02**: YOLO-pose training wrapper callable from CLI, following existing yolo_obb.py pattern
 
 ### Pipeline Integration
 
@@ -67,8 +67,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CLEAN-04 | Phase 35 | Pending |
 | CLEAN-05 | Phase 35 | Pending |
 | DATA-01 | Phase 36 | Pending |
-| TRAIN-01 | Phase 36 | Pending |
-| TRAIN-02 | Phase 36 | Pending |
+| TRAIN-01 | Phase 36 | Complete |
+| TRAIN-02 | Phase 36 | Complete |
 | PIPE-01 | Phase 37 | Pending |
 | PIPE-02 | Phase 37 | Pending |
 | PIPE-03 | Phase 37 | Pending |

@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Ultralytics Unification
-status: unknown
-last_updated: "2026-03-01T20:49:46.410Z"
+status: in_progress
+last_updated: "2026-03-01T21:30:00.000Z"
 progress:
-  total_phases: 2
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 2
+  total_phases: 3
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 4
 ---
 
 # Project State
@@ -18,20 +18,32 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-01)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 35 — Codebase Cleanup (Plan 02 complete — phase DONE)
+**Current focus:** Phase 36 — Training Wrappers (Plan 02 complete — phase DONE)
 
 ## Current Position
 
-Phase: 35 of 37 (Codebase Cleanup) — COMPLETE
+Phase: 36 of 37 (Training Wrappers) — COMPLETE
 Plan: 2/2 complete in current phase
-Status: Phase 35 complete; Phase 36 (Training Wrappers) is next
-Last activity: 2026-03-01 — Phase 35 Plan 02 complete (midline backend stubs, config validation, planning doc corrections)
+Status: Phase 36 complete; Phase 37 (Pipeline Integration) is next
+Last activity: 2026-03-01 — Phase 36 Plan 02 complete (YOLO-seg/pose training wrappers, NDJSON conversion, CLI subcommands)
 
-Progress: [██░░░░░░░░] ~33%
+Progress: [████░░░░░░] ~66%
 
 ## Accumulated Context
 
 ### Decisions
+
+Key decisions from Phase 36 Plan 02 (2026-03-01):
+
+- New seg/pose CLI subcommands use `--model` (full model name string) not `--model-size` — consistent with CONTEXT.md decision; OBB keeps `--model-size` unchanged
+- NDJSON-to-YOLO.txt conversion done before model.train(); label files written to `labels/{split}/` alongside `images/{split}/`
+- data.yaml rewritten to `data_ultralytics.yaml` with absolute `path:` to prevent Ultralytics DATASETS_DIR resolution issues
+- Pose wrapper reads `kpt_shape`, `kpt_names`, `flip_idx` from original data.yaml — nothing hardcoded about 6-keypoint structure
+
+Key decisions from Phase 36 Plan 01 (2026-03-01):
+
+- YOLO26n-seg and YOLO26n-pose training wrappers follow exact same pattern as existing yolo_obb.py
+- Both wrappers forbidden from importing aquapose.engine or aquapose.cli (import boundary enforced by test)
 
 Key decisions from Phase 35 Plan 02 (2026-03-01):
 
@@ -74,5 +86,5 @@ Full-image ↔ crop-space conversions are a pervasive source of error, especiall
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 35-02-PLAN.md (midline backend stubs, MidlineConfig validation, planning doc corrections — Phase 35 complete)
+Stopped at: Completed 36-02-PLAN.md (YOLO-seg/pose training wrappers, NDJSON conversion helpers, CLI seg/pose subcommands — Phase 36 complete)
 Resume file: None

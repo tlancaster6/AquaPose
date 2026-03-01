@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Ultralytics Unification
 status: unknown
-last_updated: "2026-03-01T22:00:44.030Z"
+last_updated: "2026-03-01T22:59:14.985Z"
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  total_phases: 3
+  completed_phases: 3
+  total_plans: 6
+  completed_plans: 6
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-01)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 37 — Pipeline Integration (Plan 01 complete)
+**Current focus:** Phase 37 — Pipeline Integration (Plan 02 complete)
 
 ## Current Position
 
 Phase: 37 of 37 (Pipeline Integration) — IN PROGRESS
-Plan: 1/3 complete in current phase
-Status: Plan 01 complete (backend renaming); Plan 02 (YOLO-seg integration) is next
-Last activity: 2026-03-01 - Completed quick task 14: Adopt Ultralytics-native NDJSON format, eliminate convert_ndjson_to_txt plumbing
+Plan: 2/3 complete in current phase
+Status: Plan 02 complete (YOLO-seg/pose inference wired into backends); Plan 03 (end-to-end pipeline integration) is next
+Last activity: 2026-03-01 — Completed 37-02-PLAN.md (SegmentationBackend and PoseEstimationBackend with real YOLO inference)
 
-Progress: [█████░░░░░] ~75%
+Progress: [███████░░░] ~85%
 
 ## Accumulated Context
 
@@ -71,6 +71,7 @@ Key decisions entering v3.0:
 - Training uses NDJSON format; existing `scripts/build_yolo_training_data.py` covers OBB/pose; only seg conversion is new (DATA-01)
 - 6 anatomical keypoints: nose, head, spine1, spine2, spine3, tail
 - [Phase 36-training-wrappers]: format_seg_annotation normalizes polygon vertices to [0,1]; generate_seg_dataset uses same affine crop pipeline as pose, OBB from keypoints + polygons from segmentation; annotations missing segmentation silently skipped
+- [Phase 37-02]: SegmentationBackend uses reconstruction/midline.py helpers directly (imported, not duplicated); half_widths in PoseEstimationBackend are zeros; _keypoints_to_midline exposed as module-level function for testability
 
 ### Pending Todos
 
@@ -92,5 +93,5 @@ Full-image ↔ crop-space conversions are a pervasive source of error, especiall
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed quick task 14 (adopt Ultralytics-native NDJSON format; eliminated NDJSON-to-txt conversion plumbing)
+Stopped at: Completed 37-02-PLAN.md (YOLO-seg skeletonization and YOLO-pose spline interpolation wired into midline backends)
 Resume file: None

@@ -89,7 +89,7 @@ Full details: `.planning/phases/29-*` through `.planning/phases/33.1-*`
 
 - [x] **Phase 35: Codebase Cleanup** — Remove custom U-Net, SAM2 pipeline, old midline backends, MOG2 backend, and legacy training CLI commands (completed 2026-03-01)
 - [x] **Phase 36: Training Wrappers** — Add NDJSON seg data converter and YOLO-seg/pose training wrappers following existing yolo_obb.py pattern (completed 2026-03-01)
-- [ ] **Phase 37: Pipeline Integration** — Rename and implement SegmentationBackend and PoseEstimationBackend as selectable midline backends with YOLO-seg/pose inference
+- [x] **Phase 37: Pipeline Integration** — Rename and implement SegmentationBackend and PoseEstimationBackend as selectable midline backends with YOLO-seg/pose inference (completed 2026-03-01)
 
 ## Phase Details
 
@@ -136,4 +136,4 @@ Plans:
 | 29-33.1 | v2.2 | 12/12 | Complete | 2026-03-01 |
 | 35. Codebase Cleanup | v3.0 | 2/2 | Complete | 2026-03-01 |
 | 36. Training Wrappers | v3.0 | 2/2 | Complete | 2026-03-01 |
-| 37. Pipeline Integration | 1/2 | In Progress|  | - |
+| 37. Pipeline Integration | 2/2 | Complete   | 2026-03-01 | - |

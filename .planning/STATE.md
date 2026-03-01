@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-03-01)
 Phase: Not started (defining requirements)
 Plan: —
 Status: Defining requirements
-Last activity: 2026-03-01 — Milestone v3.0 started
+Last activity: 2026-03-01 - Completed quick task 12: Add tool script for YOLO-OBB and YOLO-pose training set generation from multi-animal pose annotations
 
 ## Accumulated Context
 
@@ -46,6 +46,12 @@ Key decisions entering v3.0:
 ### Blockers/Concerns
 
 None at milestone start.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 12 | Add tool script for YOLO-OBB and YOLO-pose training set generation from multi-animal pose annotations | 2026-03-01 | 304bc09 | [12-add-tool-script-for-yolo-obb-and-yolo-po](./quick/12-add-tool-script-for-yolo-obb-and-yolo-po/) |
 
 ## Session Continuity
 

@@ -61,24 +61,24 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CLEAN-01 | — | Pending |
-| CLEAN-02 | — | Pending |
-| CLEAN-03 | — | Pending |
-| CLEAN-04 | — | Pending |
-| CLEAN-05 | — | Pending |
-| DATA-01 | — | Pending |
-| TRAIN-01 | — | Pending |
-| TRAIN-02 | — | Pending |
-| PIPE-01 | — | Pending |
-| PIPE-02 | — | Pending |
-| PIPE-03 | — | Pending |
-| PIPE-04 | — | Pending |
+| CLEAN-01 | Phase 35 | Pending |
+| CLEAN-02 | Phase 35 | Pending |
+| CLEAN-03 | Phase 35 | Pending |
+| CLEAN-04 | Phase 35 | Pending |
+| CLEAN-05 | Phase 35 | Pending |
+| DATA-01 | Phase 36 | Pending |
+| TRAIN-01 | Phase 36 | Pending |
+| TRAIN-02 | Phase 36 | Pending |
+| PIPE-01 | Phase 37 | Pending |
+| PIPE-02 | Phase 37 | Pending |
+| PIPE-03 | Phase 37 | Pending |
+| PIPE-04 | Phase 37 | Pending |
 
 **Coverage:**
 - v3.0 requirements: 12 total
-- Mapped to phases: 0
-- Unmapped: 12
+- Mapped to phases: 12
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-01*
-*Last updated: 2026-03-01 after initial definition*
+*Last updated: 2026-03-01 after roadmap creation*

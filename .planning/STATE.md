@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Backends
-status: unknown
-last_updated: "2026-02-28T23:49:38.451Z"
+status: in_progress
+last_updated: "2026-03-01T00:00:00Z"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 11
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # Project State
@@ -18,23 +18,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 32 — YOLO-OBB Detection Backend (Plan 32-02 complete)
+**Current focus:** Phase 33 — Keypoint Midline Backend (Plan 33-01 complete)
 
 ## Current Position
 
-Phase: 32 of 35 (YOLO-OBB Detection Backend) — Plan 32-02 complete
-Plan: 32-02 complete
+Phase: 33 of 35 (Keypoint Midline Backend) — Plan 33-01 complete
+Plan: 33-01 complete
 Status: In progress
-Last activity: 2026-02-28 - Completed 32-02: OBB Visualization Extensions (Overlay2DObserver + TrackletTrailObserver OBB polygon rendering)
+Last activity: 2026-03-01 - Completed 33-01: DirectPoseBackend implementation, MidlineConfig extensions, prep CLI
 
-Progress: [███████░░░] 64% (9/14 plans complete — Phase 29 both plans done, Phase 30 Plans 01-04 done, Phase 31 Plans 01-02 done, Phase 32 Plans 01-02 done)
+Progress: [████████░░] 71% (10/14 plans complete — Phase 29 both plans done, Phase 30 Plans 01-04 done, Phase 31 Plans 01-02 done, Phase 32 Plans 01-02 done, Phase 33 Plan 01 done)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2 (this milestone)
-- Average duration: 15 min
-- Total execution time: 30 min
+- Total plans completed: 3 (this milestone)
+- Average duration: 18 min
+- Total execution time: 53 min
 
 **By Phase:**
 
@@ -45,6 +45,7 @@ Progress: [███████░░░] 64% (9/14 plans complete — Phase 29
 
 | 31-training-infrastructure | 2 | 26 min | 13 min |
 | 32-yolo-obb-detection-backend | 2 | 36 min | 18 min |
+| 33-keypoint-midline-backend | 1 | 23 min | 23 min |
 
 *Updated after each plan completion*
 
@@ -103,9 +104,11 @@ From 32-01 execution:
 - invert_affine_point/invert_affine_points round-trip error < 1px confirmed for 6 angles including 0, pi/4, pi/2, -pi/3, pi/6, -pi
 - [Phase 32-yolo-obb-detection-backend]: OBB polygon replaces AABB in both visualization observers; _match_detection uses centroid-to-bbox-center distance; detections accessed via getattr for graceful degradation
 
-### Roadmap Evolution
-
-- Phase 33.1 inserted after Phase 33: keypoint training data augmentation (URGENT)
+From 33-01 execution:
+- Detection dataclass has no centroid field; DirectPoseBackend derives centroid from bbox via hasattr guard — same pattern as association/stage.py
+- CubicSpline falls back to linear interp1d when < 4 unique t-values visible, preventing scipy ValueError on partial visibility
+- _PoseModel and torch.load are lazy-imported inside __init__; tests patch at aquapose.training.pose._PoseModel and torch.load globally, then replace backend._model directly
+- MidlineConfig extended with 4 new fields (all with defaults) — existing YAML configs load without error
 
 ### Pending Todos
 
@@ -123,6 +126,6 @@ From 32-01 execution:
 
 ## Session Continuity
 
-Last session: 2026-02-28
-Stopped at: Completed 32-02-PLAN.md (OBB Visualization Extensions)
+Last session: 2026-03-01
+Stopped at: Completed 33-01-PLAN.md (DirectPoseBackend Implementation)
 Resume file: None

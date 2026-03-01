@@ -142,6 +142,16 @@ Plans:
   5. Curve optimizer backend uses per-point confidence as weights when confidence is present; reconstruction produces identical output to the previous version when confidence is `None`
 **Plans**: TBD
 
+### Phase 33.1: keypoint training data augmentation (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 33
+**Plans:** 1/2 plans executed
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 33.1 to break down)
+
 ### Phase 34: Stabilization
 **Goal**: All v2.2 features work correctly on real data with tuned parameters — milestone goals are complete in practice, not just in theory
 **Depends on**: Phases 29-33
@@ -166,5 +176,5 @@ Plans:
 | 30. Config and Contracts | v2.2 | 3/3 | Complete | 2026-02-28 |
 | 31. Training Infrastructure | 2/2 | Complete    | 2026-02-28 | - |
 | 32. YOLO-OBB Detection Backend | 2/2 | Complete    | 2026-02-28 | - |
-| 33. Keypoint Midline Backend | v2.2 | 0/TBD | Not started | - |
+| 33. Keypoint Midline Backend | 1/2 | In Progress|  | - |
 | 34. Stabilization | v2.2 | 0/TBD | Not started | - |

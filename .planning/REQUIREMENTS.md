@@ -35,10 +35,10 @@ Requirements for v2.2 Backends milestone. Each maps to roadmap phases.
 
 ### Midline
 
-- [ ] **MID-01**: Pipeline supports a keypoint regression backend as a swappable alternative to segment-then-extract, selectable via config
-- [ ] **MID-02**: Keypoint backend produces N ordered midline points with per-point confidence from a learned regression model (U-Net encoder + regression head)
-- [ ] **MID-03**: Keypoint backend handles partial visibility by marking unobserved regions with NaN coordinates and zero confidence, always outputting exactly `n_sample_points`
-- [ ] **MID-04**: Both midline backends produce the same output structure (N-point Midline2D) so reconstruction is backend-agnostic
+- [x] **MID-01**: Pipeline supports a keypoint regression backend as a swappable alternative to segment-then-extract, selectable via config
+- [x] **MID-02**: Keypoint backend produces N ordered midline points with per-point confidence from a learned regression model (U-Net encoder + regression head)
+- [x] **MID-03**: Keypoint backend handles partial visibility by marking unobserved regions with NaN coordinates and zero confidence, always outputting exactly `n_sample_points`
+- [x] **MID-04**: Both midline backends produce the same output structure (N-point Midline2D) so reconstruction is backend-agnostic
 
 ### Reconstruction
 
@@ -118,10 +118,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DET-03 | Phase 32 | Complete |
 | VIZ-01 | Phase 32 | Complete |
 | VIZ-02 | Phase 32 | Complete |
-| MID-01 | Phase 33 | Pending |
-| MID-02 | Phase 33 | Pending |
-| MID-03 | Phase 33 | Pending |
-| MID-04 | Phase 33 | Pending |
+| MID-01 | Phase 33 | Complete |
+| MID-02 | Phase 33 | Complete |
+| MID-03 | Phase 33 | Complete |
+| MID-04 | Phase 33 | Complete |
 | RECON-01 | Phase 33 | Pending |
 | RECON-02 | Phase 33 | Pending |
 

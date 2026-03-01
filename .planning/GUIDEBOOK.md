@@ -155,15 +155,15 @@ Detection → 2D Tracking → Cross-Camera Association → Midline → Reconstru
 
 - **In:** `tracklet_groups`, `detections`, frames
 - **Out:** `annotated_detections` — midlines for detections belonging to confirmed tracklet-groups only. Ungrouped detections are skipped entirely.
-- Segment-then-extract: crop → segmentation model (U-Net, SAM, etc.) → skeletonize → BFS → arc-length resample to N points + half-widths
-- Direct pose estimation `(v2.2)` — keypoint midline backend (`direct_pose`):
-  - U-Net encoder (frozen, reusing segmentation weights) + regression head → 6 anatomical keypoints per crop
+- Segment-then-extract (`segment_then_extract`): crop → YOLO26n-seg instance segmentation → binary mask → skeletonize → BFS → arc-length resample to N points + half-widths
+- Direct pose estimation (`direct_pose`): crop → YOLO26n-pose keypoint regression → 6 anatomical keypoints per crop
   - Keypoints: nose, head, spine1, spine2, spine3, tail
   - Each keypoint has a fixed `t` value in [0, 1] calibrated from full skeletons (mean cumulative arc-length fraction)
   - Output is always `np.linspace(0, 1, N)` — point #k always corresponds to the same anatomical location
   - Spline is fitted using only the observed keypoints and their fixed t values
   - Spline is evaluated only within `[t_min_observed, t_max_observed]`; output points outside that range → NaN + confidence=0 (no extrapolation)
-  - Per-point confidence from the regression head flows through to Stage 5 for confidence-weighted triangulation
+  - Per-point confidence from the keypoint model flows through to Stage 5 for confidence-weighted triangulation
+- Both backends operate on OBB-aligned crops from Stage 1 detections — they never see full images
 - All backends must produce the same output structure: N arc-length-sampled points with optional half-widths
 - Detections that fail midline extraction (e.g. degenerate masks) produce a flagged empty midline, not an exception
 - Cross-camera group membership (from Stage 3) provides a head-tail consistency signal — if most cameras agree on head direction, flip outliers
@@ -177,7 +177,7 @@ Detection → 2D Tracking → Cross-Camera Association → Midline → Reconstru
 - Both backends must resolve head-tail orientation before or during reconstruction
 - Single-view fish cannot be reconstructed; they appear in `dropped` with an appropriate reason
 - Output spline control point count is config, not hardcoded
-- Both triangulation and curve optimizer backends will support confidence-weighted observations `(v2.2)` — per-point confidence from the keypoint midline backend is used to weight triangulation; when confidence is None (e.g. from segment-then-extract), uniform weights are applied
+- Both triangulation and curve optimizer backends support confidence-weighted observations — per-point confidence from the YOLO-pose keypoint backend is used to weight triangulation; when confidence is None (e.g. from segment-then-extract), uniform weights are applied
 
 ### PipelineContext Data Flow
 
@@ -221,7 +221,7 @@ Stage ordering is an explicit ordered list, not a dependency DAG.
 
 A **backend** represents a fundamentally different approach to a stage's task — different algorithm, different execution pattern, or different intermediate representations. Backends are registered in a stage-level registry and resolved from config at pipeline construction time. Examples: segment-then-extract vs direct pose estimation, triangulation vs curve optimization.
 
-A **configurable model** is a choice within a backend — a different trained model, architecture, or parameter set that doesn't change the backend's structure or data flow. Model selection is handled via backend config, not by registering a new backend. Examples: YOLO vs DETR within the model-based detection backend, U-Net vs SAM within the segment-then-extract midline backend.
+A **configurable model** is a choice within a backend — a different trained model, architecture, or parameter set that doesn't change the backend's structure or data flow. Model selection is handled via backend config, not by registering a new backend. Examples: YOLO vs DETR within the model-based detection backend, YOLO26n-seg vs a future segmentation model within the segment-then-extract midline backend.
 
 The test: if swapping it in changes the internal data flow or intermediate representations, it's a new backend. If it just changes what model gets loaded, it's config.
 
@@ -357,7 +357,7 @@ Single command + flags: `aquapose run --mode diagnostic --config path.yaml`
 
 The CLI is a thin wrapper over PosePipeline. No subcommands per mode. No script may call stage functions directly, reimplement orchestration logic, or bypass stage sequencing.
 
-`aquapose train` `(v2.2)` — planned CLI group for model training (U-Net segmentation, YOLO-OBB detection, keypoint midline). Details deferred to Phase 31 (Training Infrastructure). The training subsystem must not import from `engine/` — enforced as an AST import boundary by pre-commit.
+`aquapose train` — CLI group for model training (YOLO-OBB detection, YOLO26n-seg segmentation, YOLO26n-pose keypoints). The training subsystem must not import from `engine/` — enforced as an AST import boundary by pre-commit.
 
 ---
 
@@ -372,8 +372,11 @@ Stabilized architecture, implemented all 5 stages and 5 observers, synthetic mod
 ### v2.1 Identity (shipped 2026-02-28)
 Pipeline reorder to Detection → 2D Tracking → Cross-Camera Association → Midline → Reconstruction. OC-SORT per-camera 2D tracking replacing the old FishTracker. Leiden-based cross-camera tracklet association replacing RANSAC centroid clustering. Refractive LUTs (forward pixel→ray, inverse voxel→pixel) for efficient geometric queries. 7 phases, 12 plans.
 
-### v2.2 Backends (current)
+### v2.2 Backends (shipped 2026-03-01)
 Swappable detection and midline backends: YOLO-OBB as a configurable model within the detection backend, keypoint regression as the direct_pose midline backend. Training infrastructure for YOLO-OBB and keypoint models. Config cleanup and contract enforcement. 6 phases.
+
+### v3.0 Ultralytics Unification (current)
+Replace custom U-Net segmentation and keypoint regression with Ultralytics-native YOLO26n-seg and YOLO26n-pose. Codebase cleanup, training wrappers, and pipeline integration as selectable midline backends. 3 phases.
 
 ---
 

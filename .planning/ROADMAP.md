@@ -191,7 +191,10 @@ Plans:
   2. `aquapose train seg --data-dir <path> --output-dir <path> --epochs <n>` launches a YOLO26n-seg training run and saves weights to the output directory
   3. `aquapose train pose --data-dir <path> --output-dir <path> --epochs <n>` launches a YOLO26n-pose training run and saves weights to the output directory
   4. Both training wrappers accept the same flags (`--epochs`, `--device`, `--imgsz`, `--batch`) with identical semantics to the existing `yolo-obb` subcommand
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 36-01-PLAN.md — Add --mode seg to build_yolo_training_data.py (COCO polygon converter)
+- [ ] 36-02-PLAN.md — YOLO-seg and YOLO-pose training wrappers with CLI subcommands
 
 ### Phase 37: Pipeline Integration
 **Goal**: The pipeline supports `yolo_seg` and `yolo_pose` as selectable midline backends; running either end-to-end produces `Midline2D` objects compatible with the reconstruction stages, with fish identities correctly linked from tracked detections to model outputs

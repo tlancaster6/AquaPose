@@ -87,7 +87,7 @@ Full details: see Phase Details section below for v2.2
 
 **⚠ Cross-cutting concern — Coordinate spaces:** Full-image ↔ crop-space conversions are a pervasive source of error, especially with OBB affine warps. Mismatches between training-time and inference-time crop preparation cause silent accuracy failures. Every phase must explicitly verify coordinate round-trips at each boundary (training labels, inference output, back-projection to full frame). Existing crop utilities should be reused with extreme care.
 
-- [ ] **Phase 35: Codebase Cleanup** — Remove custom U-Net, SAM2 pipeline, old midline backends, MOG2 backend, and legacy training CLI commands
+- [x] **Phase 35: Codebase Cleanup** — Remove custom U-Net, SAM2 pipeline, old midline backends, MOG2 backend, and legacy training CLI commands (completed 2026-03-01)
 - [ ] **Phase 36: Training Wrappers** — Add NDJSON seg data converter and YOLO-seg/pose training wrappers following existing yolo_obb.py pattern
 - [ ] **Phase 37: Pipeline Integration** — Implement YOLOSegBackend and YOLOPoseBackend as selectable midline backends with instance matching and config support
 
@@ -217,6 +217,6 @@ Plans:
 | 32. YOLO-OBB Detection Backend | v2.2 | 2/2 | Complete | 2026-02-28 |
 | 33. Keypoint Midline Backend | v2.2 | 2/2 | Complete | 2026-03-01 |
 | 33.1. Keypoint Training Data Augmentation | v2.2 | 1/1 | Complete | 2026-03-01 |
-| 35. Codebase Cleanup | 1/2 | In Progress|  | - |
+| 35. Codebase Cleanup | 2/2 | Complete   | 2026-03-01 | - |
 | 36. Training Wrappers | v3.0 | 0/TBD | Not started | - |
 | 37. Pipeline Integration | v3.0 | 0/TBD | Not started | - |

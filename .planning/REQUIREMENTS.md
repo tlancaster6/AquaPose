@@ -11,7 +11,7 @@ Requirements for Ultralytics Unification milestone. Each maps to roadmap phases.
 
 - [ ] **CLEAN-01**: All custom U-Net model code removed (segmentation/model.py, training/_UNet, _PoseModel, BinaryMaskDataset)
 - [ ] **CLEAN-02**: SAM2 pseudo-label pipeline removed (no longer needed — Ultralytics models trained on NDJSON datasets)
-- [ ] **CLEAN-03**: Custom model code removed from midline backends (segment_then_extract, direct_pose stubbed as no-ops) — awaiting YOLO-seg and YOLO-pose model wiring in Phase 37
+- [x] **CLEAN-03**: Custom model code removed from midline backends (segment_then_extract, direct_pose stubbed as no-ops) — awaiting YOLO-seg and YOLO-pose model wiring in Phase 37
 - [ ] **CLEAN-04**: MOG2 detection backend removed — YOLO and YOLO-OBB are the only detection backends
 - [ ] **CLEAN-05**: Old training CLI commands removed (train_unet, train_pose) — replaced by Ultralytics training wrappers
 
@@ -63,7 +63,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | CLEAN-01 | Phase 35 | Pending |
 | CLEAN-02 | Phase 35 | Pending |
-| CLEAN-03 | Phase 35 | Pending |
+| CLEAN-03 | Phase 35 | Complete |
 | CLEAN-04 | Phase 35 | Pending |
 | CLEAN-05 | Phase 35 | Pending |
 | DATA-01 | Phase 36 | Pending |

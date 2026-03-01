@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Ultralytics Unification
-status: roadmap_ready
+status: in_progress
 last_updated: "2026-03-01"
 progress:
   total_phases: 3
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
 ---
 
 # Project State
@@ -18,20 +18,33 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-01)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 35 — Codebase Cleanup (ready to plan)
+**Current focus:** Phase 35 — Codebase Cleanup (Plan 02 complete — phase DONE)
 
 ## Current Position
 
-Phase: 35 of 37 (Codebase Cleanup)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-03-01 — v3.0 roadmap created (3 phases, 12 requirements mapped)
+Phase: 35 of 37 (Codebase Cleanup) — COMPLETE
+Plan: 2/2 complete in current phase
+Status: Phase 35 complete; Phase 36 (Training Wrappers) is next
+Last activity: 2026-03-01 — Phase 35 Plan 02 complete (midline backend stubs, config validation, planning doc corrections)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] ~33%
 
 ## Accumulated Context
 
 ### Decisions
+
+Key decisions from Phase 35 Plan 02 (2026-03-01):
+
+- Both midline backends (`segment_then_extract`, `direct_pose`) are now no-op stubs accepting `**kwargs` — no model loading, all midlines are `None`
+- `MidlineConfig.__post_init__` validates `backend` against `{"segment_then_extract", "direct_pose"}` — rejects typos at construction time
+- Stubs accept all previous kwargs silently for API compatibility with `get_backend()` kwarg forwarding
+- No `sys.modules` injection needed in tests — stubs have zero model imports
+- Phase 37 will wire YOLO-seg into `segment_then_extract` and YOLO-pose into `direct_pose` (backends are insertion points, not removed)
+
+Key decisions from Phase 35 Plan 01 (2026-03-01):
+
+- `make_detector()` now only accepts 'yolo' and 'yolo_obb' — raises ValueError for unknown kinds
+- `DetectionConfig.__post_init__` validates `detector_kind` at construction time
 
 Key decisions entering v3.0:
 
@@ -61,5 +74,5 @@ Full-image ↔ crop-space conversions are a pervasive source of error, especiall
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: v3.0 roadmap created — ready to plan Phase 35
+Stopped at: Completed 35-02-PLAN.md (midline backend stubs, MidlineConfig validation, planning doc corrections — Phase 35 complete)
 Resume file: None

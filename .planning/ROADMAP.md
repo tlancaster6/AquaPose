@@ -89,7 +89,7 @@ Full details: `.planning/phases/29-*` through `.planning/phases/33.1-*`
 
 - [x] **Phase 35: Codebase Cleanup** — Remove custom U-Net, SAM2 pipeline, old midline backends, MOG2 backend, and legacy training CLI commands (completed 2026-03-01)
 - [x] **Phase 36: Training Wrappers** — Add NDJSON seg data converter and YOLO-seg/pose training wrappers following existing yolo_obb.py pattern (completed 2026-03-01)
-- [ ] **Phase 37: Pipeline Integration** — Implement YOLOSegBackend and YOLOPoseBackend as selectable midline backends with instance matching and config support
+- [ ] **Phase 37: Pipeline Integration** — Rename and implement SegmentationBackend and PoseEstimationBackend as selectable midline backends with YOLO-seg/pose inference
 
 ## Phase Details
 
@@ -114,14 +114,17 @@ Plans:
 **Summaries**: 36-02-SUMMARY.md
 
 ### Phase 37: Pipeline Integration
-**Goal**: The pipeline supports `yolo_seg` and `yolo_pose` as selectable midline backends; running either end-to-end produces `Midline2D` objects compatible with the reconstruction stages
+**Goal**: The pipeline supports `segmentation` and `pose_estimation` as selectable midline backends; running either end-to-end produces `Midline2D` objects compatible with the reconstruction stages
 **Depends on**: Phase 36 (trained models exist), Phase 35 (custom model code removed; existing segment_then_extract and direct_pose backends are no-op stubs awaiting YOLO model wiring)
 **Requirements**: PIPE-01, PIPE-02, PIPE-03
 **Success Criteria** (what must be TRUE):
-  1. Setting `midline.backend: yolo_seg` in pipeline config runs the full pipeline end-to-end; the MidlineStage produces binary masks per detection that feed skeletonization the same way U-Net masks did
-  2. Setting `midline.backend: yolo_pose` in pipeline config runs the full pipeline end-to-end; the MidlineStage produces `Midline2D` objects with 6-keypoint coordinates resampled to `n_sample_points` and per-point confidence scores
+  1. Setting `midline.backend: segmentation` in pipeline config runs the full pipeline end-to-end; the MidlineStage produces binary masks per detection that feed skeletonization the same way U-Net masks did
+  2. Setting `midline.backend: pose_estimation` in pipeline config runs the full pipeline end-to-end; the MidlineStage produces `Midline2D` objects with 6-keypoint coordinates resampled to `n_sample_points` and per-point confidence scores
   3. Both backends produce `Midline2D` instances with identical shape and field structure — the reconstruction stages require no backend-specific branching
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 37-01-PLAN.md — Rename backends to segmentation/pose_estimation, update config, registry, and tests
+- [ ] 37-02-PLAN.md — Implement real YOLO-seg and YOLO-pose inference in both backends
 
 ## Progress
 
@@ -132,5 +135,5 @@ Plans:
 | 22-28 | v2.1 | 12/12 | Complete | 2026-02-28 |
 | 29-33.1 | v2.2 | 12/12 | Complete | 2026-03-01 |
 | 35. Codebase Cleanup | v3.0 | 2/2 | Complete | 2026-03-01 |
-| 36. Training Wrappers | v3.0 | Complete    | 2026-03-01 | 2026-03-01 |
-| 37. Pipeline Integration | v3.0 | 0/TBD | Not started | - |
+| 36. Training Wrappers | v3.0 | 2/2 | Complete | 2026-03-01 |
+| 37. Pipeline Integration | v3.0 | 0/2 | Not started | - |

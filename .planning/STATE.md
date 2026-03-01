@@ -103,6 +103,10 @@ From 32-01 execution:
 - invert_affine_point/invert_affine_points round-trip error < 1px confirmed for 6 angles including 0, pi/4, pi/2, -pi/3, pi/6, -pi
 - [Phase 32-yolo-obb-detection-backend]: OBB polygon replaces AABB in both visualization observers; _match_detection uses centroid-to-bbox-center distance; detections accessed via getattr for graceful degradation
 
+### Roadmap Evolution
+
+- Phase 33.1 inserted after Phase 33: keypoint training data augmentation (URGENT)
+
 ### Pending Todos
 
 12 pending todos from v2.1 — see .planning/todos/pending/

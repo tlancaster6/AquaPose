@@ -214,23 +214,37 @@ class DirectPoseBackend:
         angle = det.angle if det.angle is not None else 0.0
         bx, by, bw, bh = det.bbox
 
-        # Compute centroid: use det.centroid if available, otherwise derive from bbox
-        if hasattr(det, "centroid") and det.centroid is not None:
+        # Use true OBB dimensions from corner points when available.
+        # Edge lengths of the OBB quadrilateral give the real oriented
+        # width/height, while det.bbox is the axis-aligned bounding box
+        # which over-estimates for rotated fish.
+        if det.obb_points is not None:
+            pts = np.asarray(det.obb_points, dtype=np.float64)  # (4, 2)
+            edge0 = float(np.linalg.norm(pts[1] - pts[0]))
+            edge1 = float(np.linalg.norm(pts[2] - pts[1]))
+            obb_w_true = max(edge0, edge1)
+            obb_h_true = min(edge0, edge1)
             center_xy: tuple[float, float] = (
-                float(det.centroid[0]),
-                float(det.centroid[1]),
+                float(pts[:, 0].mean()),
+                float(pts[:, 1].mean()),
             )
         else:
-            center_xy = (float(bx + bw / 2.0), float(by + bh / 2.0))
+            obb_w_true = float(bw)
+            obb_h_true = float(bh)
+            if hasattr(det, "centroid") and det.centroid is not None:
+                center_xy = (float(det.centroid[0]), float(det.centroid[1]))
+            else:
+                center_xy = (float(bx + bw / 2.0), float(by + bh / 2.0))
 
         affine = extract_affine_crop(
             frame=frame,
             center_xy=center_xy,
             angle_math_rad=angle,
-            obb_w=float(bw),
-            obb_h=float(bh),
+            obb_w=obb_w_true,
+            obb_h=obb_h_true,
             crop_size=self._crop_size,
             fit_obb=True,
+            mask_background=True,
         )
 
         crop_img = affine.image

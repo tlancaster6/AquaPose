@@ -162,6 +162,7 @@ def extract_affine_crop(
     padding_fraction: float = 0.15,
     interpolation: int = cv2.INTER_LINEAR,
     fit_obb: bool = False,
+    mask_background: bool = False,
 ) -> AffineCrop:
     """Extract a rotation-aligned crop centred on an OBB detection.
 
@@ -190,6 +191,13 @@ def extract_affine_crop(
             Defaults to ``cv2.INTER_LINEAR``.
         fit_obb: When True, scale the warp so the OBB fits inside the
             crop canvas.  Defaults to False (native pixel scale).
+        mask_background: When True, zero out pixels outside the OBB
+            region in crop space after the affine warp.  The visible
+            rectangle is centered in the crop at the scaled OBB size
+            plus ``padding_fraction`` margin on each side.  This
+            replicates the letterboxed training appearance for models
+            that were trained on black-background crops.  Defaults to
+            False (preserve all warped pixels).
 
     Returns:
         :class:`AffineCrop` containing the warped image, the transform
@@ -219,6 +227,22 @@ def extract_affine_crop(
         borderMode=cv2.BORDER_CONSTANT,
         borderValue=0,
     )
+
+    if mask_background:
+        # Compute visible rectangle: OBB scaled to crop space + padding margin.
+        # The affine warp rotates the OBB to axis-aligned and (optionally)
+        # scales it, so the visible region is a simple centred rectangle.
+        vis_w = obb_w * scale * (1.0 + 2.0 * padding_fraction)
+        vis_h = obb_h * scale * (1.0 + 2.0 * padding_fraction)
+
+        x0 = max(0, round(crop_w / 2.0 - vis_w / 2.0))
+        y0 = max(0, round(crop_h / 2.0 - vis_h / 2.0))
+        x1 = min(crop_w, round(crop_w / 2.0 + vis_w / 2.0))
+        y1 = min(crop_h, round(crop_h / 2.0 + vis_h / 2.0))
+
+        mask = np.zeros_like(crop_image)
+        mask[y0:y1, x0:x1] = 1
+        crop_image = crop_image * mask
 
     return AffineCrop(
         image=crop_image,

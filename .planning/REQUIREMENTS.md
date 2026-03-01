@@ -52,6 +52,13 @@ Requirements for v2.2 Backends milestone. Each maps to roadmap phases.
 - [x] **TRAIN-03**: Keypoint training supports frozen-backbone transfer learning from existing U-Net segmentation weights, with optional unfreeze for end-to-end fine-tuning
 - [x] **TRAIN-04**: Existing training scripts in `scripts/` are superseded by `src/aquapose/training/` module with shared utilities
 
+### Data Augmentation
+
+- [x] **AUG-01**: KeypointDataset returns 3-tuple `(image, keypoints, visibility_mask)` with visibility derived from COCO annotations and updated by augmentation transforms
+- [x] **AUG-02**: Augmentation transforms (geometric + color) applied via torchvision.transforms.v2 with tv_tensors.KeyPoints for joint coordinate handling
+- [x] **AUG-03**: Masked MSE loss computes only on visible keypoints, preventing learning to predict (0,0) for missing points
+- [x] **AUG-04**: Training uses ConcatDataset of clean + augmented copies (2x effective dataset size) with clean-only validation
+
 ### Visualization
 
 - [x] **VIZ-01**: Diagnostic mode renders OBB polygon overlays on detection frames
@@ -124,10 +131,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MID-04 | Phase 33 | Complete |
 | RECON-01 | Phase 33 | Complete |
 | RECON-02 | Phase 33 | Complete |
+| AUG-01 | Phase 33.1 | Complete |
+| AUG-02 | Phase 33.1 | Complete |
+| AUG-03 | Phase 33.1 | Complete |
+| AUG-04 | Phase 33.1 | Complete |
 
 **Coverage:**
-- v2.2 requirements: 29 total
-- Mapped to phases: 29
+- v2.2 requirements: 33 total
+- Mapped to phases: 33
 - Unmapped: 0
 
 ---

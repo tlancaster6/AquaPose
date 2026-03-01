@@ -31,8 +31,10 @@ affine_warp_crop = _mod.affine_warp_crop
 transform_keypoints = _mod.transform_keypoints
 format_obb_annotation = _mod.format_obb_annotation
 format_pose_annotation = _mod.format_pose_annotation
+format_seg_annotation = _mod.format_seg_annotation
 generate_obb_dataset = _mod.generate_obb_dataset
 generate_pose_dataset = _mod.generate_pose_dataset
+generate_seg_dataset = _mod.generate_seg_dataset
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -517,3 +519,464 @@ class TestIntegrationPipeline:
         pose_yaml = (output_dir / "pose" / "data.yaml").read_text()
         assert "train: train.ndjson" in pose_yaml
         assert "kpt_shape: [6, 3]" in pose_yaml
+
+
+# ---------------------------------------------------------------------------
+# format_seg_annotation
+# ---------------------------------------------------------------------------
+
+
+class TestFormatSegAnnotation:
+    def test_basic_format(self) -> None:
+        polygon = np.array([[0, 0], [64, 0], [64, 32], [0, 32]], dtype=float)
+        annot = format_seg_annotation(polygon, crop_w=128, crop_h=64)
+        assert annot["class_id"] == 0
+        assert "polygon" in annot
+        assert len(annot["polygon"]) == 4
+
+    def test_normalized_values(self) -> None:
+        # Polygon at corners of a 128x64 crop — normalized should be [0,1]
+        polygon = np.array([[0, 0], [128, 0], [128, 64], [0, 64]], dtype=float)
+        annot = format_seg_annotation(polygon, crop_w=128, crop_h=64)
+        for x, y in annot["polygon"]:
+            assert 0.0 <= x <= 1.0
+            assert 0.0 <= y <= 1.0
+
+    def test_custom_class_id(self) -> None:
+        polygon = np.array([[0, 0], [10, 0], [10, 10], [0, 10]], dtype=float)
+        annot = format_seg_annotation(polygon, crop_w=128, crop_h=64, class_id=7)
+        assert annot["class_id"] == 7
+
+    def test_clips_out_of_bounds(self) -> None:
+        # Vertices beyond crop bounds should be clipped to [0, 1]
+        polygon = np.array([[-10, -5], [200, 0], [200, 100], [0, 100]], dtype=float)
+        annot = format_seg_annotation(polygon, crop_w=128, crop_h=64)
+        for x, y in annot["polygon"]:
+            assert 0.0 <= x <= 1.0
+            assert 0.0 <= y <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# TestSegConverter — integration tests for generate_seg_dataset
+# ---------------------------------------------------------------------------
+
+
+class TestSegConverter:
+    def _build_coco_seg_json(
+        self, tmp_path: Path, n_fish: int = 2
+    ) -> tuple[Path, Path]:
+        """Create a minimal COCO JSON with segmentation polygons.
+
+        Each annotation has both keypoints and a segmentation rectangle polygon.
+        """
+        images_dir = tmp_path / "images"
+        images_dir.mkdir()
+
+        # Create two dummy 200x100 BGR images
+        img1 = np.zeros((100, 200, 3), dtype=np.uint8)
+        img2 = np.zeros((100, 200, 3), dtype=np.uint8)
+        cv2.imwrite(str(images_dir / "img1.jpg"), img1)
+        cv2.imwrite(str(images_dir / "img2.jpg"), img2)
+
+        # Keypoints fully visible along x-axis at y=50
+        kps_full = _full_kp_flat(
+            [(20, 50), (40, 50), (80, 50), (120, 50), (160, 50), (180, 50)]
+        )
+
+        def _rect_seg(cx: float, cy: float, hw: float = 10.0) -> list[float]:
+            """Flat COCO polygon for a rectangle around (cx, cy)."""
+            return [
+                cx - hw,
+                cy - hw,
+                cx + hw,
+                cy - hw,
+                cx + hw,
+                cy + hw,
+                cx - hw,
+                cy + hw,
+            ]
+
+        annotations: list[dict] = [
+            {
+                "id": 1,
+                "image_id": 1,
+                "keypoints": kps_full,
+                "num_keypoints": N,
+                "segmentation": [_rect_seg(100, 50)],
+            },
+            {
+                "id": 2,
+                "image_id": 1,
+                "keypoints": kps_full,
+                "num_keypoints": N,
+                "segmentation": [_rect_seg(100, 50)],
+            },
+            {
+                "id": 3,
+                "image_id": 2,
+                "keypoints": kps_full,
+                "num_keypoints": N,
+                "segmentation": [_rect_seg(100, 50)],
+            },
+        ]
+
+        coco = {
+            "images": [
+                {"id": 1, "file_name": "img1.jpg", "width": 200, "height": 100},
+                {"id": 2, "file_name": "img2.jpg", "width": 200, "height": 100},
+            ],
+            "annotations": annotations,
+            "categories": [
+                {
+                    "id": 1,
+                    "name": "fish",
+                    "keypoints": ["nose", "head", "spine1", "spine2", "spine3", "tail"],
+                }
+            ],
+        }
+        coco_path = tmp_path / "annotations_seg.json"
+        with open(coco_path, "w") as f:
+            json.dump(coco, f)
+
+        return coco_path, images_dir
+
+    def test_seg_dataset_structure(self, tmp_path: Path) -> None:
+        coco_path, images_dir = self._build_coco_seg_json(tmp_path)
+        coco = load_coco(coco_path)
+        output_dir = tmp_path / "output"
+
+        median_arc = compute_median_arc_length(coco["annotations"])
+        n_train, n_val = generate_seg_dataset(
+            coco,
+            images_dir=images_dir,
+            output_dir=output_dir,
+            median_arc=median_arc,
+            lateral_ratio=0.18,
+            edge_factor=2.0,
+            crop_w=128,
+            crop_h=64,
+            min_visible=4,
+            val_split=0.5,
+            seed=42,
+        )
+
+        seg_root = output_dir / "seg"
+        assert (seg_root / "data.yaml").exists()
+        assert (seg_root / "images" / "train").is_dir()
+        assert (seg_root / "images" / "val").is_dir()
+        assert (seg_root / "train.ndjson").exists()
+        assert (seg_root / "val.ndjson").exists()
+
+        # 3 annotations -> 3 crops total
+        assert n_train + n_val == 3
+
+        # Verify NDJSON schema
+        for split in ("train", "val"):
+            ndjson_path = seg_root / f"{split}.ndjson"
+            lines = [ln for ln in ndjson_path.read_text().strip().splitlines() if ln]
+            for line in lines:
+                record = json.loads(line)
+                assert "image" in record
+                assert "width" in record
+                assert "height" in record
+                assert "annotations" in record
+                for annot in record["annotations"]:
+                    assert "class_id" in annot
+                    assert "polygon" in annot
+                    assert len(annot["polygon"]) >= 3
+
+    def test_multi_ring_keeps_largest(self, tmp_path: Path) -> None:
+        """Multi-ring segmentation keeps the largest ring by vertex count."""
+        images_dir = tmp_path / "images"
+        images_dir.mkdir()
+        img = np.zeros((100, 200, 3), dtype=np.uint8)
+        cv2.imwrite(str(images_dir / "img.jpg"), img)
+
+        kps_full = _full_kp_flat(
+            [(20, 50), (40, 50), (80, 50), (120, 50), (160, 50), (180, 50)]
+        )
+
+        # Small ring: 3 vertices (6 values), Large ring: 5 vertices (10 values)
+        small_ring = [90.0, 40.0, 110.0, 40.0, 110.0, 60.0]  # triangle
+        large_ring = [
+            80.0,
+            35.0,
+            120.0,
+            35.0,
+            120.0,
+            65.0,
+            80.0,
+            65.0,
+            100.0,
+            50.0,
+        ]  # pentagon
+
+        coco = {
+            "images": [{"id": 1, "file_name": "img.jpg", "width": 200, "height": 100}],
+            "annotations": [
+                {
+                    "id": 1,
+                    "image_id": 1,
+                    "keypoints": kps_full,
+                    "num_keypoints": N,
+                    "segmentation": [small_ring, large_ring],  # two rings
+                }
+            ],
+            "categories": [{"id": 1, "name": "fish"}],
+        }
+        coco_path = tmp_path / "ann.json"
+        with open(coco_path, "w") as f:
+            json.dump(coco, f)
+
+        coco_data = load_coco(coco_path)
+        output_dir = tmp_path / "output"
+        median_arc = compute_median_arc_length(coco_data["annotations"])
+        generate_seg_dataset(
+            coco_data,
+            images_dir=images_dir,
+            output_dir=output_dir,
+            median_arc=median_arc,
+            lateral_ratio=0.18,
+            edge_factor=2.0,
+            crop_w=128,
+            crop_h=64,
+            min_visible=4,
+            val_split=0.0,
+            seed=42,
+        )
+
+        # Read the generated NDJSON and check polygon vertex count
+        train_ndjson = output_dir / "seg" / "train.ndjson"
+        lines = [ln for ln in train_ndjson.read_text().strip().splitlines() if ln]
+        assert len(lines) == 1
+        record = json.loads(lines[0])
+        # Large ring has 5 vertices; output polygon should have 5 vertices
+        assert len(record["annotations"]) == 1
+        assert len(record["annotations"][0]["polygon"]) == 5
+
+    def test_polygon_affine_transform(self, tmp_path: Path) -> None:
+        """Polygon vertices are correctly transformed into crop space."""
+        images_dir = tmp_path / "images"
+        images_dir.mkdir()
+        # White image so crop is not degenerate
+        img = np.ones((100, 200, 3), dtype=np.uint8) * 128
+        cv2.imwrite(str(images_dir / "img.jpg"), img)
+
+        # Fish centered at (100, 50) along x-axis
+        kps_full = _full_kp_flat(
+            [(20, 50), (40, 50), (80, 50), (120, 50), (160, 50), (180, 50)]
+        )
+        # Segmentation polygon: a small rectangle around crop center
+        poly_flat = [90.0, 45.0, 110.0, 45.0, 110.0, 55.0, 90.0, 55.0]
+
+        coco = {
+            "images": [{"id": 1, "file_name": "img.jpg", "width": 200, "height": 100}],
+            "annotations": [
+                {
+                    "id": 1,
+                    "image_id": 1,
+                    "keypoints": kps_full,
+                    "num_keypoints": N,
+                    "segmentation": [poly_flat],
+                }
+            ],
+            "categories": [{"id": 1, "name": "fish"}],
+        }
+        coco_path = tmp_path / "ann.json"
+        with open(coco_path, "w") as f:
+            json.dump(coco, f)
+
+        coco_data = load_coco(coco_path)
+        output_dir = tmp_path / "output"
+        median_arc = compute_median_arc_length(coco_data["annotations"])
+        generate_seg_dataset(
+            coco_data,
+            images_dir=images_dir,
+            output_dir=output_dir,
+            median_arc=median_arc,
+            lateral_ratio=0.18,
+            edge_factor=2.0,
+            crop_w=128,
+            crop_h=64,
+            min_visible=4,
+            val_split=0.0,
+            seed=42,
+        )
+
+        train_ndjson = output_dir / "seg" / "train.ndjson"
+        lines = [ln for ln in train_ndjson.read_text().strip().splitlines() if ln]
+        assert len(lines) == 1
+        record = json.loads(lines[0])
+
+        # The polygon should exist and all vertices must be in [0, 1]
+        assert len(record["annotations"]) >= 1
+        annot = record["annotations"][0]
+        for x, y in annot["polygon"]:
+            assert 0.0 <= x <= 1.0, f"x={x} out of [0,1]"
+            assert 0.0 <= y <= 1.0, f"y={y} out of [0,1]"
+
+    def test_all_fish_in_crop_labeled(self, tmp_path: Path) -> None:
+        """All fish annotations (incl. intruders) are included in each crop's labels."""
+        images_dir = tmp_path / "images"
+        images_dir.mkdir()
+        img = np.zeros((100, 200, 3), dtype=np.uint8)
+        cv2.imwrite(str(images_dir / "img.jpg"), img)
+
+        kps_full = _full_kp_flat(
+            [(20, 50), (40, 50), (80, 50), (120, 50), (160, 50), (180, 50)]
+        )
+
+        def _rect_seg(cx: float, cy: float, hw: float = 10.0) -> list[float]:
+            return [
+                cx - hw,
+                cy - hw,
+                cx + hw,
+                cy - hw,
+                cx + hw,
+                cy + hw,
+                cx - hw,
+                cy + hw,
+            ]
+
+        # 3 fish in same image, all with segmentation polygons
+        coco = {
+            "images": [{"id": 1, "file_name": "img.jpg", "width": 200, "height": 100}],
+            "annotations": [
+                {
+                    "id": 1,
+                    "image_id": 1,
+                    "keypoints": kps_full,
+                    "num_keypoints": N,
+                    "segmentation": [_rect_seg(100, 50)],
+                },
+                {
+                    "id": 2,
+                    "image_id": 1,
+                    "keypoints": kps_full,
+                    "num_keypoints": N,
+                    "segmentation": [_rect_seg(100, 50)],
+                },
+                {
+                    "id": 3,
+                    "image_id": 1,
+                    "keypoints": kps_full,
+                    "num_keypoints": N,
+                    "segmentation": [_rect_seg(100, 50)],
+                },
+            ],
+            "categories": [{"id": 1, "name": "fish"}],
+        }
+        coco_path = tmp_path / "ann.json"
+        with open(coco_path, "w") as f:
+            json.dump(coco, f)
+
+        coco_data = load_coco(coco_path)
+        output_dir = tmp_path / "output"
+        median_arc = compute_median_arc_length(coco_data["annotations"])
+        generate_seg_dataset(
+            coco_data,
+            images_dir=images_dir,
+            output_dir=output_dir,
+            median_arc=median_arc,
+            lateral_ratio=0.18,
+            edge_factor=2.0,
+            crop_w=128,
+            crop_h=64,
+            min_visible=4,
+            val_split=0.0,
+            seed=42,
+        )
+
+        # 3 crops should be generated (one per annotation), across both splits
+        seg_root = output_dir / "seg"
+        all_lines: list[str] = []
+        for split in ("train", "val"):
+            ndjson_path = seg_root / f"{split}.ndjson"
+            all_lines += [
+                ln for ln in ndjson_path.read_text().strip().splitlines() if ln
+            ]
+        assert len(all_lines) == 3
+
+        # Each crop should label all 3 fish (polygons overlap crop bounds)
+        for line in all_lines:
+            record = json.loads(line)
+            # All 3 fish polygons should be in each crop
+            assert len(record["annotations"]) == 3, (
+                f"Expected 3 annotations in crop, got {len(record['annotations'])}"
+            )
+
+    def test_missing_segmentation_skipped(self, tmp_path: Path) -> None:
+        """Annotations without segmentation are skipped in polygon labels (no error)."""
+        images_dir = tmp_path / "images"
+        images_dir.mkdir()
+        img = np.zeros((100, 200, 3), dtype=np.uint8)
+        cv2.imwrite(str(images_dir / "img.jpg"), img)
+
+        kps_full = _full_kp_flat(
+            [(20, 50), (40, 50), (80, 50), (120, 50), (160, 50), (180, 50)]
+        )
+        poly_flat = [90.0, 45.0, 110.0, 45.0, 110.0, 55.0, 90.0, 55.0]
+
+        coco = {
+            "images": [{"id": 1, "file_name": "img.jpg", "width": 200, "height": 100}],
+            "annotations": [
+                # ann 1: has keypoints and segmentation — defines OBB and contributes polygon
+                {
+                    "id": 1,
+                    "image_id": 1,
+                    "keypoints": kps_full,
+                    "num_keypoints": N,
+                    "segmentation": [poly_flat],
+                },
+                # ann 2: has keypoints but NO segmentation — can define OBB but no polygon
+                {
+                    "id": 2,
+                    "image_id": 1,
+                    "keypoints": kps_full,
+                    "num_keypoints": N,
+                    # no "segmentation" key
+                },
+            ],
+            "categories": [{"id": 1, "name": "fish"}],
+        }
+        coco_path = tmp_path / "ann.json"
+        with open(coco_path, "w") as f:
+            json.dump(coco, f)
+
+        coco_data = load_coco(coco_path)
+        output_dir = tmp_path / "output"
+        median_arc = compute_median_arc_length(coco_data["annotations"])
+
+        # Should not raise
+        n_train, n_val = generate_seg_dataset(
+            coco_data,
+            images_dir=images_dir,
+            output_dir=output_dir,
+            median_arc=median_arc,
+            lateral_ratio=0.18,
+            edge_factor=2.0,
+            crop_w=128,
+            crop_h=64,
+            min_visible=4,
+            val_split=0.0,
+            seed=42,
+        )
+
+        # 2 crops generated (both anns have keypoints to define OBBs)
+        assert n_train + n_val == 2
+
+        seg_root = output_dir / "seg"
+        all_lines: list[str] = []
+        for split in ("train", "val"):
+            ndjson_path = seg_root / f"{split}.ndjson"
+            all_lines += [
+                ln for ln in ndjson_path.read_text().strip().splitlines() if ln
+            ]
+        assert len(all_lines) == 2
+
+        # Each crop should have exactly 1 polygon annotation (ann2 is skipped)
+        for line in all_lines:
+            record = json.loads(line)
+            assert len(record["annotations"]) == 1, (
+                f"Expected 1 annotation (missing seg skipped), got {len(record['annotations'])}"
+            )

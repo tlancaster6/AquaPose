@@ -28,7 +28,7 @@ Requirements for Ultralytics Unification milestone. Each maps to roadmap phases.
 
 - [ ] **PIPE-01**: YOLOSegBackend produces binary masks per detection for midline extraction via skeletonization
 - [ ] **PIPE-02**: YOLOPoseBackend produces keypoint coordinates with per-point confidence for direct midline construction
-- [ ] **PIPE-03**: Config system supports backend selection (yolo_seg, yolo_pose) via midline.backend field
+- [x] **PIPE-03**: Config system supports backend selection (yolo_seg, yolo_pose) via midline.backend field
 
 ## Previous Milestone Requirements (v2.2)
 
@@ -70,7 +70,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TRAIN-02 | Phase 36 | Complete |
 | PIPE-01 | Phase 37 | Pending |
 | PIPE-02 | Phase 37 | Pending |
-| PIPE-03 | Phase 37 | Pending |
+| PIPE-03 | Phase 37 | Complete |
 
 **Coverage:**
 - v3.0 requirements: 11 total

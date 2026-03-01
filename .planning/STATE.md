@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-01)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 36 — Training Wrappers (Plan 02 complete — phase DONE)
+**Current focus:** Phase 37 — Pipeline Integration (Plan 01 complete)
 
 ## Current Position
 
-Phase: 36 of 37 (Training Wrappers) — COMPLETE
-Plan: 2/2 complete in current phase
-Status: Phase 36 complete; Phase 37 (Pipeline Integration) is next
-Last activity: 2026-03-01 - Completed quick task 13: Convert yolo_obb.py to use ndjson format training data and simplify to follow yolo_pose/yolo_seg pattern with common.py
+Phase: 37 of 37 (Pipeline Integration) — IN PROGRESS
+Plan: 1/3 complete in current phase
+Status: Plan 01 complete (backend renaming); Plan 02 (YOLO-seg integration) is next
+Last activity: 2026-03-01 — Phase 37 Plan 01 complete (renamed midline backends to segmentation/pose_estimation)
 
-Progress: [████░░░░░░] ~66%
+Progress: [█████░░░░░] ~75%
 
 ## Accumulated Context
 
@@ -45,13 +45,17 @@ Key decisions from Phase 36 Plan 01 (2026-03-01):
 - YOLO26n-seg and YOLO26n-pose training wrappers follow exact same pattern as existing yolo_obb.py
 - Both wrappers forbidden from importing aquapose.engine or aquapose.cli (import boundary enforced by test)
 
+Key decisions from Phase 37 Plan 01 (2026-03-01):
+
+- Backend names changed from `segment_then_extract`/`direct_pose` to `segmentation`/`pose_estimation`
+- Old names now raise ValueError at MidlineConfig construction time
+- `MidlineConfig.backend` default changed to `"segmentation"`; `keypoint_confidence_floor` default raised to 0.3
+- New backend stubs accept explicit kwargs (not `**kwargs`) and store as instance attributes for Plan 02 wiring
+
 Key decisions from Phase 35 Plan 02 (2026-03-01):
 
-- Both midline backends (`segment_then_extract`, `direct_pose`) are now no-op stubs accepting `**kwargs` — no model loading, all midlines are `None`
-- `MidlineConfig.__post_init__` validates `backend` against `{"segment_then_extract", "direct_pose"}` — rejects typos at construction time
-- Stubs accept all previous kwargs silently for API compatibility with `get_backend()` kwarg forwarding
-- No `sys.modules` injection needed in tests — stubs have zero model imports
-- Phase 37 will wire YOLO-seg into `segment_then_extract` and YOLO-pose into `direct_pose` (backends are insertion points, not removed)
+- Both midline backends were no-op stubs accepting `**kwargs` — no model loading, all midlines are `None`
+- Phase 37 Plan 01 renamed these backends and Phase 37 Plan 02 will wire YOLO-seg/pose into them
 
 Key decisions from Phase 35 Plan 01 (2026-03-01):
 
@@ -88,5 +92,5 @@ Full-image ↔ crop-space conversions are a pervasive source of error, especiall
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed quick-13 (yolo_obb.py NDJSON unification — OBB wrapper now uses train_yolo_ndjson, CLI uses --model/--weights)
+Stopped at: Completed 37-01-PLAN.md (renamed midline backends to segmentation/pose_estimation; old names rejected)
 Resume file: None

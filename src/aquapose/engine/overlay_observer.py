@@ -437,40 +437,6 @@ class Overlay2DObserver:
         return mosaic
 
     @staticmethod
-    def _draw_bbox(
-        frame: np.ndarray,
-        bbox: object,
-        color: tuple[int, int, int],
-        fish_id: int | None = None,
-    ) -> None:
-        """Draw a bounding box rectangle and optional fish ID text.
-
-        Args:
-            frame: BGR image to draw on (modified in-place).
-            bbox: Bounding box with x1, y1, x2, y2 attributes or (x1, y1, x2, y2) tuple.
-            color: BGR color tuple.
-            fish_id: If provided, draw fish ID text near the top-left corner.
-        """
-        if hasattr(bbox, "x1"):
-            x1, y1, x2, y2 = int(bbox.x1), int(bbox.y1), int(bbox.x2), int(bbox.y2)
-        elif isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
-            x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
-        else:
-            return
-
-        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-        if fish_id is not None:
-            cv2.putText(
-                frame,
-                str(fish_id),
-                (x1, y1 - 5),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                color,
-                1,
-            )
-
-    @staticmethod
     def _draw_detection_bbox(
         frame: np.ndarray,
         bbox: object,
@@ -488,8 +454,8 @@ class Overlay2DObserver:
 
         Args:
             frame: BGR image to draw on (modified in-place).
-            bbox: Bounding box with x1, y1, x2, y2 attributes or
-                ``(x1, y1, x2, y2)`` tuple — used only when *obb_points* is None.
+            bbox: Bounding box as ``(x, y, w, h)`` tuple — used only when
+                *obb_points* is None.
             color: BGR color tuple.
             obb_points: OBB corner points as ``(4, 2)`` numpy array.  When not
                 None the polygon is drawn instead of the AABB rectangle.
@@ -501,56 +467,31 @@ class Overlay2DObserver:
         if obb_points is not None:
             pts = obb_points.astype(np.int32).reshape((-1, 1, 2))
             cv2.polylines(frame, [pts], isClosed=True, color=color, thickness=thickness)
-            if fish_id is not None:
-                label = (
-                    f"{fish_id} {confidence:.2f}"
-                    if confidence is not None
-                    else str(fish_id)
-                )
-                label_x = int(obb_points[:, 0].min())
-                label_y = int(obb_points[:, 1].min()) - 5
-                cv2.putText(
-                    frame,
-                    label,
-                    (label_x, label_y),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    color,
-                    1,
-                )
+            label_x = int(obb_points[:, 0].min())
+            label_y = int(obb_points[:, 1].min()) - 5
         else:
-            if hasattr(bbox, "x1"):
-                x1, y1, x2, y2 = (
-                    int(bbox.x1),  # type: ignore[union-attr]
-                    int(bbox.y1),  # type: ignore[union-attr]
-                    int(bbox.x2),  # type: ignore[union-attr]
-                    int(bbox.y2),  # type: ignore[union-attr]
-                )
-            elif isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
-                x1, y1, x2, y2 = (
-                    int(bbox[0]),
-                    int(bbox[1]),
-                    int(bbox[2]),
-                    int(bbox[3]),
-                )
-            else:
+            if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
                 return
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
-            if fish_id is not None:
-                label = (
-                    f"{fish_id} {confidence:.2f}"
-                    if confidence is not None
-                    else str(fish_id)
-                )
-                cv2.putText(
-                    frame,
-                    label,
-                    (x1, y1 - 5),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    color,
-                    1,
-                )
+            x, y, w, h = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+            cv2.rectangle(frame, (x, y), (x + w, y + h), color, thickness)
+            label_x = x
+            label_y = y - 5
+
+        if fish_id is not None:
+            label = (
+                f"{fish_id} {confidence:.2f}"
+                if confidence is not None
+                else str(fish_id)
+            )
+            cv2.putText(
+                frame,
+                label,
+                (label_x, label_y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                color,
+                1,
+            )
 
     @staticmethod
     def _mosaic_dims(n_cameras: int, frame_w: int, frame_h: int) -> tuple[int, int]:

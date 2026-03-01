@@ -132,7 +132,8 @@ def test_draw_detection_bbox_falls_back_to_aabb() -> None:
     """_draw_detection_bbox draws AABB rectangle when obb_points is None."""
     frame = np.zeros((200, 200, 3), dtype=np.uint8)
     color = (255, 0, 0)
-    bbox = (20, 30, 120, 130)
+    # bbox is (x, y, w, h) per Detection convention.
+    bbox = (20, 30, 80, 60)
 
     Overlay2DObserver._draw_detection_bbox(
         frame,
@@ -145,6 +146,8 @@ def test_draw_detection_bbox_falls_back_to_aabb() -> None:
     assert frame.sum() > 0
     # Verify top-left corner is drawn (rectangle corner pixel).
     assert frame[30, 20, 0] == 255 or frame[30, 21, 0] == 255
+    # Verify bottom-right area is drawn (x+w, y+h) = (100, 90).
+    assert frame[90, 100, 0] == 255 or frame[89, 100, 0] == 255
 
 
 def test_draw_detection_bbox_label_format() -> None:

@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-03-01)
 Phase: 37 of 37 (Pipeline Integration) — IN PROGRESS
 Plan: 1/3 complete in current phase
 Status: Plan 01 complete (backend renaming); Plan 02 (YOLO-seg integration) is next
-Last activity: 2026-03-01 — Phase 37 Plan 01 complete (renamed midline backends to segmentation/pose_estimation)
+Last activity: 2026-03-01 - Completed quick task 14: Adopt Ultralytics-native NDJSON format, eliminate convert_ndjson_to_txt plumbing
 
 Progress: [█████░░░░░] ~75%
 
@@ -36,8 +36,7 @@ Progress: [█████░░░░░] ~75%
 Key decisions from Phase 36 Plan 02 (2026-03-01):
 
 - New seg/pose CLI subcommands use `--model` (full model name string) not `--model-size` — consistent with CONTEXT.md decision; OBB keeps `--model-size` unchanged
-- NDJSON-to-YOLO.txt conversion done before model.train(); label files written to `labels/{split}/` alongside `images/{split}/`
-- data.yaml rewritten to `data_ultralytics.yaml` with absolute `path:` to prevent Ultralytics DATASETS_DIR resolution issues
+- Training wrappers pass `dataset.ndjson` directly to `model.train(data=...)` — Ultralytics-native NDJSON format (quick-14 eliminated txt conversion)
 - Pose wrapper reads `kpt_shape`, `kpt_names`, `flip_idx` from original data.yaml — nothing hardcoded about 6-keypoint structure
 
 Key decisions from Phase 36 Plan 01 (2026-03-01):

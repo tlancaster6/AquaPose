@@ -83,9 +83,10 @@ Full-image ↔ crop-space conversions are a pervasive source of error, especiall
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 12 | Add tool script for YOLO-OBB and YOLO-pose training set generation from multi-animal pose annotations | 2026-03-01 | 304bc09 | [12-add-tool-script-for-yolo-obb-and-yolo-po](./quick/12-add-tool-script-for-yolo-obb-and-yolo-po/) |
+| 13 | Convert yolo_obb.py to use NDJSON format via train_yolo_ndjson; align OBB NDJSON key and CLI flags with seg/pose | 2026-03-01 | 7e98ac3 | [13-convert-yolo-obb-py-to-use-ndjson-format](./quick/13-convert-yolo-obb-py-to-use-ndjson-format/) |
 
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 36-02-PLAN.md (YOLO-seg/pose training wrappers, NDJSON conversion helpers, CLI seg/pose subcommands — Phase 36 complete)
+Stopped at: Completed quick-13 (yolo_obb.py NDJSON unification — OBB wrapper now uses train_yolo_ndjson, CLI uses --model/--weights)
 Resume file: None

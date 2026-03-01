@@ -127,11 +127,55 @@ class Midline3D:
 # ---------------------------------------------------------------------------
 
 
+def _weighted_triangulate_rays(
+    origins: torch.Tensor,
+    directions: torch.Tensor,
+    weights: torch.Tensor,
+) -> torch.Tensor:
+    """Weighted DLT triangulation using normal equations with per-camera weights.
+
+    Each camera's contribution to the normal equations (A, b) is scaled by
+    ``weights[i]``. When all weights are 1.0, produces identical output to
+    ``triangulate_rays()``.
+
+    Implementation mirrors ``triangulate_rays`` in ``calibration/projection.py``
+    (normal equations: A = sum_i w_i * (I - d_i d_i^T), b = A_i @ o_i) but
+    applies a scalar weight to each camera's A and b contribution.
+
+    Args:
+        origins: Ray origin points, shape (N, 3).
+        directions: Unit ray direction vectors, shape (N, 3). Must be unit vectors.
+        weights: Per-camera scalar weights, shape (N,). Typically sqrt(confidence).
+
+    Returns:
+        Triangulated 3D point, shape (3,).
+    """
+    device = origins.device
+    dtype = origins.dtype
+
+    A = torch.zeros(3, 3, device=device, dtype=dtype)
+    b = torch.zeros(3, device=device, dtype=dtype)
+
+    eye3 = torch.eye(3, device=device, dtype=dtype)
+    for i in range(origins.shape[0]):
+        d = directions[i]  # (3,)
+        o = origins[i]  # (3,)
+        w = weights[i]  # scalar
+        M = eye3 - d.unsqueeze(1) @ d.unsqueeze(0)  # (3, 3)
+        A = A + w * M
+        b = b + w * (M @ o)
+
+    result = torch.linalg.lstsq(A, b.unsqueeze(1))
+    return result.solution.squeeze(1)
+
+
 def _triangulate_body_point(
     pixels: dict[str, torch.Tensor],
     models: dict[str, RefractiveProjectionModel],
     inlier_threshold: float,
     water_z: float | None = None,
+    *,
+    weights: dict[str, float] | None = None,
 ) -> tuple[torch.Tensor, list[str], float] | None:
     """Triangulate a single 3D body point from multi-camera 2D observations.
 
@@ -162,6 +206,10 @@ def _triangulate_body_point(
         water_z: Z coordinate of the water surface in world frame.  Points
             with Z <= water_z are rejected as physically impossible.  When
             None, no Z-lower-bound check is applied.
+        weights: Optional per-camera weights mapping camera_id to a scalar
+            weight. Typically sqrt(confidence) from keypoint backend. When None
+            or when all weights equal 1.0, falls back to unweighted
+            ``triangulate_rays()`` for identical backward-compatible output.
 
     Returns:
         Tuple of (point_3d, inlier_cam_ids, mean_residual) where point_3d has
@@ -184,6 +232,26 @@ def _triangulate_body_point(
         origins[cid] = o[0]  # (3,)
         directions[cid] = d[0]  # (3,)
 
+    # Determine if we should use weighted triangulation.
+    # Weighted path is used when weights dict is provided and not all 1.0.
+    _use_weights = weights is not None and any(
+        v != 1.0 for v in weights.values() if isinstance(v, float)
+    )
+
+    def _tri_rays(ids: list[str]) -> torch.Tensor:
+        """Triangulate from the given camera IDs, applying weights when active."""
+        origs = torch.stack([origins[cid] for cid in ids])
+        dirs = torch.stack([directions[cid] for cid in ids])
+        if _use_weights:
+            assert weights is not None
+            w = torch.tensor(
+                [weights.get(cid, 1.0) for cid in ids],
+                dtype=origs.dtype,
+                device=origs.device,
+            )
+            return _weighted_triangulate_rays(origs, dirs, w)
+        return triangulate_rays(origs, dirs)
+
     def _is_below_water(pt: torch.Tensor) -> bool:
         """Return True if the point is at or above the water surface."""
         if water_z is None:
@@ -204,9 +272,7 @@ def _triangulate_body_point(
             )
             return None
 
-        origs = torch.stack([origins[cid] for cid in cam_ids])  # (2, 3)
-        dirs = torch.stack([directions[cid] for cid in cam_ids])  # (2, 3)
-        pt3d = triangulate_rays(origs, dirs)
+        pt3d = _tri_rays(cam_ids)
 
         # Layer 1: reject physically impossible points
         if _is_below_water(pt3d):
@@ -289,9 +355,7 @@ def _triangulate_body_point(
             inlier_ids = list(best_cam_ids)
 
         if len(inlier_ids) >= 2:
-            origs = torch.stack([origins[cid] for cid in inlier_ids])
-            dirs = torch.stack([directions[cid] for cid in inlier_ids])
-            final_pt3d = triangulate_rays(origs, dirs)
+            final_pt3d = _tri_rays(inlier_ids)
         else:
             final_pt3d = best_pt3d
             inlier_ids = best_cam_ids
@@ -318,9 +382,7 @@ def _triangulate_body_point(
         return final_pt3d, inlier_ids, mean_residual
 
     # n_cams > 7: Residual rejection
-    origs = torch.stack([origins[cid] for cid in cam_ids])
-    dirs = torch.stack([directions[cid] for cid in cam_ids])
-    pt3d_all = triangulate_rays(origs, dirs)
+    pt3d_all = _tri_rays(cam_ids)
 
     # Compute per-camera reprojection residuals
     residuals_dict: dict[str, float] = {}
@@ -344,9 +406,7 @@ def _triangulate_body_point(
         sorted_ids = sorted(cam_ids, key=lambda c: residuals_dict[c])
         inlier_ids = sorted_ids[:2]
 
-    origs = torch.stack([origins[cid] for cid in inlier_ids])
-    dirs = torch.stack([directions[cid] for cid in inlier_ids])
-    final_pt3d = triangulate_rays(origs, dirs)
+    final_pt3d = _tri_rays(inlier_ids)
 
     # Layer 1: final Z validation for the large-camera-count path
     if _is_below_water(final_pt3d):
@@ -837,20 +897,26 @@ def triangulate_midlines(
         per_point_depths: list[float] = []  # depth in metres below water
 
         for i in range(n_body_points):
-            # Gather pixel observations and half-widths for body point i
+            # Gather pixel observations, half-widths, and confidence weights for body point i
             pixels: dict[str, torch.Tensor] = {}
             hw_px_list: list[float] = []
+            pt_weights: dict[str, float] = {}
             for cam_id, midline in cam_midlines.items():
                 if cam_id not in models:
                     continue
                 pt = midline.points[i]
                 if np.any(np.isnan(pt)):
-                    continue
+                    continue  # NaN points excluded entirely (locked decision)
                 pixels[cam_id] = torch.from_numpy(pt).float()
                 hw_px_list.append(float(midline.half_widths[i]))
+                # Extract per-point confidence for weighting; fall back to 1.0
+                if midline.point_confidence is not None:
+                    pt_weights[cam_id] = float(np.sqrt(midline.point_confidence[i]))
+                else:
+                    pt_weights[cam_id] = 1.0
 
             result = _triangulate_body_point(
-                pixels, models, inlier_threshold, water_z=water_z
+                pixels, models, inlier_threshold, water_z=water_z, weights=pt_weights
             )
             if result is None:
                 continue

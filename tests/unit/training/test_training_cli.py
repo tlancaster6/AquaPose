@@ -82,3 +82,56 @@ def test_training_modules_do_not_import_engine() -> None:
                     )
 
     assert not violations, "Import boundary violations found:\n" + "\n".join(violations)
+
+
+def test_train_help_lists_seg_and_pose() -> None:
+    """aquapose train --help should list the seg and pose subcommands."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["train", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "seg" in result.output
+    assert "pose" in result.output
+
+
+def test_train_seg_help_shows_expected_flags() -> None:
+    """aquapose train seg --help should show all required flags."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["train", "seg", "--help"])
+    assert result.exit_code == 0, result.output
+    expected_flags = [
+        "--data-dir",
+        "--output-dir",
+        "--epochs",
+        "--batch-size",
+        "--device",
+        "--val-split",
+        "--imgsz",
+        "--model",
+        "--weights",
+    ]
+    for flag in expected_flags:
+        assert flag in result.output, (
+            f"Expected flag {flag!r} not found in seg help output"
+        )
+
+
+def test_train_pose_help_shows_expected_flags() -> None:
+    """aquapose train pose --help should show all required flags."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["train", "pose", "--help"])
+    assert result.exit_code == 0, result.output
+    expected_flags = [
+        "--data-dir",
+        "--output-dir",
+        "--epochs",
+        "--batch-size",
+        "--device",
+        "--val-split",
+        "--imgsz",
+        "--model",
+        "--weights",
+    ]
+    for flag in expected_flags:
+        assert flag in result.output, (
+            f"Expected flag {flag!r} not found in pose help output"
+        )

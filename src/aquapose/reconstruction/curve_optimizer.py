@@ -297,6 +297,45 @@ def _chamfer_distance_2d(
     return (min_proj_to_obs.mean() + min_obs_to_proj.mean()) / 2.0
 
 
+def _weighted_chamfer_distance_2d(
+    proj: torch.Tensor,
+    obs: torch.Tensor,
+    weights: torch.Tensor,
+) -> torch.Tensor:
+    """Confidence-weighted symmetric 2D chamfer distance.
+
+    The obs->proj direction uses per-point weights (typically sqrt(confidence)).
+    The proj->obs direction remains unweighted because projected spline points
+    have no per-point confidence.
+
+    When all weights are 1.0, the result is identical to ``_chamfer_distance_2d``.
+    Returns zero scalar if either set is empty.
+
+    Args:
+        proj: Projected spline points, shape (M, 2), float32.
+        obs: Observed skeleton points, shape (N, 2), float32.
+        weights: Per-observation-point weights, shape (N,), float32.
+            Typically sqrt(confidence) values.
+
+    Returns:
+        Scalar weighted chamfer distance tensor.
+    """
+    if proj.numel() == 0 or obs.numel() == 0:
+        return torch.zeros(1, device=proj.device if proj.numel() > 0 else obs.device)
+
+    # (M, N) pairwise distances
+    dists = torch.cdist(proj.unsqueeze(0), obs.unsqueeze(0)).squeeze(0)  # (M, N)
+
+    # proj→obs (unweighted): for each projected point, nearest obs
+    min_proj_to_obs = dists.min(dim=1).values  # (M,)
+
+    # obs→proj (weighted): for each observed point, nearest projected, weighted mean
+    min_obs_to_proj = dists.min(dim=0).values  # (N,)
+    weighted_obs_to_proj = (min_obs_to_proj * weights).sum() / (weights.sum() + 1e-8)
+
+    return (min_proj_to_obs.mean() + weighted_obs_to_proj) / 2.0
+
+
 # ---------------------------------------------------------------------------
 # Loss functions
 # ---------------------------------------------------------------------------
@@ -308,6 +347,7 @@ def _data_loss(
     midlines_per_fish: list[dict[str, torch.Tensor]],
     models: dict[str, RefractiveProjectionModel],
     config: CurveOptimizerConfig,
+    confidence_per_fish: list[dict[str, torch.Tensor | None]] | None = None,
 ) -> torch.Tensor:
     """Compute the data loss: mean chamfer distance per fish averaged over cameras.
 
@@ -328,6 +368,12 @@ def _data_loss(
     push the spline back underwater, preventing silent convergence at loss=0 when
     the initialization is physically invalid.
 
+    When ``confidence_per_fish`` is provided, cameras with non-None weights use
+    ``_weighted_chamfer_distance_2d`` (obs→proj direction weighted by sqrt confidence).
+    When ``confidence_per_fish`` is None or a camera's entry is None, the standard
+    ``_chamfer_distance_2d`` is used — producing identical output to the unweighted
+    version for backward compatibility.
+
     Args:
         ctrl_pts: Control points tensor, shape (N_fish, K, 3), float32.
         basis: B-spline basis matrix, shape (n_eval, K), float32.
@@ -335,6 +381,10 @@ def _data_loss(
             points tensor of shape (M, 2), float32.
         models: Per-camera refractive projection models.
         config: Optimizer configuration.
+        confidence_per_fish: Optional per-fish per-camera weight tensors.
+            When provided, must be a list of the same length as midlines_per_fish.
+            Each element maps camera_id to a weight tensor of shape (M,) or None.
+            None entries use unweighted chamfer (backward-compatible path).
 
     Returns:
         Scalar mean loss in pixel units, averaged over fish and cameras.
@@ -367,8 +417,18 @@ def _data_loss(
 
             proj_valid = proj_px[valid_mask]  # (M_valid, 2)
 
-            # Chamfer distance in pixels between projected spline and observed skeleton
-            chamfer = _chamfer_distance_2d(proj_valid, obs_pts)
+            # Select chamfer function based on confidence availability
+            conf_weights: torch.Tensor | None = None
+            if confidence_per_fish is not None:
+                conf_weights = confidence_per_fish[i].get(cam_id)
+
+            if conf_weights is not None:
+                chamfer = _weighted_chamfer_distance_2d(
+                    proj_valid, obs_pts, conf_weights
+                )
+            else:
+                # Chamfer distance in pixels between projected spline and observed skeleton
+                chamfer = _chamfer_distance_2d(proj_valid, obs_pts)
             cam_losses.append(chamfer)
 
         if cam_losses:
@@ -905,11 +965,14 @@ class CurveOptimizer:
 
         # Gather per-fish observed skeleton points as tensors on device
         # midlines_per_fish[i]: dict[cam_id -> tensor (N, 2)]
+        # confidence_per_fish[i]: dict[cam_id -> tensor (N,) | None]
         midlines_per_fish: list[dict[str, torch.Tensor]] = []
+        confidence_per_fish: list[dict[str, torch.Tensor | None]] = []
         valid_fish_ids: list[int] = []
 
         for fid in fish_ids:
             cam_obs: dict[str, torch.Tensor] = {}
+            cam_conf: dict[str, torch.Tensor | None] = {}
             for cam_id, midline2d in midline_set[fid].items():
                 if cam_id not in models:
                     continue
@@ -921,8 +984,18 @@ class CurveOptimizer:
                     continue
                 cam_obs[cam_id] = torch.from_numpy(pts_clean).float().to(device)
 
+                # Extract confidence for valid points (sqrt weighting)
+                if midline2d.point_confidence is not None:
+                    conf_clean = midline2d.point_confidence[valid_mask]
+                    cam_conf[cam_id] = (
+                        torch.from_numpy(np.sqrt(conf_clean)).float().to(device)
+                    )
+                else:
+                    cam_conf[cam_id] = None
+
             if cam_obs:
                 midlines_per_fish.append(cam_obs)
+                confidence_per_fish.append(cam_conf)
                 valid_fish_ids.append(fid)
             else:
                 logger.debug("Fish %d has no valid camera observations — skipping", fid)
@@ -1087,7 +1160,12 @@ class CurveOptimizer:
                         device,
                     )  # (1, K, 3)
                     seed_loss = _data_loss(
-                        seed_ctrl, basis_check, [midlines_per_fish[idx]], models, cfg
+                        seed_ctrl,
+                        basis_check,
+                        [midlines_per_fish[idx]],
+                        models,
+                        cfg,
+                        confidence_per_fish=[confidence_per_fish[idx]],
                     ).item()
                     if seed_loss > _MAX_SEED_LOSS:
                         logger.info(
@@ -1140,7 +1218,12 @@ class CurveOptimizer:
                     single_ctrl = coarse_init[idx : idx + 1]
                     single_obs = [midlines_per_fish[idx]]
                     fish_loss = _data_loss(
-                        single_ctrl, coarse_basis, single_obs, models, cfg
+                        single_ctrl,
+                        coarse_basis,
+                        single_obs,
+                        models,
+                        cfg,
+                        confidence_per_fish=[confidence_per_fish[idx]],
                     ).item()
                     _snap_cold_losses.append(fish_loss)
 
@@ -1187,6 +1270,7 @@ class CurveOptimizer:
                         midlines_per_fish,
                         models,
                         cfg,
+                        confidence_per_fish=confidence_per_fish,
                     )
                     smooth_l = _smoothness_penalty(coarse_ctrl)
                     z_var_l = _z_variance_penalty(coarse_ctrl, coarse_basis)
@@ -1257,6 +1341,7 @@ class CurveOptimizer:
                     midlines_per_fish,
                     models,
                     cfg,
+                    confidence_per_fish=confidence_per_fish,
                 )
                 smooth_l = _smoothness_penalty(coarse_ctrl)
                 z_var_l = _z_variance_penalty(coarse_ctrl, coarse_basis)
@@ -1283,7 +1368,12 @@ class CurveOptimizer:
 
         with torch.no_grad():
             data_l = _data_loss(
-                coarse_ctrl, coarse_basis, midlines_per_fish, models, cfg
+                coarse_ctrl,
+                coarse_basis,
+                midlines_per_fish,
+                models,
+                cfg,
+                confidence_per_fish=confidence_per_fish,
             )
         coarse_loss_val = data_l.item()
         logger.info(
@@ -1299,7 +1389,12 @@ class CurveOptimizer:
                     single_ctrl = coarse_ctrl[idx : idx + 1]
                     single_obs = [midlines_per_fish[idx]]
                     fish_loss = _data_loss(
-                        single_ctrl, coarse_basis, single_obs, models, cfg
+                        single_ctrl,
+                        coarse_basis,
+                        single_obs,
+                        models,
+                        cfg,
+                        confidence_per_fish=[confidence_per_fish[idx]],
                     ).item()
                     _snap_coarse_losses.append(fish_loss)
 
@@ -1326,7 +1421,12 @@ class CurveOptimizer:
                         single_ctrl = fine_check[idx : idx + 1]  # (1, K, 3)
                         single_obs = [midlines_per_fish[idx]]
                         curr_loss = _data_loss(
-                            single_ctrl, fine_basis, single_obs, models, cfg
+                            single_ctrl,
+                            fine_basis,
+                            single_obs,
+                            models,
+                            cfg,
+                            confidence_per_fish=[confidence_per_fish[idx]],
                         ).item()
                         if (
                             prev_loss > 0
@@ -1390,7 +1490,12 @@ class CurveOptimizer:
                     _opt.zero_grad()
 
                     data_l = _data_loss(
-                        fine_ctrl, fine_basis, midlines_per_fish, models, cfg
+                        fine_ctrl,
+                        fine_basis,
+                        midlines_per_fish,
+                        models,
+                        cfg,
+                        confidence_per_fish=confidence_per_fish,
                     )
                     smooth_l = _smoothness_penalty(fine_ctrl)
                     z_var_l = _z_variance_penalty(fine_ctrl, fine_basis)
@@ -1430,6 +1535,7 @@ class CurveOptimizer:
                                 single_obs,
                                 models,
                                 cfg,
+                                confidence_per_fish=[confidence_per_fish[idx]],
                             ).item()
                             final_per_fish_losses[idx] = fish_loss
 
@@ -1516,7 +1622,12 @@ class CurveOptimizer:
                 _opt.zero_grad()
 
                 data_l = _data_loss(
-                    fine_ctrl, fine_basis, midlines_per_fish, models, cfg
+                    fine_ctrl,
+                    fine_basis,
+                    midlines_per_fish,
+                    models,
+                    cfg,
+                    confidence_per_fish=confidence_per_fish,
                 )
                 smooth_l = _smoothness_penalty(fine_ctrl)
                 z_var_l = _z_variance_penalty(fine_ctrl, fine_basis)
@@ -1552,7 +1663,12 @@ class CurveOptimizer:
                         single_ctrl = fine_ctrl[idx : idx + 1]
                         single_obs = [midlines_per_fish[idx]]
                         fish_loss = _data_loss(
-                            single_ctrl, fine_basis, single_obs, models, cfg
+                            single_ctrl,
+                            fine_basis,
+                            single_obs,
+                            models,
+                            cfg,
+                            confidence_per_fish=[confidence_per_fish[idx]],
                         ).item()
                         final_per_fish_losses[idx] = fish_loss
 

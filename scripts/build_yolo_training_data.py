@@ -1,4 +1,4 @@
-"""Convert COCO-format keypoint annotations into Ultralytics YOLO-OBB and YOLO-Pose datasets."""
+"""Convert COCO-format keypoint annotations into Ultralytics YOLO-OBB, YOLO-Pose, and YOLO-Seg datasets."""
 
 from __future__ import annotations
 
@@ -506,6 +506,35 @@ def format_pose_annotation(
     }
 
 
+def format_seg_annotation(
+    polygon: np.ndarray,
+    crop_w: int,
+    crop_h: int,
+    class_id: int = 0,
+) -> dict:
+    """Format one segmentation polygon annotation as a dict for NDJSON output.
+
+    Polygon vertices are normalized to [0, 1] by crop dimensions and clipped.
+
+    Args:
+        polygon: float array of shape ``(M, 2)`` with (x, y) polygon vertices
+            in crop pixel space.
+        crop_w: Crop width in pixels (for normalization).
+        crop_h: Crop height in pixels (for normalization).
+        class_id: YOLO class index.
+
+    Returns:
+        Dict with ``class_id`` and ``polygon`` (list of [x, y] pairs,
+        normalized to [0, 1]).
+    """
+    poly_norm: list[list[float]] = []
+    for vertex in polygon:
+        x_norm = float(np.clip(vertex[0] / crop_w, 0.0, 1.0))
+        y_norm = float(np.clip(vertex[1] / crop_h, 0.0, 1.0))
+        poly_norm.append([round(x_norm, 6), round(y_norm, 6)])
+    return {"class_id": class_id, "polygon": poly_norm}
+
+
 # ---------------------------------------------------------------------------
 # Dataset generation
 # ---------------------------------------------------------------------------
@@ -759,6 +788,178 @@ def generate_pose_dataset(
     return n_train, n_val_actual
 
 
+def generate_seg_dataset(
+    coco: dict,
+    images_dir: Path,
+    output_dir: Path,
+    median_arc: float,
+    lateral_ratio: float,
+    edge_factor: float,
+    crop_w: int,
+    crop_h: int,
+    min_visible: int,
+    val_split: float,
+    seed: int,
+) -> tuple[int, int]:
+    """Generate a YOLO-Seg dataset with affine-warped crops and polygon masks.
+
+    For each annotation with sufficient visible keypoints, warps the OBB
+    region to an axis-aligned crop and transforms all segmentation polygons
+    in that image into crop space.  All visible fish (target + intruders)
+    are labeled in each crop.
+
+    Creates ``output_dir/seg/images/{train,val}/`` with crop images and
+    ``output_dir/seg/{train,val}.ndjson`` label files (one JSON line per
+    crop). Writes a ``data.yaml`` config file.
+
+    Args:
+        coco: Loaded COCO dict (from :func:`load_coco`).
+        images_dir: Directory containing source images.
+        output_dir: Root output directory.
+        median_arc: Median fish arc length in pixels.
+        lateral_ratio: Fraction of median arc length for lateral OBB padding.
+        edge_factor: Threshold multiplier for edge extrapolation.
+        crop_w: Output crop width in pixels.
+        crop_h: Output crop height in pixels.
+        min_visible: Minimum number of visible keypoints required to define
+            the OBB for each target annotation.
+        val_split: Fraction of crops for validation.
+        seed: Random seed for reproducible split.
+
+    Returns:
+        Tuple of (n_train, n_val) crop counts.
+    """
+    lateral_pad = median_arc * lateral_ratio
+
+    seg_root = output_dir / "seg"
+    tmp_dir = output_dir / "seg" / "_tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    for split in ("train", "val"):
+        (seg_root / "images" / split).mkdir(parents=True, exist_ok=True)
+
+    image_lookup: dict[int, dict] = coco["_image_lookup"]
+    ann_lookup: dict[int, list[dict]] = coco["_ann_lookup"]
+
+    # Collect crops: (crop_stem, list[seg_annotation_dict])
+    crop_entries: list[tuple[str, list[dict]]] = []
+
+    for img_id, img_info in image_lookup.items():
+        file_name = img_info["file_name"]
+        img_path = images_dir / file_name
+
+        if not img_path.exists():
+            continue
+
+        img = cv2.imread(str(img_path))
+        if img is None:
+            continue
+        img_h, img_w = img.shape[:2]
+
+        annotations = ann_lookup.get(img_id, [])
+        img_stem = Path(file_name).stem
+
+        for ann_idx, ann in enumerate(annotations):
+            # Annotation must have keypoints to define the OBB crop
+            coords, visible = parse_keypoints(ann)
+            if int(visible.sum()) < min_visible:
+                continue
+
+            coords_ext, visible_ext = extrapolate_edge_keypoints(
+                coords, visible, img_w, img_h, lateral_pad, edge_factor
+            )
+            corners = pca_obb(coords_ext, visible_ext, lateral_pad)
+
+            warped, affine_mat = affine_warp_crop(img, corners, crop_w, crop_h)
+
+            # Collect polygon annotations for ALL fish in this image
+            seg_annots: list[dict] = []
+            for other_ann in annotations:
+                segmentation = other_ann.get("segmentation")
+                if not segmentation:
+                    continue
+
+                # Multi-ring: keep the largest ring by vertex count
+                # Each ring is a flat list [x1,y1,x2,y2,...]
+                largest_ring: list[float] = max(segmentation, key=len)
+
+                # Parse flat polygon to (M, 2) array
+                flat = np.array(largest_ring, dtype=np.float64)
+                if len(flat) < 6:
+                    # Need at least 3 vertices (6 values)
+                    continue
+                poly = flat.reshape(-1, 2)  # (M, 2)
+
+                # Apply affine transform: [x', y'] = affine_mat @ [x, y, 1]
+                m = len(poly)
+                ones = np.ones((m, 1), dtype=np.float64)
+                poly_h = np.hstack([poly, ones])  # (M, 3)
+                poly_crop = (affine_mat @ poly_h.T).T  # (M, 2)
+
+                # Count vertices within crop bounds
+                in_bounds = (
+                    (poly_crop[:, 0] >= 0)
+                    & (poly_crop[:, 0] < crop_w)
+                    & (poly_crop[:, 1] >= 0)
+                    & (poly_crop[:, 1] < crop_h)
+                )
+                if int(in_bounds.sum()) < 3:
+                    continue
+
+                # Clip partial polygon vertices to crop bounds
+                poly_clipped = np.clip(
+                    poly_crop, [0.0, 0.0], [crop_w - 1e-6, crop_h - 1e-6]
+                )
+
+                seg_annots.append(format_seg_annotation(poly_clipped, crop_w, crop_h))
+
+            crop_stem = f"{img_stem}_{ann_idx:03d}"
+            crop_img_path = tmp_dir / f"{crop_stem}.jpg"
+            cv2.imwrite(str(crop_img_path), warped)
+            crop_entries.append((crop_stem, seg_annots))
+
+    # Shuffle and split
+    rng = random.Random(seed)
+    rng.shuffle(crop_entries)
+
+    n_val = max(1, int(len(crop_entries) * val_split)) if len(crop_entries) > 1 else 0
+    val_set = set(stem for stem, _ in crop_entries[:n_val])
+
+    ndjson_lines: dict[str, list[str]] = {"train": [], "val": []}
+
+    for crop_stem, seg_annots in crop_entries:
+        split = "val" if crop_stem in val_set else "train"
+        src_img = tmp_dir / f"{crop_stem}.jpg"
+        dst_img = seg_root / "images" / split / f"{crop_stem}.jpg"
+        if src_img.exists():
+            shutil.move(str(src_img), str(dst_img))
+
+        record = {
+            "image": f"images/{split}/{crop_stem}.jpg",
+            "width": crop_w,
+            "height": crop_h,
+            "annotations": seg_annots,
+        }
+        ndjson_lines[split].append(json.dumps(record, separators=(",", ":")))
+
+    # Cleanup tmp
+    shutil.rmtree(str(tmp_dir), ignore_errors=True)
+
+    # Write NDJSON label files
+    for split in ("train", "val"):
+        ndjson_path = seg_root / f"{split}.ndjson"
+        ndjson_path.write_text("\n".join(ndjson_lines[split]) + "\n", encoding="utf-8")
+
+    # Write data.yaml
+    yaml_content = (
+        "path: .\ntrain: train.ndjson\nval: val.ndjson\nnc: 1\nnames:\n  0: fish\n"
+    )
+    (seg_root / "data.yaml").write_text(yaml_content, encoding="utf-8")
+
+    n_train = len(ndjson_lines["train"])
+    n_val_actual = len(ndjson_lines["val"])
+    return n_train, n_val_actual
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -772,9 +973,19 @@ def build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(
         description=(
-            "Convert COCO keypoint annotations into Ultralytics YOLO-OBB "
-            "and YOLO-Pose training datasets."
+            "Convert COCO keypoint/segmentation annotations into Ultralytics "
+            "YOLO-OBB, YOLO-Pose, and YOLO-Seg training datasets."
         )
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["all", "obb", "pose", "seg"],
+        default="all",
+        help=(
+            "Dataset type to generate: 'all' generates OBB + Pose (default), "
+            "'obb' generates only OBB, 'pose' generates only Pose, "
+            "'seg' generates only Seg."
+        ),
     )
     parser.add_argument(
         "--annotations",
@@ -883,36 +1094,57 @@ def main() -> None:
     print(f"  Median arc length : {median_arc:.1f} px")
     print(f"  Lateral pad       : {lateral_pad:.1f} px")
 
-    print("\nGenerating YOLO-OBB dataset...")
-    obb_train, obb_val = generate_obb_dataset(
-        coco,
-        images_dir=images_dir,
-        output_dir=output_dir,
-        median_arc=median_arc,
-        lateral_ratio=args.lateral_ratio,
-        edge_factor=args.edge_threshold_factor,
-        val_split=args.val_split,
-        seed=args.seed,
-    )
+    mode = args.mode
 
-    print("\nGenerating YOLO-Pose dataset...")
-    pose_train, pose_val = generate_pose_dataset(
-        coco,
-        images_dir=images_dir,
-        output_dir=output_dir,
-        median_arc=median_arc,
-        lateral_ratio=args.lateral_ratio,
-        edge_factor=args.edge_threshold_factor,
-        crop_w=args.crop_width,
-        crop_h=args.crop_height,
-        min_visible=args.min_visible,
-        val_split=args.val_split,
-        seed=args.seed,
-    )
+    if mode in ("all", "obb"):
+        print("\nGenerating YOLO-OBB dataset...")
+        obb_train, obb_val = generate_obb_dataset(
+            coco,
+            images_dir=images_dir,
+            output_dir=output_dir,
+            median_arc=median_arc,
+            lateral_ratio=args.lateral_ratio,
+            edge_factor=args.edge_threshold_factor,
+            val_split=args.val_split,
+            seed=args.seed,
+        )
+        print(f"OBB dataset  : train={obb_train}, val={obb_val} images")
+
+    if mode in ("all", "pose"):
+        print("\nGenerating YOLO-Pose dataset...")
+        pose_train, pose_val = generate_pose_dataset(
+            coco,
+            images_dir=images_dir,
+            output_dir=output_dir,
+            median_arc=median_arc,
+            lateral_ratio=args.lateral_ratio,
+            edge_factor=args.edge_threshold_factor,
+            crop_w=args.crop_width,
+            crop_h=args.crop_height,
+            min_visible=args.min_visible,
+            val_split=args.val_split,
+            seed=args.seed,
+        )
+        print(f"Pose dataset : train={pose_train}, val={pose_val} crops")
+
+    if mode == "seg":
+        print("\nGenerating YOLO-Seg dataset...")
+        seg_train, seg_val = generate_seg_dataset(
+            coco,
+            images_dir=images_dir,
+            output_dir=output_dir,
+            median_arc=median_arc,
+            lateral_ratio=args.lateral_ratio,
+            edge_factor=args.edge_threshold_factor,
+            crop_w=args.crop_width,
+            crop_h=args.crop_height,
+            min_visible=args.min_visible,
+            val_split=args.val_split,
+            seed=args.seed,
+        )
+        print(f"Seg dataset  : train={seg_train}, val={seg_val} crops")
 
     print("\n=== Generation complete ===")
-    print(f"OBB dataset  : train={obb_train}, val={obb_val} images")
-    print(f"Pose dataset : train={pose_train}, val={pose_val} crops")
     print(f"Output dir   : {output_dir.resolve()}")
 
 

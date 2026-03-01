@@ -73,7 +73,7 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
 - [x] **Phase 30: Config and Contracts** — Unify pipeline config, propagate device, extend Detection and Midline2D dataclasses (3/3 plans complete) (completed 2026-02-28)
 - [x] **Phase 31: Training Infrastructure** — Build `aquapose train` CLI group and `src/aquapose/training/` package (early: start training while building integration) (completed 2026-02-28)
 - [x] **Phase 32: YOLO-OBB Detection Backend** — Add OBB detector, affine crop utilities, and OBB overlay visualization (completed 2026-02-28)
-- [ ] **Phase 33: Keypoint Midline Backend** — Implement DirectPoseBackend pipeline integration and confidence-weighted reconstruction
+- [x] **Phase 33: Keypoint Midline Backend** — Implement DirectPoseBackend pipeline integration and confidence-weighted reconstruction (completed 2026-03-01)
 - [ ] **Phase 34: Stabilization** — Interactive QA, bug fixes, parameter tuning, real-data validation, cleanup
 
 ## Phase Details
@@ -147,7 +147,7 @@ Plans:
 **Goal:** Add keypoint-aware data augmentation transforms to the pose regression training pipeline, masked MSE loss for partial visibility, and ConcatDataset training for 2x effective epoch size — critical for generalization from the 78-sample dataset
 **Requirements**: AUG-01, AUG-02, AUG-03, AUG-04
 **Depends on:** Phase 33
-**Plans:** 1 plan
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 33.1-01-PLAN.md — KeypointDataset augmentation, masked loss, updated train_pose, comprehensive tests
@@ -176,5 +176,5 @@ Plans:
 | 30. Config and Contracts | v2.2 | 3/3 | Complete | 2026-02-28 |
 | 31. Training Infrastructure | 2/2 | Complete    | 2026-02-28 | - |
 | 32. YOLO-OBB Detection Backend | 2/2 | Complete    | 2026-02-28 | - |
-| 33. Keypoint Midline Backend | 1/2 | In Progress|  | - |
+| 33. Keypoint Midline Backend | 2/2 | Complete   | 2026-03-01 | - |
 | 34. Stabilization | v2.2 | 0/TBD | Not started | - |

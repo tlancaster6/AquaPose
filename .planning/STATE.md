@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Backends
-status: in_progress
-last_updated: "2026-03-01T00:00:00Z"
+status: unknown
+last_updated: "2026-03-01T01:42:54.077Z"
 progress:
-  total_phases: 5
-  completed_phases: 4
-  total_plans: 11
-  completed_plans: 10
+  total_phases: 6
+  completed_phases: 5
+  total_plans: 12
+  completed_plans: 11
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 33 — Keypoint Midline Backend (Plan 33-01 complete)
+**Current focus:** Phase 33 complete — ready for Phase 34 (Stabilization)
 
 ## Current Position
 
-Phase: 33 of 35 (Keypoint Midline Backend) — Plan 33-01 complete
-Plan: 33-01 complete
+Phase: 33 of 35 (Keypoint Midline Backend) — ALL PLANS COMPLETE
+Plan: 33-02 complete
 Status: In progress
-Last activity: 2026-03-01 - Completed 33-01: DirectPoseBackend implementation, MidlineConfig extensions, prep CLI
+Last activity: 2026-03-01 - Completed 33-02: Confidence-weighted triangulation and curve optimizer
 
-Progress: [████████░░] 71% (10/14 plans complete — Phase 29 both plans done, Phase 30 Plans 01-04 done, Phase 31 Plans 01-02 done, Phase 32 Plans 01-02 done, Phase 33 Plan 01 done)
+Progress: [█████████░] 79% (11/14 plans complete — Phase 29 both plans done, Phase 30 Plans 01-04 done, Phase 31 Plans 01-02 done, Phase 32 Plans 01-02 done, Phase 33 Plans 01-02 done)
 
 ## Performance Metrics
 
@@ -45,7 +45,7 @@ Progress: [████████░░] 71% (10/14 plans complete — Phase 2
 
 | 31-training-infrastructure | 2 | 26 min | 13 min |
 | 32-yolo-obb-detection-backend | 2 | 36 min | 18 min |
-| 33-keypoint-midline-backend | 1 | 23 min | 23 min |
+| 33-keypoint-midline-backend | 2 | 58 min | 29 min |
 
 *Updated after each plan completion*
 
@@ -109,6 +109,7 @@ From 33-01 execution:
 - CubicSpline falls back to linear interp1d when < 4 unique t-values visible, preventing scipy ValueError on partial visibility
 - _PoseModel and torch.load are lazy-imported inside __init__; tests patch at aquapose.training.pose._PoseModel and torch.load globally, then replace backend._model directly
 - MidlineConfig extended with 4 new fields (all with defaults) — existing YAML configs load without error
+- [Phase 33-02]: Weighted triangulation uses normal equations matching triangulate_rays() approach; _tri_rays() local helper dispatches weighted/unweighted; obs->proj weighted in chamfer, proj->obs unweighted; confidence_per_fish parallel structure propagated to all _data_loss() calls
 
 ### Pending Todos
 
@@ -127,5 +128,5 @@ From 33-01 execution:
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 33-01-PLAN.md (DirectPoseBackend Implementation)
+Stopped at: Completed 33-02-PLAN.md (Confidence-Weighted Reconstruction)
 Resume file: None

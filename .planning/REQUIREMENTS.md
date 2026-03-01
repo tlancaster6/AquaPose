@@ -42,8 +42,8 @@ Requirements for v2.2 Backends milestone. Each maps to roadmap phases.
 
 ### Reconstruction
 
-- [ ] **RECON-01**: Triangulation backend weights per-point observations by confidence when available, falling back to uniform weights when confidence is None
-- [ ] **RECON-02**: Curve optimizer backend weights observations by confidence when available, falling back to uniform weights when confidence is None
+- [x] **RECON-01**: Triangulation backend weights per-point observations by confidence when available, falling back to uniform weights when confidence is None
+- [x] **RECON-02**: Curve optimizer backend weights observations by confidence when available, falling back to uniform weights when confidence is None
 
 ### Training
 
@@ -122,8 +122,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MID-02 | Phase 33 | Complete |
 | MID-03 | Phase 33 | Complete |
 | MID-04 | Phase 33 | Complete |
-| RECON-01 | Phase 33 | Pending |
-| RECON-02 | Phase 33 | Pending |
+| RECON-01 | Phase 33 | Complete |
+| RECON-02 | Phase 33 | Complete |
 
 **Coverage:**
 - v2.2 requirements: 29 total

@@ -142,15 +142,15 @@ Plans:
   5. Curve optimizer backend uses per-point confidence as weights when confidence is present; reconstruction produces identical output to the previous version when confidence is `None`
 **Plans**: TBD
 
-### Phase 33.1: keypoint training data augmentation (INSERTED)
+### Phase 33.1: Keypoint Training Data Augmentation (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
+**Goal:** Add keypoint-aware data augmentation transforms to the pose regression training pipeline, masked MSE loss for partial visibility, and ConcatDataset training for 2x effective epoch size — critical for generalization from the 78-sample dataset
+**Requirements**: AUG-01, AUG-02, AUG-03, AUG-04
 **Depends on:** Phase 33
-**Plans:** 1/2 plans executed
+**Plans:** 1 plan
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 33.1 to break down)
+- [ ] 33.1-01-PLAN.md — KeypointDataset augmentation, masked loss, updated train_pose, comprehensive tests
 
 ### Phase 34: Stabilization
 **Goal**: All v2.2 features work correctly on real data with tuned parameters — milestone goals are complete in practice, not just in theory

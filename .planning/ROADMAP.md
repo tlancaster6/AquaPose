@@ -174,10 +174,13 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. `segmentation/model.py`, `_UNet`, `_PoseModel`, and `BinaryMaskDataset` are deleted; no import of these symbols exists anywhere in the codebase
   2. SAM2 pseudo-label generation code is removed; the only path from raw video to training data is COCO JSON → NDJSON conversion
-  3. `segment_then_extract` and `direct_pose` midline backends are removed; `aquapose run` with a config referencing either raises a clear "unknown backend" error
+  3. Custom model code (UNetSegmentor, _PoseModel) removed from `segment_then_extract` and `direct_pose` backends; both backends stubbed as no-ops pending Phase 37 YOLO model wiring
   4. MOG2 detection backend is removed; the only registered detection backends are `yolo` and `yolo_obb`
   5. `train_unet` and `train_pose` CLI commands are removed from the `aquapose train` group; `aquapose train --help` no longer lists them
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 35-01-PLAN.md — Remove custom models, SAM2, MOG2, and old training CLI
+- [ ] 35-02-PLAN.md — Stub midline backends as no-ops, correct planning docs
 
 ### Phase 36: Training Wrappers
 **Goal**: A COCO-to-NDJSON segmentation data converter and training wrappers for YOLO11n-seg and YOLO11n-pose are available from the CLI, following the same pattern as the existing `yolo_obb.py` training wrapper

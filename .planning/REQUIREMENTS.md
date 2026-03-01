@@ -1,100 +1,59 @@
 # Requirements: AquaPose
 
-**Defined:** 2026-02-28
+**Defined:** 2026-03-01
 **Core Value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
 
-## v2.2 Requirements
+## v3.0 Requirements
 
-Requirements for v2.2 Backends milestone. Each maps to roadmap phases.
+Requirements for Ultralytics Unification milestone. Each maps to roadmap phases.
 
-### Documentation
+### Cleanup
 
-- [x] **DOCS-01**: Guidebook reflects current v2.1 codebase state (stale references removed, architectural descriptions accurate)
-- [x] **DOCS-02**: Guidebook documents v2.2 planned features (YOLO-OBB, keypoint midline, training CLI, project structure) in relevant sections
+- [ ] **CLEAN-01**: All custom U-Net model code removed (segmentation/model.py, training/_UNet, _PoseModel, BinaryMaskDataset)
+- [ ] **CLEAN-02**: SAM2 pseudo-label pipeline removed (no longer needed — Ultralytics models trained on NDJSON datasets)
+- [ ] **CLEAN-03**: Old midline backends removed (segment_then_extract, direct_pose) — YOLO-seg and YOLO-pose are the only midline backends
+- [ ] **CLEAN-04**: MOG2 detection backend removed — YOLO and YOLO-OBB are the only detection backends
+- [ ] **CLEAN-05**: Old training CLI commands removed (train_unet, train_pose) — replaced by Ultralytics training wrappers
 
-### Config and Contracts
+### Training Data
 
-- [x] **CFG-01**: Pipeline accepts a single top-level `device` parameter that propagates to all stages, eliminating per-stage device configuration
-- [x] **CFG-02**: Midline sample point count (`n_sample_points`) is configurable via pipeline config with no hardcoded constants remaining in any module
-- [x] **CFG-03**: Fish count is a single unified parameter (no duplicate `expect_fish_count`/`n_animals` fields)
-- [x] **CFG-04**: `stop_frame` is a top-level pipeline parameter, not nested within a stage-specific config section
-- [x] **CFG-05**: All stage configs use `_filter_fields()` so that existing YAML files load without error after schema changes
-- [x] **CFG-06**: `init-config` creates a project directory scaffold under `~/aquapose/projects/<name>/` with sensible default paths and required subdirectories
-- [x] **CFG-07**: Config paths resolve relative to `project_dir`, allowing portable project layouts; absolute paths override when provided
-- [x] **CFG-08**: `init-config --synthetic` includes the synthetic config section; omitted by default
-- [x] **CFG-09**: `init-config` orders YAML fields by user relevance (paths and animal count first, stage-specific parameters after) rather than alphabetically
-- [x] **CFG-10**: Detection dataclass carries optional rotation angle so that OBB orientation flows to downstream stages
-- [x] **CFG-11**: Midline2D dataclass carries optional per-point confidence so that reconstruction can weight observations; None means uniform confidence
-- [x] **CFG-12**: Pipeline runs end-to-end in both CPU and CUDA device modes, verified by E2E tests
-
-### Detection
-
-- [x] **DET-01**: Pipeline supports YOLO-OBB as a configurable detection model selectable via `detector_kind: yolo_obb` in config
-- [x] **DET-02**: OBB detections produce rotation-aligned affine crops suitable for downstream segmentation and keypoint models
-- [x] **DET-03**: Affine crop utilities support back-projection from crop coordinates to full-frame pixel coordinates via inverse transform
-
-### Midline
-
-- [x] **MID-01**: Pipeline supports a keypoint regression backend as a swappable alternative to segment-then-extract, selectable via config
-- [x] **MID-02**: Keypoint backend produces N ordered midline points with per-point confidence from a learned regression model (U-Net encoder + regression head)
-- [x] **MID-03**: Keypoint backend handles partial visibility by marking unobserved regions with NaN coordinates and zero confidence, always outputting exactly `n_sample_points`
-- [x] **MID-04**: Both midline backends produce the same output structure (N-point Midline2D) so reconstruction is backend-agnostic
-
-### Reconstruction
-
-- [x] **RECON-01**: Triangulation backend weights per-point observations by confidence when available, falling back to uniform weights when confidence is None
-- [x] **RECON-02**: Curve optimizer backend weights observations by confidence when available, falling back to uniform weights when confidence is None
+- [ ] **DATA-01**: Segmentation training data converter takes COCO segmentation JSON (polygon annotations) and produces NDJSON-format YOLO-seg dataset (matching existing OBB/pose NDJSON pattern)
 
 ### Training
 
-- [x] **TRAIN-01**: `aquapose train` CLI group provides discoverable subcommands for all trainable models (U-Net segmentation, YOLO-OBB, keypoint regression)
-- [x] **TRAIN-02**: Training subcommands follow consistent conventions for `--data-dir`, `--output-dir`, `--epochs`, `--device`, `--val-split` across all model types
-- [x] **TRAIN-03**: Keypoint training supports frozen-backbone transfer learning from existing U-Net segmentation weights, with optional unfreeze for end-to-end fine-tuning
-- [x] **TRAIN-04**: Existing training scripts in `scripts/` are superseded by `src/aquapose/training/` module with shared utilities
+- [ ] **TRAIN-01**: YOLO-seg training wrapper callable from CLI, following existing yolo_obb.py pattern
+- [ ] **TRAIN-02**: YOLO-pose training wrapper callable from CLI, following existing yolo_obb.py pattern
 
-### Data Augmentation
+### Pipeline Integration
 
-- [x] **AUG-01**: KeypointDataset returns 3-tuple `(image, keypoints, visibility_mask)` with visibility derived from COCO annotations and updated by augmentation transforms
-- [x] **AUG-02**: Augmentation transforms (geometric + color) applied via torchvision.transforms.v2 with tv_tensors.KeyPoints for joint coordinate handling
-- [x] **AUG-03**: Masked MSE loss computes only on visible keypoints, preventing learning to predict (0,0) for missing points
-- [x] **AUG-04**: Training uses ConcatDataset of clean + augmented copies (2x effective dataset size) with clean-only validation
+- [ ] **PIPE-01**: YOLOSegBackend produces binary masks per detection for midline extraction via skeletonization
+- [ ] **PIPE-02**: YOLOPoseBackend produces keypoint coordinates with per-point confidence for direct midline construction
+- [ ] **PIPE-03**: Config system supports backend selection (yolo_seg, yolo_pose) via midline.backend field
+- [ ] **PIPE-04**: Instance matching links YOLO model outputs to tracked fish identities via IoU-based assignment
 
-### Visualization
+## Previous Milestone Requirements (v2.2)
 
-- [x] **VIZ-01**: Diagnostic mode renders OBB polygon overlays on detection frames
-- [x] **VIZ-02**: Tracklet trail visualization includes bounding box overlays (both axis-aligned and OBB when available)
+All v2.2 requirements completed. See MILESTONES.md for details.
 
 ## Future Requirements
 
-Deferred to future release. Tracked but not in current roadmap.
+### CLI Formalization
 
-### Quality Enhancements
-
-- **QUAL-01**: Body-model extrapolation for partial midlines (infer missing keypoints from learned shape prior)
-- **QUAL-02**: Confidence calibration via temperature scaling on keypoint head outputs
-- **QUAL-03**: Joint segmentation + keypoint multi-task training loss
-
-### Detection Enhancements
-
-- **DET-04**: OBB model fine-tuned on fish-specific dataset (v2.2 uses DOTA-pretrained weights)
-
-### Training Enhancements
-
-- **TRAIN-05**: Keypoint pseudo-label auto-generation from skeletonizer output to bootstrap training data
-- **TRAIN-06**: Integral regression alternative if direct regression accuracy is insufficient
+- **CLI-01**: Training data preparation integrated as formal CLI subcommand (currently scripts/)
+- **CLI-02**: Unified training CLI for all model types (detect, seg, pose)
 
 ## Out of Scope
 
-Explicitly excluded. Documented to prevent scope creep.
-
 | Feature | Reason |
 |---------|--------|
-| Heatmap-based keypoint regression | 4px quantization at 128x128 crop is ~8% body-length error; direct regression is superior at this resolution |
-| Separate `aquapose-train` binary entrypoint | Splits help system; `aquapose train` subgroup is discoverable under unified CLI |
-| Pydantic for config | Frozen dataclasses decided in v2.0; migration touches every config path with no scientific benefit |
-| Real-time 13-camera inference | Batch mode only per project constraints; 5-30 min clips |
-| PyTorch Lightning for training | Simple bare loops don't justify trainer abstraction overhead |
-| albumentations dependency | torchvision.transforms.v2 covers all needed augmentations including keypoint-aware transforms |
+| Backwards compatibility with U-Net weights/configs | Explicitly dropped — fresh start with Ultralytics |
+| SAM2 pseudo-label generation | Replaced by direct annotation conversion from COCO JSON |
+| MOG2 detection fallback | YOLO is the only detection backend going forward |
+| Custom model architectures | Ultralytics models only — no custom encoder/decoder code |
+| Label Studio integration | Direct COCO JSON → NDJSON conversion, no annotation UI |
+| Training data CLI formalization | Deferred — scripts/ workflow sufficient for now |
+| Heatmap-based keypoint regression | Direct regression via YOLO-pose is superior |
+| PyTorch Lightning for training | Ultralytics handles training loops internally |
 
 ## Traceability
 
@@ -102,45 +61,24 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DOCS-01 | Phase 29 | Complete |
-| DOCS-02 | Phase 29 | Complete |
-| CFG-01 | Phase 30 | Complete |
-| CFG-02 | Phase 30 | Complete |
-| CFG-03 | Phase 30 | Complete |
-| CFG-04 | Phase 30 | Complete |
-| CFG-05 | Phase 30 | Pending |
-| CFG-06 | Phase 30 | Complete |
-| CFG-07 | Phase 30 | Complete |
-| CFG-08 | Phase 30 | Complete |
-| CFG-09 | Phase 30 | Complete |
-| CFG-10 | Phase 30 | Pending |
-| CFG-11 | Phase 30 | Pending |
-| CFG-12 | Phase 30 | Complete |
-| TRAIN-01 | Phase 31 | Complete |
-| TRAIN-02 | Phase 31 | Complete |
-| TRAIN-03 | Phase 31 | Complete |
-| TRAIN-04 | Phase 31 | Complete |
-| DET-01 | Phase 32 | Complete |
-| DET-02 | Phase 32 | Complete |
-| DET-03 | Phase 32 | Complete |
-| VIZ-01 | Phase 32 | Complete |
-| VIZ-02 | Phase 32 | Complete |
-| MID-01 | Phase 33 | Complete |
-| MID-02 | Phase 33 | Complete |
-| MID-03 | Phase 33 | Complete |
-| MID-04 | Phase 33 | Complete |
-| RECON-01 | Phase 33 | Complete |
-| RECON-02 | Phase 33 | Complete |
-| AUG-01 | Phase 33.1 | Complete |
-| AUG-02 | Phase 33.1 | Complete |
-| AUG-03 | Phase 33.1 | Complete |
-| AUG-04 | Phase 33.1 | Complete |
+| CLEAN-01 | — | Pending |
+| CLEAN-02 | — | Pending |
+| CLEAN-03 | — | Pending |
+| CLEAN-04 | — | Pending |
+| CLEAN-05 | — | Pending |
+| DATA-01 | — | Pending |
+| TRAIN-01 | — | Pending |
+| TRAIN-02 | — | Pending |
+| PIPE-01 | — | Pending |
+| PIPE-02 | — | Pending |
+| PIPE-03 | — | Pending |
+| PIPE-04 | — | Pending |
 
 **Coverage:**
-- v2.2 requirements: 33 total
-- Mapped to phases: 33
-- Unmapped: 0
+- v3.0 requirements: 12 total
+- Mapped to phases: 0
+- Unmapped: 12
 
 ---
-*Requirements defined: 2026-02-28*
-*Last updated: 2026-02-28 after roadmap creation*
+*Requirements defined: 2026-03-01*
+*Last updated: 2026-03-01 after initial definition*

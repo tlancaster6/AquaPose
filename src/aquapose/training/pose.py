@@ -6,10 +6,11 @@ import json
 from pathlib import Path
 
 import cv2
-import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, Subset
+from torch.utils.data import ConcatDataset, Dataset, Subset
+from torchvision import tv_tensors
+from torchvision.transforms import v2
 
 from aquapose.segmentation.model import _UNet
 
@@ -18,6 +19,16 @@ from .datasets import _load_image, stratified_split
 
 # Fixed input size — matches U-Net training pipeline
 _INPUT_SIZE = 128
+
+# Module-level augmentation transform applied in KeypointDataset augmented path.
+# Geometric transforms (flip + affine) + photometric jitter in a single compose.
+_AUGMENT_TRANSFORM = v2.Compose(
+    [
+        v2.RandomHorizontalFlip(p=0.5),
+        v2.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.8, 1.2)),
+        v2.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.05),
+    ]
+)
 
 
 class _PoseModel(nn.Module):
@@ -102,17 +113,20 @@ class _PoseModel(nn.Module):
 class KeypointDataset(Dataset):  # type: ignore[type-arg]
     """COCO-format keypoint dataset for pose regression training.
 
-    Each sample is an ``(image_tensor, keypoints_tensor)`` pair.  Keypoint
-    coordinates are normalised to [0, 1] in crop space.  Keypoints with
-    ``visibility == 0`` are treated as invisible; their coordinates are set
-    to 0.0 so the network has a well-defined learning target even when
-    annotations are partial.
+    Each sample is an ``(image_tensor, keypoints_tensor, visibility_mask)``
+    tuple.  Keypoint coordinates are normalised to [0, 1] in crop space.
+    Keypoints with ``visibility == 0`` (COCO convention) or that fall
+    out-of-bounds after augmentation are treated as invisible; their
+    coordinates are set to 0.0 so the masked loss can ignore them.
 
     Args:
         coco_json: Path to a COCO-format JSON with keypoint annotations.
         image_root: Root directory containing source images.
         n_keypoints: Expected number of keypoints per instance.
         input_size: Square image size (pixels) passed to the model.
+        augment: Whether to apply :data:`_AUGMENT_TRANSFORM` to each sample.
+            When False the clean image is returned with visibility derived
+            purely from COCO ``v`` flags.
     """
 
     def __init__(
@@ -121,10 +135,12 @@ class KeypointDataset(Dataset):  # type: ignore[type-arg]
         image_root: Path,
         n_keypoints: int = 6,
         input_size: int = _INPUT_SIZE,
+        augment: bool = False,
     ) -> None:
         self._image_root = Path(image_root)
         self._n_keypoints = n_keypoints
         self._input_size = input_size
+        self._augment = augment
 
         with open(coco_json) as f:
             coco = json.load(f)
@@ -142,8 +158,8 @@ class KeypointDataset(Dataset):  # type: ignore[type-arg]
         """Return the number of images in the dataset."""
         return len(self._images)
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
-        """Load image and normalised keypoint coordinates.
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Load image and normalised keypoint coordinates with visibility mask.
 
         Args:
             idx: Index into the image list.
@@ -151,7 +167,10 @@ class KeypointDataset(Dataset):  # type: ignore[type-arg]
         Returns:
             Tuple of:
             - image_tensor: float32 [3, H, W] in [0, 1]
-            - keypoints_tensor: float32 [n_keypoints * 2] normalised to [0, 1]
+            - keypoints_tensor: float32 [n_keypoints * 2] normalised to [0, 1].
+              Invisible keypoints have coordinates zeroed.
+            - visibility_mask: bool [n_keypoints]. True = visible and
+              in-bounds.
         """
         img_info = self._images[idx]
         img_id = img_info["id"]
@@ -166,11 +185,10 @@ class KeypointDataset(Dataset):  # type: ignore[type-arg]
         orig_h, orig_w = image.shape[:2]
         image_resized = cv2.resize(image, (sz, sz), interpolation=cv2.INTER_LINEAR)
 
-        image_tensor = torch.from_numpy(image_resized).permute(2, 0, 1).float() / 255.0
-
-        # Decode keypoints from annotation
+        # Decode keypoints: map COCO pixel coords into 128x128 pixel space
         ann = self._ann_index.get(img_id)
-        kp_flat = np.zeros(self._n_keypoints * 2, dtype=np.float32)
+        kp_pixel = torch.zeros(self._n_keypoints, 2, dtype=torch.float32)
+        visibility = torch.zeros(self._n_keypoints, dtype=torch.bool)
 
         if ann is not None:
             raw_kps = ann["keypoints"]  # [x, y, v, x, y, v, ...]
@@ -179,11 +197,49 @@ class KeypointDataset(Dataset):  # type: ignore[type-arg]
                 if base + 2 < len(raw_kps):
                     x, y, v = raw_kps[base], raw_kps[base + 1], raw_kps[base + 2]
                     if v > 0 and orig_w > 0 and orig_h > 0:
-                        kp_flat[k * 2] = float(x) / orig_w
-                        kp_flat[k * 2 + 1] = float(y) / orig_h
+                        x_px = float(x) / orig_w * sz
+                        y_px = float(y) / orig_h * sz
+                        kp_pixel[k] = torch.tensor([x_px, y_px])
+                        visibility[k] = True
 
-        keypoints_tensor = torch.from_numpy(kp_flat)
-        return image_tensor, keypoints_tensor
+        if self._augment:
+            # Build uint8 image tensor for v2 transforms (ColorJitter needs uint8)
+            img_uint8 = torch.from_numpy(image_resized).permute(2, 0, 1)  # (3, H, W)
+            img_tv = tv_tensors.Image(img_uint8)
+            kps_tv = tv_tensors.KeyPoints(kp_pixel, canvas_size=(sz, sz))
+
+            vis_aug = visibility
+            kp_out = kp_pixel.clone()
+
+            for _ in range(10):
+                img_aug, kps_aug = _AUGMENT_TRANSFORM(img_tv, kps_tv)
+                x_aug = kps_aug[:, 0]
+                y_aug = kps_aug[:, 1]
+                oob = (x_aug < 0) | (x_aug >= sz) | (y_aug < 0) | (y_aug >= sz)
+                vis_aug = visibility & ~oob
+                kp_out = torch.as_tensor(kps_aug).clone()
+                if int(vis_aug.sum()) >= 3:
+                    break
+
+            # Zero out invisible coordinates, normalize to [0, 1]
+            kp_out[~vis_aug] = 0.0
+            kp_flat = (kp_out / sz).view(-1)
+            image_tensor = img_aug.float() / 255.0  # type: ignore[union-attr]
+
+        else:
+            # Clean path: OOB check from COCO coordinates, no transform applied
+            x_coords = kp_pixel[:, 0]
+            y_coords = kp_pixel[:, 1]
+            oob = (x_coords < 0) | (x_coords >= sz) | (y_coords < 0) | (y_coords >= sz)
+            vis_aug = visibility & ~oob
+            kp_out = kp_pixel.clone()
+            kp_out[~vis_aug] = 0.0
+            kp_flat = (kp_out / sz).view(-1)
+            image_tensor = (
+                torch.from_numpy(image_resized).permute(2, 0, 1).float() / 255.0
+            )
+
+        return image_tensor, kp_flat, vis_aug
 
 
 def _load_backbone_weights(model: _PoseModel, weights_path: Path) -> None:
@@ -214,15 +270,43 @@ def _freeze_encoder(model: _PoseModel) -> None:
         param.requires_grad = False
 
 
+def _masked_mse_loss(
+    pred: torch.Tensor,
+    target: torch.Tensor,
+    visibility: torch.Tensor,
+) -> torch.Tensor:
+    """MSE loss computed only on visible keypoints.
+
+    Args:
+        pred: (B, n_keypoints * 2) predicted coordinates in [0, 1].
+        target: (B, n_keypoints * 2) ground-truth coordinates in [0, 1].
+        visibility: (B, n_keypoints) bool mask, True = visible.
+
+    Returns:
+        Scalar loss tensor.
+    """
+    vis_exp = visibility.float().repeat_interleave(2, dim=1)  # (B, n_kp*2)
+    diff_sq = (pred - target) ** 2
+    n_visible = vis_exp.sum().clamp(min=1.0)
+    return (diff_sq * vis_exp).sum() / n_visible
+
+
 def _mean_keypoint_error(
     pred: torch.Tensor,
     target: torch.Tensor,
+    visibility: torch.Tensor | None = None,
 ) -> float:
     """Compute mean Euclidean distance between predicted and target keypoints.
+
+    When ``visibility`` is provided, only visible keypoints contribute to the
+    mean.  When ``visibility`` is None, all keypoints are included (backward
+    compatible with existing callers).
 
     Args:
         pred: Predicted keypoints (B, n_keypoints * 2) in [0, 1].
         target: Ground-truth keypoints (B, n_keypoints * 2) in [0, 1].
+        visibility: Optional (B, n_keypoints) bool mask.  True = visible.
+            When provided, distances are averaged over visible keypoints only.
 
     Returns:
         Mean Euclidean distance in normalised coordinates.
@@ -232,6 +316,12 @@ def _mean_keypoint_error(
     p = pred.view(-1, n, 2)
     t = target.view(-1, n, 2)
     dist = torch.sqrt(((p - t) ** 2).sum(dim=-1))  # (B, n_keypoints)
+
+    if visibility is not None:
+        v = visibility.float()  # (B, n_keypoints)
+        n_visible = v.sum().clamp(min=1.0)
+        return float((dist * v).sum() / n_visible)
+
     return float(dist.mean().item())
 
 
@@ -253,7 +343,12 @@ def train_pose(
     """Train a pose regression model on COCO-format keypoint annotations.
 
     Builds a ``_PoseModel`` (U-Net encoder + regression head) and trains it
-    with MSE loss between predicted and ground-truth keypoint coordinates.
+    with masked MSE loss between predicted and ground-truth keypoint
+    coordinates.  Only visible keypoints contribute to the loss, preventing
+    the model from learning to predict (0, 0) for missing annotations.
+
+    Training data is doubled via a ``ConcatDataset`` of clean and augmented
+    subsets of the training split.  Validation uses clean images only.
 
     Transfer learning behaviour:
 
@@ -300,27 +395,39 @@ def train_pose(
     val_json = data_dir / "val.json"
     annotations_json = data_dir / "annotations.json"
 
+    train_dataset: Dataset  # type: ignore[type-arg]
+    val_dataset: Dataset  # type: ignore[type-arg]
+
     if train_json.exists() and val_json.exists():
-        train_dataset: KeypointDataset | Subset[tuple[torch.Tensor, torch.Tensor]] = (
-            KeypointDataset(train_json, data_dir, n_keypoints=n_keypoints)
+        # Pre-split: combine clean + augmented for training, clean for val
+        train_clean = KeypointDataset(
+            train_json, data_dir, n_keypoints=n_keypoints, augment=False
         )
-        val_dataset: KeypointDataset | Subset[tuple[torch.Tensor, torch.Tensor]] = (
-            KeypointDataset(val_json, data_dir, n_keypoints=n_keypoints)
+        train_aug = KeypointDataset(
+            train_json, data_dir, n_keypoints=n_keypoints, augment=True
+        )
+        train_dataset = ConcatDataset([train_clean, train_aug])
+        val_dataset = KeypointDataset(
+            val_json, data_dir, n_keypoints=n_keypoints, augment=False
         )
     else:
-        full_dataset = KeypointDataset(
-            annotations_json, data_dir, n_keypoints=n_keypoints
+        # Single annotations.json: split once on clean dataset, build ConcatDataset
+        train_clean = KeypointDataset(
+            annotations_json, data_dir, n_keypoints=n_keypoints, augment=False
+        )
+        train_aug = KeypointDataset(
+            annotations_json, data_dir, n_keypoints=n_keypoints, augment=True
         )
         train_indices, val_indices = stratified_split(
-            full_dataset,
+            train_clean,
             val_fraction=val_split,
             seed=42,
         )
-        train_dataset = Subset(full_dataset, train_indices)
-        val_dataset_base = KeypointDataset(
-            annotations_json, data_dir, n_keypoints=n_keypoints
+        # 2x effective epoch size: 1 clean + 1 augmented per sample
+        train_dataset = ConcatDataset(
+            [Subset(train_clean, train_indices), Subset(train_aug, train_indices)]
         )
-        val_dataset = Subset(val_dataset_base, val_indices)
+        val_dataset = Subset(train_clean, val_indices)
 
     train_loader = make_loader(
         train_dataset, batch_size, shuffle=True, device=device, num_workers=num_workers
@@ -369,12 +476,13 @@ def train_pose(
         epoch_loss = 0.0
         n_batches = 0
 
-        for images, targets in train_loader:
+        for images, targets, visibility in train_loader:
             images = images.to(device)
             targets = targets.to(device)
+            visibility = visibility.to(device)
 
             pred = model(images)
-            loss = torch.nn.functional.mse_loss(pred, targets)
+            loss = _masked_mse_loss(pred, targets, visibility)
 
             optimizer.zero_grad()
             loss.backward()
@@ -386,21 +494,24 @@ def train_pose(
 
         avg_loss = epoch_loss / max(n_batches, 1)
 
-        # Validation: mean keypoint error (Euclidean distance in [0,1] coords)
+        # Validation: masked mean keypoint error (Euclidean distance in [0,1] coords)
         model.eval()
         val_preds: list[torch.Tensor] = []
         val_targets: list[torch.Tensor] = []
+        val_vis: list[torch.Tensor] = []
         with torch.no_grad():
-            for images, targets in val_loader:
+            for images, targets, visibility in val_loader:
                 images = images.to(device)
                 pred = model(images)
                 val_preds.append(pred.cpu())
                 val_targets.append(targets.cpu())
+                val_vis.append(visibility.cpu())
 
         if val_preds:
             all_pred = torch.cat(val_preds, dim=0)
             all_tgt = torch.cat(val_targets, dim=0)
-            val_error = _mean_keypoint_error(all_pred, all_tgt)
+            all_vis = torch.cat(val_vis, dim=0)
+            val_error = _mean_keypoint_error(all_pred, all_tgt, all_vis)
         else:
             val_error = float("nan")
 

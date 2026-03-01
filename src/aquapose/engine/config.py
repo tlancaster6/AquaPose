@@ -69,20 +69,20 @@ class DetectionConfig:
 class MidlineConfig:
     """Config for the Midline stage (Stage 2).
 
-    The Midline stage supports two backends: ``"segment_then_extract"`` and
-    ``"direct_pose"``. Both are currently no-op stubs returning midline=None
+    The Midline stage supports two backends: ``"segmentation"`` and
+    ``"pose_estimation"``. Both are currently no-op stubs returning midline=None
     pending Phase 37 YOLO model integration.
 
     Attributes:
         confidence_threshold: Minimum confidence for mask acceptance by the
             segmentation backend.
-        weights_path: Path to segmentation model weights. Deprecated — will be
-            repurposed in Phase 37 for YOLO-seg model paths.
-        backend: Midline backend to use. ``"segment_then_extract"`` (default)
-            or ``"direct_pose"``. Both are no-op stubs until Phase 37.
+        weights_path: Path to YOLO-seg model weights for the ``"segmentation"``
+            backend.
+        backend: Midline backend to use. ``"segmentation"`` (default) or
+            ``"pose_estimation"``. Both are no-op stubs until Phase 37.
         n_points: Number of midline points to produce per detection.
         min_area: Minimum mask area (pixels) required to attempt midline extraction
-            (``"segment_then_extract"`` only).
+            (``"segmentation"`` only).
         detection_tolerance: Maximum pixel distance for matching a tracklet
             centroid to a detection. OC-SORT Kalman predictions can drift
             10-30px from raw centroids during coast/recovery. Default 50.0.
@@ -94,20 +94,20 @@ class MidlineConfig:
             Default 0.5.
         orientation_weight_temporal: Weight for temporal prior signal.
             Default 0.3.
-        keypoint_weights_path: Path to keypoint model weights. Deprecated — will
-            be repurposed in Phase 37 for YOLO-pose model paths.
+        keypoint_weights_path: Path to YOLO-pose model weights for the
+            ``"pose_estimation"`` backend.
         n_keypoints: Number of anatomical keypoints. Default 6.
         keypoint_t_values: Per-keypoint arc-fraction values in [0, 1] from nose
             (0.0) to tail (1.0). If ``None``, defaults to uniform spacing.
         keypoint_confidence_floor: Minimum per-keypoint confidence to treat as
-            visible in the ``"direct_pose"`` backend. Default 0.1.
+            visible in the ``"pose_estimation"`` backend. Default 0.3.
         min_observed_keypoints: Minimum number of visible keypoints required to
-            fit the spline in the ``"direct_pose"`` backend. Default 3.
+            fit the spline in the ``"pose_estimation"`` backend. Default 3.
     """
 
     confidence_threshold: float = 0.5
     weights_path: str | None = None
-    backend: str = "segment_then_extract"
+    backend: str = "segmentation"
     n_points: int = 15
     min_area: int = 300
     detection_tolerance: float = 50.0
@@ -115,15 +115,15 @@ class MidlineConfig:
     orientation_weight_geometric: float = 1.0
     orientation_weight_velocity: float = 0.5
     orientation_weight_temporal: float = 0.3
-    # direct_pose backend fields
+    # pose_estimation backend fields
     keypoint_weights_path: str | None = None
     n_keypoints: int = 6
     keypoint_t_values: list[float] | None = None
-    keypoint_confidence_floor: float = 0.1
+    keypoint_confidence_floor: float = 0.3
     min_observed_keypoints: int = 3
 
     def __post_init__(self) -> None:
-        _valid_backends = {"segment_then_extract", "direct_pose"}
+        _valid_backends = {"segmentation", "pose_estimation"}
         if self.backend not in _valid_backends:
             raise ValueError(
                 f"Unknown midline backend: {self.backend!r}. "

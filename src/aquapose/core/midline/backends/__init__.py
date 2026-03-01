@@ -22,14 +22,14 @@ def get_backend(kind: str, **kwargs: Any) -> object:
     Args:
         kind: Backend identifier. Supported values:
 
-            - ``"segment_then_extract"`` (default): No-op stub awaiting
-              YOLO-seg integration in Phase 37. All kwargs are accepted and
-              ignored.
-            - ``"direct_pose"``: No-op stub awaiting YOLO-pose integration
-              in Phase 37. All kwargs are accepted and ignored.
+            - ``"segmentation"`` (default): No-op stub awaiting YOLO-seg
+              integration in Phase 37. All kwargs are accepted and stored
+              as instance attributes.
+            - ``"pose_estimation"``: No-op stub awaiting YOLO-pose integration
+              in Phase 37. All kwargs are accepted and stored as instance
+              attributes.
 
-        **kwargs: Forwarded to the backend constructor (currently ignored by
-            both stubs).
+        **kwargs: Forwarded to the backend constructor.
 
     Returns:
         A configured backend instance with a
@@ -38,19 +38,19 @@ def get_backend(kind: str, **kwargs: Any) -> object:
     Raises:
         ValueError: If *kind* is not a recognized backend identifier.
     """
-    if kind == "segment_then_extract":
-        from aquapose.core.midline.backends.segment_then_extract import (
-            SegmentThenExtractBackend,
+    if kind == "segmentation":
+        from aquapose.core.midline.backends.segmentation import (
+            SegmentationBackend,
         )
 
-        return SegmentThenExtractBackend(**kwargs)
+        return SegmentationBackend(**kwargs)
 
-    if kind == "direct_pose":
-        from aquapose.core.midline.backends.direct_pose import DirectPoseBackend
+    if kind == "pose_estimation":
+        from aquapose.core.midline.backends.pose_estimation import PoseEstimationBackend
 
-        return DirectPoseBackend(**kwargs)
+        return PoseEstimationBackend(**kwargs)
 
     raise ValueError(
         f"Unknown midline backend kind: {kind!r}. "
-        f"Supported kinds: ['segment_then_extract', 'direct_pose']"
+        f"Supported kinds: ['segmentation', 'pose_estimation']"
     )

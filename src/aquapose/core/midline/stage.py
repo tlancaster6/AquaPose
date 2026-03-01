@@ -28,7 +28,7 @@ __all__ = ["MidlineStage"]
 logger = logging.getLogger(__name__)
 
 _DEFAULT_N_KEYPOINTS = 6
-"""Number of anatomical keypoints for the direct_pose backend model."""
+"""Number of anatomical keypoints for the pose_estimation backend model."""
 
 
 class MidlineStage:
@@ -53,22 +53,22 @@ class MidlineStage:
 
     Supports two backends:
 
-    - ``"segment_then_extract"`` (default): Uses *weights_path* for U-Net
-      weights, *confidence_threshold*, *n_points*, *min_area*.
-    - ``"direct_pose"``: Uses *midline_config.keypoint_weights_path* for
-      keypoint model weights, plus *keypoint_confidence_floor*,
+    - ``"segmentation"`` (default): Uses *weights_path* for YOLO-seg weights,
+      *confidence_threshold*, *n_points*, *min_area*.
+    - ``"pose_estimation"``: Uses *midline_config.keypoint_weights_path* for
+      YOLO-pose model weights, plus *keypoint_confidence_floor*,
       *keypoint_t_values*, *min_observed_keypoints* from *midline_config*.
 
     Args:
         video_dir: Directory containing per-camera video files.
         calibration_path: Path to the AquaCal calibration JSON file.
-        weights_path: Path to U-Net model weights file (segment_then_extract
+        weights_path: Path to YOLO-seg model weights file (segmentation
             backend). Raises FileNotFoundError if path does not exist.
-            None uses pretrained ImageNet encoder.
+            None skips model loading (stub mode).
         confidence_threshold: Minimum confidence for mask acceptance
-            (segment_then_extract backend).
-        backend: Backend kind -- ``"segment_then_extract"`` (default) or
-            ``"direct_pose"``.
+            (segmentation backend).
+        backend: Backend kind -- ``"segmentation"`` (default) or
+            ``"pose_estimation"``.
         device: PyTorch device string (e.g. ``"cuda"``, ``"cpu"``).
         n_points: Number of midline points per detection.
         min_area: Minimum mask area (pixels) to attempt midline extraction
@@ -94,7 +94,7 @@ class MidlineStage:
         calibration_path: str | Path,
         weights_path: str | None = None,
         confidence_threshold: float = 0.5,
-        backend: str = "segment_then_extract",
+        backend: str = "segmentation",
         device: str = "cuda",
         n_points: int = 15,
         min_area: int = 300,
@@ -151,18 +151,18 @@ class MidlineStage:
             raise ValueError("No cameras matched between video_dir and calibration.")
 
         # Eagerly create backend (fail-fast on missing weights, unsupported kind)
-        if backend == "direct_pose":
-            # Extract direct_pose-specific fields from midline_config
+        if backend == "pose_estimation":
+            # Extract pose_estimation-specific fields from midline_config
             mc = midline_config
             self._backend = get_backend(
-                "direct_pose",
+                "pose_estimation",
                 weights_path=mc.keypoint_weights_path if mc is not None else None,
                 device=device,
                 n_points=n_points,
                 n_keypoints=mc.n_keypoints if mc is not None else _DEFAULT_N_KEYPOINTS,
                 keypoint_t_values=mc.keypoint_t_values if mc is not None else None,
                 confidence_floor=(
-                    mc.keypoint_confidence_floor if mc is not None else 0.1
+                    mc.keypoint_confidence_floor if mc is not None else 0.3
                 ),
                 min_observed_keypoints=(
                     mc.min_observed_keypoints if mc is not None else 3

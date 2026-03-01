@@ -1,10 +1,10 @@
-"""Segment-then-extract backend stub for the Midline stage.
+"""Segmentation backend for the Midline stage.
 
 No-op stub pending Phase 37 YOLO-seg model integration. Returns
 AnnotatedDetection(midline=None) for every detection. The backend
-registers successfully under the existing backend name so the pipeline
-remains runnable; actual segmentation and midline extraction will be
-wired in Phase 37.
+registers successfully under the ``"segmentation"`` backend name so the
+pipeline remains runnable; actual segmentation and midline extraction will
+be wired in Phase 37.
 """
 
 from __future__ import annotations
@@ -17,26 +17,52 @@ import numpy as np
 from aquapose.core.midline.types import AnnotatedDetection
 from aquapose.segmentation.detector import Detection
 
-__all__ = ["SegmentThenExtractBackend"]
+__all__ = ["SegmentationBackend"]
 
 logger = logging.getLogger(__name__)
 
 
-class SegmentThenExtractBackend:
-    """Segment-then-extract midline backend (no-op stub).
+class SegmentationBackend:
+    """YOLO-seg segmentation backend for the Midline stage (no-op stub).
 
     Instantiates without loading any model. All detections receive
     AnnotatedDetection(midline=None) until YOLO-seg is wired in Phase 37.
 
     Args:
-        **kwargs: Accepted and ignored for API compatibility with get_backend()
-            keyword forwarding (e.g. weights_path, confidence_threshold,
-            n_points, min_area, device).
+        weights_path: Path to YOLO-seg model weights file. Stored for Phase 37
+            implementation; currently ignored.
+        confidence_threshold: Minimum confidence for mask acceptance. Stored
+            for Phase 37 implementation; currently ignored.
+        n_points: Number of midline points to produce per detection. Stored
+            for Phase 37 implementation; currently ignored.
+        min_area: Minimum mask area (pixels) to attempt midline extraction.
+            Stored for Phase 37 implementation; currently ignored.
+        device: PyTorch device string. Stored for Phase 37 implementation;
+            currently ignored.
+        crop_size: Output crop size ``(width, height)`` in pixels. Stored for
+            Phase 37 implementation; currently ignored.
+        **kwargs: Additional kwargs accepted for API compatibility with
+            get_backend() forwarding.
     """
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        weights_path: str | None = None,
+        confidence_threshold: float = 0.5,
+        n_points: int = 15,
+        min_area: int = 300,
+        device: str = "cuda",
+        crop_size: tuple[int, int] = (128, 64),
+        **kwargs: Any,
+    ) -> None:
+        self.weights_path = weights_path
+        self.confidence_threshold = confidence_threshold
+        self.n_points = n_points
+        self.min_area = min_area
+        self.device = device
+        self.crop_size = crop_size
         logger.warning(
-            "SegmentThenExtractBackend: no segmentation model loaded — all midlines "
+            "SegmentationBackend: no segmentation model loaded — all midlines "
             "will be None until YOLO-seg is wired in Phase 37."
         )
 

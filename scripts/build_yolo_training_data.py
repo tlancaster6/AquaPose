@@ -628,7 +628,7 @@ def generate_obb_dataset(
             "image": f"images/{split}/{Path(file_name).name}",
             "width": img_w,
             "height": img_h,
-            "obbs": obb_annots,
+            "annotations": obb_annots,
         }
         ndjson_lines[split].append(json.dumps(record, separators=(",", ":")))
         counts[split] += 1

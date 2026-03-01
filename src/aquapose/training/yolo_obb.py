@@ -2,12 +2,32 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
-import torch
+from .common import convert_ndjson_to_txt, rewrite_data_yaml, train_yolo_ndjson
 
-from .common import MetricsLogger
+
+def _format_obb_label_line(ann: dict) -> str:
+    """Format one OBB annotation as a YOLO-OBB label line.
+
+    Output format: ``class_id x1 y1 x2 y2 x3 y3 x4 y4`` with normalized coords.
+    """
+    class_id = int(ann["class_id"])
+    parts: list[str] = []
+    for corner in ann["corners"]:
+        parts.append(f"{float(corner[0]):.6f}")
+        parts.append(f"{float(corner[1]):.6f}")
+    return f"{class_id} " + " ".join(parts)
+
+
+def _convert_obb_ndjson_to_txt(ndjson_path: Path, labels_dir: Path) -> None:
+    """Convert NDJSON OBB records to YOLO .txt label files."""
+    convert_ndjson_to_txt(ndjson_path, labels_dir, _format_obb_label_line)
+
+
+def _rewrite_data_yaml_obb(data_dir: Path, original_yaml_path: Path) -> Path:
+    """Rewrite data.yaml for Ultralytics OBB training."""
+    return rewrite_data_yaml(data_dir, original_yaml_path)
 
 
 def train_yolo_obb(
@@ -19,21 +39,19 @@ def train_yolo_obb(
     device: str | None = None,
     val_split: float = 0.2,
     imgsz: int = 640,
-    model_size: str = "s",
+    model: str = "yolov8s-obb",
+    weights: Path | None = None,
 ) -> Path:
-    """Train a YOLO-OBB model on a YOLO-format oriented bounding-box dataset.
+    """Train a YOLO-OBB model on a project NDJSON oriented bounding-box dataset.
 
-    Wraps the ultralytics training API. After training, copies best.pt and
-    last.pt from the ultralytics output directory to ``output_dir`` under
-    consistent names (``best_model.pt`` and ``last_model.pt``).
-
-    The dataset must contain a ``data.yaml`` file in ``data_dir`` following
-    the ultralytics YOLO format. ``val_split`` is recorded in the metrics log
-    but the actual train/val split is controlled by ``data.yaml``.
+    Converts the project's NDJSON OBB labels to YOLO .txt format, rewrites
+    ``data.yaml`` with absolute paths and ``images/`` directories, then invokes
+    ``model.train()``. After training, copies ``best.pt`` and ``last.pt`` to
+    ``output_dir`` under consistent names.
 
     Args:
-        data_dir: Directory containing ``data.yaml`` and the YOLO-format
-            dataset (images/ and labels/ subdirectories).
+        data_dir: Directory containing ``data.yaml`` and the NDJSON dataset
+            (with ``images/train/`` and ``images/val/`` subdirectories).
         output_dir: Directory for model weights and metrics CSV.
         epochs: Number of training epochs.
         batch_size: Images per batch.
@@ -42,8 +60,12 @@ def train_yolo_obb(
         val_split: Validation split fraction (informational — recorded in
             metrics; actual split is determined by ``data.yaml``).
         imgsz: Training image size (square).
-        model_size: YOLO model size suffix. One of ``n``, ``s``, ``m``,
-            ``l``, ``x``. Selects ``yolov8{model_size}-obb.pt``.
+        model: YOLO model variant name (e.g. ``"yolov8s-obb"``,
+            ``"yolov8n-obb"``). Used to download pretrained weights when
+            ``weights`` is None.
+        weights: Path to pretrained weights for transfer learning. When
+            provided, the model is initialised from these weights instead of
+            downloading.
 
     Returns:
         Path to the best model weights file (``output_dir/best_model.pt``).
@@ -52,57 +74,15 @@ def train_yolo_obb(
         FileNotFoundError: If ``data.yaml`` is not found in ``data_dir``.
         ImportError: If the ``ultralytics`` package is not installed.
     """
-    from ultralytics import YOLO  # type: ignore[import-untyped]
-
-    if device is None:
-        device = "cuda:0" if torch.cuda.is_available() else "cpu"
-
-    data_dir = Path(data_dir)
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    data_yaml = data_dir / "data.yaml"
-    if not data_yaml.exists():
-        raise FileNotFoundError(f"data.yaml not found in {data_dir}")
-
-    # Initialise metrics logger for a final summary line
-    logger = MetricsLogger(output_dir, fields=["epochs", "val_split"])
-    logger.log(0, epochs=float(epochs), val_split=val_split)
-
-    # Run ultralytics training — it handles its own epoch-level logging
-    model = YOLO(f"yolov8{model_size}-obb.pt")
-    results = model.train(
-        data=str(data_yaml),
+    return train_yolo_ndjson(
+        data_dir,
+        output_dir,
+        format_label_line=_format_obb_label_line,
         epochs=epochs,
-        batch=batch_size,
+        batch_size=batch_size,
         device=device,
-        project=str(output_dir / "_ultralytics"),
-        name="train",
+        val_split=val_split,
         imgsz=imgsz,
+        model=model,
+        weights=weights,
     )
-
-    # Locate ultralytics output directory
-    # ultralytics saves to project/name/weights/
-    save_dir = (
-        results.save_dir
-        if results is not None and results.save_dir is not None
-        else output_dir / "_ultralytics" / "train"
-    )
-    weights_dir = Path(str(save_dir)) / "weights"
-
-    best_src = weights_dir / "best.pt"
-    last_src = weights_dir / "last.pt"
-
-    best_dst = output_dir / "best_model.pt"
-    last_dst = output_dir / "last_model.pt"
-
-    if best_src.exists():
-        shutil.copy2(best_src, best_dst)
-    if last_src.exists():
-        shutil.copy2(last_src, last_dst)
-
-    # Fall back to last if best was never saved
-    if not best_dst.exists() and last_dst.exists():
-        shutil.copy2(last_dst, best_dst)
-
-    return best_dst

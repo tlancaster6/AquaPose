@@ -17,7 +17,7 @@ def train_group() -> None:
     "--data-dir",
     required=True,
     type=click.Path(exists=True),
-    help="Directory with data.yaml and YOLO-format dataset.",
+    help="Directory with data.yaml and NDJSON OBB dataset.",
 )
 @click.option(
     "--output-dir",
@@ -33,10 +33,16 @@ def train_group() -> None:
 @click.option("--val-split", default=0.2, type=float, help="Validation split fraction.")
 @click.option("--imgsz", default=640, type=int, help="Training image size (square).")
 @click.option(
-    "--model-size",
-    default="s",
-    type=click.Choice(["n", "s", "m", "l", "x"]),
-    help="YOLO model size (yolov8{size}-obb.pt).",
+    "--model",
+    default="yolov8s-obb",
+    type=str,
+    help="YOLO model variant (e.g. yolov8s-obb, yolov8n-obb).",
+)
+@click.option(
+    "--weights",
+    default=None,
+    type=click.Path(exists=True),
+    help="Pretrained weights for transfer learning.",
 )
 def yolo_obb(
     data_dir: str,
@@ -46,7 +52,8 @@ def yolo_obb(
     device: str | None,
     val_split: float,
     imgsz: int,
-    model_size: str,
+    model: str,
+    weights: str | None,
 ) -> None:
     """Train YOLO-OBB oriented bounding-box detection model."""
     from .yolo_obb import train_yolo_obb
@@ -59,7 +66,8 @@ def yolo_obb(
         device=device,
         val_split=val_split,
         imgsz=imgsz,
-        model_size=model_size,
+        model=model,
+        weights=Path(weights) if weights is not None else None,
     )
     click.echo(f"Training complete. Best model: {best_path}")
 

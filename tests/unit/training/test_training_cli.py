@@ -39,7 +39,8 @@ def test_train_yolo_obb_help_shows_expected_flags() -> None:
         "--val-split",
         "--batch-size",
         "--imgsz",
-        "--model-size",
+        "--model",
+        "--weights",
     ]
     for flag in expected_flags:
         assert flag in result.output, f"Expected flag {flag!r} not found in help output"

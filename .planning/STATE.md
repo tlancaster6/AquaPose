@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 Phase: 33.1 of 35 (Keypoint Training Data Augmentation) — Plan 33.1-01 complete
 Plan: 33.1-01 complete
 Status: In progress
-Last activity: 2026-03-01 - Completed 33.1-01: KeypointDataset augmentation, masked MSE loss, ConcatDataset training
+Last activity: 2026-03-01 - Completed quick task 11: Add training visualizations (augmented data grid + val prediction grid)
 
 Progress: [█████████░] 86% (12/14 plans complete — Phase 29 both plans done, Phase 30 Plans 01-04 done, Phase 31 Plans 01-02 done, Phase 32 Plans 01-02 done, Phase 33 Plans 01-02 done, Phase 33.1 Plan 01 done)
 
@@ -131,6 +131,7 @@ From 33-01 execution:
 | # | Description | Date | Commit | Status | Directory |
 |---|-------------|------|--------|--------|-----------|
 | 10 | Store 3D consensus centroids on TrackletGroup and write centroid correspondences to disk via DiagnosticObserver | 2026-02-28 | 10395eb | Verified | [10-store-3d-consensus-centroids-on-tracklet](./quick/10-store-3d-consensus-centroids-on-tracklet/) |
+| 11 | Add training visualizations: augmented data grid with GT overlays, validation prediction grid for pose and unet | 2026-03-01 | b2cf304 | | [11-add-training-visualizations-augmented-da](./quick/11-add-training-visualizations-augmented-da/) |
 
 ## Session Continuity
 

@@ -7,7 +7,6 @@ from .common import (
     MetricsLogger,
     make_loader,
     save_best_and_last,
-    train_yolo_ndjson,
 )
 from .datasets import CropDataset, apply_augmentation, stratified_split
 from .prep import prep_group
@@ -24,7 +23,6 @@ __all__ = [
     "prep_group",
     "save_best_and_last",
     "stratified_split",
-    "train_yolo_ndjson",
     "train_yolo_obb",
     "train_yolo_pose",
     "train_yolo_seg",

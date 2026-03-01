@@ -2,32 +2,10 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
-from .common import convert_ndjson_to_txt, rewrite_data_yaml, train_yolo_ndjson
-
-
-def _format_seg_label_line(ann: dict) -> str:
-    """Format one seg annotation as a YOLO label line.
-
-    Output format: ``class_id x1 y1 x2 y2 ... xN yN`` with normalized coords.
-    """
-    class_id = int(ann["class_id"])
-    coords: list[str] = []
-    for pt in ann["polygon"]:
-        coords.append(f"{float(pt[0]):.6f}")
-        coords.append(f"{float(pt[1]):.6f}")
-    return f"{class_id} " + " ".join(coords)
-
-
-def _convert_seg_ndjson_to_txt(ndjson_path: Path, labels_dir: Path) -> None:
-    """Convert NDJSON segmentation records to YOLO .txt label files."""
-    convert_ndjson_to_txt(ndjson_path, labels_dir, _format_seg_label_line)
-
-
-def _rewrite_data_yaml_seg(data_dir: Path, original_yaml_path: Path) -> Path:
-    """Rewrite data.yaml for Ultralytics seg training."""
-    return rewrite_data_yaml(data_dir, original_yaml_path)
+import torch
 
 
 def train_yolo_seg(
@@ -42,23 +20,21 @@ def train_yolo_seg(
     model: str = "yolo26n-seg",
     weights: Path | None = None,
 ) -> Path:
-    """Train a YOLO-seg instance segmentation model on a project NDJSON dataset.
+    """Train a YOLO-seg instance segmentation model on a project Ultralytics-native NDJSON dataset.
 
-    Converts the project's NDJSON segmentation labels to YOLO .txt format,
-    rewrites ``data.yaml`` with absolute paths and ``images/`` directories, then
-    invokes ``model.train()``. After training, copies ``best.pt`` and ``last.pt``
-    to ``output_dir`` under consistent names.
+    Passes the ``dataset.ndjson`` file path directly to ``model.train(data=...)``.
+    After training, copies ``best.pt`` and ``last.pt`` to ``output_dir`` under
+    consistent names.
 
     Args:
-        data_dir: Directory containing ``data.yaml`` and the NDJSON dataset
-            (with ``images/train/`` and ``images/val/`` subdirectories).
+        data_dir: Directory containing ``dataset.ndjson`` (with
+            ``images/train/`` and ``images/val/`` subdirectories).
         output_dir: Directory for model weights and metrics CSV.
         epochs: Number of training epochs.
         batch_size: Images per batch.
         device: Torch device string (e.g. ``"cuda:0"``, ``"cpu"``). Auto-
             detected if None.
-        val_split: Validation split fraction (informational — recorded in
-            metrics; actual split is determined by ``data.yaml``).
+        val_split: Validation split fraction (informational only).
         imgsz: Training image size (square).
         model: YOLO model variant name (e.g. ``"yolo26n-seg"``,
             ``"yolo26s-seg"``). Used to download pretrained weights when
@@ -71,17 +47,54 @@ def train_yolo_seg(
         Path to the best model weights file (``output_dir/best_model.pt``).
 
     Raises:
-        FileNotFoundError: If ``data.yaml`` is not found in ``data_dir``.
+        FileNotFoundError: If ``dataset.ndjson`` is not found in ``data_dir``.
+        ImportError: If the ``ultralytics`` package is not installed.
     """
-    return train_yolo_ndjson(
-        data_dir,
-        output_dir,
-        format_label_line=_format_seg_label_line,
+    from ultralytics import YOLO  # type: ignore[import-untyped]
+
+    if device is None:
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+    data_dir = Path(data_dir)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    ndjson_path = data_dir / "dataset.ndjson"
+    if not ndjson_path.exists():
+        raise FileNotFoundError(f"dataset.ndjson not found in {data_dir}")
+
+    # Initialize model
+    yolo_model = YOLO(str(weights)) if weights is not None else YOLO(f"{model}.pt")
+
+    # Run ultralytics training
+    results = yolo_model.train(
+        data=str(ndjson_path),
         epochs=epochs,
-        batch_size=batch_size,
+        batch=batch_size,
         device=device,
-        val_split=val_split,
+        project=str(output_dir / "_ultralytics"),
+        name="train",
         imgsz=imgsz,
-        model=model,
-        weights=weights,
     )
+
+    # Copy weights to output_dir
+    save_dir = (
+        results.save_dir
+        if results is not None and results.save_dir is not None
+        else output_dir / "_ultralytics" / "train"
+    )
+    weights_dir = Path(str(save_dir)) / "weights"
+
+    best_src = weights_dir / "best.pt"
+    last_src = weights_dir / "last.pt"
+    best_dst = output_dir / "best_model.pt"
+    last_dst = output_dir / "last_model.pt"
+
+    if best_src.exists():
+        shutil.copy2(best_src, best_dst)
+    if last_src.exists():
+        shutil.copy2(last_src, last_dst)
+    if not best_dst.exists() and last_dst.exists():
+        shutil.copy2(last_dst, best_dst)
+
+    return best_dst

@@ -83,7 +83,7 @@ Full details: see Phase Details section below for v2.2
 
 ### 🚧 v3.0 Ultralytics Unification (In Progress)
 
-**Milestone Goal:** Replace custom U-Net segmentation and keypoint regression models with Ultralytics-native YOLO11n-seg and YOLO11n-pose, unifying detection, segmentation, and midline extraction on one framework. Starts by stripping the failed custom code, then builds training wrappers for the new models, then integrates them as backends within the existing Stage architecture.
+**Milestone Goal:** Replace custom U-Net segmentation and keypoint regression models with Ultralytics-native YOLO26n-seg and YOLO26n-pose, unifying detection, segmentation, and midline extraction on one framework. Starts by stripping the failed custom code, then builds training wrappers for the new models, then integrates them as backends within the existing Stage architecture.
 
 **⚠ Cross-cutting concern — Coordinate spaces:** Full-image ↔ crop-space conversions are a pervasive source of error, especially with OBB affine warps. Mismatches between training-time and inference-time crop preparation cause silent accuracy failures. Every phase must explicitly verify coordinate round-trips at each boundary (training labels, inference output, back-projection to full frame). Existing crop utilities should be reused with extreme care.
 
@@ -183,19 +183,19 @@ Plans:
 - [ ] 35-02-PLAN.md — Stub midline backends as no-ops, correct planning docs
 
 ### Phase 36: Training Wrappers
-**Goal**: A COCO-to-NDJSON segmentation data converter and training wrappers for YOLO11n-seg and YOLO11n-pose are available from the CLI, following the same pattern as the existing `yolo_obb.py` training wrapper
+**Goal**: A COCO-to-NDJSON segmentation data converter and training wrappers for YOLO26n-seg and YOLO26n-pose are available from the CLI, following the same pattern as the existing `yolo_obb.py` training wrapper
 **Depends on**: Phase 35 (clean codebase, no legacy training commands to conflict)
 **Requirements**: DATA-01, TRAIN-01, TRAIN-02
 **Success Criteria** (what must be TRUE):
   1. Running the seg data converter with a COCO segmentation JSON produces a directory of NDJSON files matching the schema that `scripts/build_yolo_training_data.py` produces for OBB and pose — `hatch run python scripts/build_yolo_training_data.py --mode seg` or equivalent
-  2. `aquapose train seg --data-dir <path> --output-dir <path> --epochs <n>` launches a YOLO11n-seg training run and saves weights to the output directory
-  3. `aquapose train pose --data-dir <path> --output-dir <path> --epochs <n>` launches a YOLO11n-pose training run and saves weights to the output directory
+  2. `aquapose train seg --data-dir <path> --output-dir <path> --epochs <n>` launches a YOLO26n-seg training run and saves weights to the output directory
+  3. `aquapose train pose --data-dir <path> --output-dir <path> --epochs <n>` launches a YOLO26n-pose training run and saves weights to the output directory
   4. Both training wrappers accept the same flags (`--epochs`, `--device`, `--imgsz`, `--batch`) with identical semantics to the existing `yolo-obb` subcommand
 **Plans**: TBD
 
 ### Phase 37: Pipeline Integration
 **Goal**: The pipeline supports `yolo_seg` and `yolo_pose` as selectable midline backends; running either end-to-end produces `Midline2D` objects compatible with the reconstruction stages, with fish identities correctly linked from tracked detections to model outputs
-**Depends on**: Phase 36 (trained models exist), Phase 35 (old backends removed)
+**Depends on**: Phase 36 (trained models exist), Phase 35 (custom model code removed; existing segment_then_extract and direct_pose backends are no-op stubs awaiting YOLO model wiring)
 **Requirements**: PIPE-01, PIPE-02, PIPE-03, PIPE-04
 **Success Criteria** (what must be TRUE):
   1. Setting `midline.backend: yolo_seg` in pipeline config runs the full pipeline end-to-end; the MidlineStage produces binary masks per detection that feed skeletonization the same way U-Net masks did
@@ -217,6 +217,6 @@ Plans:
 | 32. YOLO-OBB Detection Backend | v2.2 | 2/2 | Complete | 2026-02-28 |
 | 33. Keypoint Midline Backend | v2.2 | 2/2 | Complete | 2026-03-01 |
 | 33.1. Keypoint Training Data Augmentation | v2.2 | 1/1 | Complete | 2026-03-01 |
-| 35. Codebase Cleanup | v3.0 | 0/TBD | Not started | - |
+| 35. Codebase Cleanup | 1/2 | In Progress|  | - |
 | 36. Training Wrappers | v3.0 | 0/TBD | Not started | - |
 | 37. Pipeline Integration | v3.0 | 0/TBD | Not started | - |

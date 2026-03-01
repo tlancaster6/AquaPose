@@ -369,10 +369,10 @@ def affine_warp_crop(
         - warped: uint8 BGR crop of shape ``(crop_h, crop_w, 3)``.
         - affine: float64 affine matrix of shape ``(2, 3)``.
     """
-    # Source points: TL, TR, BL (3 corners for affine)
-    src = np.float32([obb_corners[0], obb_corners[1], obb_corners[3]])
+    # Source points: TL, TR, BL (3 corners for affine) — must be float32 for cv2
+    src = np.array([obb_corners[0], obb_corners[1], obb_corners[3]], dtype=np.float32)
     # Destination: top-left, top-right, bottom-left of crop
-    dst = np.float32([[0, 0], [crop_w - 1, 0], [0, crop_h - 1]])
+    dst = np.array([[0, 0], [crop_w - 1, 0], [0, crop_h - 1]], dtype=np.float32)
 
     affine = cv2.getAffineTransform(src, dst)
     warped = cv2.warpAffine(image, affine, (crop_w, crop_h))

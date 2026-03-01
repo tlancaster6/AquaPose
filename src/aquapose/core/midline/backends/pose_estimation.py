@@ -1,20 +1,21 @@
 """Pose estimation backend for the Midline stage.
 
-No-op stub pending Phase 37 YOLO-pose model integration. Returns
-AnnotatedDetection(midline=None) for every detection. The backend
-registers successfully under the ``"pose_estimation"`` backend name so the
-pipeline remains runnable; actual keypoint regression and midline fitting
-will be wired in Phase 37.
+Implements YOLO-pose inference with confidence-filtered keypoint spline
+interpolation to produce Midline2D objects in full-frame coordinates.  Uses
+OBB-aligned affine crops prepared by ``extract_affine_crop`` and back-projects
+interpolated keypoints via the inverse affine transform.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import numpy as np
+from scipy.interpolate import interp1d
 
 from aquapose.core.midline.types import AnnotatedDetection
+from aquapose.reconstruction.midline import Midline2D
+from aquapose.segmentation.crop import extract_affine_crop, invert_affine_points
 from aquapose.segmentation.detector import Detection
 
 __all__ = ["PoseEstimationBackend"]
@@ -22,31 +23,81 @@ __all__ = ["PoseEstimationBackend"]
 logger = logging.getLogger(__name__)
 
 
-class PoseEstimationBackend:
-    """YOLO-pose keypoint regression backend for the Midline stage (no-op stub).
-
-    Instantiates without loading any model. All detections receive
-    AnnotatedDetection(midline=None) until YOLO-pose is wired in Phase 37.
+def _keypoints_to_midline(
+    kpts_xy: np.ndarray,
+    t_values: np.ndarray,
+    confidences: np.ndarray,
+    n_points: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Interpolate visible keypoints to a dense midline via linear spline.
 
     Args:
-        weights_path: Path to YOLO-pose model weights file. Stored for Phase 37
-            implementation; currently ignored.
-        device: PyTorch device string. Stored for Phase 37 implementation;
-            currently ignored.
-        n_points: Number of midline points to produce per detection. Stored
-            for Phase 37 implementation; currently ignored.
-        n_keypoints: Number of anatomical keypoints. Stored for Phase 37
-            implementation; currently ignored.
-        keypoint_t_values: Per-keypoint arc-fraction values in [0, 1]. Stored
-            for Phase 37 implementation; currently ignored.
-        confidence_floor: Minimum per-keypoint confidence to treat as visible.
-            Stored for Phase 37 implementation; currently ignored.
-        min_observed_keypoints: Minimum visible keypoints required to fit the
-            spline. Stored for Phase 37 implementation; currently ignored.
-        crop_size: Output crop size ``(width, height)`` in pixels. Stored for
-            Phase 37 implementation; currently ignored.
-        **kwargs: Additional kwargs accepted for API compatibility with
-            get_backend() forwarding.
+        kpts_xy: Keypoint coordinates in crop space, shape ``(K, 2)``, float32.
+        t_values: Arc-fraction parameter values for each keypoint, shape ``(K,)``.
+            Values should span a subset of ``[0, 1]``.
+        confidences: Per-keypoint confidence scores, shape ``(K,)``.
+        n_points: Number of output midline points.
+
+    Returns:
+        xy: Resampled midline coordinates, shape ``(n_points, 2)``, float32.
+        conf: Interpolated confidence values at each output point, shape
+            ``(n_points,)``, float32.
+    """
+    t_eval = np.linspace(0.0, 1.0, n_points)
+
+    interp_x = interp1d(
+        t_values,
+        kpts_xy[:, 0],
+        kind="linear",
+        fill_value="extrapolate",
+    )
+    interp_y = interp1d(
+        t_values,
+        kpts_xy[:, 1],
+        kind="linear",
+        fill_value="extrapolate",
+    )
+    interp_c = interp1d(
+        t_values,
+        confidences,
+        kind="linear",
+        bounds_error=False,
+        fill_value=(float(confidences[0]), float(confidences[-1])),
+    )
+
+    x_out = interp_x(t_eval).astype(np.float32)
+    y_out = interp_y(t_eval).astype(np.float32)
+    conf_out = interp_c(t_eval).astype(np.float32)
+
+    xy = np.stack([x_out, y_out], axis=1)
+    return xy, conf_out
+
+
+class PoseEstimationBackend:
+    """YOLO-pose keypoint regression backend for the Midline stage.
+
+    Runs a YOLO-pose model on OBB-aligned affine crops, extracts keypoints,
+    filters by confidence, and interpolates visible keypoints to a dense
+    Midline2D via linear spline in full-frame coordinates.
+
+    Args:
+        weights_path: Path to YOLO-pose model weights file.  If ``None`` or the
+            file does not exist, the backend operates in no-model mode and
+            returns ``midline=None`` for every detection.
+        device: PyTorch device string passed to the YOLO model.  Default
+            ``"cuda"``.
+        n_points: Number of midline points to produce per detection.  Default 15.
+        n_keypoints: Number of anatomical keypoints expected from the model.
+            Default 6 (nose, head, spine1, spine2, spine3, tail).
+        keypoint_t_values: Per-keypoint arc-fraction values in ``[0, 1]``.
+            If ``None``, defaults to ``np.linspace(0, 1, n_keypoints)``.
+        confidence_floor: Minimum per-keypoint confidence to treat a keypoint
+            as visible.  Default 0.3.
+        min_observed_keypoints: Minimum number of visible keypoints required to
+            fit the spline.  Default 3.
+        crop_size: Output crop canvas size as ``(width, height)`` in pixels.
+            Default ``(128, 64)``.
+        conf: YOLO detection confidence threshold for model.predict().  Default 0.5.
     """
 
     def __init__(
@@ -59,20 +110,58 @@ class PoseEstimationBackend:
         confidence_floor: float = 0.3,
         min_observed_keypoints: int = 3,
         crop_size: tuple[int, int] = (128, 64),
-        **kwargs: Any,
+        conf: float = 0.5,
+        **kwargs: object,
     ) -> None:
+        self._device = device
+        self._n_points = n_points
+        self._n_keypoints = n_keypoints
+        self._confidence_floor = confidence_floor
+        self._min_observed_keypoints = min_observed_keypoints
+        self._crop_size = crop_size
+        self._conf = conf
+
+        # Expose public attributes for introspection / tests
         self.weights_path = weights_path
         self.device = device
         self.n_points = n_points
         self.n_keypoints = n_keypoints
-        self.keypoint_t_values = keypoint_t_values
         self.confidence_floor = confidence_floor
         self.min_observed_keypoints = min_observed_keypoints
         self.crop_size = crop_size
-        logger.warning(
-            "PoseEstimationBackend: no pose model loaded — all midlines will be None "
-            "until YOLO-pose is wired in Phase 37."
-        )
+
+        if keypoint_t_values is not None:
+            self._keypoint_t_values = np.asarray(keypoint_t_values, dtype=np.float32)
+        else:
+            self._keypoint_t_values = np.linspace(
+                0.0, 1.0, n_keypoints, dtype=np.float32
+            )
+        self.keypoint_t_values = self._keypoint_t_values
+
+        if weights_path is not None:
+            from pathlib import Path
+
+            if Path(weights_path).exists():
+                from ultralytics import YOLO
+
+                self._model: object | None = YOLO(str(weights_path))
+                logger.info("PoseEstimationBackend: loaded model from %s", weights_path)
+            else:
+                self._model = None
+                logger.warning(
+                    "PoseEstimationBackend: weights_path '%s' does not exist — "
+                    "all midlines will be None.",
+                    weights_path,
+                )
+        else:
+            self._model = None
+            logger.warning(
+                "PoseEstimationBackend: no weights_path supplied — all midlines will be None."
+            )
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def process_frame(
         self,
@@ -81,32 +170,201 @@ class PoseEstimationBackend:
         frames: dict[str, np.ndarray],
         camera_ids: list[str],
     ) -> dict[str, list[AnnotatedDetection]]:
-        """Return AnnotatedDetection(midline=None) for every detection.
+        """Run YOLO-pose inference and spline-interpolate keypoints for all detections.
+
+        For each camera and each detection, extracts an OBB-aligned affine crop,
+        runs YOLO-pose, filters keypoints by confidence, and interpolates visible
+        keypoints to a dense midline in full-frame coordinates.  All failure cases
+        (no model, no keypoints, too few visible keypoints) return ``midline=None``.
 
         Args:
-            frame_idx: Current frame index (used for AnnotatedDetection metadata).
+            frame_idx: Current frame index stored in output metadata.
             frame_dets: Per-camera detection lists from Stage 1.
-            frames: Per-camera undistorted frame images (BGR uint8). Unused.
-            camera_ids: Active camera identifiers.
+            frames: Per-camera undistorted frame images (BGR uint8).
+            camera_ids: Active camera identifiers to process.
 
         Returns:
-            Per-camera list of AnnotatedDetection objects, one per input
-            detection. All midline fields are None.
+            Per-camera list of :class:`~aquapose.core.midline.types.AnnotatedDetection`
+            objects, one per input detection.  ``midline`` is ``None`` when
+            extraction failed.
         """
         annotated: dict[str, list[AnnotatedDetection]] = {}
 
         for cam_id in camera_ids:
             cam_dets = frame_dets.get(cam_id, [])
-            annotated[cam_id] = [
-                AnnotatedDetection(
-                    detection=det,
-                    mask=None,
-                    crop_region=None,
-                    midline=None,
-                    camera_id=cam_id,
-                    frame_index=frame_idx,
-                )
-                for det in cam_dets
-            ]
+            frame = frames.get(cam_id)
+            cam_results: list[AnnotatedDetection] = []
+
+            for det in cam_dets:
+                ann = self._process_detection(det, frame, cam_id, frame_idx)
+                cam_results.append(ann)
+
+            annotated[cam_id] = cam_results
 
         return annotated
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _process_detection(
+        self,
+        det: Detection,
+        frame: np.ndarray | None,
+        cam_id: str,
+        frame_idx: int,
+    ) -> AnnotatedDetection:
+        """Process a single detection, returning an AnnotatedDetection.
+
+        Args:
+            det: Detection object with OBB metadata.
+            frame: Full-frame image (BGR uint8) or None.
+            cam_id: Camera identifier.
+            frame_idx: Current frame index.
+
+        Returns:
+            AnnotatedDetection with midline populated on success, else None.
+        """
+        _null = AnnotatedDetection(
+            detection=det,
+            mask=None,
+            crop_region=None,
+            midline=None,
+            camera_id=cam_id,
+            frame_index=frame_idx,
+        )
+
+        if self._model is None or frame is None:
+            return _null
+
+        try:
+            crop = self._extract_crop(det, frame)
+        except Exception:
+            logger.debug("PoseEstimationBackend: crop extraction failed", exc_info=True)
+            return _null
+
+        try:
+            results = self._model.predict(  # type: ignore[union-attr]
+                crop.image, conf=self._conf, verbose=False
+            )
+        except Exception:
+            logger.debug("PoseEstimationBackend: YOLO inference failed", exc_info=True)
+            return _null
+
+        kpts_xy, kpts_conf = self._extract_keypoints(results)
+        if kpts_xy is None or kpts_conf is None:
+            return _null
+
+        visible_mask = kpts_conf >= self._confidence_floor
+        n_visible = int(visible_mask.sum())
+
+        if n_visible < self._min_observed_keypoints:
+            return _null
+
+        visible_kpts = kpts_xy[visible_mask]
+        visible_t = self._keypoint_t_values[visible_mask]
+        visible_conf = kpts_conf[visible_mask]
+
+        try:
+            xy_crop, conf_resampled = _keypoints_to_midline(
+                visible_kpts, visible_t, visible_conf, self._n_points
+            )
+        except Exception:
+            logger.debug(
+                "PoseEstimationBackend: keypoint interpolation failed", exc_info=True
+            )
+            return _null
+
+        xy_frame = invert_affine_points(xy_crop, crop.M).astype(np.float32)
+
+        midline = Midline2D(
+            points=xy_frame,
+            half_widths=np.zeros(self._n_points, dtype=np.float32),
+            fish_id=0,
+            camera_id=cam_id,
+            frame_index=frame_idx,
+            is_head_to_tail=False,
+            point_confidence=conf_resampled,
+        )
+
+        return AnnotatedDetection(
+            detection=det,
+            mask=None,
+            crop_region=None,
+            midline=midline,
+            camera_id=cam_id,
+            frame_index=frame_idx,
+        )
+
+    def _extract_crop(
+        self,
+        det: Detection,
+        frame: np.ndarray,
+    ) -> object:
+        """Extract an OBB-aligned affine crop for a detection.
+
+        Args:
+            det: Detection with optional OBB fields.
+            frame: Full-frame BGR image.
+
+        Returns:
+            AffineCrop object.
+        """
+        x, y, w, h = det.bbox
+        cx = float(x + w / 2.0)
+        cy = float(y + h / 2.0)
+
+        angle = float(det.angle) if det.angle is not None else 0.0
+
+        if det.obb_points is not None and len(det.obb_points) >= 2:
+            pts = np.asarray(det.obb_points, dtype=np.float32)
+            side0 = float(np.linalg.norm(pts[1] - pts[0]))
+            side1 = float(np.linalg.norm(pts[2] - pts[1]))
+            obb_w, obb_h = side0, side1
+        else:
+            obb_w, obb_h = float(w), float(h)
+
+        return extract_affine_crop(
+            frame,
+            center_xy=(cx, cy),
+            angle_math_rad=angle,
+            obb_w=obb_w,
+            obb_h=obb_h,
+            crop_size=self._crop_size,
+            fit_obb=True,
+            mask_background=True,
+        )
+
+    def _extract_keypoints(
+        self,
+        results: list[object],
+    ) -> tuple[np.ndarray | None, np.ndarray | None]:
+        """Extract keypoint coordinates and confidences from YOLO results.
+
+        Uses pixel coordinates (``.xy``) not normalised (``.xyn``).
+        All tensor-to-numpy conversions use ``.cpu().numpy()`` to support CUDA.
+
+        Args:
+            results: Ultralytics Results list returned by model.predict().
+
+        Returns:
+            Tuple of ``(kpts_xy, kpts_conf)`` each shape ``(K,)`` / ``(K, 2)``,
+            or ``(None, None)`` when keypoints are unavailable.
+        """
+        if not results:
+            return None, None
+        res = results[0]
+        if res.keypoints is None:
+            return None, None
+        kp = res.keypoints
+        if len(kp.xy) == 0:
+            return None, None
+
+        kpts_xy = kp.xy[0].cpu().numpy().astype(np.float32)  # (K, 2) pixel coords
+        if kp.conf is not None and len(kp.conf) > 0:
+            kpts_conf = kp.conf[0].cpu().numpy().astype(np.float32)  # (K,)
+        else:
+            # No confidence available — treat all as maximally confident
+            kpts_conf = np.ones(len(kpts_xy), dtype=np.float32)
+
+        return kpts_xy, kpts_conf

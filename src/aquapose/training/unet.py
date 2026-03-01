@@ -14,6 +14,7 @@ from aquapose.segmentation.model import UNET_INPUT_SIZE, UNetSegmentor
 
 from .common import EarlyStopping, MetricsLogger, make_loader, save_best_and_last
 from .datasets import BinaryMaskDataset, stratified_split
+from .viz import save_unet_augmented_grid, save_unet_val_grid
 
 
 def _dice_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
@@ -175,6 +176,12 @@ def train_unet(
         val_dataset, batch_size, shuffle=False, device=device, num_workers=num_workers
     )
 
+    # Save augmented training data grid for visual inspection
+    try:
+        save_unet_augmented_grid(train_dataset, output_dir / "augmented_data_grid.png")
+    except Exception as exc:
+        print(f"[viz] Warning: augmented data grid failed: {exc}")
+
     # Build model with differential LR: encoder gets lr * 0.1, decoder gets lr
     segmentor = UNetSegmentor()
     model = segmentor.get_model()
@@ -263,5 +270,15 @@ def train_unet(
     # Ensure best_model.pth exists even if no improvement was ever recorded
     if not best_model_path.exists():
         torch.save(model.state_dict(), best_model_path)
+
+    # Save validation predictions grid using best model
+    try:
+        best_state = torch.load(best_model_path, map_location=device, weights_only=True)
+        model.load_state_dict(best_state)
+        save_unet_val_grid(
+            model, val_dataset, device, output_dir / "val_predictions_grid.png"
+        )
+    except Exception as exc:
+        print(f"[viz] Warning: val predictions grid failed: {exc}")
 
     return best_model_path

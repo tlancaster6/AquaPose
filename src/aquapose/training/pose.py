@@ -16,6 +16,7 @@ from aquapose.segmentation.model import _UNet
 
 from .common import EarlyStopping, MetricsLogger, make_loader, save_best_and_last
 from .datasets import _load_image, stratified_split
+from .viz import save_pose_augmented_grid, save_pose_val_grid
 
 # Fixed input size (width, height) — matches U-Net training pipeline
 _INPUT_SIZE: tuple[int, int] = (128, 64)
@@ -471,6 +472,14 @@ def train_pose(
         val_dataset, batch_size, shuffle=False, device=device, num_workers=num_workers
     )
 
+    # Save augmented training data grid for visual inspection
+    try:
+        save_pose_augmented_grid(
+            train_dataset, output_dir / "augmented_data_grid.png", input_size=input_size
+        )
+    except Exception as exc:
+        print(f"[viz] Warning: augmented data grid failed: {exc}")
+
     # Build model
     pretrained_encoder = backbone_weights is None
     model = _PoseModel(n_keypoints=n_keypoints, pretrained=pretrained_encoder)
@@ -569,5 +578,19 @@ def train_pose(
 
     if not best_model_path.exists():
         torch.save(model.state_dict(), best_model_path)
+
+    # Save validation predictions grid using best model
+    try:
+        best_state = torch.load(best_model_path, map_location=device, weights_only=True)
+        model.load_state_dict(best_state)
+        save_pose_val_grid(
+            model,
+            val_dataset,
+            device,
+            output_dir / "val_predictions_grid.png",
+            input_size=input_size,
+        )
+    except Exception as exc:
+        print(f"[viz] Warning: val predictions grid failed: {exc}")
 
     return best_model_path

@@ -219,7 +219,7 @@ def save_pose_augmented_grid(
         ax.imshow(img_hwc)
 
         # Colourmap for keypoints — use a fixed colour cycle
-        cmap = plt.cm.get_cmap("tab10", n_kp)
+        cmap = plt.colormaps.get_cmap("tab10")
 
         for k in range(n_kp):
             color = cmap(k)

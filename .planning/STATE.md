@@ -88,9 +88,10 @@ Full-image ↔ crop-space conversions are a pervasive source of error, especiall
 |---|-------------|------|--------|-----------|
 | 12 | Add tool script for YOLO-OBB and YOLO-pose training set generation from multi-animal pose annotations | 2026-03-01 | 304bc09 | [12-add-tool-script-for-yolo-obb-and-yolo-po](./quick/12-add-tool-script-for-yolo-obb-and-yolo-po/) |
 | 13 | Convert yolo_obb.py to use NDJSON format via train_yolo_ndjson; align OBB NDJSON key and CLI flags with seg/pose | 2026-03-01 | 7e98ac3 | [13-convert-yolo-obb-py-to-use-ndjson-format](./quick/13-convert-yolo-obb-py-to-use-ndjson-format/) |
+| 14 | Adopt Ultralytics-native NDJSON format: build script emits dataset header + flat annotation arrays; training wrappers pass .ndjson directly to model.train() | 2026-03-01 | c8cd9eb | [14-adopt-ultralytics-native-ndjson-format-u](./quick/14-adopt-ultralytics-native-ndjson-format-u/) |
 
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 37-01-PLAN.md (renamed midline backends to segmentation/pose_estimation; old names rejected)
+Stopped at: Completed quick task 14 (adopt Ultralytics-native NDJSON format; eliminated NDJSON-to-txt conversion plumbing)
 Resume file: None

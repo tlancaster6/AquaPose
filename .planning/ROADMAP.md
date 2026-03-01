@@ -147,7 +147,7 @@ Plans:
 **Goal:** Add keypoint-aware data augmentation transforms to the pose regression training pipeline, masked MSE loss for partial visibility, and ConcatDataset training for 2x effective epoch size — critical for generalization from the 78-sample dataset
 **Requirements**: AUG-01, AUG-02, AUG-03, AUG-04
 **Depends on:** Phase 33
-**Plans:** 2/2 plans complete
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] 33.1-01-PLAN.md — KeypointDataset augmentation, masked loss, updated train_pose, comprehensive tests

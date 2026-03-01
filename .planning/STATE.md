@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Backends
-status: unknown
-last_updated: "2026-03-01T01:50:20.589Z"
+status: in_progress
+last_updated: "2026-03-01T01:57:00Z"
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 12
-  completed_plans: 11
+  total_plans: 13
+  completed_plans: 12
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 33 complete — ready for Phase 34 (Stabilization)
+**Current focus:** Phase 33.1 — Keypoint Training Data Augmentation (Plan 33.1-01 complete)
 
 ## Current Position
 
-Phase: 33 of 35 (Keypoint Midline Backend) — ALL PLANS COMPLETE
-Plan: 33-02 complete
+Phase: 33.1 of 35 (Keypoint Training Data Augmentation) — Plan 33.1-01 complete
+Plan: 33.1-01 complete
 Status: In progress
-Last activity: 2026-03-01 - Completed 33-02: Confidence-weighted triangulation and curve optimizer
+Last activity: 2026-03-01 - Completed 33.1-01: KeypointDataset augmentation, masked MSE loss, ConcatDataset training
 
-Progress: [█████████░] 79% (11/14 plans complete — Phase 29 both plans done, Phase 30 Plans 01-04 done, Phase 31 Plans 01-02 done, Phase 32 Plans 01-02 done, Phase 33 Plans 01-02 done)
+Progress: [█████████░] 86% (12/14 plans complete — Phase 29 both plans done, Phase 30 Plans 01-04 done, Phase 31 Plans 01-02 done, Phase 32 Plans 01-02 done, Phase 33 Plans 01-02 done, Phase 33.1 Plan 01 done)
 
 ## Performance Metrics
 
@@ -46,6 +46,7 @@ Progress: [█████████░] 79% (11/14 plans complete — Phase 2
 | 31-training-infrastructure | 2 | 26 min | 13 min |
 | 32-yolo-obb-detection-backend | 2 | 36 min | 18 min |
 | 33-keypoint-midline-backend | 2 | 58 min | 29 min |
+| 33.1-keypoint-training-data-augmentation | 1 | 14 min | 14 min |
 
 *Updated after each plan completion*
 
@@ -104,6 +105,12 @@ From 32-01 execution:
 - invert_affine_point/invert_affine_points round-trip error < 1px confirmed for 6 angles including 0, pi/4, pi/2, -pi/3, pi/6, -pi
 - [Phase 32-yolo-obb-detection-backend]: OBB polygon replaces AABB in both visualization observers; _match_detection uses centroid-to-bbox-center distance; detections accessed via getattr for graceful degradation
 
+From 33.1-01 execution:
+- KeypointDataset returns 3-tuple (image, keypoints, visibility_mask); augment=True uses tv_tensors.KeyPoints + v2.Compose; clean path has OOB check for negative-coord annotations
+- _masked_mse_loss uses repeat_interleave(2) to expand visibility to coord space; clamp(min=1.0) handles all-invisible batch
+- ConcatDataset([clean_subset, aug_subset]) gives 2x effective epoch size; val is clean Subset only
+- torchvision.transforms.v2 RandomAffine and tv_tensors.KeyPoints have stub mismatches requiring type: ignore — runtime behavior is correct
+
 From 33-01 execution:
 - Detection dataclass has no centroid field; DirectPoseBackend derives centroid from bbox via hasattr guard — same pattern as association/stage.py
 - CubicSpline falls back to linear interp1d when < 4 unique t-values visible, preventing scipy ValueError on partial visibility
@@ -128,5 +135,5 @@ From 33-01 execution:
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 33-02-PLAN.md (Confidence-Weighted Reconstruction)
+Stopped at: Completed 33.1-01-PLAN.md (Keypoint Training Data Augmentation)
 Resume file: None

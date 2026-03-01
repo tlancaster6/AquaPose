@@ -16,6 +16,7 @@ from aquapose.engine import (
 )
 from aquapose.engine.pipeline import build_stages
 from aquapose.training.cli import train_group
+from aquapose.training.prep import prep_group
 
 # ---------------------------------------------------------------------------
 # CLI definition
@@ -186,6 +187,7 @@ def init_config(name: str, synthetic: bool) -> None:
 
 
 cli.add_command(train_group)
+cli.add_command(prep_group)
 
 
 def main() -> None:

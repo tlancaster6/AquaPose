@@ -10,6 +10,7 @@ from .datasets import (
     stratified_split,
 )
 from .pose import KeypointDataset, train_pose
+from .prep import prep_group
 from .unet import train_unet
 from .yolo_obb import train_yolo_obb
 
@@ -21,6 +22,7 @@ __all__ = [
     "MetricsLogger",
     "apply_augmentation",
     "make_loader",
+    "prep_group",
     "save_best_and_last",
     "stratified_split",
     "train_pose",

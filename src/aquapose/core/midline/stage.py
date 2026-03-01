@@ -48,27 +48,40 @@ class MidlineStage:
 
     Calibration data is loaded at construction for undistortion map computation.
 
+    Supports two backends:
+
+    - ``"segment_then_extract"`` (default): Uses *weights_path* for U-Net
+      weights, *confidence_threshold*, *n_points*, *min_area*.
+    - ``"direct_pose"``: Uses *midline_config.keypoint_weights_path* for
+      keypoint model weights, plus *keypoint_confidence_floor*,
+      *keypoint_t_values*, *min_observed_keypoints* from *midline_config*.
+
     Args:
         video_dir: Directory containing per-camera video files.
         calibration_path: Path to the AquaCal calibration JSON file.
-        weights_path: Path to U-Net model weights file. Raises FileNotFoundError
-            if the path does not exist (None uses pretrained ImageNet encoder).
-        confidence_threshold: Minimum confidence for mask acceptance.
-        backend: Backend kind -- "segment_then_extract" (default) or
-            "direct_pose" (raises NotImplementedError).
-        device: PyTorch device string (e.g. "cuda", "cpu").
+        weights_path: Path to U-Net model weights file (segment_then_extract
+            backend). Raises FileNotFoundError if path does not exist.
+            None uses pretrained ImageNet encoder.
+        confidence_threshold: Minimum confidence for mask acceptance
+            (segment_then_extract backend).
+        backend: Backend kind -- ``"segment_then_extract"`` (default) or
+            ``"direct_pose"``.
+        device: PyTorch device string (e.g. ``"cuda"``, ``"cpu"``).
         n_points: Number of midline points per detection.
-        min_area: Minimum mask area (pixels) to attempt midline extraction.
+        min_area: Minimum mask area (pixels) to attempt midline extraction
+            (segment_then_extract backend).
         lut_config: Optional LUT configuration for ForwardLUT loading (needed
             for orientation resolution). None skips orientation resolution.
         midline_config: Optional MidlineConfig-like object with orientation
-            weights (speed_threshold, orientation_weight_*). None uses defaults.
+            weights (speed_threshold, orientation_weight_*) and direct_pose
+            fields (keypoint_weights_path, keypoint_t_values,
+            keypoint_confidence_floor, min_observed_keypoints). None uses
+            defaults.
 
     Raises:
-        FileNotFoundError: If *video_dir*, *calibration_path*, or U-Net weights
-            do not exist.
+        FileNotFoundError: If *video_dir*, *calibration_path*, or required
+            weights files do not exist.
         ValueError: If no valid camera videos are found.
-        NotImplementedError: If *backend* is ``"direct_pose"``.
 
     """
 
@@ -134,14 +147,51 @@ class MidlineStage:
             raise ValueError("No cameras matched between video_dir and calibration.")
 
         # Eagerly create backend (fail-fast on missing weights, unsupported kind)
-        self._backend = get_backend(
-            backend,
-            weights_path=weights_path,
-            confidence_threshold=confidence_threshold,
-            n_points=n_points,
-            min_area=min_area,
-            device=device,
-        )
+        if backend == "direct_pose":
+            # Extract direct_pose-specific fields from midline_config
+            kp_weights = (
+                midline_config.keypoint_weights_path
+                if midline_config is not None
+                and hasattr(midline_config, "keypoint_weights_path")
+                else None
+            )
+            kp_t_values = (
+                midline_config.keypoint_t_values
+                if midline_config is not None
+                and hasattr(midline_config, "keypoint_t_values")
+                else None
+            )
+            kp_conf_floor = (
+                midline_config.keypoint_confidence_floor
+                if midline_config is not None
+                and hasattr(midline_config, "keypoint_confidence_floor")
+                else 0.1
+            )
+            kp_min_observed = (
+                midline_config.min_observed_keypoints
+                if midline_config is not None
+                and hasattr(midline_config, "min_observed_keypoints")
+                else 3
+            )
+            self._backend = get_backend(
+                "direct_pose",
+                weights_path=kp_weights,
+                device=device,
+                n_points=n_points,
+                n_keypoints=6,
+                keypoint_t_values=kp_t_values,
+                confidence_floor=kp_conf_floor,
+                min_observed_keypoints=kp_min_observed,
+            )
+        else:
+            self._backend = get_backend(
+                backend,
+                weights_path=weights_path,
+                confidence_threshold=confidence_threshold,
+                n_points=n_points,
+                min_area=min_area,
+                device=device,
+            )
 
     def run(self, context: PipelineContext) -> PipelineContext:
         """Run midline extraction across all cameras for all frames.

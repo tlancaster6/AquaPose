@@ -62,19 +62,21 @@ class DetectionConfig:
 class MidlineConfig:
     """Config for the Midline stage (Stage 2).
 
-    The Midline stage uses a segment-then-extract backend: it runs U-Net
-    segmentation internally to produce binary masks, then extracts 15-point
-    2D midlines with half-widths from those masks. Both segmentation and
-    midline extraction are configured here.
+    The Midline stage supports two backends: ``"segment_then_extract"`` (U-Net
+    segmentation + skeletonization) and ``"direct_pose"`` (keypoint regression).
+    Both segmentation and midline extraction are configured here.
 
     Attributes:
         confidence_threshold: Minimum confidence for mask acceptance by the
             segmentation backend.
-        weights_path: Path to U-Net model weights file (None = use default/pretrained).
-        backend: Midline backend to use. Currently only "segment_then_extract"
-            is implemented; "direct_pose" is a planned stub.
+        weights_path: Path to U-Net model weights file for the
+            ``"segment_then_extract"`` backend. ``None`` uses the pretrained
+            ImageNet encoder.
+        backend: Midline backend to use. ``"segment_then_extract"`` (default)
+            or ``"direct_pose"`` (keypoint regression).
         n_points: Number of midline points to produce per detection.
-        min_area: Minimum mask area (pixels) required to attempt midline extraction.
+        min_area: Minimum mask area (pixels) required to attempt midline extraction
+            (``"segment_then_extract"`` only).
         detection_tolerance: Maximum pixel distance for matching a tracklet
             centroid to a detection. OC-SORT Kalman predictions can drift
             10-30px from raw centroids during coast/recovery. Default 50.0.
@@ -86,6 +88,14 @@ class MidlineConfig:
             Default 0.5.
         orientation_weight_temporal: Weight for temporal prior signal.
             Default 0.3.
+        keypoint_weights_path: Path to ``_PoseModel`` keypoint weights (.pth)
+            for the ``"direct_pose"`` backend. ``None`` means not configured.
+        keypoint_t_values: Per-keypoint arc-fraction values in [0, 1] from nose
+            (0.0) to tail (1.0). If ``None``, defaults to uniform spacing.
+        keypoint_confidence_floor: Minimum per-keypoint confidence to treat as
+            visible in the ``"direct_pose"`` backend. Default 0.1.
+        min_observed_keypoints: Minimum number of visible keypoints required to
+            fit the spline in the ``"direct_pose"`` backend. Default 3.
     """
 
     confidence_threshold: float = 0.5
@@ -98,6 +108,11 @@ class MidlineConfig:
     orientation_weight_geometric: float = 1.0
     orientation_weight_velocity: float = 0.5
     orientation_weight_temporal: float = 0.3
+    # direct_pose backend fields
+    keypoint_weights_path: str | None = None
+    keypoint_t_values: list[float] | None = None
+    keypoint_confidence_floor: float = 0.1
+    min_observed_keypoints: int = 3
 
 
 @dataclass(frozen=True)

@@ -27,6 +27,9 @@ __all__ = ["MidlineStage"]
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_N_KEYPOINTS = 6
+"""Number of anatomical keypoints for the direct_pose backend model."""
+
 
 class MidlineStage:
     """Stage 4: Segments detections and extracts 2D midlines, populates context.
@@ -149,39 +152,20 @@ class MidlineStage:
         # Eagerly create backend (fail-fast on missing weights, unsupported kind)
         if backend == "direct_pose":
             # Extract direct_pose-specific fields from midline_config
-            kp_weights = (
-                midline_config.keypoint_weights_path
-                if midline_config is not None
-                and hasattr(midline_config, "keypoint_weights_path")
-                else None
-            )
-            kp_t_values = (
-                midline_config.keypoint_t_values
-                if midline_config is not None
-                and hasattr(midline_config, "keypoint_t_values")
-                else None
-            )
-            kp_conf_floor = (
-                midline_config.keypoint_confidence_floor
-                if midline_config is not None
-                and hasattr(midline_config, "keypoint_confidence_floor")
-                else 0.1
-            )
-            kp_min_observed = (
-                midline_config.min_observed_keypoints
-                if midline_config is not None
-                and hasattr(midline_config, "min_observed_keypoints")
-                else 3
-            )
+            mc = midline_config
             self._backend = get_backend(
                 "direct_pose",
-                weights_path=kp_weights,
+                weights_path=mc.keypoint_weights_path if mc is not None else None,
                 device=device,
                 n_points=n_points,
-                n_keypoints=6,
-                keypoint_t_values=kp_t_values,
-                confidence_floor=kp_conf_floor,
-                min_observed_keypoints=kp_min_observed,
+                n_keypoints=mc.n_keypoints if mc is not None else _DEFAULT_N_KEYPOINTS,
+                keypoint_t_values=mc.keypoint_t_values if mc is not None else None,
+                confidence_floor=(
+                    mc.keypoint_confidence_floor if mc is not None else 0.1
+                ),
+                min_observed_keypoints=(
+                    mc.min_observed_keypoints if mc is not None else 3
+                ),
             )
         else:
             self._backend = get_backend(

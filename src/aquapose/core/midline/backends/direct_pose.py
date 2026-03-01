@@ -142,8 +142,6 @@ class DirectPoseBackend:
             detection. Midline is None if fewer than min_observed_keypoints
             are above confidence_floor.
         """
-        import torch
-
         annotated: dict[str, list[AnnotatedDetection]] = {}
 
         for cam_id in camera_ids:
@@ -162,7 +160,6 @@ class DirectPoseBackend:
                     frame=frame,
                     cam_id=cam_id,
                     frame_idx=frame_idx,
-                    torch=torch,
                 )
                 cam_annotated.append(
                     AnnotatedDetection(
@@ -185,7 +182,6 @@ class DirectPoseBackend:
         frame: np.ndarray,
         cam_id: str,
         frame_idx: int,
-        torch: Any,
     ) -> Midline2D | None:
         """Run inference on a single detection and return a Midline2D or None.
 
@@ -206,12 +202,12 @@ class DirectPoseBackend:
             frame: Full undistorted frame (BGR uint8).
             cam_id: Camera identifier for metadata.
             frame_idx: Frame index for metadata.
-            torch: The torch module (passed to avoid repeated imports).
 
         Returns:
             Midline2D with n_points points and per-point confidence, or None
             if fewer than min_observed_keypoints are visible.
         """
+        import torch
         from scipy.interpolate import CubicSpline, interp1d
 
         # 1. Extract affine crop

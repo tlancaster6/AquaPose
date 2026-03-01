@@ -90,6 +90,8 @@ class MidlineConfig:
             Default 0.3.
         keypoint_weights_path: Path to ``_PoseModel`` keypoint weights (.pth)
             for the ``"direct_pose"`` backend. ``None`` means not configured.
+        n_keypoints: Number of anatomical keypoints the ``_PoseModel`` outputs.
+            Default 6. Must match the model architecture.
         keypoint_t_values: Per-keypoint arc-fraction values in [0, 1] from nose
             (0.0) to tail (1.0). If ``None``, defaults to uniform spacing.
         keypoint_confidence_floor: Minimum per-keypoint confidence to treat as
@@ -110,6 +112,7 @@ class MidlineConfig:
     orientation_weight_temporal: float = 0.3
     # direct_pose backend fields
     keypoint_weights_path: str | None = None
+    n_keypoints: int = 6
     keypoint_t_values: list[float] | None = None
     keypoint_confidence_floor: float = 0.1
     min_observed_keypoints: int = 3

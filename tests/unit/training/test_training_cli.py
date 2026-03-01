@@ -19,12 +19,11 @@ def test_train_help_lists_yolo_obb() -> None:
 
 
 def test_train_help_does_not_list_removed_commands() -> None:
-    """aquapose train --help must not list the removed unet and pose subcommands."""
+    """aquapose train --help must not list the removed unet subcommand."""
     runner = CliRunner()
     result = runner.invoke(cli, ["train", "--help"])
     assert result.exit_code == 0, result.output
     assert "unet" not in result.output
-    assert "pose" not in result.output
 
 
 def test_train_yolo_obb_help_shows_expected_flags() -> None:

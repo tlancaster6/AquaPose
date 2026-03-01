@@ -120,7 +120,7 @@ From 33-01 execution:
 
 ### Pending Todos
 
-15 pending todos — see .planning/todos/pending/
+16 pending todos — see .planning/todos/pending/
 
 ### Blockers/Concerns
 

@@ -216,7 +216,7 @@ class TestRealData:
                 },
                 "midline": {
                     "weights_path": str(unet_weights),
-                    "backend": "segment_then_extract",
+                    "backend": "segmentation",
                 },
             }
         )

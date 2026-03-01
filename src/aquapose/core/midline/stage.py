@@ -72,11 +72,11 @@ class MidlineStage:
         device: PyTorch device string (e.g. ``"cuda"``, ``"cpu"``).
         n_points: Number of midline points per detection.
         min_area: Minimum mask area (pixels) to attempt midline extraction
-            (segment_then_extract backend).
+            (segmentation backend).
         lut_config: Optional LUT configuration for ForwardLUT loading (needed
             for orientation resolution). None skips orientation resolution.
         midline_config: Optional MidlineConfig-like object with orientation
-            weights (speed_threshold, orientation_weight_*) and direct_pose
+            weights (speed_threshold, orientation_weight_*) and pose_estimation
             fields (keypoint_weights_path, keypoint_t_values,
             keypoint_confidence_floor, min_observed_keypoints). None uses
             defaults.

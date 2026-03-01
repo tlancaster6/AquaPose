@@ -628,7 +628,7 @@ class TestDataLossConfidence:
     ):
         """confidence_per_fish with all None values should use unweighted chamfer.
 
-        This simulates the segment_then_extract path where point_confidence is None
+        This simulates the segmentation backend path where point_confidence is None
         on all cameras — should produce identical output to confidence_per_fish=None.
         """
         device = torch.device("cpu")

@@ -410,3 +410,56 @@ def test_empty_project_dir_skips_resolution(tmp_path: Path) -> None:
 
     config = load_config(yaml_path=cfg_file)
     assert config.video_dir == "relative/path"
+
+
+# ---------------------------------------------------------------------------
+# 12. MidlineConfig backend validation (v3.0 naming)
+# ---------------------------------------------------------------------------
+
+
+def test_midline_config_segmentation_backend_valid() -> None:
+    """MidlineConfig(backend='segmentation') constructs without error."""
+    from aquapose.engine.config import MidlineConfig
+
+    cfg = MidlineConfig(backend="segmentation")
+    assert cfg.backend == "segmentation"
+
+
+def test_midline_config_pose_estimation_backend_valid() -> None:
+    """MidlineConfig(backend='pose_estimation') constructs without error."""
+    from aquapose.engine.config import MidlineConfig
+
+    cfg = MidlineConfig(backend="pose_estimation")
+    assert cfg.backend == "pose_estimation"
+
+
+def test_midline_config_segment_then_extract_raises() -> None:
+    """MidlineConfig(backend='segment_then_extract') raises ValueError (old name)."""
+    from aquapose.engine.config import MidlineConfig
+
+    with pytest.raises(ValueError, match="Unknown midline backend"):
+        MidlineConfig(backend="segment_then_extract")
+
+
+def test_midline_config_direct_pose_raises() -> None:
+    """MidlineConfig(backend='direct_pose') raises ValueError (old name)."""
+    from aquapose.engine.config import MidlineConfig
+
+    with pytest.raises(ValueError, match="Unknown midline backend"):
+        MidlineConfig(backend="direct_pose")
+
+
+def test_midline_config_default_backend_is_segmentation() -> None:
+    """MidlineConfig() defaults to backend='segmentation'."""
+    from aquapose.engine.config import MidlineConfig
+
+    cfg = MidlineConfig()
+    assert cfg.backend == "segmentation"
+
+
+def test_midline_config_default_keypoint_confidence_floor() -> None:
+    """MidlineConfig() defaults keypoint_confidence_floor to 0.3."""
+    from aquapose.engine.config import MidlineConfig
+
+    cfg = MidlineConfig()
+    assert cfg.keypoint_confidence_floor == pytest.approx(0.3)

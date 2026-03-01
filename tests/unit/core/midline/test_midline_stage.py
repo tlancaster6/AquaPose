@@ -1,10 +1,10 @@
-"""Interface tests for MidlineStage — Stage 2 of the AquaPose pipeline.
+"""Interface tests for MidlineStage — Stage 4 of the AquaPose pipeline.
 
 Validates:
 - MidlineStage satisfies the Stage Protocol via structural typing
 - run() correctly populates PipelineContext.annotated_detections
 - Backend registry raises ValueError for unknown kinds
-- SegmentThenExtractBackend stub instantiates and returns midline=None
+- SegmentationBackend stub instantiates and returns midline=None
 - Import boundary (ENG-07): no engine/ runtime imports in core/midline/
 """
 
@@ -20,8 +20,8 @@ import pytest
 from aquapose.core.context import PipelineContext, Stage
 from aquapose.core.midline import AnnotatedDetection, MidlineStage
 from aquapose.core.midline.backends import get_backend
-from aquapose.core.midline.backends.segment_then_extract import (
-    SegmentThenExtractBackend,
+from aquapose.core.midline.backends.segmentation import (
+    SegmentationBackend,
 )
 from aquapose.segmentation.detector import Detection
 
@@ -105,11 +105,11 @@ def test_backend_registry_unknown_raises() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_segment_then_extract_stub_returns_none_midlines() -> None:
-    """SegmentThenExtractBackend stub instantiates cleanly and returns midline=None."""
+def test_segmentation_backend_stub_returns_none_midlines() -> None:
+    """SegmentationBackend stub instantiates cleanly and returns midline=None."""
     import numpy as np
 
-    backend = SegmentThenExtractBackend()
+    backend = SegmentationBackend()
 
     det1 = Detection(bbox=(10, 10, 50, 50), mask=None, area=2500, confidence=0.9)
     det2 = Detection(bbox=(60, 60, 30, 30), mask=None, area=900, confidence=0.8)
@@ -139,8 +139,8 @@ _CORE_MIDLINE_MODULES = [
     "aquapose.core.midline.stage",
     "aquapose.core.midline.types",
     "aquapose.core.midline.backends",
-    "aquapose.core.midline.backends.segment_then_extract",
-    "aquapose.core.midline.backends.direct_pose",
+    "aquapose.core.midline.backends.segmentation",
+    "aquapose.core.midline.backends.pose_estimation",
 ]
 
 

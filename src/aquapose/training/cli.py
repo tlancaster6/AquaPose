@@ -7,6 +7,27 @@ from pathlib import Path
 import click
 
 
+def _parse_input_size(value: str) -> tuple[int, int]:
+    """Parse a ``WxH`` string into a ``(width, height)`` integer tuple.
+
+    Args:
+        value: Input size string, e.g. ``"128x64"``.
+
+    Returns:
+        ``(width, height)`` tuple.
+
+    Raises:
+        click.BadParameter: If the string cannot be parsed.
+    """
+    try:
+        w_str, h_str = value.lower().split("x")
+        return (int(w_str), int(h_str))
+    except (ValueError, AttributeError) as err:
+        raise click.BadParameter(
+            f"Invalid input size {value!r}. Expected format: WxH (e.g. 128x64)"
+        ) from err
+
+
 @click.group("train")
 def train_group() -> None:
     """Train AquaPose models."""
@@ -39,6 +60,12 @@ def train_group() -> None:
     "--device", default=None, type=str, help="Torch device (auto-detect if omitted)."
 )
 @click.option("--num-workers", default=4, type=int, help="DataLoader workers.")
+@click.option(
+    "--input-size",
+    default="128x64",
+    type=str,
+    help="Input size as WxH (e.g. 128x64).",
+)
 def unet(
     data_dir: str,
     output_dir: str,
@@ -49,10 +76,12 @@ def unet(
     patience: int,
     device: str | None,
     num_workers: int,
+    input_size: str,
 ) -> None:
     """Train U-Net binary segmentation model."""
     from .unet import train_unet
 
+    parsed_size = _parse_input_size(input_size)
     best_path = train_unet(
         data_dir=Path(data_dir),
         output_dir=Path(output_dir),
@@ -63,6 +92,7 @@ def unet(
         patience=patience,
         num_workers=num_workers,
         device=device,
+        input_size=parsed_size,
     )
     click.echo(f"Training complete. Best model: {best_path}")
 
@@ -163,6 +193,12 @@ def yolo_obb(
 @click.option(
     "--n-keypoints", default=6, type=int, help="Number of anatomical keypoints."
 )
+@click.option(
+    "--input-size",
+    default="128x64",
+    type=str,
+    help="Input size as WxH (e.g. 128x64).",
+)
 def pose(
     data_dir: str,
     output_dir: str,
@@ -176,10 +212,12 @@ def pose(
     backbone_weights: str | None,
     unfreeze: bool,
     n_keypoints: int,
+    input_size: str,
 ) -> None:
     """Train pose/keypoint regression model."""
     from .pose import train_pose
 
+    parsed_size = _parse_input_size(input_size)
     best_path = train_pose(
         data_dir=Path(data_dir),
         output_dir=Path(output_dir),
@@ -193,5 +231,6 @@ def pose(
         backbone_weights=Path(backbone_weights) if backbone_weights else None,
         unfreeze=unfreeze,
         n_keypoints=n_keypoints,
+        input_size=parsed_size,
     )
     click.echo(f"Training complete. Best model: {best_path}")

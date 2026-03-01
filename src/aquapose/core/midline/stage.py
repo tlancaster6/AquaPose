@@ -100,6 +100,7 @@ class MidlineStage:
         min_area: int = 300,
         lut_config: Any | None = None,
         midline_config: Any | None = None,
+        crop_size: tuple[int, int] = (128, 64),
     ) -> None:
         from aquapose.calibration.loader import (
             compute_undistortion_maps,
@@ -166,6 +167,7 @@ class MidlineStage:
                 min_observed_keypoints=(
                     mc.min_observed_keypoints if mc is not None else 3
                 ),
+                crop_size=crop_size,
             )
         else:
             self._backend = get_backend(

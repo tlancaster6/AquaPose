@@ -15,8 +15,8 @@ from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
 
 from .crop import CropRegion
 
-# Fixed input size for UNet training and inference
-UNET_INPUT_SIZE = 128
+# Fixed input size (width, height) for UNet training and inference
+UNET_INPUT_SIZE: tuple[int, int] = (128, 64)
 
 
 @dataclass
@@ -195,28 +195,28 @@ class UNetSegmentor:
 
         self._model.eval()
         device = next(self._model.parameters()).device
-        sz = UNET_INPUT_SIZE
+        sz_w, sz_h = UNET_INPUT_SIZE
 
         # Resize and convert crops to batched tensor
         tensors: list[torch.Tensor] = []
         for crop in crops:
             rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-            resized = cv2.resize(rgb, (sz, sz), interpolation=cv2.INTER_LINEAR)
+            resized = cv2.resize(rgb, (sz_w, sz_h), interpolation=cv2.INTER_LINEAR)
             t = torch.from_numpy(resized).permute(2, 0, 1).float() / 255.0
             tensors.append(t)
 
         batch = torch.stack(tensors).to(device)
 
         with torch.no_grad():
-            probs = self._model(batch)  # (B, 1, 128, 128)
+            probs = self._model(batch)  # (B, 1, sz_h, sz_w)
 
         results: list[list[SegmentationResult]] = []
         for i, (crop, region) in enumerate(zip(crops, crop_regions, strict=True)):
-            prob_map = probs[i, 0].cpu().numpy()  # (128, 128)
-            binary_128 = (prob_map > 0.5).astype(np.uint8)
+            prob_map = probs[i, 0].cpu().numpy()  # (sz_h, sz_w)
+            binary_model = (prob_map > 0.5).astype(np.uint8)
 
             # Check confidence: mean probability of foreground pixels
-            fg_pixels = prob_map[binary_128 == 1]
+            fg_pixels = prob_map[binary_model == 1]
             if (
                 fg_pixels.size == 0
                 or float(fg_pixels.mean()) < self._confidence_threshold
@@ -228,12 +228,14 @@ class UNetSegmentor:
 
             # Resize mask back to original crop dimensions
             crop_h, crop_w = crop.shape[:2]
-            if (crop_h, crop_w) == (sz, sz):
-                binary_crop = binary_128 * 255
+            if (crop_h, crop_w) == (sz_h, sz_w):
+                binary_crop = binary_model * 255
             else:
                 binary_crop = (
                     cv2.resize(
-                        binary_128, (crop_w, crop_h), interpolation=cv2.INTER_NEAREST
+                        binary_model,
+                        (crop_w, crop_h),
+                        interpolation=cv2.INTER_NEAREST,
                     )
                     * 255
                 )

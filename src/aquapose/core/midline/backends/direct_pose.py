@@ -71,7 +71,7 @@ class DirectPoseBackend:
         keypoint_t_values: list[float] | None = None,
         confidence_floor: float = 0.1,
         min_observed_keypoints: int = 3,
-        crop_size: tuple[int, int] = (128, 128),
+        crop_size: tuple[int, int] = (128, 64),
         **kwargs: Any,
     ) -> None:
         import torch

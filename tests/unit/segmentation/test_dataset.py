@@ -439,8 +439,8 @@ class TestBinaryMaskDatasetBasic:
         ds = BinaryMaskDataset(coco_path, image_root)
         image, mask = ds[0]
 
-        assert image.shape == (3, 128, 128)
-        assert mask.shape == (1, 128, 128)
+        assert image.shape == (3, 64, 128)
+        assert mask.shape == (1, 64, 128)
 
     def test_image_tensor_is_float_in_zero_one(self, tmp_path: Path) -> None:
         coco_path, image_root = _create_coco_fixture(tmp_path)
@@ -500,8 +500,8 @@ class TestBinaryMaskDatasetNegative:
         ds = BinaryMaskDataset(coco_path, images_dir)
         image, mask = ds[0]
 
-        assert image.shape == (3, 128, 128)
-        assert mask.shape == (1, 128, 128)
+        assert image.shape == (3, 64, 128)
+        assert mask.shape == (1, 64, 128)
         assert mask.sum() == 0.0
 
 
@@ -514,8 +514,8 @@ class TestBinaryMaskDatasetAugmentation:
 
         for _ in range(5):
             image, mask = ds[0]
-            assert image.shape == (3, 128, 128)
-            assert mask.shape == (1, 128, 128)
+            assert image.shape == (3, 64, 128)
+            assert mask.shape == (1, 64, 128)
             assert image.dtype == torch.float32
             assert mask.dtype == torch.float32
 
@@ -531,7 +531,7 @@ class TestBinaryMaskDatasetMergesMasks:
         _, mask = ds[0]
 
         # Single binary mask (merged), not multi-instance
-        assert mask.shape == (1, 128, 128)
+        assert mask.shape == (1, 64, 128)
         assert mask.sum() > 0
 
 

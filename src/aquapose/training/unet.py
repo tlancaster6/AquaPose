@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import Subset
 
-from aquapose.segmentation.model import UNetSegmentor
+from aquapose.segmentation.model import UNET_INPUT_SIZE, UNetSegmentor
 
 from .common import EarlyStopping, MetricsLogger, make_loader, save_best_and_last
 from .datasets import BinaryMaskDataset, stratified_split
@@ -103,6 +103,7 @@ def train_unet(
     patience: int = 20,
     num_workers: int = 4,
     device: str | None = None,
+    input_size: tuple[int, int] = UNET_INPUT_SIZE,
 ) -> Path:
     """Train U-Net on COCO-format fish crop annotations.
 

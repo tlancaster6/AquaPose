@@ -310,7 +310,7 @@ def test_keypoint_dataset_clean_returns_3tuple(coco_keypoint_dir: Path) -> None:
     item = ds[0]
     assert len(item) == 3, "Expected 3-tuple (image, keypoints, visibility)"
     image, keypoints, visibility = item
-    assert image.shape == (3, 128, 128), f"Image shape: {image.shape}"
+    assert image.shape == (3, 64, 128), f"Image shape: {image.shape}"
     assert keypoints.shape == (_N_KP * 2,), f"Keypoints shape: {keypoints.shape}"
     assert visibility.shape == (_N_KP,), f"Visibility shape: {visibility.shape}"
     assert image.dtype == torch.float32
@@ -329,7 +329,7 @@ def test_keypoint_dataset_augmented_returns_3tuple(coco_keypoint_dir: Path) -> N
     item = ds[0]
     assert len(item) == 3, "Expected 3-tuple (image, keypoints, visibility)"
     image, keypoints, visibility = item
-    assert image.shape == (3, 128, 128), f"Image shape: {image.shape}"
+    assert image.shape == (3, 64, 128), f"Image shape: {image.shape}"
     assert keypoints.shape == (_N_KP * 2,), f"Keypoints shape: {keypoints.shape}"
     assert visibility.shape == (_N_KP,), f"Visibility shape: {visibility.shape}"
 

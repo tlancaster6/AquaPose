@@ -112,6 +112,7 @@ def _build_backend_with_model(
             confidence_floor=confidence_floor,
             min_observed_keypoints=min_observed_keypoints,
             keypoint_t_values=keypoint_t_values,
+            crop_size=(128, 64),
         )
 
     # Always set the model directly on the backend
@@ -202,14 +203,21 @@ def test_output_always_n_sample_points(tmp_path: Path) -> None:
     assert ml.point_confidence.shape == (n_points,)
 
 
-def test_partial_visibility_nan_padding(tmp_path: Path) -> None:
-    """Keypoints below confidence_floor -> NaN-padded and confidence=0 outside arc span."""
+def test_partial_visibility_no_loops(tmp_path: Path) -> None:
+    """Keypoints below confidence_floor are excluded; remaining keypoints produce a smooth midline.
+
+    After the x-sorting fix, visible keypoints are sorted by crop-space x-coordinate
+    and assigned uniform t-values [0, 1].  This means:
+    - The full span [0, 1] is always observed → no NaN-padding from arc-span gaps.
+    - The resulting midline covers all n_points without NaN holes.
+    - Keypoints excluded by the confidence floor simply don't participate.
+    """
     n_keypoints = 6
     n_points = 15
 
     # Only the middle 3 keypoints (indices 2,3,4) are visible (near centre)
     # kp0,1 -> at corner (0,0) -> conf=0 (edge)
-    # kp2,3,4 -> near centre -> high conf
+    # kp2 at x=0.45, kp3 at x=0.50, kp4 at x=0.55 -> near centre -> high conf
     # kp5 -> at corner (1,1) -> conf=0 (edge)
     coords = [
         0.0,
@@ -252,35 +260,20 @@ def test_partial_visibility_nan_padding(tmp_path: Path) -> None:
     ml = result["cam1"][0].midline
     assert ml is not None
 
-    t_eval = np.linspace(0.0, 1.0, n_points)
-
-    # Visible keypoints are kp2 (t=0.4), kp3 (t=0.6), kp4 (t=0.8)
-    # -> t_min_obs=0.4, t_max_obs=0.8
-    below_span = t_eval < 0.4
-    above_span = t_eval > 0.8
-
-    # Points outside arc-span should be NaN
-    assert np.all(np.isnan(ml.points[below_span])), (
-        "Points below t_min_obs should be NaN"
+    # After x-sort fix: visible kp2,kp3,kp4 are sorted by x-coordinate and
+    # assigned t-values [0.0, 0.5, 1.0].  The full span [0, 1] is observed,
+    # so no NaN-padding occurs — all n_points are valid.
+    assert ml.points.shape == (n_points, 2), (
+        f"Expected ({n_points}, 2), got {ml.points.shape}"
     )
-    assert np.all(np.isnan(ml.points[above_span])), (
-        "Points above t_max_obs should be NaN"
+    assert not np.any(np.isnan(ml.points)), (
+        "All midline points should be valid (no NaN) when visible keypoints span [0,1]"
     )
-
-    # Confidence outside arc-span should be 0
-    assert np.all(ml.point_confidence[below_span] == 0.0), (
-        "Confidence below t_min_obs should be 0"
+    assert ml.point_confidence is not None
+    assert ml.point_confidence.shape == (n_points,)
+    assert np.all(ml.point_confidence > 0.0), (
+        "All point confidence should be positive when full span is covered"
     )
-    assert np.all(ml.point_confidence[above_span] == 0.0), (
-        "Confidence above t_max_obs should be 0"
-    )
-
-    # Inside span: points should be valid (not NaN)
-    inside_span = ~below_span & ~above_span
-    if np.any(inside_span):
-        assert not np.any(np.isnan(ml.points[inside_span])), (
-            "Points inside arc-span should not be NaN"
-        )
 
 
 def test_below_min_observed_returns_none_midline(tmp_path: Path) -> None:

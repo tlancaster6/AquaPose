@@ -21,8 +21,8 @@ class _HasImages(Protocol):
     _images: list[dict]  # type: ignore[assignment]
 
 
-# Fixed input size for U-Net training
-UNET_INPUT_SIZE = 128
+# Fixed input size (width, height) for U-Net training
+UNET_INPUT_SIZE: tuple[int, int] = (128, 64)
 
 
 def apply_augmentation(
@@ -300,7 +300,7 @@ class BinaryMaskDataset(_CocoDataset):
         """
         img_info = self._images[idx]
         img_id = img_info["id"]
-        sz = UNET_INPUT_SIZE
+        sz_w, sz_h = UNET_INPUT_SIZE
 
         image = _load_image(
             self._image_root / img_info["file_name"],
@@ -323,8 +323,8 @@ class BinaryMaskDataset(_CocoDataset):
         else:
             merged = np.zeros((cur_h, cur_w), dtype=np.uint8)
 
-        image_resized = cv2.resize(image, (sz, sz), interpolation=cv2.INTER_LINEAR)
-        mask_resized = cv2.resize(merged, (sz, sz), interpolation=cv2.INTER_NEAREST)
+        image_resized = cv2.resize(image, (sz_w, sz_h), interpolation=cv2.INTER_LINEAR)
+        mask_resized = cv2.resize(merged, (sz_w, sz_h), interpolation=cv2.INTER_NEAREST)
 
         image_tensor = torch.from_numpy(image_resized).permute(2, 0, 1).float() / 255.0
         mask_tensor = torch.from_numpy(mask_resized).unsqueeze(0).float()

@@ -48,7 +48,7 @@ class DetectionConfig:
 
     detector_kind: str = "yolo"
     model_path: str | None = None
-    crop_size: list[int] = field(default_factory=lambda: [256, 128])
+    crop_size: list[int] = field(default_factory=lambda: [128, 64])
     extra: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:

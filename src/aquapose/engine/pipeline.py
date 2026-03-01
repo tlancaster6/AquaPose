@@ -333,6 +333,7 @@ def build_stages(config: PipelineConfig) -> list:
         min_area=config.midline.min_area,
         lut_config=config.lut,
         midline_config=config.midline,
+        crop_size=tuple(config.detection.crop_size),
     )
 
     return _truncate(

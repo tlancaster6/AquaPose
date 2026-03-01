@@ -1,8 +1,8 @@
 """Backend registry for the Midline stage.
 
 Provides a factory function that resolves midline backend kind strings to
-configured backend instances. Currently "segment_then_extract" is fully
-implemented; "direct_pose" is a stub raising NotImplementedError.
+configured backend instances. Both "segment_then_extract" and "direct_pose"
+are fully implemented.
 """
 
 from __future__ import annotations
@@ -19,12 +19,17 @@ def get_backend(kind: str, **kwargs: Any) -> object:
         kind: Backend identifier. Supported values:
 
             - ``"segment_then_extract"`` (default): U-Net segmentation then
-              skeletonization + BFS midline extraction.
-            - ``"direct_pose"``: Planned key-point regression backend (stub).
+              skeletonization + BFS midline extraction. Accepted kwargs:
+              ``weights_path``, ``confidence_threshold``, ``n_points``,
+              ``min_area``, ``device``.
+            - ``"direct_pose"``: Keypoint regression backend. Uses a
+              _PoseModel (U-Net encoder + regression head) to directly predict
+              anatomical keypoints, fits a CubicSpline, and resamples to
+              n_points. Accepted kwargs: ``weights_path``, ``device``,
+              ``n_points``, ``n_keypoints``, ``keypoint_t_values``,
+              ``confidence_floor``, ``min_observed_keypoints``, ``crop_size``.
 
-        **kwargs: Forwarded to the backend constructor. For
-            ``"segment_then_extract"``, accepted kwargs are: ``weights_path``,
-            ``confidence_threshold``, ``n_points``, ``min_area``, ``device``.
+        **kwargs: Forwarded to the backend constructor.
 
     Returns:
         A configured backend instance with a
@@ -32,7 +37,7 @@ def get_backend(kind: str, **kwargs: Any) -> object:
 
     Raises:
         ValueError: If *kind* is not a recognized backend identifier.
-        NotImplementedError: If *kind* is ``"direct_pose"`` (stub).
+        FileNotFoundError: If required weights files do not exist.
     """
     if kind == "segment_then_extract":
         from aquapose.core.midline.backends.segment_then_extract import (

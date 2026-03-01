@@ -3,7 +3,7 @@
 Validates:
 - MidlineStage satisfies the Stage Protocol via structural typing
 - run() correctly populates PipelineContext.annotated_detections
-- Direct pose backend raises NotImplementedError
+- DirectPoseBackend constructs (no longer raises NotImplementedError)
 - Backend registry raises ValueError for unknown kinds
 - Import boundary (ENG-07): no engine/ runtime imports in core/midline/
 - Fail-fast on missing U-Net weights
@@ -92,26 +92,32 @@ def test_midline_stage_populates_annotated_detections(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_direct_pose_backend_raises() -> None:
-    """Constructing the direct pose backend raises NotImplementedError."""
+def test_backend_registry_direct_pose_constructs(tmp_path: Path) -> None:
+    """get_backend('direct_pose') returns a DirectPoseBackend instance (mocked model)."""
     from aquapose.core.midline.backends.direct_pose import DirectPoseBackend
 
-    with pytest.raises(NotImplementedError, match="planned alternative backend"):
-        DirectPoseBackend()
+    fake_weights = tmp_path / "pose_model.pth"
+    fake_weights.write_bytes(b"fake")
 
+    mock_model = MagicMock()
+    mock_model.to.return_value = mock_model
+    mock_model.eval.return_value = mock_model
 
-def test_direct_pose_backend_process_frame_raises() -> None:
-    """DirectPoseBackend.process_frame raises NotImplementedError.
+    with (
+        patch(
+            "aquapose.training.pose._PoseModel",
+            return_value=mock_model,
+        ),
+        patch("torch.load", return_value={}),
+    ):
+        backend = get_backend(
+            "direct_pose",
+            weights_path=str(fake_weights),
+            device="cpu",
+        )
 
-    Tests the process_frame stub directly without going through the registry,
-    by patching __init__ to not raise so the instance can be created.
-    """
-    from aquapose.core.midline.backends.direct_pose import DirectPoseBackend
-
-    with patch.object(DirectPoseBackend, "__init__", return_value=None):
-        instance = DirectPoseBackend()  # type: ignore[call-arg]
-    with pytest.raises(NotImplementedError):
-        instance.process_frame(0, {}, {}, [])
+    assert isinstance(backend, DirectPoseBackend)
+    assert hasattr(backend, "process_frame")
 
 
 # ---------------------------------------------------------------------------
@@ -123,12 +129,6 @@ def test_backend_registry_unknown_raises() -> None:
     """get_backend raises ValueError for an unrecognized backend kind."""
     with pytest.raises(ValueError, match="Unknown midline backend kind"):
         get_backend("nonexistent_backend")
-
-
-def test_backend_registry_direct_pose_raises() -> None:
-    """get_backend('direct_pose') propagates NotImplementedError from the stub."""
-    with pytest.raises(NotImplementedError):
-        get_backend("direct_pose")
 
 
 def test_backend_registry_segment_then_extract_constructs(tmp_path: Path) -> None:

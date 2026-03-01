@@ -10,14 +10,6 @@ from click.testing import CliRunner
 from aquapose.cli import cli
 
 
-def test_train_help_lists_unet() -> None:
-    """aquapose train --help should list the unet subcommand."""
-    runner = CliRunner()
-    result = runner.invoke(cli, ["train", "--help"])
-    assert result.exit_code == 0, result.output
-    assert "unet" in result.output
-
-
 def test_train_help_lists_yolo_obb() -> None:
     """aquapose train --help should list the yolo-obb subcommand."""
     runner = CliRunner()
@@ -26,32 +18,13 @@ def test_train_help_lists_yolo_obb() -> None:
     assert "yolo-obb" in result.output
 
 
-def test_train_help_lists_pose() -> None:
-    """aquapose train --help should list the pose subcommand."""
+def test_train_help_does_not_list_removed_commands() -> None:
+    """aquapose train --help must not list the removed unet and pose subcommands."""
     runner = CliRunner()
     result = runner.invoke(cli, ["train", "--help"])
     assert result.exit_code == 0, result.output
-    assert "pose" in result.output
-
-
-def test_train_unet_help_shows_expected_flags() -> None:
-    """aquapose train unet --help should show all required flags."""
-    runner = CliRunner()
-    result = runner.invoke(cli, ["train", "unet", "--help"])
-    assert result.exit_code == 0, result.output
-    expected_flags = [
-        "--data-dir",
-        "--output-dir",
-        "--epochs",
-        "--device",
-        "--val-split",
-        "--batch-size",
-        "--lr",
-        "--patience",
-        "--num-workers",
-    ]
-    for flag in expected_flags:
-        assert flag in result.output, f"Expected flag {flag!r} not found in help output"
+    assert "unet" not in result.output
+    assert "pose" not in result.output
 
 
 def test_train_yolo_obb_help_shows_expected_flags() -> None:
@@ -71,44 +44,6 @@ def test_train_yolo_obb_help_shows_expected_flags() -> None:
     ]
     for flag in expected_flags:
         assert flag in result.output, f"Expected flag {flag!r} not found in help output"
-
-
-def test_train_pose_help_shows_expected_flags() -> None:
-    """aquapose train pose --help should show all required flags."""
-    runner = CliRunner()
-    result = runner.invoke(cli, ["train", "pose", "--help"])
-    assert result.exit_code == 0, result.output
-    expected_flags = [
-        "--data-dir",
-        "--output-dir",
-        "--epochs",
-        "--device",
-        "--val-split",
-        "--batch-size",
-        "--lr",
-        "--patience",
-        "--num-workers",
-        "--backbone-weights",
-        "--unfreeze",
-        "--n-keypoints",
-    ]
-    for flag in expected_flags:
-        assert flag in result.output, f"Expected flag {flag!r} not found in help output"
-
-
-def test_all_subcommands_share_consistent_flags() -> None:
-    """All three subcommands must share --data-dir, --output-dir, --epochs, --device, --val-split."""
-    runner = CliRunner()
-    shared_flags = ["--data-dir", "--output-dir", "--epochs", "--device", "--val-split"]
-    subcommands = ["unet", "yolo-obb", "pose"]
-
-    for subcmd in subcommands:
-        result = runner.invoke(cli, ["train", subcmd, "--help"])
-        assert result.exit_code == 0, f"{subcmd} help failed: {result.output}"
-        for flag in shared_flags:
-            assert flag in result.output, (
-                f"Shared flag {flag!r} missing from 'train {subcmd} --help'"
-            )
 
 
 def _get_training_module_imports(filepath: Path) -> list[tuple[int, str]]:

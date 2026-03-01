@@ -59,7 +59,7 @@ def test_load_config_yaml_override() -> None:
     """
     yaml_content = {
         "n_animals": 3,
-        "detection": {"detector_kind": "mog2"},
+        "detection": {"detector_kind": "yolo_obb"},
         "tracking": {"max_coast_frames": 15},
     }
 
@@ -73,7 +73,7 @@ def test_load_config_yaml_override() -> None:
         tmp_path.unlink(missing_ok=True)
 
     # Overridden fields
-    assert config.detection.detector_kind == "mog2"
+    assert config.detection.detector_kind == "yolo_obb"
     assert config.tracking.max_coast_frames == 15
 
     # Non-overridden fields retain defaults
@@ -89,10 +89,10 @@ def test_load_config_yaml_override() -> None:
 def test_load_config_cli_overrides() -> None:
     """CLI overrides (dot-notation) apply to nested config fields."""
     config = load_config(
-        cli_overrides={"n_animals": 3, "detection.detector_kind": "mog2"}
+        cli_overrides={"n_animals": 3, "detection.detector_kind": "yolo_obb"}
     )
 
-    assert config.detection.detector_kind == "mog2"
+    assert config.detection.detector_kind == "yolo_obb"
     # Non-overridden fields retain defaults
     assert config.tracking.max_coast_frames == 30
 
@@ -100,10 +100,10 @@ def test_load_config_cli_overrides() -> None:
 def test_load_config_cli_overrides_nested_dict() -> None:
     """CLI overrides expressed as nested dicts also work."""
     config = load_config(
-        cli_overrides={"n_animals": 3, "detection": {"detector_kind": "mog2"}}
+        cli_overrides={"n_animals": 3, "detection": {"detector_kind": "yolo_obb"}}
     )
 
-    assert config.detection.detector_kind == "mog2"
+    assert config.detection.detector_kind == "yolo_obb"
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +113,7 @@ def test_load_config_cli_overrides_nested_dict() -> None:
 
 def test_cli_overrides_trump_yaml() -> None:
     """When both YAML and CLI specify the same field, CLI wins."""
-    yaml_content = {"n_animals": 3, "detection": {"detector_kind": "mog2"}}
+    yaml_content = {"n_animals": 3, "detection": {"detector_kind": "yolo_obb"}}
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as tmp:
         yaml.dump(yaml_content, tmp)
@@ -127,13 +127,30 @@ def test_cli_overrides_trump_yaml() -> None:
     finally:
         tmp_path.unlink(missing_ok=True)
 
-    # CLI "yolo" beats YAML "mog2"
+    # CLI "yolo" beats YAML "yolo_obb"
     assert config.detection.detector_kind == "yolo"
 
 
 # ---------------------------------------------------------------------------
 # 5. Frozen config raises on mutation
 # ---------------------------------------------------------------------------
+
+
+def test_detector_kind_mog2_raises_value_error() -> None:
+    """DetectionConfig with detector_kind='mog2' raises ValueError."""
+    from aquapose.engine.config import DetectionConfig
+
+    with pytest.raises(ValueError, match="Unknown detector_kind") as exc_info:
+        DetectionConfig(detector_kind="mog2")
+    assert "mog2" in str(exc_info.value)
+
+
+def test_detector_kind_yolo_obb_valid() -> None:
+    """DetectionConfig with detector_kind='yolo_obb' is accepted."""
+    from aquapose.engine.config import DetectionConfig
+
+    cfg = DetectionConfig(detector_kind="yolo_obb")
+    assert cfg.detector_kind == "yolo_obb"
 
 
 def test_frozen_config_raises_on_mutation() -> None:

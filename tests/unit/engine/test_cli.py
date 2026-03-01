@@ -156,7 +156,7 @@ class TestCLIExecution:
                 "--config",
                 str(config_file),
                 "--set",
-                "detection.detector_kind=mog2",
+                "detection.detector_kind=yolo",
                 "--set",
                 "tracking.max_age=10",
             ],
@@ -164,7 +164,7 @@ class TestCLIExecution:
         overrides = mock_pipeline["load_config"].call_args.kwargs.get(
             "cli_overrides", {}
         )
-        assert overrides.get("detection.detector_kind") == "mog2"
+        assert overrides.get("detection.detector_kind") == "yolo"
         assert overrides.get("tracking.max_age") == 10
 
     def test_pipeline_constructed_with_stages_and_observers(

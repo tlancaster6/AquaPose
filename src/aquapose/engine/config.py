@@ -27,7 +27,7 @@ class DetectionConfig:
     """Config for the detection stage.
 
     Attributes:
-        detector_kind: Detector backend to use (e.g. "yolo", "yolo_obb", "mog2").
+        detector_kind: Detector backend to use (e.g. "yolo", "yolo_obb").
         model_path: Path to detector weights file (required for YOLO/YOLO-OBB).
             ``None`` means no path configured (caller must supply via
             ``detector_kwargs`` or construct the stage directly).
@@ -56,6 +56,13 @@ class DetectionConfig:
         # dict is mutable so we just ensure we got a dict (not None).
         if not isinstance(self.extra, dict):
             object.__setattr__(self, "extra", dict(self.extra))
+        # Validate detector_kind — only "yolo" and "yolo_obb" are supported.
+        _valid_detector_kinds = {"yolo", "yolo_obb"}
+        if self.detector_kind not in _valid_detector_kinds:
+            raise ValueError(
+                f"Unknown detector_kind: {self.detector_kind!r}. "
+                f"Available: {sorted(_valid_detector_kinds)}"
+            )
 
 
 @dataclass(frozen=True)

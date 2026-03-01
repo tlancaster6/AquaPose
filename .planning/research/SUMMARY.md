@@ -1,237 +1,232 @@
 # Project Research Summary
 
-**Project:** AquaPose v2.2 Backends
-**Domain:** 3D fish pose estimation — swappable ML backends, training infrastructure, config cleanup
-**Researched:** 2026-02-28
+**Project:** AquaPose v3.0 — Ultralytics Unification
+**Domain:** Multi-view 3D fish pose estimation — replacing custom segmentation and keypoint models with Ultralytics-native YOLO backends
+**Researched:** 2026-03-01
 **Confidence:** HIGH
 
 ## Executive Summary
 
-AquaPose v2.2 adds three capabilities to an already-shipped, production-quality pipeline: a YOLO-OBB detection backend that provides fish orientation angles directly from the detector, a keypoint regression head that replaces noisy skeletonization with direct ordered-coordinate prediction, and a unified training CLI that consolidates four disconnected scripts into one discoverable `aquapose train` command group. The existing architecture — a 3-layer event-driven system (Core → PosePipeline → Observers) with 5 pipeline stages and a frozen-dataclass config — accommodates all of these additions cleanly via its backend registry pattern and optional-field dataclass extension pattern. No new runtime dependencies are required; the only version change is bumping `ultralytics>=8.0` to `>=8.1` for OBB support.
+AquaPose v3.0 replaces two custom-trained models — a U-Net segmentor with IoU 0.623 and a custom keypoint regression head that underperformed even with augmentation — with Ultralytics-native YOLO11n-seg and YOLO11n-pose. The case for unification is compelling: `ultralytics>=8.1` is already in the dependency stack from v2.2, the training API is identical across detect/seg/pose tasks, no new pyproject.toml dependencies are required, and pretrained COCO backbone weights dramatically reduce the labeled data requirement for fine-tuning on fish. The primary deliverable is not a new capability — it is replacing fragile custom model infrastructure with a battle-tested unified training loop while improving model quality.
 
-The recommended build order follows a strict dependency hierarchy driven by the codebase's own contracts. Foundation work comes first: config cleanup (device propagation, configurable `n_sample_points`, universal `_filter_fields()`) and backward-compatible extensions to the `Detection` and `Midline2D` dataclasses must land before any new backends are written. Detection backend and keypoint model development can then proceed in parallel. Confidence-weighted triangulation depends only on the `Midline2D.point_confidence` field added in the foundation phase, so it too can proceed in parallel with the backend work. Training infrastructure is fully independent and can be developed alongside or after the backend work.
+The recommended approach is a five-phase build order driven by data availability and inference pipeline dependencies. Data preparation tooling (SAM2 masks to YOLO polygon and pose label formats) must come first so model training can run as a long background process while pipeline integration proceeds in parallel. The architectural change is narrowly scoped: only `core/midline/backends/` and `segmentation/` are touched, with `Midline2D` and `AnnotatedDetection` contracts unchanged, meaning Stages 1, 2, 3, and 5 of the pipeline are entirely unaffected.
 
-The highest-risk area is coordinate system handling: the OBB angle convention (radians, clockwise, range `[-pi/4, 3pi/4)`) differs from OpenCV's `minAreaRect` output (degrees, `(-90, 0]`), and keypoint coordinates must be transformed from crop space back to frame space before being stored in `Midline2D.points`. Both errors are silent — pipeline execution succeeds but 3D reconstruction produces garbage. The mitigation is mandatory smoke tests at each coordinate boundary before any model training begins.
+The primary risks are data quality issues, not architecture. SAM2 masks produce multi-region polygons that must be cleaned before YOLO seg training. YOLO pose label coordinates must be in full-frame-normalized space, not crop space — a silent but catastrophic error if missed. The small dataset (~150 annotated frames) requires conservative training hyperparameters and a proper temporal train/val split to avoid memorization. All three of these risks have clear, implementable prevention strategies documented in PITFALLS.md.
+
+---
 
 ## Key Findings
 
 ### Recommended Stack
 
-The v2.2 milestone requires no new top-level dependencies. All new capabilities use the existing dependency set. The only change to `pyproject.toml` is a version bump for `ultralytics` to `>=8.1` to guarantee OBB model availability. `tqdm`, useful for training progress display, is available as a transitive dependency of `ultralytics` and should be imported without being added as an explicit dependency.
+The stack requires no new dependencies. `ultralytics>=8.1` (current: 8.4.19) covers YOLO11 seg, YOLO11 pose, YOLO-OBB, and standard YOLO detection under a unified training API. YOLO11 (released September 2024) is the current recommended generation — it outperforms YOLOv8 at equal model size and uses identical annotation formats and training API calls.
 
 **Core technologies:**
-- PyTorch (latest stable): U-Net inference, keypoint regression head, YOLO — no longer pinned to 2.4.1; primary pipeline has no PyTorch3D coupling
-- ultralytics >=8.1: YOLO standard bbox and YOLO-OBB detection; OBB support added in 8.1.0
-- scikit-image >=0.22: skeletonization for pseudo-label generation, midline arc-length resampling
-- scipy >=1.13: spline fitting, Levenberg-Marquardt refinement, Hungarian assignment
-- opencv-python >=4.8: `cv2.getRotationMatrix2D` + `cv2.warpAffine` for affine crop extraction
-- click >=8.1: all CLI surface including new `aquapose train` subgroup
-- boxmot >=11.0 + leidenalg >=0.10: OC-SORT and Leiden (unchanged from v2.1)
+- `ultralytics>=8.1`: All three model types (detect, seg, pose) — one library, one training API, no additional dependencies
+- `YOLO11n-seg.pt` (2.7M params): Instance segmentation replacing custom U-Net; pretrained COCO backbone; start nano and scale up only if val IoU < 0.80
+- `YOLO11n-pose.pt` (2.9M params): Keypoint midline backend replacing custom regression head; use `kpt_shape: [6, 3]` with visibility flags; start from detect backbone (`yolo11n.pt`) since kpt_shape differs from COCO pretrained pose head
+- `opencv-python>=4.8`: Mask-to-polygon contour extraction for annotation preparation (`cv2.findContours`, connected component filtering)
+- `scikit-image>=0.22`: Skeletonization pipeline reused unchanged in the YOLO-seg backend path; also generates keypoint pseudo-labels from masks via arc-length sampling
+- `scipy>=1.13`: Spline fitting and LM refinement in the reconstruction stage — completely unchanged
 
-**What NOT to add:** albumentations (use torchvision.transforms.v2), timm (torchvision MobileNetV3-Small is sufficient), mmdet/mmpose (complex install), segmentation_models_pytorch (custom U-Net already exists), PyTorch Lightning (simple loops don't justify trainer abstraction), Pydantic (frozen dataclasses decided in v2.0).
+**What does NOT change:** PyTorch version constraints (no longer pinned to 2.4.1), SAM2 pseudo-label pipeline (generates source masks converted to YOLO format), all reconstruction and tracking libraries, all other `pyproject.toml` entries.
+
+See `STACK.md` for full annotation format specifications, training configuration parameters, and model variant selection guidance.
 
 ### Expected Features
 
-**Must have (table stakes — ship in v2.2):**
-- `YOLOOBBDetector` + `make_detector("yolo_obb", ...)` — OBB backend drop-in with `Detection.angle` field
-- `extract_obb_crop(frame, xywhr)` — returns `(crop, M_inv)` for keypoint back-projection
-- `UNetKeypointHead` — attaches to frozen MobileNetV3-Small encoder; outputs `(N_points, 3)` in crop coordinates
-- `Midline2D.point_confidence: np.ndarray | None = None` — backward-compatible; None = uniform weights
-- Confidence-weighted DLT path in `triangulation.py` — weighted when confidences present, falls back gracefully
-- `aquapose train` Click group with `unet`, `yolo-obb`, `keypoint` subcommands replacing scripts/
-- `src/aquapose/training/` module with `common.py`, `unet.py`, `yolo_obb.py`, `keypoint.py`
-- `N_SAMPLE_POINTS` moved to `ReconstructionConfig.n_points` (default 15)
-- `device: str = "cuda"` at top-level `PipelineConfig`, propagated through `build_stages()`
+The milestone delivers swappable Ultralytics backends in MidlineStage (Stage 4) with a data preparation pipeline that converts existing SAM2 pseudo-labels to YOLO-native formats.
 
-**Should have (add after core validated):**
-- Partial midline confidence gating (defer until keypoint head quality is known)
-- OBB polygon overlay in diagnostic observer
-- `init-config` CLI UX improvements (YAML schema comments)
+**Must have (table stakes):**
+- `YOLOSegMidlineBackend` — YOLO seg inference on crop, binary mask output, feeds existing unchanged skeletonization path to `Midline2D`
+- `YOLOPoseMidlineBackend` — YOLO pose inference on crop, keypoints mapped to `Midline2D(points, confidences)` with native per-keypoint confidence
+- `convert_sam_masks_to_yolo_seg()` — batch conversion of SAM2 binary masks to YOLO polygon label files
+- `generate_pose_labels_from_masks()` — SAM2 mask → skeletonize → arc-length sample 6 points → YOLO pose label with visibility=2
+- `aquapose train yolo-seg` and `aquapose train yolo-pose` CLI subcommands using Ultralytics `model.train()` API
+- Dataset YAML files for both tasks with correct `nc`, `names`, and `kpt_shape: [6, 3]` for pose
+- `make_midline_backend()` factory updated with `"yolo_seg"` and `"yolo_pose"` branches
+- Instance matching utility: `match_detections_to_tracks()` using IoU between YOLO result boxes and tracked bounding boxes
 
-**Defer (v2.3+):**
-- Keypoint pseudo-label auto-generation pipeline
-- OBB fine-tuning on fish-specific dataset
-- Confidence calibration (temperature scaling)
-- Multi-task joint segmentation + keypoint loss
-- Encoder fine-tuning with keypoint head (freeze encoder entirely in v2.2)
+**Should have (differentiators):**
+- Instance-aware masks from YOLO-seg: separates overlapping fish that confused the U-Net crop approach
+- Native per-keypoint confidence from YOLO-pose: flows into existing confidence-weighted DLT triangulation without custom sigmoid head architecture
+- Pretrained COCO backbone weights: dramatically reduces labeled data requirement for fish fine-tuning
+- Single unified Ultralytics training API: eliminates custom training loop maintenance
+
+**Defer to v3.1+:**
+- YOLO11 upgrade from YOLOv8 (trivial API-compatible swap; validate v3.0 first; STACK.md recommends YOLO11 directly)
+- Joint seg+pose combined inference pass (not officially supported by Ultralytics)
+- Width profile extraction from YOLO-seg masks (useful but not blocking)
+- Pose label quality filtering by skeletonizer branch count (improves training data; add after label pipeline works)
+- Human annotation refinement of a keypoint subset
 
 **Anti-features to avoid:**
-- Heatmap-based keypoint regression — 4px quantization at 128x128 is unacceptable for ~50px fish
-- `OBBDetection` subclass — breaks all isinstance checks; extend `Detection` with optional fields instead
-- Real-time 13-camera OBB inference — batch mode only per project constraints
-- Separate `aquapose-train` entrypoint — keep under unified `aquapose` CLI
+- Running YOLO-seg on pre-cropped patches per-fish (defeats instance separation; run on crop but handle letterbox correctly)
+- Using COCO pretrained pose weights directly with custom kpt_shape (head architecture mismatch — use detect backbone as base)
+- Combining seg+pose into a single joint model (not supported by Ultralytics standard API)
+- Including camera e3v8250 (wide-angle overhead) in training data (established skip from v1.0)
 
 ### Architecture Approach
 
-The v2.2 additions slot into the existing 3-layer architecture without structural changes. The backend registry pattern (`get_backend(kind, **kwargs)`) handles the new OBB detection backend and already has a stub for the direct-pose midline backend. The `training/` package is a new peer module at the `segmentation/` level — it is explicitly forbidden from importing `engine/` to avoid circular initialization. All new ML model classes live in `segmentation/` (e.g., `keypoint_model.py`), geometric utilities live in `segmentation/crop.py`, and backend orchestration lives in the appropriate `core/` backend directory.
+The 5-stage pipeline structure, PipelineContext accumulator, and all inter-stage data contracts (`Midline2D`, `AnnotatedDetection`, `Detection`) are completely unchanged. All changes are confined to `core/midline/backends/` (two new backend classes replacing two deleted ones), `segmentation/` (new `YOLOSegInferencer` class), `training/` (new prep and training wrapper modules), and three new fields in `MidlineConfig`. Stages 1, 2, 3, and 5 are unaffected.
 
-**Major components (new and modified):**
-1. `segmentation/keypoint_model.py` (NEW) — `KeypointModel`: frozen MobileNetV3-Small encoder + direct regression head outputting `(B, N, 3)` in crop coordinates
-2. `segmentation/crop.py` (EXTENDED) — `compute_obb_crop_region()`, `extract_affine_crop()`, `untransform_points_from_obb()` shared by both detection overlay and midline backend
-3. `core/detection/backends/yolo_obb.py` (NEW) — `YOLOOBBBackend` wrapping `YOLOOBBDetector`; produces `Detection` with `angle` set
-4. `core/midline/backends/direct_pose.py` (MODIFIED) — replaces `NotImplementedError` stub with full `DirectPoseBackend`
-5. `reconstruction/triangulation.py` (MODIFIED) — adds weighted DLT path scaling rows by `sqrt(point_confidence)` before SVD
-6. `engine/config.py` (MODIFIED) — `device` propagation, `n_points` in `ReconstructionConfig`, universal `_filter_fields()`
-7. `src/aquapose/training/` (NEW PACKAGE) — `TrainingConfig`, `KeypointDataset`, `train_unet`, `train_keypoint`, `train_yolo_obb`
-8. `cli.py` (EXTENDED) — `aquapose train` group, `aquapose init-config` command
+**Major components:**
 
-**Import boundary (enforced by AST pre-commit hook):**
-- `training/` → `core/`, `segmentation/`, `reconstruction/` (NOT `engine/`)
-- `cli.py` → `engine/` AND `training/` (the single fan-in point)
+1. `segmentation/yolo_seg.py` → `YOLOSegInferencer` — wraps Ultralytics YOLO-seg API; lives in `segmentation/` layer (same as `YOLODetector`) to respect AST-enforced import boundaries; loads model once at `__init__`; handles letterbox correction via `result.masks.xy` polygon output rather than raw `masks.data` (which is in padded inference space, not crop dimensions)
+
+2. `core/midline/backends/yolo_seg.py` → `YOLOSegBackend` — invokes `YOLOSegInferencer.segment_batch()`, then feeds mask to unchanged skeletonization pipeline (`_skeleton_and_widths`, `_longest_path_bfs`, `_resample_arc_length`, `_crop_to_frame`); replaces `SegmentThenExtractBackend`
+
+3. `core/midline/backends/yolo_pose.py` → `YOLOPoseBackend` — runs YOLO pose model on affine crop, extracts `(6, 3)` keypoint tensor (pixel coords in crop space), applies back-projection via existing `invert_affine_points()`, then feeds existing CubicSpline path; replaces `DirectPoseBackend`
+
+4. `training/prep_seg.py` and `training/prep_pose.py` — annotation conversion scripts; SAM2 binary masks → YOLO polygon labels (seg), SAM2 masks → skeletonize → 6-keypoint YOLO pose labels (pose)
+
+5. `training/yolo_seg.py` and `training/yolo_pose.py` — thin wrappers calling `ultralytics.YOLO(...).train()`; follow exact pattern of existing `training/yolo_obb.py`
+
+**Deletion targets (only after integration tests pass):** `_UNet`, `UNetSegmentor`, `BinaryMaskDataset`, `train_unet()`, `_PoseModel`, `_KeypointHead`, `train_pose()`, `SegmentThenExtractBackend`, `DirectPoseBackend` — and legacy `MidlineConfig` fields `weights_path`, `keypoint_weights_path`, `n_keypoints`, `keypoint_t_values`, `keypoint_confidence_floor`, `min_observed_keypoints`.
+
+**Critical architectural constraint:** The AST-based import boundary checker (enforced via pre-commit hook) prohibits `core/` from importing `engine/`. Backend classes must receive config values as primitives from `MidlineStage.__init__`, never importing `MidlineConfig` directly.
 
 ### Critical Pitfalls
 
-1. **OBB angle convention mismatch** — ultralytics outputs radians clockwise in `[-pi/4, 3pi/4)`, OpenCV `minAreaRect` outputs degrees counter-clockwise in `(-90, 0]`. Always extract angle from `result.obb.xywhr[..., 4]` and convert via `angle_deg = radians * 180 / pi`. Add a crop-orientation smoke test (known-angle detection → affine crop → visually axis-aligned fish) before any keypoint model training begins.
+The pitfall file covers three tiers: v3.0-specific (B-series), v2.2-era integration (A-series), and v1.0/v2.0/v2.1 foundation pitfalls. The top pitfalls for this milestone are:
 
-2. **Keypoint coordinates returned in crop-local space** — the keypoint head outputs `(x, y)` in `[0, crop_w] x [0, crop_h]`. Without calling `_crop_to_frame()` (scale + translate) before constructing `Midline2D`, all midline points cluster near frame origin and triangulation silently produces 3D points near the camera. Add assertion: `midline.points[:, 0].min() > crop_region.x1 - 20` for every non-None midline.
+1. **SAM2 multi-region masks produce invalid YOLO seg annotations (B1)** — SAM2 frequently generates disconnected mask regions for a single fish (especially low-contrast females). Naive `cv2.findContours` produces multiple polygons, which Ultralytics treats as multiple fish instances. Prevention: apply morphological closing before contour extraction; if still multi-region, keep only largest contour and log discarded area fraction; run Ultralytics dataset checker before any training begins.
 
-3. **`N_SAMPLE_POINTS` scatter across consumers** — `io/midline_writer.py`, `visualization/triangulation_viz.py`, and `reconstruction/curve_optimizer.py` all hardcode or import `N_SAMPLE_POINTS = 15`. A config change that updates `MidlineConfig.n_points` but not these modules silently produces truncated HDF5 datasets and misfiring visualization guards. Audit and replace all bare `15` literals with the constant before any point-count changes.
+2. **YOLO pose keypoints must be normalized to FULL IMAGE, not crop space (B2)** — The existing codebase is crop-centric; writing keypoints relative to the crop image causes the model to learn that all fish have keypoints in the top-left corner. Prevention: always back-project crop-space coordinates to frame space before normalization (`frame_x = crop_x1 + kp_x_in_crop`); add sanity check that all normalized coordinates are in [0, 1]; run training for 2–3 epochs and visualize predictions.
 
-4. **Config backward compatibility breakage** — `_filter_fields()` is applied to `AssociationConfig` and `TrackingConfig` but NOT to `DetectionConfig`, `MidlineConfig`, or `ReconstructionConfig`. Adding any new field without a default to the latter three will break all existing user YAML files at load time. Apply `_filter_fields()` universally and add a pinned v2.1 YAML regression test before any other config schema changes.
+3. **YOLO-seg masks.data is in letterboxed space for non-square crops (B4)** — `result.masks.data` shape is `(N, 640, 640)` when inference runs on any crop at default `imgsz=640`; naive resize to crop dimensions produces the wrong mask placement. Prevention: use `result.masks.xy` (polygon coordinates already scaled to original image space) then rasterize with `cv2.fillPoly` to get binary mask in crop dimensions.
 
-5. **Arc-length mismatch from variable-length keypoint output** — triangulation uses arc-length index `i` as the cross-camera correspondence key. A keypoint backend that omits low-confidence points produces a different-length midline, shifting the arc-length mapping and silently corrupting 3D reconstruction. The keypoint backend must always produce exactly `n_points` outputs, padding with the last known position and marking padded points as low-confidence. Enforce with `assert midline.points.shape == (n_points, 2)` in `MidlineStage.run()`.
+4. **Small dataset overfitting with Ultralytics default hyperparameters (B6)** — Default Ultralytics settings are tuned for COCO-scale datasets. With ~150 annotated frames, mosaic creates memorized image pairs; closing mosaic in the last 10 epochs removes the primary augmentation at convergence. Prevention: `close_mosaic=0`, `lr0=0.001`, `freeze=10` for first epochs, temporal train/val split (not random), start from pretrained COCO backbone.
+
+5. **Breaking the existing working YOLO detection model (B7)** — Adding new training runs may overwrite existing detection weights via `project/name` collision, or an `ultralytics` version upgrade may break the detection inference API. Prevention: use distinct `project/name` for seg and pose training runs; pin Ultralytics version before adding new training code; run detection pipeline smoke test after any new Ultralytics code is added.
+
+---
 
 ## Implications for Roadmap
 
-Based on research, the architecture's dependency graph dictates the following phase structure. Foundation work gates everything else. Detection backend and keypoint model development can overlap. Training infrastructure is fully independent.
+Based on combined research, a five-phase build order is recommended, driven by data availability constraints and dependency ordering. The overarching principle: start training data preparation and kick off model training as early as possible (training takes hours to days) while pipeline integration proceeds in parallel.
 
-### Phase 1: Config and Contract Foundation
+### Phase 1: Annotation Conversion Tooling
 
-**Rationale:** Config cleanup (`device` propagation, `n_sample_points` centralization, universal `_filter_fields()`) and backward-compatible dataclass extensions (`Detection.angle`, `Midline2D.point_confidence`) have no dependencies and unblock every subsequent phase. If device propagation is not in place before new backends are added, each backend invents its own device default and tensor-device mismatches appear mid-pipeline. If `_filter_fields()` is not applied universally, any new config field added in a later phase will break user YAML files with no graceful error.
+**Rationale:** Training cannot begin without data in YOLO format. These scripts have zero dependency on pipeline code — they operate only on SAM2 masks and reconstruction utilities already in the codebase. Completing this phase and immediately kicking off model training maximizes the overlap between background training time and pipeline integration work.
 
-**Delivers:** A stable, backward-compatible contract layer that all v2.2 features build on.
+**Delivers:** `training/prep_seg.py` (masks → YOLO polygon labels), `training/prep_pose.py` (masks → skeletonize → YOLO pose labels), dataset YAML files for both tasks, `aquapose prep-seg` and `aquapose prep-pose` CLI subcommands, visual spot-check of 20+ converted labels.
 
-**Addresses:**
-- `N_SAMPLE_POINTS` moved to `ReconstructionConfig.n_points` (default 15)
-- `device: str = "cuda"` at top-level `PipelineConfig`, propagated in `load_config()`
-- `_filter_fields()` applied universally to all stage configs
-- `Detection.angle: float | None = None`, `Detection.obb_points: np.ndarray | None = None`
-- `Midline2D.point_confidence: np.ndarray | None = None`
-- `aquapose init-config` CLI command
+**Addresses features:** Seg polygon label generation (P1), Pose keypoint label generation (P1), Dataset YAMLs (P1)
 
-**Avoids:** Pitfalls A8 (device propagation), A9 (Midline2D contract change), A10 (config backward compat), A3 (N_SAMPLE_POINTS scatter).
+**Avoids pitfalls:** B1 (SAM2 multi-region polygon cleaning), B2 (full-frame normalization for pose labels), B3 (kpt_shape in YAML), B8 (polygon point count validation)
 
-**Research flag:** Standard patterns — no additional research needed. Frozen dataclass config system is well-understood from live codebase.
+**Research flag:** LOW — patterns are well-documented; implementation risk is data quality, not API uncertainty.
 
----
+### Phase 2: Training Wrappers and Model Training
 
-### Phase 2: YOLO-OBB Detection Backend
+**Rationale:** Thin wrappers over `ultralytics.YOLO(...).train()` following the established `training/yolo_obb.py` precedent. Can be built and training kicked off while Phase 3 (inference backends) proceeds. Background training runs for hours; all subsequent phases can proceed without waiting.
 
-**Rationale:** OBB detection is the first visible capability. It enables affine crop extraction, which the keypoint backend (Phase 3) depends on. OBB NMS threshold tuning (parallel fish suppression) must be validated on real video before any keypoint training data is collected. Building detection first allows auditing detection quality through the existing skeletonize midline backend before the keypoint head is added.
+**Delivers:** `training/yolo_seg.py` (`train_yolo_seg()`), `training/yolo_pose.py` (`train_yolo_pose()`), `aquapose train yolo-seg` and `aquapose train yolo-pose` CLI subcommands, first `best.pt` weights for seg and pose.
 
-**Delivers:** `YOLOOBBDetector`, `YOLOOBBBackend`, affine crop utilities, OBB polygon overlay. The existing pipeline runs end-to-end with OBB crops and the skeletonize midline backend — detection quality is auditable before the keypoint head is built.
+**Uses:** `ultralytics.YOLO.train()` unified API, `training/yolo_obb.py` as the direct pattern template
 
-**Addresses:**
-- `YOLOOBBDetector` + `make_detector("yolo_obb", ...)` factory branch
-- `compute_obb_crop_region()`, `extract_affine_crop()`, `untransform_points_from_obb()` in `segmentation/crop.py`
-- `YOLOOBBBackend` in `core/detection/backends/yolo_obb.py`
-- OBB polygon overlay in `engine/overlay_observer.py`
+**Avoids pitfalls:** B6 (small dataset hyperparameters: `close_mosaic=0`, `lr0=0.001`, `freeze=10`), B7 (distinct project/name for each model type; detection smoke test after adding any training code)
 
-**Uses:** ultralytics >=8.1, OpenCV `cv2.warpAffine` with `cv2.BORDER_REPLICATE`, existing backend registry pattern.
+**Research flag:** LOW — direct precedent in codebase (`yolo_obb.py`); well-documented Ultralytics API.
 
-**Avoids:** Pitfalls A1 (OBB angle convention — crop-orientation smoke test before training), A4 (OBB NMS parallel fish — detection count regression test on schooling frames), A5 (affine crop border artifacts — use `cv2.BORDER_REPLICATE` not `cv2.BORDER_CONSTANT`).
+### Phase 3: Inference Backends
 
-**Research flag:** Standard patterns — ultralytics OBB API is HIGH confidence from official docs; OpenCV affine crop is canonical. No additional research needed.
+**Rationale:** Backends can be developed and unit-tested against pre-trained COCO weights (`yolo11n-seg.pt`, `yolo11n-pose.pt`) before fish-specific model training completes. Does not block on Phases 1 or 2 completion. The most architecturally sensitive phase because it touches import boundaries.
 
----
+**Delivers:** `segmentation/yolo_seg.py` (`YOLOSegInferencer`), `core/midline/backends/yolo_seg.py` (`YOLOSegBackend`), `core/midline/backends/yolo_pose.py` (`YOLOPoseBackend`), `match_detections_to_tracks()` utility (shared between both backends), updated `get_backend()` registry, unit tests for both backends with mock models.
 
-### Phase 3: Keypoint Regression Midline Backend
+**Implements:** `YOLOSegInferencer` in `segmentation/` layer, both backends in `core/midline/backends/`, factory registry pattern, lazy import pattern for Ultralytics (inside `__init__`), eager model loading at init.
 
-**Rationale:** Depends on affine crop utilities from Phase 2 and the `Midline2D.point_confidence` field from Phase 1. The `DirectPoseBackend` stub already exists but raises `NotImplementedError` — this phase implements it. Keypoint model training data (pseudo-labels) is generated from the existing skeletonizer output, so no new annotation tooling is needed.
+**Avoids pitfalls:** B4 (letterbox mask space — use `masks.xy` not `masks.data`), B5 (YOLO pose keypoints are in crop space — apply `invert_affine_points()` before `Midline2D` construction), AP0 / CLAUDE.md (CUDA tensor → always `.cpu().numpy()` immediately after Ultralytics result access)
 
-**Delivers:** `KeypointModel` (`segmentation/keypoint_model.py`), `DirectPoseBackend` (full implementation replacing stub), confidence-weighted DLT in `triangulation.py`. The pipeline can run fully with the keypoint midline backend end-to-end.
+**Research flag:** MEDIUM — the letterbox mask issue (B4) is a non-obvious Ultralytics behavior that must be explicitly tested; instance matching threshold tuning is empirical; import boundary constraints are project-specific and require care. Recommend verifying `result.masks.xy` behavior against current Ultralytics version before finalizing backend implementation.
 
-**Addresses:**
-- `UNetKeypointHead` — direct coordinate regression, `(B, N, 3)` output with sigmoid-activated x/y/confidence
-- `DirectPoseBackend.process_frame()` — produces `AnnotatedDetection` with `Midline2D(point_confidence=...)`
-- Confidence-weighted DLT: scale RANSAC rows by `sqrt(point_confidence)` before SVD
-- `CurveOptimizerBackend` confidence weighting (weighted Chamfer distance)
+### Phase 4: Config Wiring and Integration Test
 
-**Uses:** PyTorch `nn.Module`, existing MobileNetV3-Small encoder weights, scikit-image skeletonizer for pseudo-label generation.
+**Rationale:** Backends exist; now wire them into the config system and validate end-to-end. Integration test must pass before any deletion begins. Config changes follow the existing `weights_path` pattern exactly.
 
-**Avoids:** Pitfalls A2 (crop-to-frame coordinate transform — assertion after every backend call), A11 (arc-length mismatch — enforce fixed `n_points` output contract with `assert midline.points.shape == (n_points, 2)`), A5 (border artifacts — inherited fix from Phase 2).
+**Delivers:** Three new fields in `MidlineConfig` (`yolo_seg_model_path`, `yolo_pose_model_path`, `yolo_imgsz`), updated `build_stages()` in `engine/pipeline.py`, updated `load_config()` path resolution, integration test running the full pipeline with `backend: "yolo_seg"` using COCO weights on a synthetic frame.
 
-**Research flag:** Direct regression vs heatmap decision is resolved (direct regression wins at 128x128, 4px heatmap quantization is unacceptable). Wing Loss vs MSE: MSE is sufficient for a first pass. No additional research needed beyond STACK.md content.
+**Avoids pitfalls:** AP0 (import boundary — `MidlineStage` passes primitives to backends, never passes `MidlineConfig` object itself)
 
----
+**Research flag:** LOW — config wiring follows exact existing pattern for `weights_path` field; integration test pattern established from prior phases.
 
-### Phase 4: Training Infrastructure
+### Phase 5: Deletion Pass
 
-**Rationale:** The `aquapose train` CLI and `training/` package are fully independent of all other v2.2 features. They can be developed in parallel with Phases 2 and 3 if capacity allows. Deferring to Phase 4 ensures the ML architecture (Phase 3) is locked before the training CLI is built around it, avoiding rework if the keypoint head API changes.
+**Rationale:** Only after Phases 1–4 pass integration tests. Both old and new backends coexist during validation (selected via `backend` field in config); deletion removes the fallback. Deleting before validation leaves the pipeline broken with no fallback if issues arise.
 
-**Delivers:** `src/aquapose/training/` package (`unet.py`, `keypoint.py`, `yolo_obb.py`, `dataset.py`, `config.py`), `aquapose train unet / keypoint / yolo-obb` subcommands. Replaces four disconnected scripts in `scripts/` with a documented, discoverable interface.
+**Delivers:** Deleted custom model code (`_UNet`, `UNetSegmentor`, `BinaryMaskDataset`, `train_unet()`, `_PoseModel`, `_KeypointHead`, `train_pose()`), deleted old backends (`SegmentThenExtractBackend`, `DirectPoseBackend`), removed legacy `MidlineConfig` fields, full test suite passing.
 
-**Addresses:**
-- `KeypointDataset` — OBB crop + keypoint annotation loading with temporal-segment train/val split
-- `train_unet()` — migrated from `segmentation/training.py`
-- `train_keypoint_head()` — new training loop with MSE loss, confidence gating, checkpoint saving
-- `aquapose train` Click group registered under existing CLI
-
-**Uses:** click (existing), PyTorch bare training loop (no Lightning), tqdm via ultralytics transitive dep.
-
-**Avoids:** Pitfalls A6 (augmentation spatial consistency — use torchvision keypoint-aware transforms for all geometric augmentations), A7 (train/val temporal leakage — split by contiguous clip with gap, not random frames), A12 (import boundary violation — `training/` must not import from `engine/`).
-
-**Research flag:** Training CLI patterns are standard Click subcommands — no additional research needed. The train/val split strategy (temporal segments) is resolved in PITFALLS.md. Verify torchvision v2 keypoint-aware transform API during implementation.
-
----
+**Research flag:** LOW — deletion is mechanical; the only risk is incomplete test coverage of deleted code, which should be resolved in Phase 3 unit tests.
 
 ### Phase Ordering Rationale
 
-- **Config and dataclass contracts first:** `Midline2D.point_confidence` and `Detection.angle` are prerequisites for Phases 2 and 3. Doing this in Phase 1 means subsequent phases all build on stable interfaces rather than simultaneously modifying shared types.
-- **OBB detection before keypoint backend:** Affine crop utilities (`segmentation/crop.py`) are written once in Phase 2 and reused by Phase 3. Building the keypoint backend first would require implementing the same utilities speculatively.
-- **Keypoint backend before training infrastructure:** The `KeypointModel` API (input/output shapes, `n_points` parameter) must be stable before `training/keypoint.py` and `training/dataset.py` are written. If the model API changes, the training loop changes.
-- **Training infrastructure last (or parallel):** It is fully decoupled and can be developed in parallel with Phases 2 and 3 if capacity allows, or deferred to Phase 4 without blocking the pipeline.
+- Data preparation comes first because model training takes hours and must run in the background — delaying it by even one phase adds direct clock time to the milestone.
+- Training wrappers (Phase 2) and inference backends (Phase 3) are independent of each other; they can proceed concurrently if capacity allows.
+- Integration test (Phase 4) gates the deletion pass (Phase 5) — no deletion before end-to-end validation.
+- Old backends remain selectable via config throughout Phases 1–4, which means a failing Phase 3 or 4 does not break production runs.
 
 ### Research Flags
 
-Phases needing deeper research during planning:
+Phases likely needing deeper research during planning:
 
-- **Phase 3 (Keypoint Backend) — partial midline handling:** The correct threshold for `point_confidence` gating and the `MIN_BODY_POINTS` floor value are empirically determined. Set conservatively in v2.2 and tune based on real reconstruction quality. This is deferred from the v2.2 MVP per FEATURES.md.
-- **Phase 4 (Training) — OBB label conversion:** The existing fish bbox labels are axis-aligned rectangles. Converting to OBB label format requires either re-annotation or automated conversion via per-detection skeletonization. This conversion step is not detailed in any research file and should be scoped during Phase 2 or 4 planning.
+- **Phase 3 (Inference Backends):** The YOLO-seg letterbox mask correction (B4) and YOLO-pose crop-to-frame back-projection (B5) are implementation-sensitive; the exact API behavior of `result.masks.xy` vs `result.masks.data` should be verified against the current Ultralytics version during implementation.
+- **Phase 3 (Instance Matching):** `match_detections_to_tracks()` is a new utility with no existing precedent in the codebase; IoU threshold (default 0.3) may need adjustment for fish in crowded schools.
 
-Phases with standard patterns (skip additional research):
+Phases with standard patterns (skip research-phase):
 
-- **Phase 1 (Config/Contracts):** Frozen dataclass extension and `load_config()` patterns are fully documented in the live codebase.
-- **Phase 2 (OBB Detection):** ultralytics OBB API is HIGH confidence from official docs; OpenCV affine transforms are canonical.
-- **Phase 3 (Keypoint Model):** Direct regression at 128x128 is the resolved recommendation; no alternative approaches need investigation.
+- **Phase 1 (Annotation Conversion):** `cv2.findContours` → polygon normalization is well-understood; the SAM2 multi-region handling adds complexity but has a clear implementation.
+- **Phase 2 (Training Wrappers):** Direct precedent in `training/yolo_obb.py`; Ultralytics training API is stable and documented.
+- **Phase 4 (Config Wiring):** Follows exact existing pattern for `weights_path` field.
+- **Phase 5 (Deletion):** Mechanical cleanup after validation.
+
+---
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All stack decisions use existing or well-documented libraries; only version bump is ultralytics >=8.1, verified against official OBB release notes and GitHub discussions |
-| Features | HIGH | Existing codebase fully inspected; all interface contracts (Detection, Midline2D, backend registry) are known ground truth; OBB/keypoint approaches verified against official docs and literature |
-| Architecture | HIGH | Based on live codebase analysis, not speculation; all integration points, import boundaries, and build order derived from actual code |
-| Pitfalls | HIGH | OBB angle convention verified against ultralytics GitHub issues #13003 and #16235; all other pitfalls derived from direct codebase inspection of actual construction sites and consumers |
+| Stack | HIGH | Ultralytics official docs verified; no new dependencies; version constraint already satisfied; YOLO11 API confirmed identical to YOLOv8 |
+| Features | HIGH | Ultralytics official docs verified; codebase read directly for interface contracts; fish-domain keypoint studies cited |
+| Architecture | HIGH | Existing codebase read directly; import boundaries verified against AST hook; all data contracts confirmed unchanged |
+| Pitfalls | HIGH | Codebase inspected for all integration points; Ultralytics GitHub issues cross-referenced for letterbox behavior, kpt_shape handling, and version upgrade risks |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Keypoint head quality floor:** The target accuracy for the keypoint regression head is not specified. The current U-Net achieves IoU 0.623 (accepted below target to unblock downstream). Plans should include a validation gate: if mean keypoint error exceeds a threshold, fall back to the skeletonize backend for the affected camera-frame.
-- **OBB training label conversion:** Existing fish bbox labels are axis-aligned. Converting to OBB 4-corner format for fine-tuning requires a defined process (re-annotation or automated conversion). Scope during Phase 2 or 4 planning.
-- **`segmentation/training.py` disposition:** The research recommends `training/unet.py` either wraps or replaces `segmentation/training.py`. The deprecation/migration plan should be decided at the start of Phase 4 to avoid silent dual-maintenance.
+- **Instance matching threshold calibration:** The `match_detections_to_tracks()` IoU threshold (default 0.3) is a reasonable starting point but is unvalidated for the 9-fish cichlid school scenario where fish bounding boxes may overlap. Tune empirically after Phase 3 integration test.
+
+- **Pose pseudo-label quality ceiling:** YOLO-pose model accuracy is bounded by the quality of skeletonizer-derived pseudo-labels. The skeletonizer on noisy SAM2 masks has known failure modes (multi-branch skeletons, disconnected arcs). A post-Phase-2 quality audit (filter labels by skeleton branch count) is recommended before committing to a final training run.
+
+- **`yolo_imgsz` tuning for crop inference:** Default `imgsz=640` may be unnecessarily large for ~256x128 fish crops; `imgsz=256` or `imgsz=320` likely sufficient and halves inference time. Tune empirically after backends are integrated.
+
+- **Female fish mask quality:** Low-contrast females were already a known challenge for U-Net. YOLO-seg with pretrained COCO backbone may handle this better, but is unvalidated. If YOLO-seg fails on females, increase `hsv_v=0.6` in training augmentation config (no albumentations — Ultralytics built-in augmentation covers this).
+
+---
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- Ultralytics OBB Task Documentation: https://docs.ultralytics.com/tasks/obb/ — OBB output format, xywhr convention, angle range
-- Ultralytics OBB Datasets Overview: https://docs.ultralytics.com/datasets/obb/ — label format (4-corner normalized)
-- Ultralytics issue #13003 "Is the angle value given by OBB correct?": https://github.com/ultralytics/ultralytics/issues/13003 — angle convention mismatch
-- Ultralytics issue #16235 "YOLOv8-OBB angle conversion": https://github.com/ultralytics/ultralytics/issues/16235 — angle convention mismatch
-- OpenCV Affine Transformations Tutorial: https://docs.opencv.org/4.x/d4/d61/tutorial_warp_affine.html — getRotationMatrix2D + warpAffine
-- Click Entry Points Documentation: https://click.palletsprojects.com/en/latest/entry-points/ — CLI group/subgroup patterns
-- Live codebase (all modules): authoritative ground truth for all interfaces, dataclasses, config structure, import boundaries
+
+- Ultralytics official documentation — seg task, pose task, dataset formats, training config, model variant comparison: https://docs.ultralytics.com/
+- Ultralytics GitHub releases — version 8.4.19 (2026-02-28): https://github.com/ultralytics/ultralytics/releases
+- Ultralytics GitHub issues — letterbox mask behavior (#4796), kpt_shape requirements (#1970), SAM2 mask conversion (#15380), OBB angle conventions (#13003, #16235)
+- Existing codebase (read directly): `core/midline/stage.py`, `core/midline/backends/`, `segmentation/model.py`, `training/`, `engine/config.py`, `core/detection/backends/`
 
 ### Secondary (MEDIUM confidence)
-- Learnable Triangulation of Human Pose (SAIC-violet): https://saic-violet.github.io/learnable-triangulation/ — confidence-weighted algebraic triangulation pattern for weighted DLT
-- DLT Triangulation: Why Optimize? (arXiv 1907.11917): https://arxiv.org/pdf/1907.11917 — weighted vs unweighted DLT tradeoffs
-- Boosting integral-based pose estimation (ScienceDirect 2024): https://www.sciencedirect.com/science/article/abs/pii/S0893608024004489 — comparison of heatmap vs integral vs direct regression at varying resolutions
-- Integral Human Pose Regression (ECCV 2018): https://openaccess.thecvf.com/content_ECCV_2018/papers/Xiao_Sun_Integral_Human_Pose_ECCV_2018_paper.pdf — integral regression alternative
+
+- LearnOpenCV — animal pose estimation with YOLOv8: custom kpt_shape for non-human subjects, training workflow
+- Roboflow Blog — custom YOLOv8 pose training workflow with annotated examples
+- MDPI Marine Science 2024 — fish-domain YOLOv8-pose validation (albacore tuna, head/jaw/tail keypoints)
+- Ultralytics community discussions — SAM2 mask → YOLO seg format conversion patterns
 
 ### Tertiary (LOW confidence)
-- SimCC paper (ECCV 2022): https://github.com/leeyegy/SimCC — coordinate classification; rejected for this use case at 128x128 input size
+
+- DmitryCS/yolov8_segment_pose (GitHub) — community joint seg+pose implementation; cited as anti-feature rationale only; not a recommended approach
 
 ---
-*Research completed: 2026-02-28*
+
+*Research completed: 2026-03-01*
 *Ready for roadmap: yes*

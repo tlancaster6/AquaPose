@@ -1,10 +1,351 @@
 # Pitfalls Research
 
-**Domain:** Adding YOLO-OBB, keypoint midline backend, training infrastructure, and config cleanup to an existing multi-view 3D fish pose estimation pipeline (v2.2 Backends milestone)
-**Researched:** 2026-02-28
-**Confidence:** HIGH — codebase directly inspected for all integration points; OBB angle convention verified against ultralytics GitHub issues #13003, #16235 and official docs; existing pitfalls from prior research retained below.
+**Domain:** Adding YOLO-OBB, keypoint midline backend, training infrastructure, and config cleanup to an existing multi-view 3D fish pose estimation pipeline (v2.2 Backends milestone); then replacing custom U-Net and keypoint regression models with Ultralytics-native YOLOv8-seg and YOLOv8-pose (v3.0 Ultralytics Unification)
+**Researched:** 2026-02-28 (v2.2) / 2026-03-01 (v3.0 additions)
+**Confidence:** HIGH — codebase directly inspected for all integration points; OBB angle convention verified against ultralytics GitHub issues #13003, #16235 and official docs; v3.0 pitfalls cross-verified against Ultralytics GitHub issues #4796, #15380, #17116, #1970 and official task documentation.
 
-> **Scope note:** This file covers two tiers of pitfalls. The first section ("v2.2 Integration Pitfalls") is new research specific to adding OBB detection, keypoint regression, and training infrastructure to the existing system. The second section ("Foundation Pitfalls") preserves the original project-wide pitfalls from v1.0/v2.0/v2.1 research that remain relevant.
+> **Scope note:** This file covers three tiers of pitfalls. The first section ("v3.0 Ultralytics Unification Pitfalls") is new research specific to replacing custom segmentation/pose models with Ultralytics-native equivalents. The second section ("v2.2 Integration Pitfalls") covers adding OBB detection, keypoint regression, and training infrastructure. The third section ("Foundation Pitfalls") preserves the original project-wide pitfalls from v1.0/v2.0/v2.1 research.
+
+---
+
+## v3.0 Ultralytics Unification Pitfalls
+
+These pitfalls are specific to replacing custom U-Net segmentation and keypoint regression models with Ultralytics YOLOv8-seg and YOLOv8-pose. The primary risk sources are: annotation format conversion from SAM2 binary masks to YOLO polygon format, small dataset training on ~150 frames, coordinate space handling between Ultralytics inference output and the existing pipeline's crop-space / frame-space conventions, and ensuring the working YOLO detection model is not broken.
+
+---
+
+### Pitfall B1: SAM2 Multi-Region Masks Produce Invalid YOLO Segmentation Annotations
+
+**What goes wrong:**
+SAM2 frequently generates masks with multiple disconnected regions for a single fish instance — especially for low-contrast females where the mask may fragment across the body. YOLO segmentation format requires one polygon per object per label line. When a conversion script naively calls `cv2.findContours` on a SAM2 mask with multiple connected components, it produces multiple contours. If each contour is written as a separate polygon on separate lines, Ultralytics treats them as separate object instances. If only the largest contour is kept, small but anatomically important regions (fin tips, tail) are silently lost. If multiple contours are concatenated into one polygon line, the polygon self-intersects, which causes training errors or silently produces bad loss.
+
+**Why it happens:**
+The SAM2 crop-and-box-only pseudo-label pipeline (already validated on this project) is optimized for segmentation quality, not polygon suitability. Disconnected SAM2 masks are common at occlusion boundaries and on low-contrast fish bodies. The conversion step from binary mask to YOLO polygon is typically a single `findContours` call that developers assume produces one contour.
+
+**How to avoid:**
+- After `cv2.findContours`, check `len(contours) > 1`. If multiple regions exist, apply morphological closing (dilation then erosion) to merge nearby regions before polygon extraction. Kernel size should be ~5–10% of the fish width in pixels.
+- If closing fails to merge, keep only the largest contour by area. Log a warning with the frame ID and discarded area fraction. Discarded area > 10% of the fish area warrants manual review.
+- Validate every converted label file: load with `ultralytics.data.utils.check_det_dataset()` or a custom check that counts polygon points per line and asserts all coordinates are in [0, 1].
+- Run Ultralytics' dataset checker (`YOLO(...).val(data=yaml)`) on the converted dataset before any training to surface corrupt annotations early.
+
+**Warning signs:**
+- Training logs show "ignoring corrupt image/label" warnings with specific frame paths.
+- mAP stays near zero after 10+ epochs (indicates corrupted annotations that produce no valid predictions).
+- Visual inspection of label overlay images shows multiple disconnected colored regions per fish.
+
+**Phase to address:**
+Training data preparation phase (annotation conversion tooling). The mask-to-polygon conversion must be verified visually on a sample of 20+ frames before training begins.
+
+---
+
+### Pitfall B2: YOLO Pose Keypoints Must Be Normalized Relative to the FULL IMAGE, Not the Crop
+
+**What goes wrong:**
+The existing pseudo-label and training data pipeline operates on crops: SAM2 is run on a crop, the U-Net is trained on 128x128 crops, and keypoints from the custom regression model are in crop-space coordinates. When preparing YOLOv8-pose training labels, developers may naturally write keypoint coordinates relative to the crop image (since that's what SAM2 and U-Net used). YOLO pose label format requires ALL coordinates — bounding box center, bounding box size, AND all keypoint coordinates — to be normalized relative to the full frame image dimensions. Keypoints in crop space will fall near (0, 0) in normalized full-frame space, causing the model to learn that all fish have keypoints in the top-left corner.
+
+**Why it happens:**
+The Ultralytics pose format documentation states "normalize between 0 and 1" but does not explicitly say "relative to the full image, not a sub-region." The official issue #1970 explicitly warns that "keypoint coordinates should be relative to the global image and not the cropped image." The existing codebase's crop-centric workflow makes this the default mental model for anyone working in it.
+
+**How to avoid:**
+- Training label generation must convert keypoint coordinates from crop space to frame space BEFORE normalization: `frame_x = crop_x1 + keypoint_x_in_crop; frame_y = crop_y1 + keypoint_y_in_crop`. Then normalize: `norm_x = frame_x / frame_width; norm_y = frame_y / frame_height`.
+- The bounding box in YOLO pose format is also in full-frame normalized coordinates. Use the detection bbox (already in frame space) as the bounding box.
+- Add a sanity check: for every label line, verify `0 <= px_i <= 1` and `0 <= py_i <= 1` for all keypoints. Any value outside [0, 1] indicates crop-space coordinates were written without frame-space conversion.
+- Run training for 2–3 epochs and visualize predictions on training images: if keypoints cluster near the top-left of the full frame, the coordinate space is wrong.
+
+**Warning signs:**
+- Training warnings: "ignoring corrupt image/label: non-normalized or out of bounds coordinate" from Ultralytics (this fires when coords are > 1).
+- After training, predicted keypoints on full-frame images cluster near the image origin.
+- Bounding boxes look correct but keypoints are systematically offset from the fish body.
+
+**Phase to address:**
+Training data preparation phase (annotation format conversion). Verify with a single label file overlay before building the full dataset.
+
+---
+
+### Pitfall B3: `kpt_shape` Missing from dataset.yaml Causes Silent Training Failure
+
+**What goes wrong:**
+YOLOv8 pose training requires a `kpt_shape: [N, 3]` entry in `dataset.yaml` specifying the number of keypoints and dimensionality (2 for xy-only, 3 for xy+visibility). If this field is missing, Ultralytics raises a `KeyError` during training initialization — but the error message may be obscure enough that developers assume it is a data path issue. Additionally, if `kpt_shape: [6, 2]` is specified but label files contain `[6, 3]` columns (with visibility), Ultralytics silently misparses columns, shifting coordinates by one position for all keypoints past the first.
+
+**Why it happens:**
+`kpt_shape` is a pose-task-specific field not present in detection or segmentation dataset YAML files. Developers copying a detection YAML as a starting point for pose training will not have this field. The mismatch between kpt_shape dimensionality (2 vs 3) and actual label file columns is a silent data corruption.
+
+**How to avoid:**
+- Always specify `kpt_shape: [6, 3]` for 6 keypoints with visibility (recommended). Use visibility=2 for visible keypoints, visibility=1 for annotated-but-occluded, visibility=0 for missing (coordinates should be (0, 0) with visibility=0).
+- Use `kpt_shape: [6, 3]` even if not all fish have all 6 keypoints — mark missing keypoints with `(0.0, 0.0, 0)` rather than omitting them or changing the count.
+- Validate the dataset YAML before training using `from ultralytics.data.utils import check_det_dataset; check_det_dataset(yaml_path)`.
+- Use the COCO8-pose dataset as a reference for the expected YAML structure.
+
+**Warning signs:**
+- `KeyError: 'kpt_shape'` during training initialization.
+- Predicted keypoints are shifted by one index relative to ground truth (head predicted at tail position, etc.).
+- Training begins and immediately terminates in the first few iterations with loss = NaN.
+
+**Phase to address:**
+Training data preparation phase (dataset YAML construction). Add a YAML validation step as a prerequisite gate before training.
+
+---
+
+### Pitfall B4: YOLOv8-seg Inference on Crops Returns Masks in Letterboxed/Padded Space, Not Original Crop Dimensions
+
+**What goes wrong:**
+When YOLOv8-seg is run on a crop image (non-square, e.g., 256x128 for OBB-aligned crops), Ultralytics letterboxes the crop to 640x640 before inference. The `result.masks.data` tensor has shape `(N, 640, 640)` — the padded square dimensions, not the original crop dimensions. The black letterbox padding is included in the mask. If this mask is naively resized to `(crop_h, crop_w)` using `cv2.resize`, the fish mask is compressed into the original crop region but the padding is incorrectly scaled. The resulting mask covers the wrong region.
+
+**Why it happens:**
+Ultralytics automatically rescales bounding boxes back to original image coordinates, but `result.masks.data` is in the padded inference space. Users who follow the official docs' simple examples (which use square images) never encounter this. The Ultralytics GitHub issue #4796 (2023) documented this and Glenn Jocher acknowledged it as a "common enough use case" but it was not automatically handled in the library at that time. The correct path is to use `result.masks.xy` (polygon format, already scaled to original image coords) rather than `result.masks.data` when coordinates are needed for downstream use.
+
+**How to avoid:**
+- Use `result.masks.xy` for polygon coordinates — these ARE already in original image pixel space (Ultralytics applies scale restoration to xy outputs).
+- Use `result.masks.data` ONLY if you need the binary mask matrix, and apply the scale/crop restoration: compute the letterbox padding from `result.orig_shape` and the inference input size, crop out the padding, then resize to original dimensions. Alternatively, use `result.plot()` to obtain the correctly scaled overlay, but this is only for visualization.
+- The safest approach for this project: convert `result.masks.xy[i]` (polygon in frame pixels) to a binary mask using `cv2.fillPoly` on a canvas of `(crop_h, crop_w)`.
+- Test explicitly: run YOLOv8-seg on a 256x128 crop, verify that the returned mask region matches the visible fish area, not a compressed version of a 640x640 letterboxed mask.
+
+**Warning signs:**
+- Segmentation masks on non-square crops appear squished or offset — the fish is in one region but the mask covers a different region.
+- Mask IoU against ground truth is poor for rectangular crops but good for square crops.
+- `result.masks.data.shape` is `(N, 640, 640)` instead of `(N, crop_h, crop_w)`.
+
+**Phase to address:**
+Segmentation backend integration phase (pipeline integration of YOLOv8-seg). Write a test that runs inference on a non-square crop and verifies mask pixel coverage against known ground truth.
+
+---
+
+### Pitfall B5: YOLOv8-pose Keypoint Output Is in Original Frame Space, Not Crop Space — But the Pipeline Expects Crop Space
+
+**What goes wrong:**
+When YOLOv8-pose is run on a crop image, `result.keypoints.xy` returns keypoints in the crop's coordinate space (pixel coordinates within the crop image). The existing pipeline's `Midline2D` contract requires frame-space coordinates. If these crop-space keypoints are stored in `Midline2D.points` without back-projection, all downstream triangulation receives wrong coordinates — exactly the same failure mode as Pitfall A2 but now specifically for Ultralytics inference output rather than custom model output.
+
+The complementary failure: if YOLOv8-pose is run on the FULL FRAME instead of a crop (to avoid the coordinate conversion), all fish in the frame are detected simultaneously, which conflicts with the per-fish, per-crop inference model the pipeline uses. Running full-frame pose inference also degrades per-fish keypoint accuracy because the model must handle up to 9 fish simultaneously at 1600x1200 resolution.
+
+**Why it happens:**
+`result.keypoints.xy` is always in the coordinate space of the image passed to `predict()`. Running on a crop gives crop-space coordinates; running on the full frame gives frame-space coordinates. The pipeline's crop-based inference architecture (detect → crop → segment/pose → paste back) requires an explicit coordinate translation step that is not automatic.
+
+**How to avoid:**
+- Run YOLOv8-pose on individual crops (one fish per crop). After inference, back-project: `frame_kp_x = crop_region.x1 + kp_x; frame_kp_y = crop_region.y1 + kp_y`.
+- For OBB-aligned affine crops (Phase 32), additionally apply `invert_affine_points(kp_xy, affine_crop.M)` before adding the crop offset.
+- Add a coordinate plausibility assertion: every keypoint in frame space should fall within `[detection.bbox.x1 - margin, detection.bbox.x2 + margin]` and similarly for Y. Log and skip any keypoint outside this range.
+- Unit test the back-projection with a synthetic crop at a known position: assert back-projected keypoints match their expected frame-space positions to within 1 pixel.
+
+**Warning signs:**
+- Midline visualization overlays show keypoints near the top-left of the full frame when fish are in the center.
+- Triangulation produces 3D midlines clustered near the tank center regardless of fish position.
+- `midline.points[:, 0].mean()` is much smaller than `detection.bbox[0]` (x1 of the detection).
+
+**Phase to address:**
+Segmentation/pose backend integration phase (pipeline wiring). The back-projection step must be written and tested before any reconstruction testing.
+
+---
+
+### Pitfall B6: Small Dataset Overfitting — YOLOv8 Mosaic Augmentation Uses the Same 150 Images Repeatedly
+
+**What goes wrong:**
+YOLOv8's default mosaic augmentation combines 4 randomly selected training images into one. With only ~150 annotated frames, the same image pairs appear together repeatedly across epochs, and the model memorizes specific frame configurations rather than learning general fish appearance. Val loss matches train loss from epoch 5 onward (temporal leakage from the small pool), giving false confidence. On held-out video frames the model fails on females (never generalized beyond training appearances) and on unusual body orientations.
+
+Additionally, YOLOv8 defaults to closing mosaic augmentation in the last 10 epochs (`close_mosaic=10`). With only 50–100 training epochs on a small dataset, turning off mosaic for the last 10 epochs removes the primary augmentation source just as the model is nearing convergence, often causing a sharp validation metric drop and instability.
+
+**Why it happens:**
+Ultralytics default hyperparameters are tuned for COCO-scale datasets (tens of thousands of images). A 150-frame dataset with 12-camera correlations behaves very differently from a diverse object detection dataset. The default configuration is inappropriate at this data scale.
+
+**How to avoid:**
+- Set `close_mosaic=0` to keep mosaic active throughout training (no sudden augmentation removal).
+- Increase other augmentation intensities: `degrees=15` (rotation), `scale=0.5` (scale jitter), `fliplr=0.5`, `hsv_h=0.015, hsv_s=0.7, hsv_v=0.4` (color jitter to help with low-contrast females).
+- Start from a pretrained model (`yolov8n-seg.pt` or `yolov8n-pose.pt`) — transfer learning from COCO significantly reduces the data volume needed for the backbone.
+- Freeze backbone layers for the first 10–20 epochs (`freeze=10`) to prevent overfitting the pretrained features to the small dataset, then unfreeze for fine-tuning. This is especially important for seg/pose models where the backbone is significantly larger than the head.
+- Use a lower learning rate than the default: `lr0=0.001` instead of `0.01` for small dataset fine-tuning.
+- Split training data by temporal segment (see Pitfall A7 for the temporal leakage concern — applies here too).
+
+**Warning signs:**
+- Val mAP50 exceeds 0.90 within the first 5–10 epochs on a 150-frame dataset (memorization, not generalization).
+- Sharp metric drop in the last 10 epochs (mosaic closure effect).
+- Model fails on held-out frames from different recording sessions despite excellent val metrics.
+- Loss curve for females is consistently higher than for males throughout training (insufficient female appearance coverage).
+
+**Phase to address:**
+Training data preparation and model training phases. Establish a held-out validation clip from a different recording session (or a non-overlapping temporal window) BEFORE any training begins.
+
+---
+
+### Pitfall B7: Breaking the Existing Working YOLO Detection Model When Adding Seg/Pose Training
+
+**What goes wrong:**
+The existing YOLO detection model (`yolo_fish/train_v1/weights/best.pt`) is the pipeline's entry point and works correctly. When developers add training infrastructure for seg/pose, they may accidentally:
+1. Overwrite the existing weights path by using the same `project=` and `name=` arguments in `YOLO.train()`.
+2. Load the detection weights as the starting point for seg model training — detection and seg models have different head architectures, so this silently trains with incompatible weight initialization on the detection head.
+3. Change the Ultralytics version (e.g., `pip install --upgrade ultralytics`) to get a newer feature, which changes the inference output format (e.g., `results[0].boxes` attribute changes) and breaks existing detection parsing code.
+
+**Why it happens:**
+Ultralytics uses `YOLO("yolov8n.pt")` for detect and `YOLO("yolov8n-seg.pt")` for seg — the file suffix determines the task. Developers unfamiliar with this may load a detect `.pt` file when intending to train a seg model. The `project/name` collision is easy to miss in the training script.
+
+**How to avoid:**
+- Write seg and pose training to explicitly load from task-specific starting weights: `YOLO("yolov8n-seg.pt")` for seg, `YOLO("yolov8n-pose.pt")` for pose. Never use the existing detection weights file as the starting point for seg/pose training.
+- Use distinct `project` and `name` values: `project="runs/seg", name="fish_seg_v1"` and `project="runs/pose", name="fish_pose_v1"`. Never use `runs/detect`.
+- Pin the Ultralytics version in `pyproject.toml` before adding new training infrastructure. Do not upgrade during active development.
+- After adding any new Ultralytics training code, run the existing detection pipeline smoke test: `aquapose run --config tests/fixtures/minimal_config.yaml` and verify detection count matches baseline.
+
+**Warning signs:**
+- `runs/detect/fish_seg_v1` directory exists (project/name mismatch with detect task).
+- Existing detection pipeline starts failing with `AttributeError: 'Results' object has no attribute 'boxes'` after an Ultralytics version upgrade.
+- Seg model `.pt` file size is the same as the detect model `.pt` file (indicates the detect weights were loaded as seg, which may fail silently during transfer).
+
+**Phase to address:**
+Training infrastructure phase and model integration phase. Add a regression test for the detection pipeline before any new Ultralytics model training is attempted.
+
+---
+
+### Pitfall B8: YOLO Segmentation Annotation Polygon Winding Order and Minimum Point Count
+
+**What goes wrong:**
+Ultralytics YOLO segmentation format requires polygon coordinates as `class_id x1 y1 x2 y2 ... xn yn` where coordinates are normalized [0, 1] and the polygon must have at least 3 points. Two specific failures:
+1. Degenerate polygons: a fish seen nearly head-on in an edge camera produces a very narrow mask. The bounding contour from `cv2.findContours` may degenerate to 1–2 points after simplification, which Ultralytics silently ignores (the label line is skipped, reducing training data without warning).
+2. Excessive polygon complexity: an unprocessed SAM2 mask contour may have 500–2000 points. This slows dataset loading and may cause memory issues with large batches.
+
+**Why it happens:**
+`cv2.findContours` returns raw pixel-boundary contours without simplification. SAM2 masks have smooth but detailed boundaries that produce many contour points. Developers converting masks to polygons rarely think about point count as a training concern.
+
+**How to avoid:**
+- Simplify contours with `cv2.approxPolyDP(contour, epsilon=2.0, closed=True)` before writing to label files. Epsilon of 1.5–3.0 pixels balances boundary fidelity against polygon complexity.
+- After simplification, assert `len(simplified_contour) >= 3`. If fewer than 3 points remain, log and skip the annotation (the mask is degenerate and not usable as training data).
+- Cap polygon point count at 100–150 points by increasing epsilon until below the cap. This is acceptable for fish body shapes which are smooth ellipsoids.
+- Verify the final dataset has no label files with fewer than 3 polygon points: `for f in labels/; check len(line.split()) >= 7 (class + 3 xy pairs)`.
+
+**Warning signs:**
+- Ultralytics dataset check reports "no labels found in image" for some frames despite label files existing.
+- Training data count is lower than expected (degenerate polygons silently skipped).
+- Dataset loading is slow (thousands of points per polygon causing parsing overhead).
+
+**Phase to address:**
+Training data preparation phase (polygon extraction and validation step).
+
+---
+
+### Pitfall B9: Missing Keypoints Must Be Represented as (0.0, 0.0, 0) — Not Omitted or Padded With Other Values
+
+**What goes wrong:**
+Fish viewed at extreme angles or with occlusion will not have all 6 anatomical keypoints visible. Three wrong approaches:
+1. **Omit the keypoint entirely** — changes the column count per label line. Ultralytics expects exactly `kpt_shape[0]` keypoints per object, every time. Variable column counts cause a parsing crash.
+2. **Use (-1, -1, 0)** — negative normalized coordinates are out-of-range and trigger "non-normalized or out of bounds" warnings. Some values will be clipped or the label skipped.
+3. **Use (0.5, 0.5, 0)** — marking missing keypoints at image center teaches the model to predict center for occluded points, which is wrong.
+
+The correct representation is `(0.0, 0.0, 0)` — coordinates at image origin with visibility=0 — which signals to the loss function that this keypoint should not contribute to the gradient.
+
+**Why it happens:**
+The Ultralytics issue #17116 explicitly documents this. The COCO keypoint convention (v=0: not labeled, v=1: labeled but not visible, v=2: labeled and visible) is not obvious to developers unfamiliar with the COCO spec. Custom datasets often have simpler annotation schemes that do not include visibility.
+
+**How to avoid:**
+- In the annotation pipeline, explicitly mark each of the 6 keypoints with: if annotated → `(norm_x, norm_y, 2)` if visible, `(norm_x, norm_y, 1)` if occluded but inferred; if not annotatable → `(0.0, 0.0, 0)`.
+- In the data conversion script, never use negative coordinates or coordinates outside [0, 1].
+- During inference post-processing, filter out keypoints where the visibility score < threshold OR the confidence from the model is low — do not use keypoints predicted at (0, 0) as real body positions.
+
+**Warning signs:**
+- Training warnings: "non-normalized or out of bounds coordinate" for specific frames.
+- Inference shows predicted keypoints at (0, 0) in frame coordinates on some fish (model has learned to predict image origin for missing points using wrong training convention).
+- Column count in label files is inconsistent across fish within the same frame.
+
+**Phase to address:**
+Training data preparation phase (keypoint annotation pipeline). Validate by loading a sample label file and asserting exactly `5 + kpt_shape[0] * kpt_shape[1]` values per line.
+
+---
+
+### Pitfall B10: Running YOLOv8-seg on Crops vs Full Frame — Data Format Must Match Inference Mode
+
+**What goes wrong:**
+If YOLOv8-seg is trained on full-frame images (normalized polygon coordinates relative to the full 1600x1200 frame) but then run at inference time on crops (256x128 regions), the model receives images where the fish fills the entire frame. The input distribution is completely different from training. The model has only ever seen a fish as a small polygon in the center of a 1600x1200 frame; it now sees the same fish filling 90% of the image. Detection will fail.
+
+The reverse failure: if trained on crops but inference runs on full frames, the model receives a full 1600x1200 frame with many small fish and must detect and segment all of them simultaneously — which it has no training experience for.
+
+**Why it happens:**
+The existing pipeline has two inference modes that look similar: full-frame YOLO detection (already working), and crop-based U-Net segmentation. Developers adding YOLOv8-seg must decide which mode to use for BOTH training AND inference. The existing detect + crop workflow must inform the seg training mode. Mixing modes invalidates the training distribution.
+
+**How to avoid:**
+- Decide explicitly at the start: train on crops (one fish per image) and run inference on crops, OR train on full frames and run inference on full frames. For this pipeline, training on crops is recommended because:
+  - It matches the existing YOLO-detect → crop → segment architecture.
+  - It keeps images small (faster training on 150 frames).
+  - It avoids multi-instance seg at inference time (one fish per crop, simpler).
+- Encode the inference mode in the dataset YAML description comment and in the model documentation.
+- Do NOT mix: if the training dataset contains cropped images, the inference code must crop before calling `model.predict()`.
+
+**Warning signs:**
+- Model trained on crops fails to detect fish when run on full frames (or vice versa).
+- Segmentation mAP is high during training but near zero in pipeline integration testing.
+- `result.boxes` is empty when running inference on a full frame with a model trained on crops.
+
+**Phase to address:**
+Training data preparation phase (design of training image format). This must be decided before any annotation preparation begins, as it affects all label coordinate normalization.
+
+---
+
+## Technical Debt Patterns (v3.0 Specific)
+
+| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
+|----------|-------------------|----------------|-----------------|
+| Train on raw SAM2 masks without visual validation of polygon conversion | Faster pipeline setup | Silent corrupt annotations; model trains on garbage | Never — always validate 20+ samples visually before full training |
+| Use `result.masks.data` directly without letterbox correction | Simpler code | Masks in wrong coordinate space for non-square crops | Never for non-square inputs — use `result.masks.xy` and `cv2.fillPoly` |
+| Skip `kpt_shape` validation in dataset YAML | No extra code | Silent column offset; model predicts wrong keypoints | Never — add YAML validation as a pipeline step |
+| Train seg/pose from scratch instead of pretrained weights | No dependency on COCO weights | 10x more data needed; poor generalization on 150 frames | Never for this dataset size |
+| Use full-frame inference for seg/pose after training on crops | Simpler inference code | Distribution mismatch; model fails on real frames | Never — inference mode must match training mode |
+| Keep old U-Net code during transition | Fallback if Ultralytics fails | Maintenance burden; import conflicts; mixed model interfaces | Acceptable only as a temporary stage gate during phased replacement |
+
+---
+
+## Integration Gotchas (v3.0 Specific)
+
+| Integration | Common Mistake | Correct Approach |
+|-------------|----------------|------------------|
+| SAM2 mask → YOLO seg polygon | Write each `findContours` contour as a separate label line | Merge multi-region masks with morphological closing; keep only largest contour if merging fails |
+| Keypoint labels | Normalize coords relative to crop image | Normalize relative to full frame image; convert crop coords first |
+| Missing keypoints | Omit or use (-1,-1) | Always write `(0.0, 0.0, 0)` for missing keypoints; never change column count |
+| YOLOv8-seg inference masks | Use `result.masks.data` directly | Use `result.masks.xy` (already in original image coords) then `cv2.fillPoly` |
+| YOLOv8-pose keypoints at inference | Use `result.keypoints.xy` as frame coords | `result.keypoints.xy` is in crop coords when crop is passed; add `crop_region.x1/y1` offset |
+| Existing YOLO detect model | Load detect weights for seg training | Use task-specific weights: `YOLO("yolov8n-seg.pt")` for seg |
+| Ultralytics version pinning | Upgrade for new features mid-project | Pin version in `pyproject.toml`; verify detect pipeline still works after any upgrade |
+
+---
+
+## "Looks Done But Isn't" Checklist (v3.0 Specific)
+
+- [ ] **Polygon conversion validated:** 20+ label files visually inspected with overlaid polygons on source images — no disconnected regions, no degenerate (< 3 point) polygons.
+- [ ] **YOLO seg training on crops:** Confirm dataset images are crops (not full frames); label coordinates normalized to crop dimensions, not frame dimensions.
+- [ ] **YOLO pose keypoints in frame space:** Verify label file keypoint coordinates for a known fish are in expected full-frame normalized range (not near 0 which would indicate crop space).
+- [ ] **kpt_shape in dataset.yaml:** `kpt_shape: [6, 3]` present; `kpt_shape[1] == 3` (not 2) to support visibility flags.
+- [ ] **Missing keypoints use (0.0, 0.0, 0):** Search label files for negative values or values > 1.0 — both indicate wrong convention.
+- [ ] **Inference mask coordinate space correct:** Test inference on a 256x128 crop; verify `result.masks.xy[0]` points are within (0, 256) for x and (0, 128) for y.
+- [ ] **Keypoint back-projection verified:** After pose model inference on a crop, verify back-projected frame keypoints fall within the detection bounding box.
+- [ ] **Existing detect model unaffected:** Run existing YOLO detect pipeline after any Ultralytics version change or training run; verify detection count on reference frame matches baseline.
+- [ ] **No project/name collision:** seg and pose training use distinct `project/name` paths; `runs/detect/` is unchanged.
+- [ ] **Temporal split validated:** Val set is from a different recording session or non-overlapping temporal window; val loss is NOT matching train loss from epoch 1.
+
+---
+
+## Recovery Strategies (v3.0 Specific)
+
+| Pitfall | Recovery Cost | Recovery Steps |
+|---------|---------------|----------------|
+| SAM2 multi-region polygon corruption discovered after training | HIGH | Fix conversion pipeline, regenerate all labels, retrain from scratch |
+| Keypoint labels in crop space discovered after training | HIGH | Recompute all keypoint labels with frame-space normalization, retrain |
+| Missing kpt_shape in YAML or wrong dimensionality | LOW | Add/fix YAML field, no label changes needed, re-run training |
+| Masks in letterboxed space used incorrectly | MEDIUM | Switch from `result.masks.data` to `result.masks.xy` + fillPoly; no retraining needed |
+| Existing detect model broken by Ultralytics upgrade | MEDIUM | Pin previous version, check release notes for breaking changes, update parsing code |
+| Model trained on crops, inference on full frames | HIGH | Retrain with correct dataset format; or change inference to crop-first (preferred) |
+| Small dataset overfitting discovered | MEDIUM | Add stronger augmentation (especially color jitter for low-contrast females), freeze backbone, retrain |
+
+---
+
+## Pitfall-to-Phase Mapping (v3.0 Specific)
+
+| Pitfall | Prevention Phase | Verification |
+|---------|------------------|--------------|
+| B1: SAM2 multi-region masks | Training data prep (annotation conversion) | Visual overlay check on 20+ frames; zero corrupt-label warnings at dataset check |
+| B2: Keypoint coords in crop space | Training data prep (pose label generation) | Assert normalized keypoint values in expected frame-space range; no > 1.0 or < 0 |
+| B3: Missing kpt_shape in YAML | Training data prep (YAML construction) | `check_det_dataset(yaml_path)` passes without KeyError |
+| B4: Masks in letterboxed space | Seg backend integration | Test: non-square crop inference → verify mask pixel region matches fish location |
+| B5: Pose keypoints in crop space at inference | Pose backend integration | Coordinate plausibility assertion: keypoints within detection bbox |
+| B6: Small dataset overfitting | Model training (hyperparameter setup) | Hold-out val clip from different session; val loss diverges from train after ~20 epochs |
+| B7: Breaking existing detect model | Any training phase | Detect pipeline regression test after each Ultralytics model training run |
+| B8: Degenerate polygons | Training data prep (polygon extraction) | Assert len >= 3 for all polygons; count check matches expected fish count per frame |
+| B9: Wrong missing keypoint convention | Training data prep (annotation pipeline) | Assert all values in [0, 1]; no negative coords; constant column count per label line |
+| B10: Train/inference mode mismatch | Training data prep (design decision) | Explicitly document training image format; verify inference code matches it |
+
+---
 
 ---
 
@@ -426,6 +767,22 @@ Training infrastructure phase, before writing any training module code.
 
 ## Sources
 
+### v3.0 Sources
+
+- Ultralytics YOLOv8-seg task documentation: [Instance Segmentation](https://docs.ultralytics.com/tasks/segment/)
+- Ultralytics YOLOv8-pose task documentation: [Pose Estimation](https://docs.ultralytics.com/tasks/pose/)
+- Ultralytics pose dataset format: [Pose Estimation Datasets Overview](https://docs.ultralytics.com/datasets/pose/)
+- Ultralytics issue #4796 "Inference on rectangular image returns padded mask": [GitHub](https://github.com/ultralytics/ultralytics/issues/4796)
+- Ultralytics issue #15380 "Handling Multiple Connected Regions from SAM2 for YOLO Segmentation Training": [GitHub](https://github.com/ultralytics/ultralytics/issues/15380)
+- Ultralytics issue #17116 "Question about kpt_shape parameter and handling missing keypoints": [GitHub](https://github.com/ultralytics/ultralytics/issues/17116)
+- Ultralytics issue #1970 "YOLOv8-Pose annotations format": [GitHub](https://github.com/ultralytics/ultralytics/issues/1970)
+- Ultralytics GitHub discussion #6421 "SAM segmentation masks to YOLO format": [GitHub](https://github.com/orgs/ultralytics/discussions/6421)
+- Ultralytics small dataset training discussion #6201: [GitHub](https://github.com/ultralytics/ultralytics/issues/6201)
+- Ultralytics layer freezing discussion #3862: [GitHub](https://github.com/orgs/ultralytics/discussions/3862)
+- Roboflow discussion on kpt_shape configuration: [What format to use for YOLOV8 Pose model training](https://discuss.roboflow.com/t/what-format-to-use-for-yolov8-pose-model-training/10568)
+
+### v2.2 Sources
+
 - Ultralytics YOLO OBB documentation: [Oriented Bounding Boxes Object Detection](https://docs.ultralytics.com/tasks/obb/)
 - Ultralytics issue #13003 "Is the angle value given by OBB correct?": [GitHub](https://github.com/ultralytics/ultralytics/issues/13003)
 - Ultralytics issue #16235 "YOLOv8-OBB angle conversion": [GitHub](https://github.com/ultralytics/ultralytics/issues/16235)
@@ -434,5 +791,5 @@ Training infrastructure phase, before writing any training module code.
 - Prior project pitfalls research: 2026-02-19 / 2026-02-21 (v1.0–v2.1)
 
 ---
-*Pitfalls research for: v2.2 Backends — YOLO-OBB, keypoint midline, training infrastructure, config cleanup*
-*Researched: 2026-02-28*
+*Pitfalls research for: v3.0 Ultralytics Unification (replacing U-Net segmentation and keypoint regression with YOLOv8-seg and YOLOv8-pose); v2.2 Backends; v1.0–v2.1 foundation*
+*Researched: 2026-02-28 (v2.2) / 2026-03-01 (v3.0 additions)*

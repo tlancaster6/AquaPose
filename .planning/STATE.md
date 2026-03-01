@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-03-01)
 Phase: 36 of 37 (Training Wrappers) — COMPLETE
 Plan: 2/2 complete in current phase
 Status: Phase 36 complete; Phase 37 (Pipeline Integration) is next
-Last activity: 2026-03-01 — Phase 36 Plan 02 complete (YOLO-seg/pose training wrappers, NDJSON conversion, CLI subcommands)
+Last activity: 2026-03-01 - Completed quick task 13: Convert yolo_obb.py to use ndjson format training data and simplify to follow yolo_pose/yolo_seg pattern with common.py
 
 Progress: [████░░░░░░] ~66%
 

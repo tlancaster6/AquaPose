@@ -161,6 +161,7 @@ def extract_affine_crop(
     crop_size: tuple[int, int],
     padding_fraction: float = 0.15,
     interpolation: int = cv2.INTER_LINEAR,
+    fit_obb: bool = False,
 ) -> AffineCrop:
     """Extract a rotation-aligned crop centred on an OBB detection.
 
@@ -168,26 +169,27 @@ def extract_affine_crop(
     horizontal, then centres the OBB centre in the crop canvas.  Pixels
     outside the source frame are zero-filled (letterbox padding).
 
-    The ``obb_w`` and ``obb_h`` parameters are accepted for interface
-    consistency with callers that have the OBB dimensions available, but
-    the crop canvas size is controlled solely by ``crop_size``.
-    ``padding_fraction`` is reserved for future use (downstream callers
-    that want scaled crops); it does not affect the current canvas size.
+    When ``fit_obb`` is True, the warp also scales the OBB so it fits
+    inside the crop canvas (letterbox-style, preserving aspect ratio).
+    This is needed by backends whose models were trained on letterboxed
+    crops.  ``invert_affine_points`` correctly inverts the combined
+    rotation+scale+translation.
 
     Args:
         frame: Source image of shape ``(H, W)`` or ``(H, W, C)``.
         center_xy: OBB centre in frame pixel coordinates ``(cx, cy)``.
         angle_math_rad: OBB orientation in standard math radians (CCW,
-            range ``[-pi, pi]``). This is the value stored in
-            :attr:`~aquapose.segmentation.detector.Detection.angle` after
-            the YOLO-OBB backend's conversion.
+            range ``[-pi, pi]``).
         obb_w: OBB width in pixels (along the fish's long axis).
         obb_h: OBB height in pixels (across the fish body).
         crop_size: Output canvas size ``(width, height)`` in pixels.
         padding_fraction: Reserved for future scaled-canvas support.
-            Currently unused — the crop canvas is always ``crop_size``.
+            Currently unused when ``fit_obb`` is False.  When ``fit_obb``
+            is True, leaves this fraction as margin on each side.
         interpolation: OpenCV interpolation flag for ``cv2.warpAffine``.
             Defaults to ``cv2.INTER_LINEAR``.
+        fit_obb: When True, scale the warp so the OBB fits inside the
+            crop canvas.  Defaults to False (native pixel scale).
 
     Returns:
         :class:`AffineCrop` containing the warped image, the transform
@@ -199,8 +201,11 @@ def extract_affine_crop(
     # Convert standard math angle (CCW, radians) -> cv2 angle (CW, degrees)
     angle_cv2_deg = math.degrees(-angle_math_rad)
 
-    # Build a rotation matrix about the OBB centre
-    M_rot = cv2.getRotationMatrix2D((cx, cy), angle_cv2_deg, scale=1.0)
+    # Compute scale: fit OBB into canvas if requested, otherwise native scale
+    scale = min(crop_w / max(obb_w, 1.0), crop_h / max(obb_h, 1.0)) if fit_obb else 1.0
+
+    # Build a rotation+scale matrix about the OBB centre
+    M_rot = cv2.getRotationMatrix2D((cx, cy), angle_cv2_deg, scale=scale)
 
     # Translate so that the OBB centre lands at the centre of the crop canvas
     M_rot[0, 2] += crop_w / 2 - cx

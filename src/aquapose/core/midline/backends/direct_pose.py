@@ -230,6 +230,7 @@ class DirectPoseBackend:
             obb_w=float(bw),
             obb_h=float(bh),
             crop_size=self._crop_size,
+            fit_obb=True,
         )
 
         crop_img = affine.image
@@ -279,27 +280,48 @@ class DirectPoseBackend:
             return None
 
         # 6. Back-project visible keypoints to frame space
-        #    Normalized [0,1] -> crop pixel coords (multiply by crop dimensions)
+        #    Normalized [0,1] -> crop pixel coords -> frame coords via affine inverse.
+        #    fit_obb=True in extract_affine_crop scaled the fish to fill the crop,
+        #    so invert_affine_points correctly undoes rotation+scale+translation.
         visible_kp_norm = kp_norm[visible_mask]  # (V, 2)
-        kp_crop_px = visible_kp_norm * np.array(
-            [crop_w, crop_h], dtype=np.float64
-        )  # (V, 2)
-
-        kp_frame = invert_affine_points(kp_crop_px, affine.M)  # (V, 2)
-
-        # t-values for visible keypoints
         visible_t = self._t_values[visible_mask]  # (V,)
         visible_conf = conf[visible_mask]  # (V,)
 
-        # 7. Fit CubicSpline (requires at least 2 unique t-values for cubic)
-        #    Sort by t to ensure monotone parameter axis
-        sort_idx = np.argsort(visible_t)
-        t_sorted = visible_t[sort_idx]
-        xy_sorted = kp_frame[sort_idx]
-        conf_sorted = visible_conf[sort_idx]
+        kp_crop_px = visible_kp_norm * np.array([crop_w, crop_h], dtype=np.float64)
 
-        # Deduplicate coincident t-values (shouldn't happen with uniform t_values
-        # but guard against edge cases in custom keypoint_t_values)
+        # 6a. Re-order keypoints by their crop-space x-coordinate.
+        #
+        #     During training the fish body was always oriented left-to-right
+        #     in the crop (Nose at small x, Tailbase at large x).  Keypoints
+        #     that were invisible in a training image are not reliably learned
+        #     and may be predicted with x-values that violate the expected
+        #     monotone order.  When CubicSpline connects non-monotone points
+        #     parameterised by t=[0,0.2,...,1.0] it produces loops ("awareness
+        #     ribbon" shape).
+        #
+        #     Sorting by crop-space x enforces the same ordering assumed during
+        #     training.  For fish whose affine crop is oriented right-to-left
+        #     the sorted order will be reversed relative to the anatomical
+        #     labelling, but the resulting midline is still geometrically smooth;
+        #     the orientation-resolution stage corrects head-tail direction.
+        #
+        #     t-values are re-assigned uniformly after sorting so that the
+        #     spline parameter still runs from 0 (one end) to 1 (other end).
+        if len(kp_crop_px) >= 2:
+            x_order = np.argsort(kp_crop_px[:, 0])
+            kp_crop_px = kp_crop_px[x_order]
+            visible_conf = visible_conf[x_order]
+            visible_t = np.linspace(0.0, 1.0, len(kp_crop_px))
+
+        kp_frame = invert_affine_points(kp_crop_px, affine.M)  # (V, 2)
+
+        # 7. Fit CubicSpline (requires at least 2 unique t-values for cubic)
+        #    visible_t is already sorted and unique (linspace or pre-sorted
+        #    anatomical values).  Keep the deduplication guard for safety.
+        t_sorted = visible_t
+        xy_sorted = kp_frame
+        conf_sorted = visible_conf
+
         _, unique_idx = np.unique(t_sorted, return_index=True)
         if len(unique_idx) < 2:
             # Can't fit a spline with fewer than 2 unique t-values

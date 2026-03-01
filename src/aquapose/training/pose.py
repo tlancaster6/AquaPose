@@ -208,8 +208,11 @@ class KeypointDataset(Dataset):  # type: ignore[type-arg]
             img_tv = tv_tensors.Image(img_uint8)
             kps_tv = tv_tensors.KeyPoints(kp_pixel, canvas_size=(sz, sz))  # type: ignore[call-overload]
 
-            vis_aug = visibility
+            # Retry up to 10 times to get ≥3 visible keypoints after augmentation.
+            # If all retries fail, the last attempt is used (masked loss handles it).
+            img_aug: torch.Tensor = img_tv
             kp_out = kp_pixel.clone()
+            vis_aug = visibility
 
             for _ in range(10):
                 img_aug, kps_aug = _AUGMENT_TRANSFORM(img_tv, kps_tv)
@@ -217,14 +220,14 @@ class KeypointDataset(Dataset):  # type: ignore[type-arg]
                 y_aug = kps_aug[:, 1]
                 oob = (x_aug < 0) | (x_aug >= sz) | (y_aug < 0) | (y_aug >= sz)
                 vis_aug = visibility & ~oob
-                kp_out = torch.as_tensor(kps_aug).clone()
+                kp_out = kps_aug.detach().clone()
                 if int(vis_aug.sum()) >= 3:
                     break
 
             # Zero out invisible coordinates, normalize to [0, 1]
             kp_out[~vis_aug] = 0.0
             kp_flat = (kp_out / sz).view(-1)
-            image_tensor = img_aug.float() / 255.0  # type: ignore[union-attr]
+            image_tensor = img_aug.float() / 255.0
 
         else:
             # Clean path: OOB check from COCO coordinates, no transform applied
@@ -395,28 +398,31 @@ def train_pose(
     val_json = data_dir / "val.json"
     annotations_json = data_dir / "annotations.json"
 
+    # COCO convention: images may live in data_dir/images/ subdirectory
+    image_root = data_dir / "images" if (data_dir / "images").is_dir() else data_dir
+
     train_dataset: Dataset  # type: ignore[type-arg]
     val_dataset: Dataset  # type: ignore[type-arg]
 
     if train_json.exists() and val_json.exists():
         # Pre-split: combine clean + augmented for training, clean for val
         train_clean = KeypointDataset(
-            train_json, data_dir, n_keypoints=n_keypoints, augment=False
+            train_json, image_root, n_keypoints=n_keypoints, augment=False
         )
         train_aug = KeypointDataset(
-            train_json, data_dir, n_keypoints=n_keypoints, augment=True
+            train_json, image_root, n_keypoints=n_keypoints, augment=True
         )
         train_dataset = ConcatDataset([train_clean, train_aug])
         val_dataset = KeypointDataset(
-            val_json, data_dir, n_keypoints=n_keypoints, augment=False
+            val_json, image_root, n_keypoints=n_keypoints, augment=False
         )
     else:
         # Single annotations.json: split once on clean dataset, build ConcatDataset
         train_clean = KeypointDataset(
-            annotations_json, data_dir, n_keypoints=n_keypoints, augment=False
+            annotations_json, image_root, n_keypoints=n_keypoints, augment=False
         )
         train_aug = KeypointDataset(
-            annotations_json, data_dir, n_keypoints=n_keypoints, augment=True
+            annotations_json, image_root, n_keypoints=n_keypoints, augment=True
         )
         train_indices, val_indices = stratified_split(
             train_clean,
@@ -464,6 +470,8 @@ def train_pose(
         # Encoder frozen — only optimise head
         optimizer = torch.optim.AdamW(head_params, lr=lr, weight_decay=1e-4)
 
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+
     early_stopper = EarlyStopping(patience=patience, mode="min")
     logger = MetricsLogger(output_dir, fields=["train_loss", "val_error"])
     logger.set_total_epochs(epochs)
@@ -493,6 +501,7 @@ def train_pose(
             n_batches += 1
 
         avg_loss = epoch_loss / max(n_batches, 1)
+        scheduler.step()
 
         # Validation: masked mean keypoint error (Euclidean distance in [0,1] coords)
         model.eval()

@@ -1,8 +1,7 @@
 """Backend registry for the Midline stage.
 
 Provides a factory function that resolves midline backend kind strings to
-configured backend instances. Both backends are currently no-op stubs
-pending Phase 37 YOLO model integration.
+configured backend instances.
 """
 
 from __future__ import annotations
@@ -15,19 +14,13 @@ __all__ = ["get_backend"]
 def get_backend(kind: str, **kwargs: Any) -> object:
     """Create a midline backend by kind name.
 
-    Both backends are currently no-op stubs that return midline=None for all
-    detections. YOLO-seg and YOLO-pose models will be wired into these backends
-    in Phase 37.
-
     Args:
         kind: Backend identifier. Supported values:
 
-            - ``"segmentation"`` (default): No-op stub awaiting YOLO-seg
-              integration in Phase 37. All kwargs are accepted and stored
-              as instance attributes.
-            - ``"pose_estimation"``: No-op stub awaiting YOLO-pose integration
-              in Phase 37. All kwargs are accepted and stored as instance
-              attributes.
+            - ``"segmentation"`` (default): YOLO-seg mask inference with
+              skeletonization to extract Midline2D objects.
+            - ``"pose_estimation"``: YOLO-pose keypoint inference with
+              spline interpolation to extract Midline2D objects.
 
         **kwargs: Forwarded to the backend constructor.
 

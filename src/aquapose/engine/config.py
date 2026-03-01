@@ -69,9 +69,9 @@ class DetectionConfig:
 class MidlineConfig:
     """Config for the Midline stage (Stage 2).
 
-    The Midline stage supports two backends: ``"segmentation"`` and
-    ``"pose_estimation"``. Both are currently no-op stubs returning midline=None
-    pending Phase 37 YOLO model integration.
+    The Midline stage supports two backends: ``"segmentation"`` (YOLO-seg
+    mask skeletonization) and ``"pose_estimation"`` (YOLO-pose keypoint
+    spline interpolation).
 
     Attributes:
         confidence_threshold: Minimum confidence for mask acceptance by the
@@ -79,7 +79,7 @@ class MidlineConfig:
         weights_path: Path to YOLO-seg model weights for the ``"segmentation"``
             backend.
         backend: Midline backend to use. ``"segmentation"`` (default) or
-            ``"pose_estimation"``. Both are no-op stubs until Phase 37.
+            ``"pose_estimation"``.
         n_points: Number of midline points to produce per detection.
         min_area: Minimum mask area (pixels) required to attempt midline extraction
             (``"segmentation"`` only).

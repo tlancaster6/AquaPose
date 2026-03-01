@@ -25,7 +25,7 @@ _INPUT_SIZE = 128
 _AUGMENT_TRANSFORM = v2.Compose(
     [
         v2.RandomHorizontalFlip(p=0.5),
-        v2.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.8, 1.2)),
+        v2.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.8, 1.2)),  # type: ignore[arg-type]
         v2.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.05),
     ]
 )
@@ -206,7 +206,7 @@ class KeypointDataset(Dataset):  # type: ignore[type-arg]
             # Build uint8 image tensor for v2 transforms (ColorJitter needs uint8)
             img_uint8 = torch.from_numpy(image_resized).permute(2, 0, 1)  # (3, H, W)
             img_tv = tv_tensors.Image(img_uint8)
-            kps_tv = tv_tensors.KeyPoints(kp_pixel, canvas_size=(sz, sz))
+            kps_tv = tv_tensors.KeyPoints(kp_pixel, canvas_size=(sz, sz))  # type: ignore[call-overload]
 
             vis_aug = visibility
             kp_out = kp_pixel.clone()

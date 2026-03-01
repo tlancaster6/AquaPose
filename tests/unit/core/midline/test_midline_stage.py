@@ -3,10 +3,13 @@
 Validates:
 - MidlineStage satisfies the Stage Protocol via structural typing
 - run() correctly populates PipelineContext.annotated_detections
-- DirectPoseBackend constructs (no longer raises NotImplementedError)
 - Backend registry raises ValueError for unknown kinds
 - Import boundary (ENG-07): no engine/ runtime imports in core/midline/
-- Fail-fast on missing U-Net weights
+
+Note: v3.0 Plan 01 removed UNetSegmentor, _PoseModel, and related backends.
+Tests that constructed SegmentThenExtractBackend or DirectPoseBackend
+using the deleted models have been removed. Plan 02 will replace these
+backends with Ultralytics-native stubs.
 """
 
 from __future__ import annotations
@@ -88,39 +91,6 @@ def test_midline_stage_populates_annotated_detections(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Direct pose backend
-# ---------------------------------------------------------------------------
-
-
-def test_backend_registry_direct_pose_constructs(tmp_path: Path) -> None:
-    """get_backend('direct_pose') returns a DirectPoseBackend instance (mocked model)."""
-    from aquapose.core.midline.backends.direct_pose import DirectPoseBackend
-
-    fake_weights = tmp_path / "pose_model.pth"
-    fake_weights.write_bytes(b"fake")
-
-    mock_model = MagicMock()
-    mock_model.to.return_value = mock_model
-    mock_model.eval.return_value = mock_model
-
-    with (
-        patch(
-            "aquapose.training.pose._PoseModel",
-            return_value=mock_model,
-        ),
-        patch("torch.load", return_value={}),
-    ):
-        backend = get_backend(
-            "direct_pose",
-            weights_path=str(fake_weights),
-            device="cpu",
-        )
-
-    assert isinstance(backend, DirectPoseBackend)
-    assert hasattr(backend, "process_frame")
-
-
-# ---------------------------------------------------------------------------
 # Backend registry
 # ---------------------------------------------------------------------------
 
@@ -129,34 +99,6 @@ def test_backend_registry_unknown_raises() -> None:
     """get_backend raises ValueError for an unrecognized backend kind."""
     with pytest.raises(ValueError, match="Unknown midline backend kind"):
         get_backend("nonexistent_backend")
-
-
-def test_backend_registry_segment_then_extract_constructs(tmp_path: Path) -> None:
-    """get_backend('segment_then_extract') constructs without error (mocked model)."""
-    fake_weights = tmp_path / "model.pth"
-    fake_weights.write_bytes(b"fake")
-
-    mock_model = MagicMock()
-    mock_model.to.return_value = mock_model
-    mock_segmentor = MagicMock()
-    mock_segmentor.get_model.return_value = mock_model
-
-    with (
-        patch(
-            "aquapose.segmentation.model.UNetSegmentor",
-            return_value=mock_segmentor,
-        ),
-        patch(
-            "aquapose.core.midline.backends.segment_then_extract.Path.exists",
-            return_value=True,
-        ),
-    ):
-        backend = get_backend(
-            "segment_then_extract",
-            weights_path=str(fake_weights),
-            device="cpu",
-        )
-        assert backend is not None
 
 
 # ---------------------------------------------------------------------------
@@ -213,57 +155,6 @@ def test_import_boundary_no_engine_imports() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Fail-fast on missing weights
-# ---------------------------------------------------------------------------
-
-
-def test_missing_weights_raises_at_construction(tmp_path: Path) -> None:
-    """SegmentThenExtractBackend raises FileNotFoundError when weights don't exist."""
-    from aquapose.core.midline.backends.segment_then_extract import (
-        SegmentThenExtractBackend,
-    )
-
-    nonexistent_weights = tmp_path / "nonexistent_weights.pth"
-    # Do NOT create the file — it must not exist
-
-    with pytest.raises(FileNotFoundError, match=r"nonexistent_weights\.pth"):
-        SegmentThenExtractBackend(weights_path=str(nonexistent_weights))
-
-
-def test_missing_weights_raises_via_midline_stage(tmp_path: Path) -> None:
-    """MidlineStage raises FileNotFoundError when U-Net weights do not exist."""
-    video_dir = tmp_path / "videos"
-    video_dir.mkdir()
-    (video_dir / "cam1-video.mp4").write_bytes(b"fake")
-
-    calib_path = tmp_path / "calibration.json"
-    calib_path.write_text("{}")
-
-    nonexistent_weights = tmp_path / "nonexistent.pth"
-
-    mock_cam = MagicMock()
-    mock_calib = MagicMock()
-    mock_calib.cameras = {"cam1": mock_cam}
-
-    with (
-        patch(
-            "aquapose.calibration.loader.load_calibration_data",
-            return_value=mock_calib,
-        ),
-        patch(
-            "aquapose.calibration.loader.compute_undistortion_maps",
-            return_value=MagicMock(),
-        ),
-        pytest.raises(FileNotFoundError, match=r"nonexistent\.pth"),
-    ):
-        MidlineStage(
-            video_dir=video_dir,
-            calibration_path=calib_path,
-            weights_path=str(nonexistent_weights),
-        )
-
-
-# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -300,6 +191,8 @@ def _build_stage(
     fake_weights = tmp_path / "model.pth"
     fake_weights.write_bytes(b"fake")
 
+    import sys
+
     mock_cam1 = MagicMock()
     mock_cam2 = MagicMock()
     mock_calib = MagicMock()
@@ -311,6 +204,12 @@ def _build_stage(
     mock_segmentor = MagicMock()
     mock_segmentor.get_model.return_value = mock_model
 
+    # aquapose.segmentation.model is removed in v3.0 (Plan 01).
+    # Inject a mock module so the lazy import inside SegmentThenExtractBackend.__init__
+    # resolves without error. Plan 02 will replace this backend with a stub.
+    mock_seg_model_module = MagicMock()
+    mock_seg_model_module.UNetSegmentor = MagicMock(return_value=mock_segmentor)
+
     with (
         patch(
             "aquapose.calibration.loader.load_calibration_data",
@@ -320,9 +219,9 @@ def _build_stage(
             "aquapose.calibration.loader.compute_undistortion_maps",
             return_value=mock_undist,
         ),
-        patch(
-            "aquapose.segmentation.model.UNetSegmentor",
-            return_value=mock_segmentor,
+        patch.dict(
+            sys.modules,
+            {"aquapose.segmentation.model": mock_seg_model_module},
         ),
         patch(
             "aquapose.core.midline.backends.segment_then_extract.Path.exists",

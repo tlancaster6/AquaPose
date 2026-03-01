@@ -21,10 +21,6 @@ class _HasImages(Protocol):
     _images: list[dict]  # type: ignore[assignment]
 
 
-# Fixed input size (width, height) for U-Net training
-UNET_INPUT_SIZE: tuple[int, int] = (128, 64)
-
-
 def apply_augmentation(
     image: np.ndarray,
     masks: list[np.ndarray],
@@ -99,7 +95,7 @@ def stratified_split(
 
     Args:
         dataset: Any dataset exposing a ``_images`` list (e.g.
-            ``CropDataset``, ``BinaryMaskDataset``, ``KeypointDataset``).
+            ``CropDataset``).
         val_fraction: Fraction of each camera's images to use for validation.
             Must be in (0, 1).
         seed: Random seed for reproducibility.
@@ -272,61 +268,3 @@ class CropDataset(_CocoDataset):
         }
 
         return image_tensor, target
-
-
-class BinaryMaskDataset(_CocoDataset):
-    """Dataset for U-Net binary segmentation on fish crops.
-
-    Returns ``(image, mask)`` tensors resized to 128x128. All per-instance
-    masks are merged into a single binary mask (since each crop contains
-    at most one fish). Negative examples return an all-zero mask.
-
-    Args:
-        coco_json: Path to COCO-format annotation JSON file.
-        image_root: Root directory containing the source images.
-        augment: Whether to apply data augmentation (flips, rotation, jitter).
-    """
-
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
-        """Load image and merged binary mask, resize to 128x128.
-
-        Args:
-            idx: Index into the image list.
-
-        Returns:
-            Tuple of (image_tensor, mask_tensor) where image is float32
-            [3, 128, 128] in [0, 1] and mask is float32 [1, 128, 128]
-            with values 0.0 or 1.0.
-        """
-        img_info = self._images[idx]
-        img_id = img_info["id"]
-        sz_w, sz_h = UNET_INPUT_SIZE
-
-        image = _load_image(
-            self._image_root / img_info["file_name"],
-            img_info.get("height", 256),
-            img_info.get("width", 256),
-        )
-
-        anns = self._ann_index.get(img_id, [])
-        masks, boxes = _decode_annotations(anns)
-
-        if self._augment and masks:
-            image, masks, boxes = apply_augmentation(image, masks, boxes)
-
-        # Merge all instance masks into a single binary mask
-        cur_h, cur_w = image.shape[:2]
-        if masks:
-            merged = np.zeros((cur_h, cur_w), dtype=np.uint8)
-            for m in masks:
-                merged = np.maximum(merged, m)
-        else:
-            merged = np.zeros((cur_h, cur_w), dtype=np.uint8)
-
-        image_resized = cv2.resize(image, (sz_w, sz_h), interpolation=cv2.INTER_LINEAR)
-        mask_resized = cv2.resize(merged, (sz_w, sz_h), interpolation=cv2.INTER_NEAREST)
-
-        image_tensor = torch.from_numpy(image_resized).permute(2, 0, 1).float() / 255.0
-        mask_tensor = torch.from_numpy(mask_resized).unsqueeze(0).float()
-
-        return image_tensor, mask_tensor

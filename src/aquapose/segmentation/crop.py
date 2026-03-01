@@ -2,7 +2,7 @@
 
 Provides shared machinery to crop an image region around a bounding box,
 run a segmentation model on the crop, and paste the resulting mask back
-into the full frame. Used by SAMPseudoLabeler and Mask R-CNN inference.
+into the full frame. Used by midline extraction backends and crop preprocessing.
 
 Also provides affine crop utilities for OBB-aligned crops:
 :func:`extract_affine_crop`, :func:`invert_affine_point`, and

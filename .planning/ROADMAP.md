@@ -188,14 +188,13 @@ Plans:
 **Summaries**: 36-02-SUMMARY.md
 
 ### Phase 37: Pipeline Integration
-**Goal**: The pipeline supports `yolo_seg` and `yolo_pose` as selectable midline backends; running either end-to-end produces `Midline2D` objects compatible with the reconstruction stages, with fish identities correctly linked from tracked detections to model outputs
+**Goal**: The pipeline supports `yolo_seg` and `yolo_pose` as selectable midline backends; running either end-to-end produces `Midline2D` objects compatible with the reconstruction stages
 **Depends on**: Phase 36 (trained models exist), Phase 35 (custom model code removed; existing segment_then_extract and direct_pose backends are no-op stubs awaiting YOLO model wiring)
-**Requirements**: PIPE-01, PIPE-02, PIPE-03, PIPE-04
+**Requirements**: PIPE-01, PIPE-02, PIPE-03
 **Success Criteria** (what must be TRUE):
   1. Setting `midline.backend: yolo_seg` in pipeline config runs the full pipeline end-to-end; the MidlineStage produces binary masks per detection that feed skeletonization the same way U-Net masks did
   2. Setting `midline.backend: yolo_pose` in pipeline config runs the full pipeline end-to-end; the MidlineStage produces `Midline2D` objects with 6-keypoint coordinates resampled to `n_sample_points` and per-point confidence scores
   3. Both backends produce `Midline2D` instances with identical shape and field structure — the reconstruction stages require no backend-specific branching
-  4. IoU-based instance matching correctly links each YOLO model output (mask or keypoints) to its tracked fish identity; unmatched detections are dropped rather than causing index errors
 **Plans**: TBD
 
 ## Progress
@@ -212,5 +211,5 @@ Plans:
 | 33. Keypoint Midline Backend | v2.2 | 2/2 | Complete | 2026-03-01 |
 | 33.1. Keypoint Training Data Augmentation | v2.2 | 1/1 | Complete | 2026-03-01 |
 | 35. Codebase Cleanup | v3.0 | 2/2 | Complete | 2026-03-01 |
-| 36. Training Wrappers | v3.0 | 2/2 | Complete | 2026-03-01 |
+| 36. Training Wrappers | 2/2 | Complete   | 2026-03-01 | 2026-03-01 |
 | 37. Pipeline Integration | v3.0 | 0/TBD | Not started | - |

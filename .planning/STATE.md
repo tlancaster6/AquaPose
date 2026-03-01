@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Ultralytics Unification
-status: in_progress
-last_updated: "2026-03-01T21:30:00.000Z"
+status: unknown
+last_updated: "2026-03-01T21:49:44.306Z"
 progress:
-  total_phases: 3
+  total_phases: 2
   completed_phases: 2
-  total_plans: 6
+  total_plans: 4
   completed_plans: 4
 ---
 
@@ -67,6 +67,7 @@ Key decisions entering v3.0:
 - Existing Stage Protocol architecture retained — new models plug in as backends within the 5-stage pipeline
 - Training uses NDJSON format; existing `scripts/build_yolo_training_data.py` covers OBB/pose; only seg conversion is new (DATA-01)
 - 6 anatomical keypoints: nose, head, spine1, spine2, spine3, tail
+- [Phase 36-training-wrappers]: format_seg_annotation normalizes polygon vertices to [0,1]; generate_seg_dataset uses same affine crop pipeline as pose, OBB from keypoints + polygons from segmentation; annotations missing segmentation silently skipped
 
 ### Pending Todos
 

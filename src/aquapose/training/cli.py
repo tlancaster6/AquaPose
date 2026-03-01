@@ -34,9 +34,9 @@ def train_group() -> None:
 @click.option("--imgsz", default=640, type=int, help="Training image size (square).")
 @click.option(
     "--model",
-    default="yolov8s-obb",
+    default="yolo26n-obb",
     type=str,
-    help="YOLO model variant (e.g. yolov8s-obb, yolov8n-obb).",
+    help="YOLO model variant (e.g. yolo26n-obb, yolo26s-obb).",
 )
 @click.option(
     "--weights",

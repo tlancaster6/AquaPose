@@ -39,7 +39,7 @@ def train_yolo_obb(
     device: str | None = None,
     val_split: float = 0.2,
     imgsz: int = 640,
-    model: str = "yolov8s-obb",
+    model: str = "yolo26n-obb",
     weights: Path | None = None,
 ) -> Path:
     """Train a YOLO-OBB model on a project NDJSON oriented bounding-box dataset.
@@ -60,8 +60,8 @@ def train_yolo_obb(
         val_split: Validation split fraction (informational — recorded in
             metrics; actual split is determined by ``data.yaml``).
         imgsz: Training image size (square).
-        model: YOLO model variant name (e.g. ``"yolov8s-obb"``,
-            ``"yolov8n-obb"``). Used to download pretrained weights when
+        model: YOLO model variant name (e.g. ``"yolo26n-obb"``,
+            ``"yolo26s-obb"``). Used to download pretrained weights when
             ``weights`` is None.
         weights: Path to pretrained weights for transfer learning. When
             provided, the model is initialised from these weights instead of

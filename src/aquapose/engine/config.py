@@ -69,18 +69,17 @@ class DetectionConfig:
 class MidlineConfig:
     """Config for the Midline stage (Stage 2).
 
-    The Midline stage supports two backends: ``"segment_then_extract"`` (U-Net
-    segmentation + skeletonization) and ``"direct_pose"`` (keypoint regression).
-    Both segmentation and midline extraction are configured here.
+    The Midline stage supports two backends: ``"segment_then_extract"`` and
+    ``"direct_pose"``. Both are currently no-op stubs returning midline=None
+    pending Phase 37 YOLO model integration.
 
     Attributes:
         confidence_threshold: Minimum confidence for mask acceptance by the
             segmentation backend.
-        weights_path: Path to U-Net model weights file for the
-            ``"segment_then_extract"`` backend. ``None`` uses the pretrained
-            ImageNet encoder.
+        weights_path: Path to segmentation model weights. Deprecated — will be
+            repurposed in Phase 37 for YOLO-seg model paths.
         backend: Midline backend to use. ``"segment_then_extract"`` (default)
-            or ``"direct_pose"`` (keypoint regression).
+            or ``"direct_pose"``. Both are no-op stubs until Phase 37.
         n_points: Number of midline points to produce per detection.
         min_area: Minimum mask area (pixels) required to attempt midline extraction
             (``"segment_then_extract"`` only).
@@ -95,10 +94,9 @@ class MidlineConfig:
             Default 0.5.
         orientation_weight_temporal: Weight for temporal prior signal.
             Default 0.3.
-        keypoint_weights_path: Path to ``_PoseModel`` keypoint weights (.pth)
-            for the ``"direct_pose"`` backend. ``None`` means not configured.
-        n_keypoints: Number of anatomical keypoints the ``_PoseModel`` outputs.
-            Default 6. Must match the model architecture.
+        keypoint_weights_path: Path to keypoint model weights. Deprecated — will
+            be repurposed in Phase 37 for YOLO-pose model paths.
+        n_keypoints: Number of anatomical keypoints. Default 6.
         keypoint_t_values: Per-keypoint arc-fraction values in [0, 1] from nose
             (0.0) to tail (1.0). If ``None``, defaults to uniform spacing.
         keypoint_confidence_floor: Minimum per-keypoint confidence to treat as
@@ -123,6 +121,14 @@ class MidlineConfig:
     keypoint_t_values: list[float] | None = None
     keypoint_confidence_floor: float = 0.1
     min_observed_keypoints: int = 3
+
+    def __post_init__(self) -> None:
+        _valid_backends = {"segment_then_extract", "direct_pose"}
+        if self.backend not in _valid_backends:
+            raise ValueError(
+                f"Unknown midline backend: {self.backend!r}. "
+                f"Available: {sorted(_valid_backends)}"
+            )
 
 
 @dataclass(frozen=True)

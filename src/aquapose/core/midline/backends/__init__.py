@@ -1,8 +1,8 @@
 """Backend registry for the Midline stage.
 
 Provides a factory function that resolves midline backend kind strings to
-configured backend instances. Both "segment_then_extract" and "direct_pose"
-are fully implemented.
+configured backend instances. Both backends are currently no-op stubs
+pending Phase 37 YOLO model integration.
 """
 
 from __future__ import annotations
@@ -15,21 +15,21 @@ __all__ = ["get_backend"]
 def get_backend(kind: str, **kwargs: Any) -> object:
     """Create a midline backend by kind name.
 
+    Both backends are currently no-op stubs that return midline=None for all
+    detections. YOLO-seg and YOLO-pose models will be wired into these backends
+    in Phase 37.
+
     Args:
         kind: Backend identifier. Supported values:
 
-            - ``"segment_then_extract"`` (default): U-Net segmentation then
-              skeletonization + BFS midline extraction. Accepted kwargs:
-              ``weights_path``, ``confidence_threshold``, ``n_points``,
-              ``min_area``, ``device``.
-            - ``"direct_pose"``: Keypoint regression backend. Uses a
-              _PoseModel (U-Net encoder + regression head) to directly predict
-              anatomical keypoints, fits a CubicSpline, and resamples to
-              n_points. Accepted kwargs: ``weights_path``, ``device``,
-              ``n_points``, ``n_keypoints``, ``keypoint_t_values``,
-              ``confidence_floor``, ``min_observed_keypoints``, ``crop_size``.
+            - ``"segment_then_extract"`` (default): No-op stub awaiting
+              YOLO-seg integration in Phase 37. All kwargs are accepted and
+              ignored.
+            - ``"direct_pose"``: No-op stub awaiting YOLO-pose integration
+              in Phase 37. All kwargs are accepted and ignored.
 
-        **kwargs: Forwarded to the backend constructor.
+        **kwargs: Forwarded to the backend constructor (currently ignored by
+            both stubs).
 
     Returns:
         A configured backend instance with a
@@ -37,7 +37,6 @@ def get_backend(kind: str, **kwargs: Any) -> object:
 
     Raises:
         ValueError: If *kind* is not a recognized backend identifier.
-        FileNotFoundError: If required weights files do not exist.
     """
     if kind == "segment_then_extract":
         from aquapose.core.midline.backends.segment_then_extract import (

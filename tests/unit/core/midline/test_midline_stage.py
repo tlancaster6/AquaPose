@@ -4,12 +4,8 @@ Validates:
 - MidlineStage satisfies the Stage Protocol via structural typing
 - run() correctly populates PipelineContext.annotated_detections
 - Backend registry raises ValueError for unknown kinds
+- SegmentThenExtractBackend stub instantiates and returns midline=None
 - Import boundary (ENG-07): no engine/ runtime imports in core/midline/
-
-Note: v3.0 Plan 01 removed UNetSegmentor, _PoseModel, and related backends.
-Tests that constructed SegmentThenExtractBackend or DirectPoseBackend
-using the deleted models have been removed. Plan 02 will replace these
-backends with Ultralytics-native stubs.
 """
 
 from __future__ import annotations
@@ -24,6 +20,9 @@ import pytest
 from aquapose.core.context import PipelineContext, Stage
 from aquapose.core.midline import AnnotatedDetection, MidlineStage
 from aquapose.core.midline.backends import get_backend
+from aquapose.core.midline.backends.segment_then_extract import (
+    SegmentThenExtractBackend,
+)
 from aquapose.segmentation.detector import Detection
 
 # ---------------------------------------------------------------------------
@@ -102,6 +101,36 @@ def test_backend_registry_unknown_raises() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Stub backend behavior
+# ---------------------------------------------------------------------------
+
+
+def test_segment_then_extract_stub_returns_none_midlines() -> None:
+    """SegmentThenExtractBackend stub instantiates cleanly and returns midline=None."""
+    import numpy as np
+
+    backend = SegmentThenExtractBackend()
+
+    det1 = Detection(bbox=(10, 10, 50, 50), mask=None, area=2500, confidence=0.9)
+    det2 = Detection(bbox=(60, 60, 30, 30), mask=None, area=900, confidence=0.8)
+    frame_dets: dict[str, list[Detection]] = {"cam1": [det1, det2]}
+    frames: dict[str, np.ndarray] = {"cam1": np.zeros((480, 640, 3), dtype=np.uint8)}
+
+    result = backend.process_frame(
+        frame_idx=0,
+        frame_dets=frame_dets,
+        frames=frames,
+        camera_ids=["cam1"],
+    )
+
+    assert "cam1" in result
+    assert len(result["cam1"]) == 2
+    for ann in result["cam1"]:
+        assert isinstance(ann, AnnotatedDetection)
+        assert ann.midline is None, "Stub must return midline=None for all detections"
+
+
+# ---------------------------------------------------------------------------
 # Import boundary
 # ---------------------------------------------------------------------------
 
@@ -167,7 +196,7 @@ def _build_stage(
 
     The stage's run() is replaced with a lightweight stub that returns the
     supplied *synthetic_annotated* instead of opening real videos or running
-    U-Net inference.
+    model inference.
 
     Args:
         tmp_path: Temporary directory for synthetic stub files.
@@ -188,27 +217,11 @@ def _build_stage(
     calib_path = tmp_path / "calibration.json"
     calib_path.write_text("{}")
 
-    fake_weights = tmp_path / "model.pth"
-    fake_weights.write_bytes(b"fake")
-
-    import sys
-
     mock_cam1 = MagicMock()
     mock_cam2 = MagicMock()
     mock_calib = MagicMock()
     mock_calib.cameras = {"cam1": mock_cam1, "cam2": mock_cam2}
     mock_undist = MagicMock()
-    mock_model = MagicMock()
-    mock_model.to.return_value = mock_model
-
-    mock_segmentor = MagicMock()
-    mock_segmentor.get_model.return_value = mock_model
-
-    # aquapose.segmentation.model is removed in v3.0 (Plan 01).
-    # Inject a mock module so the lazy import inside SegmentThenExtractBackend.__init__
-    # resolves without error. Plan 02 will replace this backend with a stub.
-    mock_seg_model_module = MagicMock()
-    mock_seg_model_module.UNetSegmentor = MagicMock(return_value=mock_segmentor)
 
     with (
         patch(
@@ -219,19 +232,10 @@ def _build_stage(
             "aquapose.calibration.loader.compute_undistortion_maps",
             return_value=mock_undist,
         ),
-        patch.dict(
-            sys.modules,
-            {"aquapose.segmentation.model": mock_seg_model_module},
-        ),
-        patch(
-            "aquapose.core.midline.backends.segment_then_extract.Path.exists",
-            return_value=True,
-        ),
     ):
         stage = MidlineStage(
             video_dir=video_dir,
             calibration_path=calib_path,
-            weights_path=str(fake_weights),
             device="cpu",
         )
 

@@ -12,7 +12,6 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import pytest
 
 _SCRIPT_PATH = Path(__file__).parents[2] / "scripts" / "build_yolo_training_data.py"
 _spec = importlib.util.spec_from_file_location("build_yolo_training_data", _SCRIPT_PATH)
@@ -30,8 +29,8 @@ pca_obb = _mod.pca_obb
 extrapolate_edge_keypoints = _mod.extrapolate_edge_keypoints
 affine_warp_crop = _mod.affine_warp_crop
 transform_keypoints = _mod.transform_keypoints
-format_obb_label = _mod.format_obb_label
-format_pose_label = _mod.format_pose_label
+format_obb_annotation = _mod.format_obb_annotation
+format_pose_annotation = _mod.format_pose_annotation
 generate_obb_dataset = _mod.generate_obb_dataset
 generate_pose_dataset = _mod.generate_pose_dataset
 
@@ -245,80 +244,71 @@ class TestExtrapolateEdgeKeypoints:
 
 
 # ---------------------------------------------------------------------------
-# format_obb_label
+# format_obb_annotation
 # ---------------------------------------------------------------------------
 
 
-class TestFormatObbLabel:
+class TestFormatObbAnnotation:
     def test_basic_format(self) -> None:
         corners = np.array([[0, 0], [100, 0], [100, 50], [0, 50]], dtype=float)
-        label = format_obb_label(corners, img_w=100, img_h=50)
-        parts = label.split()
-        assert parts[0] == "0"  # class id
-        assert len(parts) == 9  # class + 8 coords
-        # First corner should be 0.0 0.0
-        assert float(parts[1]) == pytest.approx(0.0)
-        assert float(parts[2]) == pytest.approx(0.0)
+        annot = format_obb_annotation(corners, img_w=100, img_h=50)
+        assert annot["class_id"] == 0
+        assert len(annot["corners"]) == 4
+        assert annot["corners"][0] == [0.0, 0.0]
 
     def test_normalized_values(self) -> None:
         corners = np.array([[50, 25], [100, 25], [100, 50], [50, 50]], dtype=float)
-        label = format_obb_label(corners, img_w=200, img_h=100)
-        parts = label.split()
-        # x values should be in [0, 1]
-        for i in range(1, 9, 2):
-            assert 0.0 <= float(parts[i]) <= 1.0
+        annot = format_obb_annotation(corners, img_w=200, img_h=100)
+        for cx, cy in annot["corners"]:
+            assert 0.0 <= cx <= 1.0
+            assert 0.0 <= cy <= 1.0
 
     def test_custom_class_id(self) -> None:
         corners = np.zeros((4, 2))
-        label = format_obb_label(corners, img_w=100, img_h=100, class_id=3)
-        assert label.startswith("3 ")
+        annot = format_obb_annotation(corners, img_w=100, img_h=100, class_id=3)
+        assert annot["class_id"] == 3
 
 
 # ---------------------------------------------------------------------------
-# format_pose_label
+# format_pose_annotation
 # ---------------------------------------------------------------------------
 
 
-class TestFormatPoseLabel:
+class TestFormatPoseAnnotation:
     def test_all_visible(self) -> None:
         kps = np.array(
             [[16, 8], [32, 8], [48, 8], [64, 8], [80, 8], [96, 8]], dtype=float
         )
         vis = np.ones(N, dtype=bool)
-        label = format_pose_label(0.5, 0.5, 1.0, 1.0, kps, vis, crop_w=128, crop_h=64)
-        parts = label.split()
-        # class + cx cy w h + N*(x y v) = 1 + 4 + 6*3 = 23
-        assert len(parts) == 23
-        assert parts[0] == "0"
-        # Visibility flags for all visible = 2
-        vis_flags = [parts[7 + k * 3] for k in range(N)]
-        assert all(v == "2" for v in vis_flags)
+        annot = format_pose_annotation(
+            0.5, 0.5, 1.0, 1.0, kps, vis, crop_w=128, crop_h=64
+        )
+        assert annot["class_id"] == 0
+        assert annot["bbox"] == [0.5, 0.5, 1.0, 1.0]
+        assert len(annot["keypoints"]) == N
+        for kp in annot["keypoints"]:
+            assert kp[2] == 2  # visible
 
     def test_invisible_keypoints_are_zeros(self) -> None:
         kps = np.zeros((N, 2), dtype=float)
         vis = np.zeros(N, dtype=bool)
-        label = format_pose_label(0.5, 0.5, 1.0, 1.0, kps, vis, crop_w=128, crop_h=64)
-        parts = label.split()
-        # All keypoint values should be 0 0 0
-        for k in range(N):
-            base = 5 + k * 3
-            assert parts[base] == "0"
-            assert parts[base + 1] == "0"
-            assert parts[base + 2] == "0"
+        annot = format_pose_annotation(
+            0.5, 0.5, 1.0, 1.0, kps, vis, crop_w=128, crop_h=64
+        )
+        for kp in annot["keypoints"]:
+            assert kp == [0, 0, 0]
 
     def test_mixed_visibility(self) -> None:
         kps = np.array([[16, 8], [0, 0], [48, 8], [0, 0], [80, 8], [0, 0]], dtype=float)
         vis = np.array([True, False, True, False, True, False])
-        label = format_pose_label(0.5, 0.5, 1.0, 1.0, kps, vis, crop_w=128, crop_h=64)
-        parts = label.split()
+        annot = format_pose_annotation(
+            0.5, 0.5, 1.0, 1.0, kps, vis, crop_w=128, crop_h=64
+        )
         for k in range(N):
-            base = 5 + k * 3
             if vis[k]:
-                assert parts[base + 2] == "2"
+                assert annot["keypoints"][k][2] == 2
             else:
-                assert parts[base] == "0"
-                assert parts[base + 1] == "0"
-                assert parts[base + 2] == "0"
+                assert annot["keypoints"][k] == [0, 0, 0]
 
 
 # ---------------------------------------------------------------------------
@@ -433,21 +423,22 @@ class TestIntegrationPipeline:
         assert (obb_root / "data.yaml").exists()
         assert (obb_root / "images" / "train").is_dir()
         assert (obb_root / "images" / "val").is_dir()
-        assert (obb_root / "labels" / "train").is_dir()
-        assert (obb_root / "labels" / "val").is_dir()
+        assert (obb_root / "train.ndjson").exists()
+        assert (obb_root / "val.ndjson").exists()
 
         # Total images should be 2
         assert n_train + n_val == 2
 
-        # Label files should have OBB format lines
-        all_labels = list((obb_root / "labels" / "train").glob("*.txt")) + list(
-            (obb_root / "labels" / "val").glob("*.txt")
-        )
-        for lbl in all_labels:
-            lines = [ln for ln in lbl.read_text().strip().splitlines() if ln]
+        # NDJSON lines should have valid JSON with obb annotations
+        for split in ("train", "val"):
+            ndjson_path = obb_root / f"{split}.ndjson"
+            lines = [ln for ln in ndjson_path.read_text().strip().splitlines() if ln]
             for line in lines:
-                parts = line.split()
-                assert len(parts) == 9  # class + 4 corners * 2 coords
+                record = json.loads(line)
+                assert "image" in record
+                assert "obbs" in record
+                for obb in record["obbs"]:
+                    assert len(obb["corners"]) == 4
 
     def test_pose_dataset_structure(self, tmp_path: Path) -> None:
         coco_path, images_dir = self._build_coco_json(tmp_path)
@@ -473,8 +464,8 @@ class TestIntegrationPipeline:
         assert (pose_root / "data.yaml").exists()
         assert (pose_root / "images" / "train").is_dir()
         assert (pose_root / "images" / "val").is_dir()
-        assert (pose_root / "labels" / "train").is_dir()
-        assert (pose_root / "labels" / "val").is_dir()
+        assert (pose_root / "train.ndjson").exists()
+        assert (pose_root / "val.ndjson").exists()
 
         # 3 annotations in input, all with 6/6 visible -> 3 crops total
         assert n_train + n_val == 3
@@ -490,17 +481,20 @@ class TestIntegrationPipeline:
             assert w == 128
             assert h == 64
 
-        # Check label format
-        all_labels = list((pose_root / "labels" / "train").glob("*.txt")) + list(
-            (pose_root / "labels" / "val").glob("*.txt")
-        )
-        for lbl in all_labels:
-            content = lbl.read_text().strip()
-            if not content:
-                continue
-            parts = content.split()
-            # class + cx cy w h + N*(x y v) = 1 + 4 + 6*3 = 23
-            assert len(parts) == 23
+        # Check NDJSON label format
+        total_records = 0
+        for split in ("train", "val"):
+            ndjson_path = pose_root / f"{split}.ndjson"
+            lines = [ln for ln in ndjson_path.read_text().strip().splitlines() if ln]
+            for line in lines:
+                record = json.loads(line)
+                assert "image" in record
+                assert "annotations" in record
+                for annot in record["annotations"]:
+                    assert len(annot["keypoints"]) == N
+                    assert len(annot["bbox"]) == 4
+                total_records += 1
+        assert total_records == 3
 
     def test_data_yaml_content(self, tmp_path: Path) -> None:
         coco_path, images_dir = self._build_coco_json(tmp_path)
@@ -516,9 +510,10 @@ class TestIntegrationPipeline:
         )
 
         obb_yaml = (output_dir / "obb" / "data.yaml").read_text()
-        assert "train: images/train" in obb_yaml
-        assert "val: images/val" in obb_yaml
+        assert "train: train.ndjson" in obb_yaml
+        assert "val: val.ndjson" in obb_yaml
         assert "nc: 1" in obb_yaml
 
         pose_yaml = (output_dir / "pose" / "data.yaml").read_text()
+        assert "train: train.ndjson" in pose_yaml
         assert "kpt_shape: [6, 3]" in pose_yaml

@@ -556,6 +556,11 @@ class TestFormatSegAnnotation:
             assert 0.0 <= y <= 1.0
 
 
+def _rect_seg(cx: float, cy: float, hw: float = 10.0) -> list[float]:
+    """Flat COCO polygon for a rectangle around (cx, cy)."""
+    return [cx - hw, cy - hw, cx + hw, cy - hw, cx + hw, cy + hw, cx - hw, cy + hw]
+
+
 # ---------------------------------------------------------------------------
 # TestSegConverter — integration tests for generate_seg_dataset
 # ---------------------------------------------------------------------------
@@ -582,19 +587,6 @@ class TestSegConverter:
         kps_full = _full_kp_flat(
             [(20, 50), (40, 50), (80, 50), (120, 50), (160, 50), (180, 50)]
         )
-
-        def _rect_seg(cx: float, cy: float, hw: float = 10.0) -> list[float]:
-            """Flat COCO polygon for a rectangle around (cx, cy)."""
-            return [
-                cx - hw,
-                cy - hw,
-                cx + hw,
-                cy - hw,
-                cx + hw,
-                cy + hw,
-                cx - hw,
-                cy + hw,
-            ]
 
         annotations: list[dict] = [
             {
@@ -825,18 +817,6 @@ class TestSegConverter:
         kps_full = _full_kp_flat(
             [(20, 50), (40, 50), (80, 50), (120, 50), (160, 50), (180, 50)]
         )
-
-        def _rect_seg(cx: float, cy: float, hw: float = 10.0) -> list[float]:
-            return [
-                cx - hw,
-                cy - hw,
-                cx + hw,
-                cy - hw,
-                cx + hw,
-                cy + hw,
-                cx - hw,
-                cy + hw,
-            ]
 
         # 3 fish in same image, all with segmentation polygons
         coco = {

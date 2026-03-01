@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from .common import EarlyStopping, MetricsLogger, make_loader, save_best_and_last
+from .common import (
+    EarlyStopping,
+    MetricsLogger,
+    make_loader,
+    save_best_and_last,
+    train_yolo_ndjson,
+)
 from .datasets import CropDataset, apply_augmentation, stratified_split
 from .prep import prep_group
 from .yolo_obb import train_yolo_obb
@@ -18,6 +24,7 @@ __all__ = [
     "prep_group",
     "save_best_and_last",
     "stratified_split",
+    "train_yolo_ndjson",
     "train_yolo_obb",
     "train_yolo_pose",
     "train_yolo_seg",

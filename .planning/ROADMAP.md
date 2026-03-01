@@ -220,6 +220,6 @@ Plans:
 | 32. YOLO-OBB Detection Backend | v2.2 | 2/2 | Complete | 2026-02-28 |
 | 33. Keypoint Midline Backend | v2.2 | 2/2 | Complete | 2026-03-01 |
 | 33.1. Keypoint Training Data Augmentation | v2.2 | 1/1 | Complete | 2026-03-01 |
-| 35. Codebase Cleanup | 2/2 | Complete   | 2026-03-01 | - |
+| 35. Codebase Cleanup | 2/2 | Complete    | 2026-03-01 | - |
 | 36. Training Wrappers | v3.0 | 0/TBD | Not started | - |
 | 37. Pipeline Integration | v3.0 | 0/TBD | Not started | - |

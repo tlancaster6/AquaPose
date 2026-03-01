@@ -1,13 +1,13 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.0
+milestone: v1.0
 milestone_name: Ultralytics Unification
-status: in_progress
-last_updated: "2026-03-01"
+status: unknown
+last_updated: "2026-03-01T20:49:46.410Z"
 progress:
-  total_phases: 3
+  total_phases: 2
   completed_phases: 1
-  total_plans: 2
+  total_plans: 4
   completed_plans: 2
 ---
 

@@ -59,17 +59,17 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ### Active
 
-## Current Milestone: v2.2 Backends
+## Current Milestone: v3.0 Ultralytics Unification
 
-**Goal:** Add swappable detection and midline backends (YOLO-OBB, keypoint-based midline), build training infrastructure, and clean up config system.
+**Goal:** Replace custom U-Net segmentation and keypoint regression models with Ultralytics-native YOLOv8-seg and YOLOv8-pose, unifying detection→segmentation→midline on one framework.
 
 **Target features:**
-- Training infrastructure (`src/aquapose/training/` + CLI entry points)
-- Config system cleanup (unified params, configurable N_SAMPLE_POINTS, device propagation, init-config UX)
-- Guidebook audit and update
-- YOLO-OBB configurable detection model with affine crop and bbox overlays
-- Keypoint-based midline backend (U-Net + regression head, per-point confidence, partial midline handling)
-- Confidence-weighted reconstruction in both backends
+- Strip custom U-Net segmentation and keypoint regression code (training/, _PoseModel, BinaryMaskDataset)
+- YOLOv8-seg backend replacing U-Net for mask inference
+- YOLOv8-pose backend replacing keypoint regression for midline extraction
+- Unified Ultralytics training workflow for detect, seg, and pose models
+- Pipeline integration: Ultralytics models as drop-in backends within existing Stage architecture
+- Training data preparation tooling for Ultralytics format (YOLO seg/pose annotation formats)
 
 ### Out of Scope
 
@@ -131,7 +131,9 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Direct triangulation over analysis-by-synthesis | ABS 30+ min/sec impractical; direct triangulation orders of magnitude faster | ✓ Good — primary pipeline works |
 | AquaCal as dependency, AquaMVS as reference | Avoid fragile cross-repo imports; reimplement refractive projection | ✓ Good |
 | YOLO as primary detector, MOG2 as fallback | YOLOv8n trained on 150 frames; recall 0.78 | ✓ Good |
-| U-Net over Mask R-CNN for segmentation | Lightweight (~2.5M params), trains on SAM2 pseudo-labels | ⚠️ Revisit — IoU 0.623 is bottleneck |
+| U-Net over Mask R-CNN for segmentation | Lightweight (~2.5M params), trains on SAM2 pseudo-labels | ✗ Replaced — IoU 0.623 insufficient; moving to YOLOv8-seg in v3.0 |
+| Custom keypoint regression for midline | U-Net encoder + regression head, per-point confidence | ✗ Replaced — poor performance even with augmentation; moving to YOLOv8-pose in v3.0 |
+| Ultralytics unification over custom models | Two custom U-Net models failed; Ultralytics provides pretrained backbones, battle-tested training, unified architecture | — Pending v3.0 |
 | RANSAC centroid clustering for cross-view identity | Cast refractive rays, triangulate minimal subsets, score consensus | Superseded by Leiden clustering in v2.1 |
 | Arc-length normalized correspondence | Slender-body assumption preserves cross-view correspondence | ✓ Good |
 | Analysis-by-synthesis retained as optional route | Shelved, not deleted — available for advanced work | ✓ Good |
@@ -153,4 +155,4 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Import boundary via AST checker + pre-commit | Automated enforcement prevents architectural regression | ✓ Good — 0 violations at milestone completion |
 
 ---
-*Last updated: 2026-02-28 after v2.2 Backends milestone started*
+*Last updated: 2026-03-01 after v3.0 Ultralytics Unification milestone started*

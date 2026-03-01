@@ -77,7 +77,7 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
 - [x] **Phase 33.1: Keypoint Training Data Augmentation** — complete 2026-03-01
 
 **6 phases (including inserted 33.1), Phase 34 (Stabilization) deferred**
-Full details: see Phase Details section below for v2.2
+Full details: `.planning/phases/29-*` through `.planning/phases/33.1-*`
 
 </details>
 
@@ -92,80 +92,6 @@ Full details: see Phase Details section below for v2.2
 - [ ] **Phase 37: Pipeline Integration** — Implement YOLOSegBackend and YOLOPoseBackend as selectable midline backends with instance matching and config support
 
 ## Phase Details
-
-### Phase 29: Guidebook Audit — COMPLETE (2026-02-28)
-**Goal**: GUIDEBOOK.md accurately reflects the v2.1 codebase and documents v2.2 planned features, giving future Claude sessions a reliable architectural reference
-**Depends on**: Nothing (documentation work, no code dependencies)
-**Requirements**: DOCS-01, DOCS-02
-**Plans**: 2/2 complete
-Plans:
-- [x] 29-01-PLAN.md — Audit and update GUIDEBOOK.md for v2.1 accuracy
-- [x] 29-02-PLAN.md — Add v2.2 planned feature inline tags
-**Summaries**: 29-01-SUMMARY.md, 29-02-SUMMARY.md
-
-### Phase 30: Config and Contracts — COMPLETE (2026-02-28)
-**Goal**: Pipeline config is unified and backward-compatible, device propagates to all stages from one top-level parameter, and Detection/Midline2D dataclasses carry the optional fields that v2.2 backends require
-**Depends on**: Phase 29
-**Requirements**: CFG-01, CFG-02, CFG-03, CFG-04, CFG-05, CFG-06, CFG-07, CFG-08, CFG-09, CFG-10, CFG-11, CFG-12
-**Success Criteria** (what must be TRUE):
-  1. Setting `device: cpu` at the top level of a pipeline config runs the full pipeline on CPU with no per-stage device overrides required; E2E tests cover both CPU and CUDA modes
-  2. Changing `n_sample_points` in pipeline config changes the number of midline points produced by all stages — no hardcoded `15` literals remain in any module
-  3. Existing v2.1 YAML config files load without error after config schema changes (backward compatibility via universal `_filter_fields()`)
-  4. `aquapose init-config <name>` creates a ready-to-use project directory with correctly ordered YAML fields and optional `--synthetic` flag for synthetic config section
-  5. `Detection` and `Midline2D` dataclasses carry their new optional fields (`angle`, `obb_points`, `point_confidence`) and all existing code paths treat absent fields as `None` without modification
-**Plans**: 3/3 complete
-Plans:
-- [x] 30-01-PLAN.md — Dataclass extensions and strict config validation
-- [x] 30-02-PLAN.md — Config field promotion and propagation
-- [x] 30-03-PLAN.md — init-config rewrite and path resolution
-**Summaries**: 30-01-SUMMARY.md, 30-02-SUMMARY.md, 30-03-SUMMARY.md
-
-### Phase 31: Training Infrastructure — COMPLETE (2026-02-28)
-**Goal**: All model training is accessible through a single `aquapose train` CLI group with consistent conventions, replacing disconnected scripts — built early so model training can begin while pipeline integration proceeds
-**Depends on**: Phase 30 (config conventions, device parameter)
-**Requirements**: TRAIN-01, TRAIN-02, TRAIN-03, TRAIN-04
-**Success Criteria** (what must be TRUE):
-  1. `aquapose train --help` lists `unet`, `yolo-obb`, and `pose` subcommands; each subcommand accepts `--data-dir`, `--output-dir`, `--epochs`, `--device`, and `--val-split` with consistent semantics
-  2. `aquapose train pose --backbone-weights <path>` loads U-Net encoder weights and freezes backbone for transfer learning; `--unfreeze` flag enables end-to-end fine-tuning
-  3. Running `aquapose train unet` produces the same training behavior as the existing `segmentation/training.py` script, which is then superseded
-  4. `src/aquapose/training/` module exists as a proper package with no imports from `engine/` (import boundary enforced by pre-commit hook)
-**Plans**: 2/2 complete
-Plans:
-- [x] 31-01-PLAN.md — Training package scaffold, shared utilities, datasets, U-Net subcommand
-- [x] 31-02-PLAN.md — YOLO-OBB and pose subcommands, migration cleanup
-
-### Phase 32: YOLO-OBB Detection Backend — COMPLETE (2026-02-28)
-**Goal**: Pipeline supports YOLO-OBB as a selectable detection model that produces rotation-aligned affine crops and OBB polygon overlays in diagnostic mode
-**Depends on**: Phase 30 (Detection.angle field), Phase 31 (training CLI for OBB model training)
-**Requirements**: DET-01, DET-02, DET-03, VIZ-01, VIZ-02
-**Success Criteria** (what must be TRUE):
-  1. Running the pipeline with `detector_kind: yolo_obb` in config produces detections with non-None `angle` and `obb_points` fields; running with `detector_kind: yolo` produces unchanged behavior
-  2. Affine crops extracted from OBB detections show fish bodies axis-aligned within the crop (orientation smoke test passes for known-angle detections)
-  3. A point in crop coordinates can be back-projected to full-frame pixel coordinates via the inverse transform, with round-trip error under 1 pixel
-  4. Diagnostic mode renders OBB polygon overlays on detection frames and bounding box overlays (both axis-aligned and OBB) on tracklet trail frames
-**Plans**: 2/2 complete
-
-### Phase 33: Keypoint Midline Backend — COMPLETE (2026-03-01)
-**Goal**: Pipeline supports a keypoint regression backend that produces N ordered midline points with per-point confidence, and both reconstruction backends weight observations by that confidence
-**Depends on**: Phase 32 (affine crop utilities), Phase 30 (Midline2D.point_confidence field), Phase 31 (keypoint training)
-**Requirements**: MID-01, MID-02, MID-03, MID-04, RECON-01, RECON-02
-**Success Criteria** (what must be TRUE):
-  1. Setting `midline_backend: direct_pose` in config runs the full pipeline end-to-end using the keypoint regression model; setting `midline_backend: segment_then_extract` restores the original behavior
-  2. The keypoint backend always produces exactly `n_sample_points` midline points per fish per camera, with unobserved regions marked as NaN coordinates and zero confidence rather than a shorter array
-  3. Both midline backends produce `Midline2D` instances with the same shape and field structure — the reconstruction stages require no backend-specific branching
-  4. Triangulation backend uses per-point confidence as weights when confidence is present; reconstruction produces identical output to the previous version when confidence is `None`
-  5. Curve optimizer backend uses per-point confidence as weights when confidence is present; reconstruction produces identical output to the previous version when confidence is `None`
-**Plans**: 2/2 complete
-
-### Phase 33.1: Keypoint Training Data Augmentation — COMPLETE (2026-03-01)
-**Goal**: Add keypoint-aware data augmentation transforms to the pose regression training pipeline, masked MSE loss for partial visibility, and ConcatDataset training for 2x effective epoch size
-**Depends on**: Phase 33
-**Requirements**: AUG-01, AUG-02, AUG-03, AUG-04
-**Plans**: 1/1 complete
-Plans:
-- [x] 33.1-01-PLAN.md — KeypointDataset augmentation, masked loss, updated train_pose, comprehensive tests
-
----
 
 ### Phase 35: Codebase Cleanup — COMPLETE (2026-03-01)
 **Goal**: The codebase contains no custom U-Net, SAM2 pseudo-label, old midline backend, MOG2 detection, or legacy training CLI code — only Ultralytics-based models and the new training wrappers remain, leaving a clean foundation for v3.0 backends
@@ -204,12 +130,7 @@ Plans:
 | 1-9 | v1.0 | 28/28 | Complete | 2026-02-25 |
 | 13-21 | v2.0 | 34/34 | Complete | 2026-02-27 |
 | 22-28 | v2.1 | 12/12 | Complete | 2026-02-28 |
-| 29. Guidebook Audit | v2.2 | 2/2 | Complete | 2026-02-28 |
-| 30. Config and Contracts | v2.2 | 3/3 | Complete | 2026-02-28 |
-| 31. Training Infrastructure | v2.2 | 2/2 | Complete | 2026-02-28 |
-| 32. YOLO-OBB Detection Backend | v2.2 | 2/2 | Complete | 2026-02-28 |
-| 33. Keypoint Midline Backend | v2.2 | 2/2 | Complete | 2026-03-01 |
-| 33.1. Keypoint Training Data Augmentation | v2.2 | 1/1 | Complete | 2026-03-01 |
+| 29-33.1 | v2.2 | 12/12 | Complete | 2026-03-01 |
 | 35. Codebase Cleanup | v3.0 | 2/2 | Complete | 2026-03-01 |
-| 36. Training Wrappers | 2/2 | Complete   | 2026-03-01 | 2026-03-01 |
+| 36. Training Wrappers | v3.0 | Complete    | 2026-03-01 | 2026-03-01 |
 | 37. Pipeline Integration | v3.0 | 0/TBD | Not started | - |

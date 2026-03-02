@@ -11,8 +11,6 @@ hatch run pre-commit install
 hatch run pre-commit install --hook-type pre-push
 ```
 
-pytorch3d must be installed separately (not on PyPI) — see pyproject.toml comment.
-
 ## Commands
 
 ```bash

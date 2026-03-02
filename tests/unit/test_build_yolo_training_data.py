@@ -12,6 +12,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import yaml
 
 _SCRIPT_PATH = Path(__file__).parents[2] / "scripts" / "build_yolo_training_data.py"
 _spec = importlib.util.spec_from_file_location("build_yolo_training_data", _SCRIPT_PATH)
@@ -246,71 +247,96 @@ class TestExtrapolateEdgeKeypoints:
 
 
 # ---------------------------------------------------------------------------
-# format_obb_annotation
+# format_obb_annotation — flat list format
 # ---------------------------------------------------------------------------
 
 
 class TestFormatObbAnnotation:
-    def test_basic_format(self) -> None:
+    def test_returns_flat_list(self) -> None:
+        """format_obb_annotation returns a flat list [cls, x1, y1, ..., x4, y4]."""
         corners = np.array([[0, 0], [100, 0], [100, 50], [0, 50]], dtype=float)
-        annot = format_obb_annotation(corners, img_w=100, img_h=50)
-        assert annot["class_id"] == 0
-        assert len(annot["corners"]) == 4
-        assert annot["corners"][0] == [0.0, 0.0]
+        row = format_obb_annotation(corners, img_w=100, img_h=50)
+        assert isinstance(row, list)
+        # cls + 4 corners * 2 coords = 9 values
+        assert len(row) == 9
+        assert row[0] == 0.0  # class_id
 
     def test_normalized_values(self) -> None:
         corners = np.array([[50, 25], [100, 25], [100, 50], [50, 50]], dtype=float)
-        annot = format_obb_annotation(corners, img_w=200, img_h=100)
-        for cx, cy in annot["corners"]:
-            assert 0.0 <= cx <= 1.0
-            assert 0.0 <= cy <= 1.0
+        row = format_obb_annotation(corners, img_w=200, img_h=100)
+        # All values except class_id should be in [0, 1]
+        for v in row[1:]:
+            assert 0.0 <= v <= 1.0
 
     def test_custom_class_id(self) -> None:
         corners = np.zeros((4, 2))
-        annot = format_obb_annotation(corners, img_w=100, img_h=100, class_id=3)
-        assert annot["class_id"] == 3
+        row = format_obb_annotation(corners, img_w=100, img_h=100, class_id=3)
+        assert row[0] == 3.0
 
 
 # ---------------------------------------------------------------------------
-# format_pose_annotation
+# format_pose_annotation — flat list format
 # ---------------------------------------------------------------------------
 
 
 class TestFormatPoseAnnotation:
-    def test_all_visible(self) -> None:
+    def test_returns_flat_list(self) -> None:
+        """format_pose_annotation returns a flat list [cls, cx, cy, w, h, x1, y1, v1, ...]."""
         kps = np.array(
             [[16, 8], [32, 8], [48, 8], [64, 8], [80, 8], [96, 8]], dtype=float
         )
         vis = np.ones(N, dtype=bool)
-        annot = format_pose_annotation(
+        row = format_pose_annotation(
             0.5, 0.5, 1.0, 1.0, kps, vis, crop_w=128, crop_h=64
         )
-        assert annot["class_id"] == 0
-        assert annot["bbox"] == [0.5, 0.5, 1.0, 1.0]
-        assert len(annot["keypoints"]) == N
-        for kp in annot["keypoints"]:
-            assert kp[2] == 2  # visible
+        assert isinstance(row, list)
+        # cls + 4 bbox + N * 3 = 5 + 18 = 23 values
+        assert len(row) == 5 + N * 3
+        assert row[0] == 0.0  # class_id
+        assert row[1] == 0.5  # cx
+        assert row[2] == 0.5  # cy
+        assert row[3] == 1.0  # w
+        assert row[4] == 1.0  # h
+
+    def test_visible_keypoints_have_v2(self) -> None:
+        kps = np.array(
+            [[16, 8], [32, 8], [48, 8], [64, 8], [80, 8], [96, 8]], dtype=float
+        )
+        vis = np.ones(N, dtype=bool)
+        row = format_pose_annotation(
+            0.5, 0.5, 1.0, 1.0, kps, vis, crop_w=128, crop_h=64
+        )
+        # Every 3rd value starting at index 7 is the visibility flag
+        for k in range(N):
+            v_flag = row[5 + k * 3 + 2]
+            assert v_flag == 2
 
     def test_invisible_keypoints_are_zeros(self) -> None:
         kps = np.zeros((N, 2), dtype=float)
         vis = np.zeros(N, dtype=bool)
-        annot = format_pose_annotation(
+        row = format_pose_annotation(
             0.5, 0.5, 1.0, 1.0, kps, vis, crop_w=128, crop_h=64
         )
-        for kp in annot["keypoints"]:
-            assert kp == [0, 0, 0]
+        for k in range(N):
+            x = row[5 + k * 3]
+            y = row[5 + k * 3 + 1]
+            v = row[5 + k * 3 + 2]
+            assert x == 0
+            assert y == 0
+            assert v == 0
 
     def test_mixed_visibility(self) -> None:
         kps = np.array([[16, 8], [0, 0], [48, 8], [0, 0], [80, 8], [0, 0]], dtype=float)
         vis = np.array([True, False, True, False, True, False])
-        annot = format_pose_annotation(
+        row = format_pose_annotation(
             0.5, 0.5, 1.0, 1.0, kps, vis, crop_w=128, crop_h=64
         )
         for k in range(N):
+            v_flag = row[5 + k * 3 + 2]
             if vis[k]:
-                assert annot["keypoints"][k][2] == 2
+                assert v_flag == 2
             else:
-                assert annot["keypoints"][k] == [0, 0, 0]
+                assert v_flag == 0
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +385,7 @@ class TestTransformKeypoints:
 
 
 # ---------------------------------------------------------------------------
-# Integration test: full pipeline
+# Integration test: full pipeline (txt+yaml format)
 # ---------------------------------------------------------------------------
 
 
@@ -405,6 +431,7 @@ class TestIntegrationPipeline:
         return coco_path, images_dir
 
     def test_obb_dataset_structure(self, tmp_path: Path) -> None:
+        """OBB dataset produces labels/ dir with .txt files and dataset.yaml."""
         coco_path, images_dir = self._build_coco_json(tmp_path)
         coco = load_coco(coco_path)
         output_dir = tmp_path / "output"
@@ -422,27 +449,32 @@ class TestIntegrationPipeline:
         )
 
         obb_root = output_dir / "obb"
-        assert (obb_root / "data.yaml").exists()
+        assert (obb_root / "dataset.yaml").exists()
         assert (obb_root / "images" / "train").is_dir()
         assert (obb_root / "images" / "val").is_dir()
-        assert (obb_root / "train.ndjson").exists()
-        assert (obb_root / "val.ndjson").exists()
+        assert (obb_root / "labels" / "train").is_dir()
+        assert (obb_root / "labels" / "val").is_dir()
 
         # Total images should be 2
         assert n_train + n_val == 2
 
-        # NDJSON lines should have valid JSON with obb annotations
-        for split in ("train", "val"):
-            ndjson_path = obb_root / f"{split}.ndjson"
-            lines = [ln for ln in ndjson_path.read_text().strip().splitlines() if ln]
+        # Each image should have a corresponding .txt label file
+        all_imgs = list((obb_root / "images" / "train").glob("*.jpg")) + list(
+            (obb_root / "images" / "val").glob("*.jpg")
+        )
+        for img_path in all_imgs:
+            label_path = (
+                obb_root / "labels" / img_path.parent.name / (img_path.stem + ".txt")
+            )
+            assert label_path.exists(), f"Missing label for {img_path}"
+            # Each non-empty line should have 9 space-separated values (cls + 4 corners * 2)
+            lines = [ln for ln in label_path.read_text().splitlines() if ln.strip()]
             for line in lines:
-                record = json.loads(line)
-                assert "image" in record
-                assert "obbs" in record
-                for obb in record["obbs"]:
-                    assert len(obb["corners"]) == 4
+                parts = line.split()
+                assert len(parts) == 9, f"Expected 9 values, got {len(parts)}: {line}"
 
     def test_pose_dataset_structure(self, tmp_path: Path) -> None:
+        """Pose dataset produces labels/ dir with .txt files and dataset.yaml."""
         coco_path, images_dir = self._build_coco_json(tmp_path)
         coco = load_coco(coco_path)
         output_dir = tmp_path / "output"
@@ -463,11 +495,11 @@ class TestIntegrationPipeline:
         )
 
         pose_root = output_dir / "pose"
-        assert (pose_root / "data.yaml").exists()
+        assert (pose_root / "dataset.yaml").exists()
         assert (pose_root / "images" / "train").is_dir()
         assert (pose_root / "images" / "val").is_dir()
-        assert (pose_root / "train.ndjson").exists()
-        assert (pose_root / "val.ndjson").exists()
+        assert (pose_root / "labels" / "train").is_dir()
+        assert (pose_root / "labels" / "val").is_dir()
 
         # 3 annotations in input, all with 6/6 visible -> 3 crops total
         assert n_train + n_val == 3
@@ -483,22 +515,20 @@ class TestIntegrationPipeline:
             assert w == 128
             assert h == 64
 
-        # Check NDJSON label format
-        total_records = 0
-        for split in ("train", "val"):
-            ndjson_path = pose_root / f"{split}.ndjson"
-            lines = [ln for ln in ndjson_path.read_text().strip().splitlines() if ln]
-            for line in lines:
-                record = json.loads(line)
-                assert "image" in record
-                assert "annotations" in record
-                for annot in record["annotations"]:
-                    assert len(annot["keypoints"]) == N
-                    assert len(annot["bbox"]) == 4
-                total_records += 1
-        assert total_records == 3
+        # Each crop should have a .txt label with correct format
+        # cls cx cy w h + N * 3 = 5 + 18 = 23 values
+        for crop_path in all_crops:
+            label_path = (
+                pose_root / "labels" / crop_path.parent.name / (crop_path.stem + ".txt")
+            )
+            assert label_path.exists()
+            lines = [ln for ln in label_path.read_text().splitlines() if ln.strip()]
+            assert len(lines) == 1, "Each crop has exactly one pose annotation"
+            parts = lines[0].split()
+            assert len(parts) == 5 + N * 3
 
-    def test_data_yaml_content(self, tmp_path: Path) -> None:
+    def test_dataset_yaml_content_obb(self, tmp_path: Path) -> None:
+        """OBB dataset.yaml has correct keys and no kpt_shape."""
         coco_path, images_dir = self._build_coco_json(tmp_path)
         coco = load_coco(coco_path)
         output_dir = tmp_path / "output"
@@ -507,53 +537,72 @@ class TestIntegrationPipeline:
         generate_obb_dataset(
             coco, images_dir, output_dir, median_arc, 0.18, 2.0, 0.5, 42
         )
+
+        obb_yaml_path = output_dir / "obb" / "dataset.yaml"
+        obb_yaml = yaml.safe_load(obb_yaml_path.read_text())
+
+        assert "path" in obb_yaml
+        assert obb_yaml["train"] == "images/train"
+        assert obb_yaml["val"] == "images/val"
+        assert obb_yaml["nc"] == 1
+        assert "kpt_shape" not in obb_yaml
+        assert "flip_idx" not in obb_yaml
+
+    def test_dataset_yaml_content_pose(self, tmp_path: Path) -> None:
+        """Pose dataset.yaml has kpt_shape and flip_idx."""
+        coco_path, images_dir = self._build_coco_json(tmp_path)
+        coco = load_coco(coco_path)
+        output_dir = tmp_path / "output"
+        median_arc = compute_median_arc_length(coco["annotations"])
+
         generate_pose_dataset(
             coco, images_dir, output_dir, median_arc, 0.18, 2.0, 128, 64, 4, 0.5, 42
         )
 
-        obb_yaml = (output_dir / "obb" / "data.yaml").read_text()
-        assert "train: train.ndjson" in obb_yaml
-        assert "val: val.ndjson" in obb_yaml
-        assert "nc: 1" in obb_yaml
+        pose_yaml_path = output_dir / "pose" / "dataset.yaml"
+        pose_yaml = yaml.safe_load(pose_yaml_path.read_text())
 
-        pose_yaml = (output_dir / "pose" / "data.yaml").read_text()
-        assert "train: train.ndjson" in pose_yaml
-        assert "kpt_shape: [6, 3]" in pose_yaml
+        assert pose_yaml["train"] == "images/train"
+        assert pose_yaml["val"] == "images/val"
+        assert pose_yaml["nc"] == 1
+        assert pose_yaml["kpt_shape"] == [6, 3]
+        assert "flip_idx" in pose_yaml
+        assert len(pose_yaml["flip_idx"]) == 6
 
 
 # ---------------------------------------------------------------------------
-# format_seg_annotation
+# format_seg_annotation — flat list format
 # ---------------------------------------------------------------------------
 
 
 class TestFormatSegAnnotation:
-    def test_basic_format(self) -> None:
+    def test_returns_flat_list(self) -> None:
+        """format_seg_annotation returns a flat list [cls, x1, y1, x2, y2, ...]."""
         polygon = np.array([[0, 0], [64, 0], [64, 32], [0, 32]], dtype=float)
-        annot = format_seg_annotation(polygon, crop_w=128, crop_h=64)
-        assert annot["class_id"] == 0
-        assert "polygon" in annot
-        assert len(annot["polygon"]) == 4
+        row = format_seg_annotation(polygon, crop_w=128, crop_h=64)
+        assert isinstance(row, list)
+        # cls + 4 vertices * 2 = 9 values
+        assert len(row) == 1 + 4 * 2
+        assert row[0] == 0.0  # class_id
 
     def test_normalized_values(self) -> None:
         # Polygon at corners of a 128x64 crop — normalized should be [0,1]
         polygon = np.array([[0, 0], [128, 0], [128, 64], [0, 64]], dtype=float)
-        annot = format_seg_annotation(polygon, crop_w=128, crop_h=64)
-        for x, y in annot["polygon"]:
-            assert 0.0 <= x <= 1.0
-            assert 0.0 <= y <= 1.0
+        row = format_seg_annotation(polygon, crop_w=128, crop_h=64)
+        for v in row[1:]:
+            assert 0.0 <= v <= 1.0
 
     def test_custom_class_id(self) -> None:
         polygon = np.array([[0, 0], [10, 0], [10, 10], [0, 10]], dtype=float)
-        annot = format_seg_annotation(polygon, crop_w=128, crop_h=64, class_id=7)
-        assert annot["class_id"] == 7
+        row = format_seg_annotation(polygon, crop_w=128, crop_h=64, class_id=7)
+        assert row[0] == 7.0
 
     def test_clips_out_of_bounds(self) -> None:
         # Vertices beyond crop bounds should be clipped to [0, 1]
         polygon = np.array([[-10, -5], [200, 0], [200, 100], [0, 100]], dtype=float)
-        annot = format_seg_annotation(polygon, crop_w=128, crop_h=64)
-        for x, y in annot["polygon"]:
-            assert 0.0 <= x <= 1.0
-            assert 0.0 <= y <= 1.0
+        row = format_seg_annotation(polygon, crop_w=128, crop_h=64)
+        for v in row[1:]:
+            assert 0.0 <= v <= 1.0
 
 
 def _rect_seg(cx: float, cy: float, hw: float = 10.0) -> list[float]:
@@ -633,6 +682,7 @@ class TestSegConverter:
         return coco_path, images_dir
 
     def test_seg_dataset_structure(self, tmp_path: Path) -> None:
+        """Seg dataset produces labels/ dir with .txt files and dataset.yaml."""
         coco_path, images_dir = self._build_coco_seg_json(tmp_path)
         coco = load_coco(coco_path)
         output_dir = tmp_path / "output"
@@ -653,29 +703,32 @@ class TestSegConverter:
         )
 
         seg_root = output_dir / "seg"
-        assert (seg_root / "data.yaml").exists()
+        assert (seg_root / "dataset.yaml").exists()
         assert (seg_root / "images" / "train").is_dir()
         assert (seg_root / "images" / "val").is_dir()
-        assert (seg_root / "train.ndjson").exists()
-        assert (seg_root / "val.ndjson").exists()
+        assert (seg_root / "labels" / "train").is_dir()
+        assert (seg_root / "labels" / "val").is_dir()
 
         # 3 annotations -> 3 crops total
         assert n_train + n_val == 3
 
-        # Verify NDJSON schema
-        for split in ("train", "val"):
-            ndjson_path = seg_root / f"{split}.ndjson"
-            lines = [ln for ln in ndjson_path.read_text().strip().splitlines() if ln]
+        # Each crop should have a corresponding .txt label file
+        all_crops = list((seg_root / "images" / "train").glob("*.jpg")) + list(
+            (seg_root / "images" / "val").glob("*.jpg")
+        )
+        for crop_path in all_crops:
+            label_path = (
+                seg_root / "labels" / crop_path.parent.name / (crop_path.stem + ".txt")
+            )
+            assert label_path.exists(), f"Missing label for {crop_path}"
+            lines = [ln for ln in label_path.read_text().splitlines() if ln.strip()]
             for line in lines:
-                record = json.loads(line)
-                assert "image" in record
-                assert "width" in record
-                assert "height" in record
-                assert "annotations" in record
-                for annot in record["annotations"]:
-                    assert "class_id" in annot
-                    assert "polygon" in annot
-                    assert len(annot["polygon"]) >= 3
+                parts = line.split()
+                # cls + at least 3 vertex pairs (6 values) = at least 7
+                assert len(parts) >= 7
+                # All values after class_id should be normalized [0, 1]
+                for v in parts[1:]:
+                    assert 0.0 <= float(v) <= 1.0
 
     def test_multi_ring_keeps_largest(self, tmp_path: Path) -> None:
         """Multi-ring segmentation keeps the largest ring by vertex count."""
@@ -737,14 +790,15 @@ class TestSegConverter:
             seed=42,
         )
 
-        # Read the generated NDJSON and check polygon vertex count
-        train_ndjson = output_dir / "seg" / "train.ndjson"
-        lines = [ln for ln in train_ndjson.read_text().strip().splitlines() if ln]
+        # Read the generated .txt and check polygon vertex count
+        seg_root = output_dir / "seg"
+        train_labels = list((seg_root / "labels" / "train").glob("*.txt"))
+        assert len(train_labels) == 1
+        lines = [ln for ln in train_labels[0].read_text().splitlines() if ln.strip()]
         assert len(lines) == 1
-        record = json.loads(lines[0])
-        # Large ring has 5 vertices; output polygon should have 5 vertices
-        assert len(record["annotations"]) == 1
-        assert len(record["annotations"][0]["polygon"]) == 5
+        parts = lines[0].split()
+        # Large ring has 5 vertices -> cls + 5*2 = 11 values
+        assert len(parts) == 1 + 5 * 2
 
     def test_polygon_affine_transform(self, tmp_path: Path) -> None:
         """Polygon vertices are correctly transformed into crop space."""
@@ -795,17 +849,17 @@ class TestSegConverter:
             seed=42,
         )
 
-        train_ndjson = output_dir / "seg" / "train.ndjson"
-        lines = [ln for ln in train_ndjson.read_text().strip().splitlines() if ln]
-        assert len(lines) == 1
-        record = json.loads(lines[0])
+        seg_root = output_dir / "seg"
+        train_labels = list((seg_root / "labels" / "train").glob("*.txt"))
+        assert len(train_labels) == 1
+        lines = [ln for ln in train_labels[0].read_text().splitlines() if ln.strip()]
+        assert len(lines) >= 1
 
-        # The polygon should exist and all vertices must be in [0, 1]
-        assert len(record["annotations"]) >= 1
-        annot = record["annotations"][0]
-        for x, y in annot["polygon"]:
-            assert 0.0 <= x <= 1.0, f"x={x} out of [0,1]"
-            assert 0.0 <= y <= 1.0, f"y={y} out of [0,1]"
+        # The polygon should exist and all values (after class_id) must be in [0, 1]
+        parts = lines[0].split()
+        for v in parts[1:]:
+            fv = float(v)
+            assert 0.0 <= fv <= 1.0, f"value={fv} out of [0,1]"
 
     def test_all_fish_in_crop_labeled(self, tmp_path: Path) -> None:
         """All fish annotations (incl. intruders) are included in each crop's labels."""
@@ -867,22 +921,18 @@ class TestSegConverter:
             seed=42,
         )
 
-        # 3 crops should be generated (one per annotation), across both splits
+        # 3 crops should be generated (one per annotation)
         seg_root = output_dir / "seg"
-        all_lines: list[str] = []
-        for split in ("train", "val"):
-            ndjson_path = seg_root / f"{split}.ndjson"
-            all_lines += [
-                ln for ln in ndjson_path.read_text().strip().splitlines() if ln
-            ]
-        assert len(all_lines) == 3
+        all_label_files = list((seg_root / "labels" / "train").glob("*.txt")) + list(
+            (seg_root / "labels" / "val").glob("*.txt")
+        )
+        assert len(all_label_files) == 3
 
-        # Each crop should label all 3 fish (polygons overlap crop bounds)
-        for line in all_lines:
-            record = json.loads(line)
-            # All 3 fish polygons should be in each crop
-            assert len(record["annotations"]) == 3, (
-                f"Expected 3 annotations in crop, got {len(record['annotations'])}"
+        # Each crop should label all 3 fish (one line per polygon)
+        for label_path in all_label_files:
+            lines = [ln for ln in label_path.read_text().splitlines() if ln.strip()]
+            assert len(lines) == 3, (
+                f"Expected 3 polygon lines in {label_path.name}, got {len(lines)}"
             )
 
     def test_missing_segmentation_skipped(self, tmp_path: Path) -> None:
@@ -946,17 +996,14 @@ class TestSegConverter:
         assert n_train + n_val == 2
 
         seg_root = output_dir / "seg"
-        all_lines: list[str] = []
-        for split in ("train", "val"):
-            ndjson_path = seg_root / f"{split}.ndjson"
-            all_lines += [
-                ln for ln in ndjson_path.read_text().strip().splitlines() if ln
-            ]
-        assert len(all_lines) == 2
+        all_label_files = list((seg_root / "labels" / "train").glob("*.txt")) + list(
+            (seg_root / "labels" / "val").glob("*.txt")
+        )
+        assert len(all_label_files) == 2
 
         # Each crop should have exactly 1 polygon annotation (ann2 is skipped)
-        for line in all_lines:
-            record = json.loads(line)
-            assert len(record["annotations"]) == 1, (
-                f"Expected 1 annotation (missing seg skipped), got {len(record['annotations'])}"
+        for label_path in all_label_files:
+            lines = [ln for ln in label_path.read_text().splitlines() if ln.strip()]
+            assert len(lines) == 1, (
+                f"Expected 1 annotation line (missing seg skipped), got {len(lines)}"
             )

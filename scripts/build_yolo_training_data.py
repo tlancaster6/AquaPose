@@ -11,6 +11,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import yaml
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -436,10 +437,11 @@ def format_obb_annotation(
     img_h: int,
     class_id: int = 0,
 ) -> list[float]:
-    """Format one OBB annotation as a flat array for Ultralytics-native NDJSON.
+    """Format one OBB annotation as a flat array for a YOLO-OBB .txt label line.
 
     Returns a flat list ``[cls, x1, y1, x2, y2, x3, y3, x4, y4]`` with
-    corners normalized to [0, 1] by image dimensions.
+    corners normalized to [0, 1] by image dimensions. Join with spaces and
+    write to a ``.txt`` file alongside the corresponding image.
 
     Args:
         obb_corners: float64 array of shape ``(4, 2)`` with corner (x, y) in
@@ -472,11 +474,13 @@ def format_pose_annotation(
     crop_h: int,
     class_id: int = 0,
 ) -> list[float]:
-    """Format one pose annotation as a flat array for Ultralytics-native NDJSON.
+    """Format one pose annotation as a flat array for a YOLO-Pose .txt label line.
 
     Returns a flat list ``[cls, cx, cy, w, h, x1, y1, v1, x2, y2, v2, ...]``
     with bbox and keypoints normalized to [0, 1]. Invisible keypoints are
     output as ``0, 0, 0``. Visible keypoints use COCO visible=2 convention.
+    Join with spaces and write to a ``.txt`` file alongside the corresponding
+    image.
 
     Args:
         cx: Bounding box center x, normalized to [0, 1].
@@ -516,10 +520,11 @@ def format_seg_annotation(
     crop_h: int,
     class_id: int = 0,
 ) -> list[float]:
-    """Format one segmentation polygon annotation as a flat array for Ultralytics-native NDJSON.
+    """Format one segmentation polygon annotation as a flat array for a YOLO-Seg .txt label line.
 
     Returns a flat list ``[cls, x1, y1, x2, y2, ...]`` with polygon vertices
-    normalized to [0, 1] by crop dimensions.
+    normalized to [0, 1] by crop dimensions. Join with spaces and write to a
+    ``.txt`` file alongside the corresponding image.
 
     Args:
         polygon: float array of shape ``(M, 2)`` with (x, y) polygon vertices
@@ -557,10 +562,17 @@ def generate_obb_dataset(
 ) -> tuple[int, int]:
     """Generate a YOLO-OBB dataset from COCO keypoint annotations.
 
-    Creates ``output_dir/obb/images/{train,val}/`` with copied source images
-    and ``output_dir/obb/dataset.ndjson`` label file in Ultralytics-native
-    NDJSON format (dataset header line followed by image lines with flat
-    annotation arrays).
+    Creates the standard Ultralytics directory structure::
+
+        output_dir/obb/
+          images/train/   (copied source images)
+          images/val/
+          labels/train/   (per-image .txt label files)
+          labels/val/
+          dataset.yaml    (dataset metadata)
+
+    Each ``.txt`` label file contains one line per fish annotation in the
+    format ``cls x1 y1 x2 y2 x3 y3 x4 y4`` with normalized coordinates.
 
     Args:
         coco: Loaded COCO dict (from :func:`load_coco`).
@@ -581,6 +593,7 @@ def generate_obb_dataset(
     obb_root = output_dir / "obb"
     for split in ("train", "val"):
         (obb_root / "images" / split).mkdir(parents=True, exist_ok=True)
+        (obb_root / "labels" / split).mkdir(parents=True, exist_ok=True)
 
     image_lookup: dict[int, dict] = coco["_image_lookup"]
     ann_lookup: dict[int, list[dict]] = coco["_ann_lookup"]
@@ -595,11 +608,6 @@ def generate_obb_dataset(
     train_ids = set(all_image_ids[n_val:])
 
     counts: dict[str, int] = {"train": 0, "val": 0}
-    ndjson_lines: list[str] = []
-
-    # Dataset header line
-    header = {"type": "dataset", "task": "obb", "class_names": {"0": "fish"}}
-    ndjson_lines.append(json.dumps(header, separators=(",", ":")))
 
     for img_id, split in [(i, "val") for i in val_ids] + [
         (i, "train") for i in train_ids
@@ -617,7 +625,7 @@ def generate_obb_dataset(
         img_h, img_w = img.shape[:2]
 
         annotations = ann_lookup.get(img_id, [])
-        obb_rows: list[list[float]] = []
+        label_lines: list[str] = []
 
         for ann in annotations:
             coords, visible = parse_keypoints(ann)
@@ -628,26 +636,33 @@ def generate_obb_dataset(
                 coords, visible, img_w, img_h, lateral_pad, edge_factor
             )
             corners = pca_obb(coords_ext, visible_ext, lateral_pad)
-            obb_rows.append(format_obb_annotation(corners, img_w, img_h))
+            row = format_obb_annotation(corners, img_w, img_h)
+            label_lines.append(" ".join(str(v) for v in row))
 
-        # Copy image and build NDJSON record
+        # Copy image
+        stem = Path(file_name).stem
         dest_img = obb_root / "images" / split / Path(file_name).name
         shutil.copy2(str(img_path), str(dest_img))
 
-        record = {
-            "type": "image",
-            "file": f"images/{split}/{Path(file_name).name}",
-            "width": img_w,
-            "height": img_h,
-            "split": split,
-            "annotations": {"obb": obb_rows},
-        }
-        ndjson_lines.append(json.dumps(record, separators=(",", ":")))
+        # Write per-image label .txt file (empty file if no annotations)
+        label_path = obb_root / "labels" / split / f"{stem}.txt"
+        label_path.write_text(
+            "\n".join(label_lines) + ("\n" if label_lines else ""), encoding="utf-8"
+        )
+
         counts[split] += 1
 
-    # Write single combined NDJSON file
-    ndjson_path = obb_root / "dataset.ndjson"
-    ndjson_path.write_text("\n".join(ndjson_lines) + "\n", encoding="utf-8")
+    # Write dataset.yaml
+    dataset_yaml = {
+        "path": str(obb_root.resolve()),
+        "train": "images/train",
+        "val": "images/val",
+        "nc": 1,
+        "names": {0: "fish"},
+    }
+    yaml_path = obb_root / "dataset.yaml"
+    with open(yaml_path, "w", encoding="utf-8") as f:
+        yaml.dump(dataset_yaml, f, sort_keys=False)
 
     return counts["train"], counts["val"]
 
@@ -671,10 +686,17 @@ def generate_pose_dataset(
     region to an axis-aligned crop at ``(crop_w, crop_h)`` and transforms
     keypoint coordinates into crop space.
 
-    Creates ``output_dir/pose/images/{train,val}/`` with crop images and
-    ``output_dir/pose/dataset.ndjson`` label file in Ultralytics-native NDJSON
-    format (dataset header line followed by image lines with flat annotation
-    arrays).
+    Creates the standard Ultralytics directory structure::
+
+        output_dir/pose/
+          images/train/   (affine-warped crop images)
+          images/val/
+          labels/train/   (per-crop .txt label files)
+          labels/val/
+          dataset.yaml    (dataset metadata including kpt_shape and flip_idx)
+
+    Each ``.txt`` label file contains one line per fish annotation in the
+    format ``cls cx cy w h x1 y1 v1 x2 y2 v2 ...`` with normalized coordinates.
 
     Args:
         coco: Loaded COCO dict (from :func:`load_coco`).
@@ -699,12 +721,15 @@ def generate_pose_dataset(
     tmp_dir.mkdir(parents=True, exist_ok=True)
     for split in ("train", "val"):
         (pose_root / "images" / split).mkdir(parents=True, exist_ok=True)
+        (pose_root / "labels" / split).mkdir(parents=True, exist_ok=True)
 
     image_lookup: dict[int, dict] = coco["_image_lookup"]
     ann_lookup: dict[int, list[dict]] = coco["_ann_lookup"]
 
-    # Collect crops: (crop_stem, pose_row)
-    crop_entries: list[tuple[str, list[float]]] = []
+    # Collect crops: (crop_stem, pose_row, n_keypoints)
+    crop_entries: list[tuple[str, list[float], int]] = []
+
+    n_keypoints = 0
 
     for img_id, img_info in image_lookup.items():
         file_name = img_info["file_name"]
@@ -726,6 +751,8 @@ def generate_pose_dataset(
             if int(visible.sum()) < min_visible:
                 continue
 
+            n_keypoints = len(coords)
+
             coords_ext, visible_ext = extrapolate_edge_keypoints(
                 coords, visible, img_w, img_h, lateral_pad, edge_factor
             )
@@ -743,52 +770,51 @@ def generate_pose_dataset(
             crop_stem = f"{img_stem}_{ann_idx:03d}"
             crop_img_path = tmp_dir / f"{crop_stem}.jpg"
             cv2.imwrite(str(crop_img_path), warped)
-            crop_entries.append((crop_stem, pose_row))
+            crop_entries.append((crop_stem, pose_row, n_keypoints))
 
     # Shuffle and split
     rng = random.Random(seed)
     rng.shuffle(crop_entries)
 
     n_val = max(1, int(len(crop_entries) * val_split)) if len(crop_entries) > 1 else 0
-    val_set = set(stem for stem, _ in crop_entries[:n_val])
-
-    ndjson_lines: list[str] = []
-
-    # Dataset header line
-    header = {
-        "type": "dataset",
-        "task": "pose",
-        "class_names": {"0": "fish"},
-        "kpt_shape": [6, 3],
-    }
-    ndjson_lines.append(json.dumps(header, separators=(",", ":")))
+    val_set = set(stem for stem, _, _ in crop_entries[:n_val])
 
     counts: dict[str, int] = {"train": 0, "val": 0}
 
-    for crop_stem, pose_row in crop_entries:
+    for crop_stem, pose_row, _n_kp in crop_entries:
         split = "val" if crop_stem in val_set else "train"
         src_img = tmp_dir / f"{crop_stem}.jpg"
         dst_img = pose_root / "images" / split / f"{crop_stem}.jpg"
         if src_img.exists():
             shutil.move(str(src_img), str(dst_img))
 
-        record = {
-            "type": "image",
-            "file": f"images/{split}/{crop_stem}.jpg",
-            "width": crop_w,
-            "height": crop_h,
-            "split": split,
-            "annotations": {"pose": [pose_row]},
-        }
-        ndjson_lines.append(json.dumps(record, separators=(",", ":")))
+        # Write per-crop label .txt file (one line = one annotation)
+        label_path = pose_root / "labels" / split / f"{crop_stem}.txt"
+        label_path.write_text(
+            " ".join(str(v) for v in pose_row) + "\n", encoding="utf-8"
+        )
+
         counts[split] += 1
 
     # Cleanup tmp
     shutil.rmtree(str(tmp_dir), ignore_errors=True)
 
-    # Write single combined NDJSON file
-    ndjson_path = pose_root / "dataset.ndjson"
-    ndjson_path.write_text("\n".join(ndjson_lines) + "\n", encoding="utf-8")
+    # Determine kpt_shape from collected data (fall back to N_KEYPOINTS constant)
+    kpt_n = n_keypoints if n_keypoints > 0 else N_KEYPOINTS
+
+    # Write dataset.yaml (includes kpt_shape and identity flip_idx)
+    dataset_yaml = {
+        "path": str(pose_root.resolve()),
+        "train": "images/train",
+        "val": "images/val",
+        "nc": 1,
+        "names": {0: "fish"},
+        "kpt_shape": [kpt_n, 3],
+        "flip_idx": list(range(kpt_n)),
+    }
+    yaml_path = pose_root / "dataset.yaml"
+    with open(yaml_path, "w", encoding="utf-8") as f:
+        yaml.dump(dataset_yaml, f, sort_keys=False)
 
     return counts["train"], counts["val"]
 
@@ -813,10 +839,17 @@ def generate_seg_dataset(
     in that image into crop space.  All visible fish (target + intruders)
     are labeled in each crop.
 
-    Creates ``output_dir/seg/images/{train,val}/`` with crop images and
-    ``output_dir/seg/dataset.ndjson`` label file in Ultralytics-native NDJSON
-    format (dataset header line followed by image lines with flat annotation
-    arrays).
+    Creates the standard Ultralytics directory structure::
+
+        output_dir/seg/
+          images/train/   (affine-warped crop images)
+          images/val/
+          labels/train/   (per-crop .txt label files)
+          labels/val/
+          dataset.yaml    (dataset metadata)
+
+    Each ``.txt`` label file contains one line per segmentation polygon in the
+    format ``cls x1 y1 x2 y2 ...`` with normalized coordinates.
 
     Args:
         coco: Loaded COCO dict (from :func:`load_coco`).
@@ -842,6 +875,7 @@ def generate_seg_dataset(
     tmp_dir.mkdir(parents=True, exist_ok=True)
     for split in ("train", "val"):
         (seg_root / "images" / split).mkdir(parents=True, exist_ok=True)
+        (seg_root / "labels" / split).mkdir(parents=True, exist_ok=True)
 
     image_lookup: dict[int, dict] = coco["_image_lookup"]
     ann_lookup: dict[int, list[dict]] = coco["_ann_lookup"]
@@ -930,12 +964,6 @@ def generate_seg_dataset(
     n_val = max(1, int(len(crop_entries) * val_split)) if len(crop_entries) > 1 else 0
     val_set = set(stem for stem, _ in crop_entries[:n_val])
 
-    ndjson_lines: list[str] = []
-
-    # Dataset header line
-    header = {"type": "dataset", "task": "segment", "class_names": {"0": "fish"}}
-    ndjson_lines.append(json.dumps(header, separators=(",", ":")))
-
     counts: dict[str, int] = {"train": 0, "val": 0}
 
     for crop_stem, seg_rows in crop_entries:
@@ -945,23 +973,29 @@ def generate_seg_dataset(
         if src_img.exists():
             shutil.move(str(src_img), str(dst_img))
 
-        record = {
-            "type": "image",
-            "file": f"images/{split}/{crop_stem}.jpg",
-            "width": crop_w,
-            "height": crop_h,
-            "split": split,
-            "annotations": {"segments": seg_rows},
-        }
-        ndjson_lines.append(json.dumps(record, separators=(",", ":")))
+        # Write per-crop label .txt file (one line per polygon)
+        label_path = seg_root / "labels" / split / f"{crop_stem}.txt"
+        label_lines = [" ".join(str(v) for v in row) for row in seg_rows]
+        label_path.write_text(
+            "\n".join(label_lines) + ("\n" if label_lines else ""), encoding="utf-8"
+        )
+
         counts[split] += 1
 
     # Cleanup tmp
     shutil.rmtree(str(tmp_dir), ignore_errors=True)
 
-    # Write single combined NDJSON file
-    ndjson_path = seg_root / "dataset.ndjson"
-    ndjson_path.write_text("\n".join(ndjson_lines) + "\n", encoding="utf-8")
+    # Write dataset.yaml
+    dataset_yaml = {
+        "path": str(seg_root.resolve()),
+        "train": "images/train",
+        "val": "images/val",
+        "nc": 1,
+        "names": {0: "fish"},
+    }
+    yaml_path = seg_root / "dataset.yaml"
+    with open(yaml_path, "w", encoding="utf-8") as f:
+        yaml.dump(dataset_yaml, f, sort_keys=False)
 
     n_train = counts["train"]
     n_val_actual = counts["val"]

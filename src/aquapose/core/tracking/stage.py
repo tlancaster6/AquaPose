@@ -73,7 +73,7 @@ class TrackingStage:
             ``new_carry.tracks_2d_state`` holds per-camera tracker states.
 
         """
-        from aquapose.tracking.ocsort_wrapper import OcSortTracker
+        from aquapose.core.tracking.ocsort_wrapper import OcSortTracker
 
         if carry is None:
             carry = CarryForward()

@@ -15,14 +15,13 @@ import scipy.interpolate
 import torch
 
 from aquapose.calibration.projection import RefractiveProjectionModel
-from aquapose.reconstruction.midline import Midline2D
-from aquapose.reconstruction.triangulation import (
+from aquapose.core.reconstruction.triangulation import (
     N_SAMPLE_POINTS,
     SPLINE_K,
     SPLINE_KNOTS,
-    Midline3D,
-    MidlineSet,
 )
+from aquapose.core.types.midline import Midline2D
+from aquapose.core.types.reconstruction import Midline3D, MidlineSet
 
 
 @dataclass

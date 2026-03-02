@@ -16,20 +16,17 @@ import logging
 import cv2
 import numpy as np
 
-from aquapose.core.midline.types import AnnotatedDetection
-from aquapose.reconstruction.midline import (
-    Midline2D,
+from aquapose.core.midline.crop import extract_affine_crop, invert_affine_points
+from aquapose.core.midline.midline import (
     _adaptive_smooth,
     _longest_path_bfs,
     _resample_arc_length,
     _skeleton_and_widths,
 )
-from aquapose.segmentation.crop import (
-    AffineCrop,
-    extract_affine_crop,
-    invert_affine_points,
-)
-from aquapose.segmentation.detector import Detection
+from aquapose.core.midline.types import AnnotatedDetection
+from aquapose.core.types.crop import AffineCrop
+from aquapose.core.types.detection import Detection
+from aquapose.core.types.midline import Midline2D
 
 __all__ = ["SegmentationBackend"]
 

@@ -19,7 +19,7 @@ from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d import Axes3D
 
 if TYPE_CHECKING:
-    from aquapose.reconstruction.triangulation import Midline3D
+    from aquapose.core.types.reconstruction import Midline3D
 
 # Import the shared BGR palette and convert to RGB (0-1 floats) for matplotlib
 from aquapose.visualization.overlay import FISH_COLORS

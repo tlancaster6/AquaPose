@@ -21,11 +21,11 @@ from aquapose.visualization.overlay import FISH_COLORS, draw_midline_overlay
 
 if TYPE_CHECKING:
     from aquapose.calibration.projection import RefractiveProjectionModel
+    from aquapose.core.reconstruction.curve_optimizer import OptimizerSnapshot
     from aquapose.core.tracking import FishTrack
-    from aquapose.reconstruction.curve_optimizer import OptimizerSnapshot
-    from aquapose.reconstruction.triangulation import Midline3D, MidlineSet
-    from aquapose.segmentation.crop import CropRegion
-    from aquapose.segmentation.detector import Detection
+    from aquapose.core.types.crop import CropRegion
+    from aquapose.core.types.detection import Detection
+    from aquapose.core.types.reconstruction import Midline3D, MidlineSet
     from aquapose.synthetic.fish import FishConfig
     from aquapose.visualization.midline_viz import TrackSnapshot
 
@@ -323,13 +323,13 @@ def write_diagnostic_report(
     """
     from datetime import UTC, datetime
 
-    from aquapose.core.tracking import TrackState
-    from aquapose.reconstruction.midline import (
+    from aquapose.core.midline.midline import (
         _adaptive_smooth,
         _check_skip_mask,
         _longest_path_bfs,
         _skeleton_and_widths,
     )
+    from aquapose.core.tracking import TrackState
 
     lines: list[str] = []
     n_frames = len(detections_per_frame)

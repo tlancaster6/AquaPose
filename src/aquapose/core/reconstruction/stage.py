@@ -22,8 +22,9 @@ import numpy as np
 
 from aquapose.core.context import PipelineContext
 from aquapose.core.reconstruction.backends import get_backend
-from aquapose.reconstruction.midline import Midline2D
-from aquapose.reconstruction.triangulation import DEFAULT_INLIER_THRESHOLD, Midline3D
+from aquapose.core.reconstruction.triangulation import DEFAULT_INLIER_THRESHOLD
+from aquapose.core.types.midline import Midline2D
+from aquapose.core.types.reconstruction import Midline3D
 
 __all__ = ["ReconstructionStage"]
 

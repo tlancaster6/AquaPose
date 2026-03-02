@@ -1,9 +1,7 @@
-"""Stage-specific types for the Midline stage (Stage 2).
+"""AnnotatedDetection type for the Midline stage (Stage 4).
 
-Re-exports Midline2D and CropRegion from their canonical modules so
-downstream code can import from a single location within the core package.
-Also defines AnnotatedDetection — a Detection enriched with midline data
-produced by the segment-then-extract backend.
+Defines AnnotatedDetection — a Detection enriched with midline data produced
+by the segmentation or pose-estimation backends.
 """
 
 from __future__ import annotations
@@ -12,11 +10,11 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from aquapose.reconstruction.midline import Midline2D
-from aquapose.segmentation.crop import CropRegion
-from aquapose.segmentation.detector import Detection
+from aquapose.core.types.crop import CropRegion
+from aquapose.core.types.detection import Detection
+from aquapose.core.types.midline import Midline2D
 
-__all__ = ["AnnotatedDetection", "CropRegion", "Midline2D"]
+__all__ = ["AnnotatedDetection"]
 
 
 @dataclass

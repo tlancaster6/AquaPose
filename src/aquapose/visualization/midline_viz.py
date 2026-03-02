@@ -21,8 +21,8 @@ from aquapose.visualization.overlay import FISH_COLORS
 if TYPE_CHECKING:
     from aquapose.calibration.projection import RefractiveProjectionModel
     from aquapose.core.tracking import FishTrack, TrackState
-    from aquapose.segmentation.crop import CropRegion
-    from aquapose.segmentation.detector import Detection
+    from aquapose.core.types.crop import CropRegion
+    from aquapose.core.types.detection import Detection
 
 logger = logging.getLogger(__name__)
 
@@ -390,7 +390,7 @@ def vis_midline_extraction_montage(
         video_set: Opened VideoSet providing undistorted frames.
         output_path: Output PNG path.
     """
-    from aquapose.reconstruction.midline import (
+    from aquapose.core.midline.midline import (
         _adaptive_smooth,
         _check_skip_mask,
         _longest_path_bfs,
@@ -574,7 +574,7 @@ def vis_skip_reason_pie(
         masks_per_frame: Per-frame mask dicts from Stage 2.
         output_path: Output PNG path.
     """
-    from aquapose.reconstruction.midline import (
+    from aquapose.core.midline.midline import (
         _adaptive_smooth,
         _check_skip_mask,
         _longest_path_bfs,

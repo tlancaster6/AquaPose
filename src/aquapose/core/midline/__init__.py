@@ -16,7 +16,7 @@ from aquapose.core.midline.orientation import (
 )
 from aquapose.core.midline.stage import MidlineStage
 from aquapose.core.midline.types import AnnotatedDetection
-from aquapose.reconstruction.midline import Midline2D
+from aquapose.core.types.midline import Midline2D
 
 __all__ = [
     "AnnotatedDetection",

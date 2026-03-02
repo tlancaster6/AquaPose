@@ -6,6 +6,6 @@ Midline3D output type.
 """
 
 from aquapose.core.reconstruction.stage import ReconstructionStage
-from aquapose.reconstruction.triangulation import Midline3D
+from aquapose.core.types.reconstruction import Midline3D
 
 __all__ = ["Midline3D", "ReconstructionStage"]

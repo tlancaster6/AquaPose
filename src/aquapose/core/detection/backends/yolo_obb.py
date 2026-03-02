@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from aquapose.segmentation.detector import Detection
+from aquapose.core.types.detection import Detection
 
 __all__ = ["YOLOOBBBackend"]
 

@@ -14,7 +14,7 @@ from typing import Any
 
 from aquapose.core.context import PipelineContext
 from aquapose.core.detection.backends import get_backend
-from aquapose.core.detection.types import Detection
+from aquapose.core.types.detection import Detection
 from aquapose.io.discovery import discover_camera_videos
 
 __all__ = ["DetectionStage"]

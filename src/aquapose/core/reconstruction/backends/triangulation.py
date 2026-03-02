@@ -11,13 +11,12 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from aquapose.reconstruction.triangulation import (
+from aquapose.core.reconstruction.triangulation import (
     DEFAULT_INLIER_THRESHOLD,
     SPLINE_N_CTRL,
-    Midline3D,
-    MidlineSet,
     triangulate_midlines,
 )
+from aquapose.core.types.reconstruction import Midline3D, MidlineSet
 
 __all__ = ["TriangulationBackend"]
 

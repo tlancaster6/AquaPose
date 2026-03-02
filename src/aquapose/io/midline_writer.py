@@ -12,14 +12,14 @@ from typing import TYPE_CHECKING, Any, cast
 import h5py
 import numpy as np
 
-from aquapose.reconstruction.triangulation import (
+from aquapose.core.reconstruction.triangulation import (
     N_SAMPLE_POINTS,
     SPLINE_K,
     SPLINE_KNOTS,
 )
 
 if TYPE_CHECKING:
-    from aquapose.reconstruction.triangulation import Midline3D
+    from aquapose.core.types.reconstruction import Midline3D
 
 # Number of B-spline control points per midline
 _N_CTRL = 7

@@ -5,6 +5,6 @@ cameras, runs YOLO object detection, and populates PipelineContext.
 """
 
 from aquapose.core.detection.stage import DetectionStage
-from aquapose.core.detection.types import Detection
+from aquapose.core.types.detection import Detection
 
 __all__ = ["Detection", "DetectionStage"]

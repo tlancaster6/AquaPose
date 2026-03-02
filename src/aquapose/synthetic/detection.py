@@ -14,7 +14,7 @@ import numpy as np
 import torch
 
 from aquapose.calibration.projection import RefractiveProjectionModel
-from aquapose.segmentation.detector import Detection
+from aquapose.core.types.detection import Detection
 from aquapose.synthetic.trajectory import TrajectoryResult
 
 

@@ -17,7 +17,7 @@ import torch
 
 if TYPE_CHECKING:
     from aquapose.calibration.projection import RefractiveProjectionModel
-    from aquapose.reconstruction.triangulation import Midline3D
+    from aquapose.core.types.reconstruction import Midline3D
 
 logger = logging.getLogger(__name__)
 

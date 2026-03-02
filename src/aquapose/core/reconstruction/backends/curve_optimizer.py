@@ -11,8 +11,11 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from aquapose.reconstruction.curve_optimizer import CurveOptimizer, CurveOptimizerConfig
-from aquapose.reconstruction.triangulation import Midline3D, MidlineSet
+from aquapose.core.reconstruction.curve_optimizer import (
+    CurveOptimizer,
+    CurveOptimizerConfig,
+)
+from aquapose.core.types.reconstruction import Midline3D, MidlineSet
 
 __all__ = ["CurveOptimizerBackend"]
 

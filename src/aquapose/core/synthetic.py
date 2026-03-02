@@ -17,9 +17,9 @@ from aquapose.calibration import RefractiveProjectionModel
 from aquapose.calibration.loader import compute_undistortion_maps, load_calibration_data
 from aquapose.core.context import PipelineContext
 from aquapose.core.midline.types import AnnotatedDetection
-from aquapose.reconstruction.midline import Midline2D
-from aquapose.segmentation.crop import CropRegion
-from aquapose.segmentation.detector import Detection
+from aquapose.core.types.crop import CropRegion
+from aquapose.core.types.detection import Detection
+from aquapose.core.types.midline import Midline2D
 
 if TYPE_CHECKING:
     from aquapose.engine.config import SyntheticConfig

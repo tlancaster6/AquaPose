@@ -120,9 +120,16 @@ class DiagnosticObserver:
         print(frame_0["detections"])
     """
 
-    def __init__(self, output_dir: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        output_dir: str | Path | None = None,
+        calibration_path: str | Path | None = None,
+    ) -> None:
         self.stages: dict[str, StageSnapshot] = {}
         self._output_dir = Path(output_dir) if output_dir is not None else None
+        self._calibration_path = (
+            Path(calibration_path) if calibration_path is not None else None
+        )
 
     def on_event(self, event: Event) -> None:
         """Receive a dispatched event and capture stage snapshots.
@@ -181,12 +188,56 @@ class DiagnosticObserver:
             and _MIDLINE_STAGE_NAME in self.stages
         ):
             try:
+                models = self._build_projection_models()
                 out_mid = self.export_midline_fixtures(
-                    self._output_dir / "midline_fixtures.npz"
+                    self._output_dir / "midline_fixtures.npz",
+                    models=models,
                 )
                 logger.info("Midline fixtures exported to %s", out_mid)
             except Exception:
                 logger.warning("Failed to export midline fixtures", exc_info=True)
+
+    def _build_projection_models(self) -> dict[str, Any] | None:
+        """Build per-camera projection models from calibration data.
+
+        Returns:
+            Dict mapping camera_id to RefractiveProjectionModel, or None if
+            calibration_path was not provided or camera_ids are unavailable.
+        """
+        if self._calibration_path is None:
+            return None
+
+        # Need camera_ids from any captured snapshot
+        camera_ids: list[str] | None = None
+        for snapshot in self.stages.values():
+            if snapshot.camera_ids is not None:
+                camera_ids = snapshot.camera_ids
+                break
+        if not camera_ids:
+            return None
+
+        from aquapose.calibration.loader import (
+            compute_undistortion_maps,
+            load_calibration_data,
+        )
+        from aquapose.calibration.projection import RefractiveProjectionModel
+
+        calib_data = load_calibration_data(str(self._calibration_path))
+        models: dict[str, Any] = {}
+        for cam_id in camera_ids:
+            if cam_id in calib_data.cameras:
+                cam = calib_data.cameras[cam_id]
+                undist_maps = compute_undistortion_maps(cam)
+                models[cam_id] = RefractiveProjectionModel(
+                    K=undist_maps.K_new,
+                    R=cam.R,
+                    t=cam.t,
+                    water_z=calib_data.water_z,
+                    normal=calib_data.interface_normal,
+                    n_air=calib_data.n_air,
+                    n_water=calib_data.n_water,
+                )
+        return models if models else None
 
     # ------------------------------------------------------------------
     # Midline fixture export

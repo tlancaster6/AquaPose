@@ -80,7 +80,7 @@ def main() -> None:
         baseline_data = json.load(f)
 
     baseline_data["baseline_metadata"] = {
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(datetime.timezone.utc).isoformat(),
         "fixture_path": str(fixture_path),
         "backend_identifier": (
             "aquapose.core.reconstruction.triangulation.triangulate_midlines"

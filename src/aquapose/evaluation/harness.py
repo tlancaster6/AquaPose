@@ -152,9 +152,15 @@ def run_evaluation(
             for dropout_cam in cam_map:
                 # Build reduced midline set excluding dropout_cam for ALL fish
                 reduced: MidlineSet = {
-                    fid: {c: m for c, m in cams.items() if c != dropout_cam}
+                    fid: remaining
                     for fid, cams in midline_set.items()
+                    if (
+                        remaining := {c: m for c, m in cams.items() if c != dropout_cam}
+                    )
                 }
+                if not reduced:
+                    tier2_data[fish_id][dropout_cam].append(None)
+                    continue
                 dropout_result = triangulate_midlines(reduced, models, frame_index=fi)
 
                 if fish_id not in dropout_result:

@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: Reconstruction
-status: ready_to_plan
-last_updated: "2026-03-02T21:30:00Z"
+status: unknown
+last_updated: "2026-03-02T19:49:27.968Z"
 progress:
-  total_phases: 6
+  total_phases: 1
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 ## Current Position
 
 Phase: 40 of 45 (Diagnostic Capture)
-Plan: 0 of ? in current phase
-Status: Ready to plan
-Last activity: 2026-03-02 — Roadmap created for v3.1 (6 phases, 19 requirements mapped)
+Plan: 1 of ? in current phase (40-01 complete)
+Status: In progress
+Last activity: 2026-03-02 — Completed 40-01: MidlineFixture dataclass + DiagnosticObserver NPZ export
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 5%
 
 ## Accumulated Context
 
@@ -46,6 +46,9 @@ v3.1 strategic decisions:
 - Single triangulation strategy regardless of camera count (no camera-count branching)
 - ~300 frames (10 sec) working dataset — chunk processing out of scope
 - Outlier rejection threshold (RECON-02) requires empirical tuning via eval harness
+- [Phase 40-diagnostic-capture]: NPZ key convention uses flat slash-separated keys for numpy.load compatibility
+- [Phase 40-diagnostic-capture]: MidlineFixture is a data contract only (no loader) - loader deferred to Plan 02
+- [Phase 40-diagnostic-capture]: No min_cameras filter on frame inclusion - all frames with at least one midline captured
 
 ### Pending Todos
 
@@ -59,5 +62,5 @@ v3.1 strategic decisions:
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Roadmap created, Phase 40 ready to plan
+Stopped at: Completed 40-diagnostic-capture/40-01-PLAN.md
 Resume file: None

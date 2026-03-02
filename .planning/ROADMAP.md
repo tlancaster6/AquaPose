@@ -189,7 +189,7 @@ Phases execute in numeric order: 40 → 41 → 42 → 43 → 44 → 45
 | 22-28 | v2.1 | 12/12 | Complete | 2026-02-28 |
 | 29-33.1 | v2.2 | 12/12 | Complete | 2026-03-01 |
 | 35-39 | v3.0 | 14/14 | Complete | 2026-03-02 |
-| 40. Diagnostic Capture | v3.1 | 0/? | Not started | - |
+| 40. Diagnostic Capture | 1/2 | In Progress|  | - |
 | 41. Evaluation Harness | v3.1 | 0/? | Not started | - |
 | 42. Baseline Measurement | v3.1 | 0/? | Not started | - |
 | 43. Triangulation Rebuild | v3.1 | 0/? | Not started | - |

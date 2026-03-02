@@ -77,6 +77,10 @@ Key decisions entering v3.0:
 
 17 pending todos from v2.2 — see .planning/todos/pending/ (review for relevance to v3.0)
 
+### Roadmap Evolution
+
+- Phase 38 added: Stabilization and Tech Debt Cleanup (NDJSON→txt labels, init-config defaults, weights_path consolidation, stale docstrings)
+
 ### Blockers/Concerns
 
 **CRITICAL — Coordinate space conversions (cross-cutting, all phases):**

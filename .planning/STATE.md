@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: Reconstruction
 status: unknown
-last_updated: "2026-03-02T22:08:06.613Z"
+last_updated: "2026-03-02T22:19:39.344Z"
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State
@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-02)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 42 — Baseline Measurement
+**Current focus:** Phase 43 — Triangulation Rebuild
 
 ## Current Position
 
-Phase: 42 of 45 (Baseline Measurement)
-Plan: 1 of 1 in current phase (42-01 complete)
+Phase: 43 of 45 (Triangulation Rebuild)
+Plan: 2 of 2 in current phase (43-02 complete)
 Status: In progress
-Last activity: 2026-03-02 — Completed 42-01: Baseline measurement script with outlier flagging and baseline_results.json persistence
+Last activity: 2026-03-02 — Completed 43-02: DltBackend with confidence-weighted DLT triangulation, outlier rejection, and B-spline fitting
 
 Progress: [██░░░░░░░░] 10%
 
@@ -62,6 +62,7 @@ v3.1 strategic decisions:
 - [Phase 42-01]: No tests for measure_baseline.py - manual execution only per CONTEXT.md
 - [Phase 43]: MIN_BODY_POINTS re-exported from triangulation.py via noqa F401 to preserve existing test imports without changing test files
 - [Phase 43]: Backward-compat aliases kept in triangulation.py for zero-change backward compatibility with existing private-function imports
+- [Phase 43]: DltBackend uses single-strategy DLT (triangulate → reject → re-triangulate) with no camera-count branching, no orientation alignment, no epipolar refinement
 
 ### Pending Todos
 
@@ -75,5 +76,5 @@ v3.1 strategic decisions:
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 42-baseline-measurement/42-01-PLAN.md
+Stopped at: Completed 43-triangulation-rebuild/43-02-PLAN.md
 Resume file: None

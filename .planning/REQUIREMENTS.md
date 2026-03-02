@@ -24,12 +24,12 @@ Requirements for reconstruction rebuild milestone. Each maps to roadmap phases.
 ### Reconstruction
 
 - [x] **RECON-01**: Per-body-point triangulation via confidence-weighted DLT (single strategy regardless of camera count)
-- [ ] **RECON-02**: Outlier camera rejection via reprojection residual threshold (empirically tuned)
-- [ ] **RECON-03**: Re-triangulation with inlier cameras after outlier rejection
+- [x] **RECON-02**: Outlier camera rejection via reprojection residual threshold (empirically tuned)
+- [x] **RECON-03**: Re-triangulation with inlier cameras after outlier rejection
 - [x] **RECON-04**: B-spline fitting via `make_lsq_spline` with 7 control points and minimum valid-point threshold
-- [ ] **RECON-05**: Water surface rejection (Z ≤ water_z)
-- [ ] **RECON-06**: Low-confidence flagging when configurable fraction of body points had <3 inlier cameras
-- [ ] **RECON-07**: Half-widths passed through from upstream (defaults if absent), not used in reconstruction logic
+- [x] **RECON-05**: Water surface rejection (Z ≤ water_z)
+- [x] **RECON-06**: Low-confidence flagging when configurable fraction of body points had <3 inlier cameras
+- [x] **RECON-07**: Half-widths passed through from upstream (defaults if absent), not used in reconstruction logic
 - [ ] **RECON-08**: New triangulation backend outperforms or matches current backend on Tier 1 and Tier 2 metrics
 
 ### Cleanup
@@ -79,12 +79,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EVAL-05 | Phase 41 | Complete |
 | EVAL-06 | Phase 42 | Complete |
 | RECON-01 | Phase 43 | Complete |
-| RECON-02 | Phase 43 | Pending |
-| RECON-03 | Phase 43 | Pending |
+| RECON-02 | Phase 43 | Complete |
+| RECON-03 | Phase 43 | Complete |
 | RECON-04 | Phase 43 | Complete |
-| RECON-05 | Phase 43 | Pending |
-| RECON-06 | Phase 43 | Pending |
-| RECON-07 | Phase 43 | Pending |
+| RECON-05 | Phase 43 | Complete |
+| RECON-06 | Phase 43 | Complete |
+| RECON-07 | Phase 43 | Complete |
 | RECON-08 | Phase 44 | Pending |
 | CLEAN-01 | Phase 45 | Pending |
 | CLEAN-02 | Phase 45 | Pending |

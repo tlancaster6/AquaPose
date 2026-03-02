@@ -104,7 +104,7 @@ Full details: `.planning/milestones/v3.0-ROADMAP.md`
 
 - [x] **Phase 40: Diagnostic Capture** - Expand diagnostic observer to capture and serialize MidlineSet data as loadable fixtures (completed 2026-03-02)
 - [x] **Phase 41: Evaluation Harness** - Build offline evaluation framework with real-data fixtures, frame selection, and Tier 1/2 metrics (completed 2026-03-02)
-- [ ] **Phase 42: Baseline Measurement** - Run evaluation against current reconstruction backend to establish reference metrics
+- [x] **Phase 42: Baseline Measurement** - Run evaluation against current reconstruction backend to establish reference metrics (completed 2026-03-02)
 - [ ] **Phase 43: Triangulation Rebuild** - Implement stripped-down confidence-weighted DLT triangulation with outlier rejection and B-spline fitting
 - [ ] **Phase 44: Validation and Tuning** - Confirm new backend meets or beats baseline on Tier 1 and Tier 2 metrics
 - [ ] **Phase 45: Dead Code Cleanup** - Remove old triangulation backend, curve optimizer, and other dead reconstruction code
@@ -194,7 +194,7 @@ Phases execute in numeric order: 40 → 41 → 42 → 43 → 44 → 45
 | 35-39 | v3.0 | 14/14 | Complete | 2026-03-02 |
 | 40. Diagnostic Capture | 2/2 | Complete    | 2026-03-02 | - |
 | 41. Evaluation Harness | 2/2 | Complete    | 2026-03-02 | - |
-| 42. Baseline Measurement | v3.1 | 0/? | Not started | - |
+| 42. Baseline Measurement | 1/1 | Complete   | 2026-03-02 | - |
 | 43. Triangulation Rebuild | v3.1 | 0/? | Not started | - |
 | 44. Validation and Tuning | v3.1 | 0/? | Not started | - |
 | 45. Dead Code Cleanup | v3.1 | 0/? | Not started | - |

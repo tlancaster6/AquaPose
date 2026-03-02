@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: Reconstruction
 status: unknown
-last_updated: "2026-03-02T20:38:26.820Z"
+last_updated: "2026-03-02T20:48:40.037Z"
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 5
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State
@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-02)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 41 — Evaluation Harness
+**Current focus:** Phase 42 — Baseline Measurement
 
 ## Current Position
 
-Phase: 41 of 45 (Evaluation Harness)
-Plan: 2 of N in current phase (41-02 complete)
+Phase: 42 of 45 (Baseline Measurement)
+Plan: 1 of 1 in current phase (42-01 complete)
 Status: In progress
-Last activity: 2026-03-02 — Completed 41-02: Evaluation harness with frame selection, Tier 1/Tier 2 metrics, ASCII + JSON output
+Last activity: 2026-03-02 — Completed 42-01: Baseline measurement script with outlier flagging and baseline_results.json persistence
 
 Progress: [██░░░░░░░░] 10%
 
@@ -57,6 +57,9 @@ v3.1 strategic decisions:
 - [Phase 41-01-calib-bundle]: Shared calibration params (water_z, n_air, n_water, interface_normal) taken from first model in dict
 - [Phase 41-02]: Harness calls triangulate_midlines() directly (not TriangulationBackend) to avoid calibration file dependency
 - [Phase 41-02]: Tier 2 leave-one-out reduced midline_set excludes dropout_cam for ALL fish (not just current fish)
+- [Phase 42-01]: flag_outliers returns empty set for <2 values or std==0
+- [Phase 42-01]: Baseline JSON augments eval_results.json with baseline_metadata key (not a new schema)
+- [Phase 42-01]: No tests for measure_baseline.py - manual execution only per CONTEXT.md
 
 ### Pending Todos
 
@@ -70,5 +73,5 @@ v3.1 strategic decisions:
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 41-evaluation-harness/41-02-PLAN.md
+Stopped at: Completed 42-baseline-measurement/42-01-PLAN.md
 Resume file: None

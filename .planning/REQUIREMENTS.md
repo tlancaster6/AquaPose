@@ -19,7 +19,7 @@ Requirements for reconstruction rebuild milestone. Each maps to roadmap phases.
 - [x] **EVAL-03**: Tier 1 metric: per-fish, per-camera reprojection error (mean and max) with overall aggregates
 - [x] **EVAL-04**: Tier 2 metric: leave-one-out camera stability (max control-point displacement across dropout runs)
 - [x] **EVAL-05**: Evaluation outputs human-readable summary table and machine-diffable regression data
-- [ ] **EVAL-06**: Baseline evaluation run against current reconstruction backend establishes reference metrics
+- [x] **EVAL-06**: Baseline evaluation run against current reconstruction backend establishes reference metrics
 
 ### Reconstruction
 
@@ -77,7 +77,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EVAL-03 | Phase 41 | Complete |
 | EVAL-04 | Phase 41 | Complete |
 | EVAL-05 | Phase 41 | Complete |
-| EVAL-06 | Phase 42 | Pending |
+| EVAL-06 | Phase 42 | Complete |
 | RECON-01 | Phase 43 | Pending |
 | RECON-02 | Phase 43 | Pending |
 | RECON-03 | Phase 43 | Pending |

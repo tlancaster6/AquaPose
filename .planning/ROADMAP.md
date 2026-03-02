@@ -90,7 +90,7 @@ Full details: `.planning/phases/29-*` through `.planning/phases/33.1-*`
 - [x] **Phase 35: Codebase Cleanup** — Remove custom U-Net, SAM2 pipeline, old midline backends, MOG2 backend, and legacy training CLI commands (completed 2026-03-01)
 - [x] **Phase 36: Training Wrappers** — Add NDJSON seg data converter and YOLO-seg/pose training wrappers following existing yolo_obb.py pattern (completed 2026-03-01)
 - [x] **Phase 37: Pipeline Integration** — Rename and implement SegmentationBackend and PoseEstimationBackend as selectable midline backends with YOLO-seg/pose inference (completed 2026-03-01)
-- [ ] **Phase 38: Stabilization and Tech Debt Cleanup** — Switch NDJSON to standard YOLO txt+yaml labels, consolidate config fields, update init-config defaults, dead code analysis
+- [x] **Phase 38: Stabilization and Tech Debt Cleanup** — Switch NDJSON to standard YOLO txt+yaml labels, consolidate config fields, update init-config defaults, dead code analysis (completed 2026-03-02)
 
 ## Phase Details
 
@@ -156,7 +156,7 @@ Plans:
 **Goal:** Legacy top-level domain libraries (reconstruction/, segmentation/, tracking/) are reorganized into core/ submodules alongside the stages that consume them, eliminating cross-package private-helper imports and misleading directory names. Stale docstrings and GUIDEBOOK.md updated to match new paths.
 **Requirements**: STAB-04 (deferred from phase 38), TBD
 **Depends on:** Phase 38
-**Plans:** 3/4 plans executed
+**Plans:** 3/4 plans complete
 
 Plans:
 - [ ] TBD (run /gsd:plan-phase 39 to break down)

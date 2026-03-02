@@ -2,6 +2,122 @@
 
 <!-- version list -->
 
+## v1.1.0-dev.5 (2026-03-02)
+
+### Bug Fixes
+
+- Use python3 in import boundary hook and fix pipeline config test paths
+  ([`c2df444`](https://github.com/tlancaster6/AquaPose/commit/c2df444384963d441e5434b11bf27495440d31b9))
+
+### Chores
+
+- Cleanup and planning for next milestone
+  ([`b9fe845`](https://github.com/tlancaster6/AquaPose/commit/b9fe84558a7eff50e3a9eb05839902d815bbf4f6))
+
+- Complete v3.0 Ultralytics Unification milestone
+  ([`065c59e`](https://github.com/tlancaster6/AquaPose/commit/065c59e1b45787bbf5bba6a398d5e3a9ddcf14db))
+
+- Removing legacy scripts
+  ([`4754ce4`](https://github.com/tlancaster6/AquaPose/commit/4754ce45d9db3bb44c222962646a480fa5878105))
+
+- **38-04**: Delete visualization/diagnostics.py dead code
+  ([`846b157`](https://github.com/tlancaster6/AquaPose/commit/846b1574f142f75d9dead2825e72b77bf00b2179))
+
+### Documentation
+
+- **38**: Add phase research and context
+  ([`86f3665`](https://github.com/tlancaster6/AquaPose/commit/86f3665898fd0b0a21e9b0882e4188dfc2bc35d6))
+
+- **38**: Capture phase context
+  ([`1d6b0d4`](https://github.com/tlancaster6/AquaPose/commit/1d6b0d4bc630953017c270904921ee2c1f024804))
+
+- **38**: Create phase plan
+  ([`ea098a4`](https://github.com/tlancaster6/AquaPose/commit/ea098a4780c487c2e52908035ee58f4fdae25da4))
+
+- **38**: Research phase domain
+  ([`66cfcee`](https://github.com/tlancaster6/AquaPose/commit/66cfceecc88904e98a93c49527b2416c77c45e21))
+
+- **38-01**: Complete config field consolidation plan
+  ([`88ee4b8`](https://github.com/tlancaster6/AquaPose/commit/88ee4b83660829760cc69703e2e2efc3c07d3286))
+
+- **38-02**: Complete NDJSON-to-txt+yaml migration plan
+  ([`eecf857`](https://github.com/tlancaster6/AquaPose/commit/eecf857aae79dd93275b9f3f5cc6d93b5f015d70))
+
+- **38-04**: Complete dead code analysis and cleanup plan
+  ([`97e87e5`](https://github.com/tlancaster6/AquaPose/commit/97e87e5df7853d63ad12bf9b4eb2dcab149730bf))
+
+- **39**: Capture phase context
+  ([`0f7b317`](https://github.com/tlancaster6/AquaPose/commit/0f7b3173a3324a227e42d6a84da227a85f0ace90))
+
+- **39**: Create phase plan
+  ([`52e7cd1`](https://github.com/tlancaster6/AquaPose/commit/52e7cd12a8182b47d6dac3b7693ac323a1f06dc9))
+
+- **39**: Research phase domain
+  ([`b8403c2`](https://github.com/tlancaster6/AquaPose/commit/b8403c225fd36d0d4c6fdf4584d33956944e1418))
+
+- **39-01**: Complete core/types package and implementation file relocation plan
+  ([`0264e06`](https://github.com/tlancaster6/AquaPose/commit/0264e06bf484d24ccb901b0b9f3c87de799fbd66))
+
+- **39-02**: Complete import migration plan execution
+  ([`a720686`](https://github.com/tlancaster6/AquaPose/commit/a720686b4c139c496af86791b12e10a7ac2bca7f))
+
+- **39-03**: Complete test import migration plan
+  ([`e01082c`](https://github.com/tlancaster6/AquaPose/commit/e01082c59468f0480e1b8f28a884df26de80e73e))
+
+- **39-04**: Complete documentation and docstring cleanup plan
+  ([`18097c2`](https://github.com/tlancaster6/AquaPose/commit/18097c252907dfa3f14de1e22909ad618032e795))
+
+- **39-04**: Remove stale legacy path references from module docstrings
+  ([`a73c66a`](https://github.com/tlancaster6/AquaPose/commit/a73c66aea4f202f36985747bb30611b27618721c))
+
+- **39-04**: Update GUIDEBOOK.md and CLAUDE.md with post-migration structure
+  ([`db53f44`](https://github.com/tlancaster6/AquaPose/commit/db53f4423a6e0272d30f15457b91b16684ba1ace))
+
+- **phase-38**: Complete phase execution
+  ([`44a5d62`](https://github.com/tlancaster6/AquaPose/commit/44a5d620af5053ba5a9de090fa2373482d27a2fd))
+
+- **phase-39**: Complete phase execution
+  ([`0fcc5eb`](https://github.com/tlancaster6/AquaPose/commit/0fcc5eb7fe0cd7417f5a303d1bbf1e7a49632c11))
+
+- **state**: Record phase 38 context session
+  ([`e9bb7e6`](https://github.com/tlancaster6/AquaPose/commit/e9bb7e67acf5f33512951af4d1f2826254ce8e80))
+
+- **v3.0**: Complete milestone audit — 16/16 requirements satisfied
+  ([`83cd535`](https://github.com/tlancaster6/AquaPose/commit/83cd5359145a04f36fa66b68eb3ad5659feb4c35))
+
+### Features
+
+- **38-01**: Consolidate config fields — model_path -> weights_path, remove keypoint_weights_path
+  ([`f833d04`](https://github.com/tlancaster6/AquaPose/commit/f833d04ac52dabfe728e92cf7f186c9730fa14ea))
+
+- **38-01**: Fix init-config defaults to reflect Ultralytics-based architecture
+  ([`69bd1db`](https://github.com/tlancaster6/AquaPose/commit/69bd1dbb6c3ea516e751ec921f1fcf90964271d1))
+
+- **38-02**: Migrate build script to YOLO txt+yaml output format
+  ([`69bfe02`](https://github.com/tlancaster6/AquaPose/commit/69bfe02901afde341f2289ad67d5f3a011f961f4))
+
+- **38-04**: Produce import analysis dead code report for legacy directories
+  ([`d36d1b2`](https://github.com/tlancaster6/AquaPose/commit/d36d1b2e3483ef114560d1801bcc0e692c3b5421))
+
+- **39-01**: Create core/types/ package with cross-stage shared types
+  ([`6dea193`](https://github.com/tlancaster6/AquaPose/commit/6dea193e408b9aaf179a0582ebd589e5cc157fa9))
+
+- **39-01**: Merge YOLODetector and make_detector() into detection backend
+  ([`80af32f`](https://github.com/tlancaster6/AquaPose/commit/80af32f7ee940d42660d6d401d975bb45f11119a))
+
+- **39-01**: Relocate implementation files to new core locations
+  ([`26bae8f`](https://github.com/tlancaster6/AquaPose/commit/26bae8ffa95c0ca35806c8c0548383a1e114f7a9))
+
+- **39-02**: Delete legacy reconstruction/, segmentation/, tracking/ directories
+  ([`9236537`](https://github.com/tlancaster6/AquaPose/commit/92365374431b94b4b2b5f897545120619b2bb550))
+
+- **39-02**: Rewire all src/ imports to core paths; delete shim files
+  ([`ed0fcd9`](https://github.com/tlancaster6/AquaPose/commit/ed0fcd94763c23436864e5027438cc3b14994912))
+
+- **39-03**: Update all test file imports to new core paths
+  ([`ba52398`](https://github.com/tlancaster6/AquaPose/commit/ba523983f471045e700eadd6320741b700909c9b))
+
+
 ## v1.1.0-dev.4 (2026-03-02)
 
 ### Bug Fixes

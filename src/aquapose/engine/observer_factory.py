@@ -107,6 +107,7 @@ def build_observers(
                 output_dir=config.output_dir,
                 video_dir=config.video_dir,
                 calibration_path=config.calibration_path,
+                show_bbox=True,
             )
         )
         observers.append(Animation3DObserver(output_dir=config.output_dir))

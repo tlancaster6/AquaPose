@@ -250,15 +250,17 @@ class Overlay2DObserver:
                                                 self._midline_2d_color,
                                             )
                                     if self._show_bbox:
-                                        bbox = getattr(det, "bbox", None)
+                                        # AnnotatedDetection wraps Detection
+                                        inner = getattr(det, "detection", det)
+                                        bbox = getattr(inner, "bbox", None)
                                         if bbox is not None:
                                             fish_id_label = (
                                                 getattr(det, "fish_id", None)
                                                 if self._show_fish_id
                                                 else None
                                             )
-                                            obb_pts = getattr(det, "obb_points", None)
-                                            conf = getattr(det, "confidence", None)
+                                            obb_pts = getattr(inner, "obb_points", None)
+                                            conf = getattr(inner, "confidence", None)
                                             self._draw_detection_bbox(
                                                 frames[cam_id],
                                                 bbox,

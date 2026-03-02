@@ -95,6 +95,47 @@
 
 ---
 
+## Milestone: v3.0 — Ultralytics Unification
+
+**Shipped:** 2026-03-02
+**Phases:** 5 | **Plans:** 14 | **Timeline:** 2 days
+
+### What Was Built
+- Removed all custom U-Net, SAM2, MOG2, and legacy training code
+- YOLO-seg and YOLO-pose training wrappers with CLI and COCO seg data converter
+- SegmentationBackend and PoseEstimationBackend as selectable midline backends
+- Standard YOLO txt+yaml training data format across all model types
+- Consolidated config (single weights_path), correct init-config defaults
+- core/types/ shared type package; legacy dirs reorganized into core/ submodules
+
+### What Worked
+- **Incremental migration strategy:** Wave 1 created new files, Wave 2 rewired imports, Wave 3 updated docs — clean dependency ordering
+- **Parallel plan execution:** Plans 39-02 and 39-03 (src/ and test/ import rewiring) ran in parallel with no conflicts
+- **Deferred-then-completed pattern:** STAB-04 deferred from Phase 38 to Phase 39 was the right call — docstring cleanup made more sense after module reorganization
+- **Comprehensive audit:** 3-source cross-reference (VERIFICATION + SUMMARY + traceability) caught stale metadata
+
+### What Was Inefficient
+- **NDJSON format churn:** Phase 36 built NDJSON conversion, Phase 38 replaced it with standard txt+yaml — could have gone directly to txt+yaml
+- **SUMMARY frontmatter still underutilized:** `one_liner` fields still null in all SUMMARYs, making automated accomplishment extraction fail
+- **Phase 38 plan count confusion:** 38-03 deferred to Phase 39 but plan count shows 3/4 — ambiguous without reading the deferral note
+
+### Patterns Established
+- core/types/ as shared cross-stage type layer (stdlib + numpy only, no implementation imports)
+- Dual-path migration: create new files → rewire imports → delete old — never break intermediate states
+- Backend selection via config string → registry factory → lazy import
+
+### Key Lessons
+1. **Go directly to the right format** — NDJSON→txt+yaml churn was avoidable; research should validate format compatibility before building
+2. **Module reorganization is easier after stabilization** — Phase 39 went smoothly because Phase 38 had already cleaned up dead code and config
+3. **Populate SUMMARY frontmatter** — still not happening consistently; milestone tooling remains degraded
+
+### Cost Observations
+- Model mix: ~70% sonnet (executors), ~20% opus (orchestrator), ~10% sonnet (verifiers)
+- Sessions: ~3-4 across 2 days
+- Notable: Phase 39 was the most efficient — 4 plans in 3 waves completed in a single session
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -103,6 +144,7 @@
 |-----------|----------|--------|------------|
 | v1.0 | 11 days | 12 | Initial development; architecture pivot mid-milestone |
 | v2.0 | 3 days | 10 | Full architectural refactor; audit-then-remediate pattern |
+| v3.0 | 2 days | 5 | Ultralytics migration; incremental file relocation strategy |
 
 ### Cumulative Quality
 
@@ -110,6 +152,7 @@
 |-----------|-----|-------|-------------|
 | v1.0 | 50,802 | ~300 | 8 |
 | v2.0 | 18,660 + 14,826 test | 514 | 1 |
+| v3.0 | 22,087 + 18,829 test | 656 | 3 |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -117,3 +160,4 @@
 2. Pivot early when runtime measurements invalidate an approach
 3. Align on canonical domain models before coding — mismatches compound
 4. Audit phases produce better remediation than fix-as-you-go
+5. Go directly to the right format — intermediate format churn wastes effort (v3.0 NDJSON→txt lesson)

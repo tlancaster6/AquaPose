@@ -2,7 +2,7 @@
 
 ## What This Is
 
-AquaPose is a 3D fish pose estimation system that reconstructs the position, orientation, and body shape of cichlids from a 13-camera aquarium rig. Built as an event-driven computation engine with strict 3-layer architecture (Core Computation → PosePipeline → Observers), the pipeline executes 5 stages — Detection (YOLO), 2D Tracking (OC-SORT per-camera), Association (ray-ray scoring + Leiden clustering), Midline (U-Net + skeletonization), and Reconstruction (multi-view triangulation + B-spline fitting) — producing dense 3D trajectories and midline kinematics for behavioral research. Precomputed refractive lookup tables (forward pixel→ray and inverse voxel→pixel) eliminate per-frame refraction math during association. A curve-based optimizer provides an alternative correspondence-free reconstruction backend. Invoked via `aquapose run --config path.yaml` with production, diagnostic, synthetic, and benchmark execution modes.
+AquaPose is a 3D fish pose estimation system that reconstructs the position, orientation, and body shape of cichlids from a 13-camera aquarium rig. Built as an event-driven computation engine with strict 3-layer architecture (Core Computation → PosePipeline → Observers), the pipeline executes 5 stages — Detection (YOLO-OBB), 2D Tracking (OC-SORT per-camera), Association (ray-ray scoring + Leiden clustering), Midline (YOLO-seg or YOLO-pose backends), and Reconstruction (multi-view triangulation + B-spline fitting) — producing dense 3D trajectories and midline kinematics for behavioral research. Precomputed refractive lookup tables (forward pixel→ray and inverse voxel→pixel) eliminate per-frame refraction math during association. A curve-based optimizer provides an alternative correspondence-free reconstruction backend. Invoked via `aquapose run --config path.yaml` with production, diagnostic, synthetic, and benchmark execution modes.
 
 ## Core Value
 
@@ -57,19 +57,19 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - ✓ Tracklet and association diagnostic visualization (DIAG-01) — v2.1
 - ✓ E2E smoke tests on synthetic data (EVAL-01) — v2.1
 
+- ✓ Custom U-Net and keypoint regression code stripped; Ultralytics-only codebase — v3.0
+- ✓ YOLO-seg training wrapper with COCO polygon data converter (DATA-01, TRAIN-01) — v3.0
+- ✓ YOLO-pose training wrapper with CLI subcommand (TRAIN-02) — v3.0
+- ✓ SegmentationBackend (YOLO-seg + skeletonization) as selectable midline backend (PIPE-01) — v3.0
+- ✓ PoseEstimationBackend (YOLO-pose + spline interpolation) as selectable midline backend (PIPE-02) — v3.0
+- ✓ Config backend selection via midline.backend field (PIPE-03) — v3.0
+- ✓ Standard YOLO txt+yaml training data format (STAB-01) — v3.0
+- ✓ Consolidated weights_path config field (STAB-02) — v3.0
+- ✓ Legacy dirs reorganized into core/ submodules with core/types/ package (REORG-01) — v3.0
+
 ### Active
 
-## Current Milestone: v3.0 Ultralytics Unification
-
-**Goal:** Replace custom U-Net segmentation and keypoint regression models with Ultralytics-native YOLOv8-seg and YOLOv8-pose, unifying detection→segmentation→midline on one framework.
-
-**Target features:**
-- Strip custom U-Net segmentation and keypoint regression code (training/, _PoseModel, BinaryMaskDataset)
-- YOLOv8-seg backend replacing U-Net for mask inference
-- YOLOv8-pose backend replacing keypoint regression for midline extraction
-- Unified Ultralytics training workflow for detect, seg, and pose models
-- Pipeline integration: Ultralytics models as drop-in backends within existing Stage architecture
-- Training data preparation tooling for Ultralytics format (YOLO seg/pose annotation formats)
+(No active milestone — use `/gsd:new-milestone` to start next)
 
 ### Out of Scope
 
@@ -86,15 +86,16 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ## Context
 
-### Current State (v2.1 Identity shipped)
+### Current State (v3.0 Ultralytics Unification shipped)
 
-- **Codebase:** 21,389 LOC source across `src/aquapose/` (calibration, core/, engine/, segmentation, tracking, reconstruction, io, visualization)
+- **Codebase:** 22,087 LOC source across `src/aquapose/` (calibration, core/, engine/, io, visualization), 18,829 LOC tests (656 tests)
 - **Architecture:** Event-driven 3-layer — Core Computation (5 stages) → PosePipeline (orchestrator) → Observers (6 side-effect handlers)
-- **Pipeline order:** Detection (YOLO) → 2D Tracking (OC-SORT) → Association (Leiden) → Midline (U-Net + skeletonization) → Reconstruction (triangulation + B-spline)
+- **Pipeline order:** Detection (YOLO-OBB) → 2D Tracking (OC-SORT) → Association (Leiden) → Midline (YOLO-seg or YOLO-pose) → Reconstruction (triangulation + B-spline)
 - **Tech stack:** Python 3.11, PyTorch, PyTorch3D, scikit-image, OpenCV, h5py, ultralytics (YOLO), Click (CLI), Plotly (3D viz), boxmot (OC-SORT), leidenalg/igraph, hatch build system
-- **Test suite:** 554+ unit tests, 2 E2E smoke tests (synthetic), real-data tests (@slow)
+- **Midline backends:** SegmentationBackend (YOLO-seg + skeletonization) and PoseEstimationBackend (YOLO-pose + spline), selectable via `midline.backend` config field
+- **Training infrastructure:** `aquapose train {yolo-obb, seg, pose}` CLI subcommands with standard YOLO txt+yaml data format
+- **Core organization:** Shared types in `core/types/`, implementations in `core/<stage>/`, legacy top-level dirs eliminated
 - **Two reconstruction backends:** Triangulation (primary, fast) and curve optimizer (experimental, correspondence-free) — selected via config
-- **Segmentation quality:** U-Net IoU 0.623 — sufficient for pipeline but noisy 2D midlines are the primary quality bottleneck for real data
 - **Known limitation:** Z-reconstruction uncertainty 132x larger than XY due to top-down camera geometry
 - **Import boundary:** Automated AST-based checker enforced via pre-commit hook — core/ never imports engine/ at runtime
 
@@ -131,9 +132,11 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Direct triangulation over analysis-by-synthesis | ABS 30+ min/sec impractical; direct triangulation orders of magnitude faster | ✓ Good — primary pipeline works |
 | AquaCal as dependency, AquaMVS as reference | Avoid fragile cross-repo imports; reimplement refractive projection | ✓ Good |
 | YOLO as primary detector, MOG2 as fallback | YOLOv8n trained on 150 frames; recall 0.78 | ✓ Good |
-| U-Net over Mask R-CNN for segmentation | Lightweight (~2.5M params), trains on SAM2 pseudo-labels | ✗ Replaced — IoU 0.623 insufficient; moving to YOLOv8-seg in v3.0 |
-| Custom keypoint regression for midline | U-Net encoder + regression head, per-point confidence | ✗ Replaced — poor performance even with augmentation; moving to YOLOv8-pose in v3.0 |
-| Ultralytics unification over custom models | Two custom U-Net models failed; Ultralytics provides pretrained backbones, battle-tested training, unified architecture | — Pending v3.0 |
+| U-Net over Mask R-CNN for segmentation | Lightweight (~2.5M params), trains on SAM2 pseudo-labels | ✗ Replaced — IoU 0.623 insufficient; replaced by YOLO-seg in v3.0 |
+| Custom keypoint regression for midline | U-Net encoder + regression head, per-point confidence | ✗ Replaced — poor performance even with augmentation; replaced by YOLO-pose in v3.0 |
+| Ultralytics unification over custom models | Two custom U-Net models failed; Ultralytics provides pretrained backbones, battle-tested training, unified architecture | ✓ Good — v3.0 shipped, all 16 requirements satisfied |
+| Standard YOLO txt+yaml over NDJSON | NDJSON was adopted mid-v3.0 then reverted; standard format has better tooling support | ✓ Good — all three training modes use txt+yaml |
+| Legacy dirs reorganized into core/ submodules | reconstruction/, segmentation/, tracking/ had misleading names and cross-package imports | ✓ Good — core/types/ shared types, core/<stage>/ implementations |
 | RANSAC centroid clustering for cross-view identity | Cast refractive rays, triangulate minimal subsets, score consensus | Superseded by Leiden clustering in v2.1 |
 | Arc-length normalized correspondence | Slender-body assumption preserves cross-view correspondence | ✓ Good |
 | Analysis-by-synthesis retained as optional route | Shelved, not deleted — available for advanced work | ✓ Good |
@@ -155,4 +158,4 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Import boundary via AST checker + pre-commit | Automated enforcement prevents architectural regression | ✓ Good — 0 violations at milestone completion |
 
 ---
-*Last updated: 2026-03-01 after v3.0 Ultralytics Unification milestone started*
+*Last updated: 2026-03-02 after v3.0 Ultralytics Unification milestone completed*

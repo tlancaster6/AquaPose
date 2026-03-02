@@ -1,5 +1,24 @@
 # Milestones
 
+## v3.0 Ultralytics Unification (Shipped: 2026-03-02)
+
+**Phases completed:** 5 phases, 14 plans
+**Timeline:** 2 days (2026-03-01 → 2026-03-02)
+**Codebase:** 22,087 LOC source, 18,829 LOC tests (656 tests)
+**Git range:** 54 commits, 168 files changed (+14,778 / -9,059)
+
+**Key accomplishments:**
+1. Removed all custom U-Net, SAM2, MOG2, and legacy training code — clean Ultralytics-only foundation
+2. Built YOLO-seg and YOLO-pose training wrappers with CLI subcommands and COCO seg data converter
+3. Implemented SegmentationBackend (YOLO-seg + skeletonization) and PoseEstimationBackend (YOLO-pose + spline) as selectable midline backends
+4. Standardized training data format from NDJSON to YOLO txt+yaml labels across all three model types (OBB, seg, pose)
+5. Consolidated config fields (single `weights_path`), fixed `init-config` defaults for YOLO-OBB + pose_estimation
+6. Reorganized legacy `reconstruction/`, `segmentation/`, `tracking/` into `core/` submodules with shared `core/types/` package
+
+**Delivered:** Complete migration from custom U-Net/keypoint models to Ultralytics-native YOLO-seg and YOLO-pose backends, with unified training infrastructure, standardized data format, consolidated config, and reorganized codebase. All 16 requirements satisfied, audit passed 16/16.
+
+---
+
 ## v1.0 MVP (Shipped: 2026-02-25)
 
 **Phases completed:** 12 phases, 28 plans

@@ -6,7 +6,7 @@
 - ✅ **v2.0 Alpha** — Phases 13-21 (shipped 2026-02-27)
 - ✅ **v2.1 Identity** — Phases 22-28 (shipped 2026-02-28)
 - ✅ **v2.2 Backends** — Phases 29-33.1 (shipped 2026-03-01)
-- 🚧 **v3.0 Ultralytics Unification** — Phases 35-37 (in progress)
+- ✅ **v3.0 Ultralytics Unification** — Phases 35-39 (shipped 2026-03-02)
 
 ## Phases
 
@@ -81,51 +81,19 @@ Full details: `.planning/phases/29-*` through `.planning/phases/33.1-*`
 
 </details>
 
-### 🚧 v3.0 Ultralytics Unification (In Progress)
+<details>
+<summary>✅ v3.0 Ultralytics Unification (Phases 35-39) — SHIPPED 2026-03-02</summary>
 
-**Milestone Goal:** Replace custom U-Net segmentation and keypoint regression models with Ultralytics-native YOLO26n-seg and YOLO26n-pose, unifying detection, segmentation, and midline extraction on one framework. Starts by stripping the failed custom code, then builds training wrappers for the new models, then integrates them as backends within the existing Stage architecture.
+- [x] Phase 35: Codebase Cleanup (2/2 plans) — completed 2026-03-01
+- [x] Phase 36: Training Wrappers (2/2 plans) — completed 2026-03-01
+- [x] Phase 37: Pipeline Integration (2/2 plans) — completed 2026-03-01
+- [x] Phase 38: Stabilization and Tech Debt Cleanup (3/4 plans, 1 deferred) — completed 2026-03-02
+- [x] Phase 39: Core Reorganization (4/4 plans) — completed 2026-03-02
 
-**⚠ Cross-cutting concern — Coordinate spaces:** Full-image ↔ crop-space conversions are a pervasive source of error, especially with OBB affine warps. Mismatches between training-time and inference-time crop preparation cause silent accuracy failures. Every phase must explicitly verify coordinate round-trips at each boundary (training labels, inference output, back-projection to full frame). Existing crop utilities should be reused with extreme care.
+**5 phases, 14 plans total**
+Full details: `.planning/milestones/v3.0-ROADMAP.md`
 
-- [x] **Phase 35: Codebase Cleanup** — Remove custom U-Net, SAM2 pipeline, old midline backends, MOG2 backend, and legacy training CLI commands (completed 2026-03-01)
-- [x] **Phase 36: Training Wrappers** — Add NDJSON seg data converter and YOLO-seg/pose training wrappers following existing yolo_obb.py pattern (completed 2026-03-01)
-- [x] **Phase 37: Pipeline Integration** — Rename and implement SegmentationBackend and PoseEstimationBackend as selectable midline backends with YOLO-seg/pose inference (completed 2026-03-01)
-- [x] **Phase 38: Stabilization and Tech Debt Cleanup** — Switch NDJSON to standard YOLO txt+yaml labels, consolidate config fields, update init-config defaults, dead code analysis (completed 2026-03-02)
-
-## Phase Details
-
-### Phase 35: Codebase Cleanup — COMPLETE (2026-03-01)
-**Goal**: The codebase contains no custom U-Net, SAM2 pseudo-label, old midline backend, MOG2 detection, or legacy training CLI code — only Ultralytics-based models and the new training wrappers remain, leaving a clean foundation for v3.0 backends
-**Depends on**: Nothing (cleanup precedes building)
-**Requirements**: CLEAN-01, CLEAN-02, CLEAN-03, CLEAN-04, CLEAN-05
-**Plans**: 2/2 complete
-Plans:
-- [x] 35-01-PLAN.md — Remove custom models, SAM2, MOG2, and old training CLI
-- [x] 35-02-PLAN.md — Stub midline backends as no-ops, correct planning docs
-**Summaries**: 35-01-SUMMARY.md, 35-02-SUMMARY.md (in progress)
-
-### Phase 36: Training Wrappers — COMPLETE (2026-03-01)
-**Goal**: A COCO-to-NDJSON segmentation data converter and training wrappers for YOLO26n-seg and YOLO26n-pose are available from the CLI, following the same pattern as the existing `yolo_obb.py` training wrapper
-**Depends on**: Phase 35 (clean codebase, no legacy training commands to conflict)
-**Requirements**: DATA-01, TRAIN-01, TRAIN-02
-**Plans**: 2/2 complete
-Plans:
-- [x] 36-01-PLAN.md — Add --mode seg to build_yolo_training_data.py (COCO polygon converter)
-- [x] 36-02-PLAN.md — YOLO-seg and YOLO-pose training wrappers with CLI subcommands
-**Summaries**: 36-02-SUMMARY.md
-
-### Phase 37: Pipeline Integration
-**Goal**: The pipeline supports `segmentation` and `pose_estimation` as selectable midline backends; running either end-to-end produces `Midline2D` objects compatible with the reconstruction stages
-**Depends on**: Phase 36 (trained models exist), Phase 35 (custom model code removed; existing segment_then_extract and direct_pose backends are no-op stubs awaiting YOLO model wiring)
-**Requirements**: PIPE-01, PIPE-02, PIPE-03
-**Success Criteria** (what must be TRUE):
-  1. Setting `midline.backend: segmentation` in pipeline config runs the full pipeline end-to-end; the MidlineStage produces binary masks per detection that feed skeletonization the same way U-Net masks did
-  2. Setting `midline.backend: pose_estimation` in pipeline config runs the full pipeline end-to-end; the MidlineStage produces `Midline2D` objects with 6-keypoint coordinates resampled to `n_sample_points` and per-point confidence scores
-  3. Both backends produce `Midline2D` instances with identical shape and field structure — the reconstruction stages require no backend-specific branching
-**Plans**: 2 plans
-Plans:
-- [ ] 37-01-PLAN.md — Rename backends to segmentation/pose_estimation, update config, registry, and tests
-- [ ] 37-02-PLAN.md — Implement real YOLO-seg and YOLO-pose inference in both backends
+</details>
 
 ## Progress
 
@@ -135,31 +103,4 @@ Plans:
 | 13-21 | v2.0 | 34/34 | Complete | 2026-02-27 |
 | 22-28 | v2.1 | 12/12 | Complete | 2026-02-28 |
 | 29-33.1 | v2.2 | 12/12 | Complete | 2026-03-01 |
-| 35. Codebase Cleanup | v3.0 | 2/2 | Complete | 2026-03-01 |
-| 36. Training Wrappers | v3.0 | 2/2 | Complete | 2026-03-01 |
-| 37. Pipeline Integration | 2/2 | Complete    | 2026-03-01 | - |
-
-### Phase 38: Stabilization and Tech Debt Cleanup
-**Goal**: Training data and config infrastructure uses standard YOLO txt+yaml format (not NDJSON), config fields are consolidated and init-config generates correct defaults, and dead legacy code is analyzed
-**Depends on**: Phase 37 (backends must be implemented before cleaning up references to them)
-**Requirements**: STAB-01, STAB-02, STAB-03
-**Plans**: 3 plans (38-03 deferred to phase 39)
-
-Plans:
-- [x] 38-01-PLAN.md — Config field consolidation (weights_path rename) and init-config defaults
-- [x] 38-02-PLAN.md — NDJSON to standard YOLO txt+yaml label format migration
-- ~~38-03-PLAN.md~~ — Deferred to phase 39 (docstring/guidebook audit after module reorg)
-- [x] 38-04-PLAN.md — Dead code import analysis report and user-approved cleanup
-
-### Phase 39: Migrate legacy domain libraries into core submodules
-
-**Goal:** Legacy top-level domain libraries (reconstruction/, segmentation/, tracking/) are reorganized into core/ submodules alongside the stages that consume them, eliminating cross-package private-helper imports and misleading directory names. Stale docstrings and GUIDEBOOK.md updated to match new paths.
-**Requirements**: STAB-04, REORG-01
-**Depends on:** Phase 38
-**Plans:** 4/4 plans complete
-
-Plans:
-- [ ] 39-01-PLAN.md — Create core/types/ package and relocate implementation files to new core locations
-- [ ] 39-02-PLAN.md — Rewire all src/ consumer imports, delete shims, delete legacy directories
-- [ ] 39-03-PLAN.md — Rewire all test imports and verify full test suite passes
-- [ ] 39-04-PLAN.md — Update GUIDEBOOK.md, CLAUDE.md, and stale docstrings (STAB-04)
+| 35-39 | v3.0 | 14/14 | Complete | 2026-03-02 |

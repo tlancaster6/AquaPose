@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: Reconstruction
-status: unknown
-last_updated: "2026-03-02T19:58:12.376Z"
+status: in_progress
+last_updated: "2026-03-02T20:17:18Z"
 progress:
   total_phases: 2
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 3
+  completed_plans: 3
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-02)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 40 — Diagnostic Capture
+**Current focus:** Phase 41 — Evaluation Harness
 
 ## Current Position
 
-Phase: 40 of 45 (Diagnostic Capture)
-Plan: 2 of 2 in current phase (40-01, 40-02 complete)
+Phase: 41 of 45 (Evaluation Harness)
+Plan: 1 of N in current phase (41-01 complete)
 Status: In progress
-Last activity: 2026-03-02 — Completed 40-02: load_midline_fixture NPZ deserializer with round-trip tests
+Last activity: 2026-03-02 — Completed 41-01: CalibBundle dataclass and NPZ v2.0 format with calibration bundling
 
-Progress: [█░░░░░░░░░] 5%
+Progress: [██░░░░░░░░] 10%
 
 ## Accumulated Context
 
@@ -51,6 +51,10 @@ v3.1 strategic decisions:
 - [Phase 40-diagnostic-capture]: No min_cameras filter on frame inclusion - all frames with at least one midline captured
 - [Phase 40-diagnostic-capture]: load_midline_fixture derives frame_indices from parsed midline keys (not meta/frame_indices) to handle empty fixtures correctly
 - [Phase 40-diagnostic-capture]: camera_ids in MidlineFixture loaded from meta/camera_ids to preserve original capture ordering
+- [Phase 41-01-calib-bundle]: NPZ_VERSION updated to 2.0; both 1.0 and 2.0 accepted in loader via _SUPPORTED_VERSIONS
+- [Phase 41-01-calib-bundle]: export_midline_fixtures writes 1.0 (no calib/) when models=None, 2.0 (with calib/) when models provided
+- [Phase 41-01-calib-bundle]: CalibBundle is frozen dataclass; per-camera keys discovered dynamically by scanning NPZ key names
+- [Phase 41-01-calib-bundle]: Shared calibration params (water_z, n_air, n_water, interface_normal) taken from first model in dict
 
 ### Pending Todos
 
@@ -64,5 +68,5 @@ v3.1 strategic decisions:
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 40-diagnostic-capture/40-02-PLAN.md
+Stopped at: Completed 41-evaluation-harness/41-01-PLAN.md
 Resume file: None

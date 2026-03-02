@@ -24,8 +24,8 @@ from aquapose.core.midline.backends.pose_estimation import (
     _keypoints_to_midline,
 )
 from aquapose.core.midline.types import AnnotatedDetection
-from aquapose.segmentation.crop import AffineCrop
-from aquapose.segmentation.detector import Detection
+from aquapose.core.types.crop import AffineCrop
+from aquapose.core.types.detection import Detection
 
 # ---------------------------------------------------------------------------
 # Helpers

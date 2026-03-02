@@ -23,7 +23,7 @@ from aquapose.core.midline.backends import get_backend
 from aquapose.core.midline.backends.segmentation import (
     SegmentationBackend,
 )
-from aquapose.segmentation.detector import Detection
+from aquapose.core.types.detection import Detection
 
 # ---------------------------------------------------------------------------
 # Protocol conformance

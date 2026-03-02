@@ -21,19 +21,19 @@ import pytest
 import torch
 
 from aquapose.calibration.projection import RefractiveProjectionModel, triangulate_rays
-from aquapose.reconstruction.curve_optimizer import (
+from aquapose.core.reconstruction.curve_optimizer import (
     CurveOptimizerConfig,
     _chamfer_distance_2d,
     _data_loss,
     _weighted_chamfer_distance_2d,
     get_basis,
 )
-from aquapose.reconstruction.midline import Midline2D
-from aquapose.reconstruction.triangulation import (
-    MidlineSet,
+from aquapose.core.reconstruction.triangulation import (
     _weighted_triangulate_rays,
     triangulate_midlines,
 )
+from aquapose.core.types.midline import Midline2D
+from aquapose.core.types.reconstruction import MidlineSet
 
 # ---------------------------------------------------------------------------
 # Shared camera rig helpers (mirrors tests/unit/test_triangulation.py)

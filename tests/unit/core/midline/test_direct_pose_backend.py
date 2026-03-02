@@ -12,7 +12,7 @@ import numpy as np
 
 from aquapose.core.midline.backends.pose_estimation import PoseEstimationBackend
 from aquapose.core.midline.types import AnnotatedDetection
-from aquapose.segmentation.detector import Detection
+from aquapose.core.types.detection import Detection
 
 
 def test_pose_estimation_stub_returns_none_midlines() -> None:

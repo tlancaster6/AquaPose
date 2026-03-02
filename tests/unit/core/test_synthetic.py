@@ -147,7 +147,7 @@ class TestSyntheticDataStageRun:
         assert has_any, "No cameras received any detections"
 
     def test_annotated_detections_have_midlines(self) -> None:
-        from aquapose.reconstruction.midline import Midline2D
+        from aquapose.core.types.midline import Midline2D
 
         context = self._run_stage()
         found_midline = False

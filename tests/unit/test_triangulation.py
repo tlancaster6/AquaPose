@@ -7,12 +7,9 @@ import pytest
 import torch
 
 from aquapose.calibration.projection import RefractiveProjectionModel
-from aquapose.reconstruction.midline import Midline2D
-from aquapose.reconstruction.triangulation import (
+from aquapose.core.reconstruction.triangulation import (
     MIN_BODY_POINTS,
     N_SAMPLE_POINTS,
-    Midline3D,
-    MidlineSet,
     _align_midline_orientations,
     _fit_spline,
     _pixel_half_width_to_metres,
@@ -22,6 +19,8 @@ from aquapose.reconstruction.triangulation import (
     refine_midline_lm,
     triangulate_midlines,
 )
+from aquapose.core.types.midline import Midline2D
+from aquapose.core.types.reconstruction import Midline3D, MidlineSet
 
 # ---------------------------------------------------------------------------
 # Synthetic camera rig helpers

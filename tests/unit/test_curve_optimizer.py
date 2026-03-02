@@ -7,7 +7,10 @@ import pytest
 import torch
 
 from aquapose.calibration.projection import RefractiveProjectionModel
-from aquapose.reconstruction.curve_optimizer import (
+from aquapose.core.reconstruction.curve_optimizer import (
+    N_SAMPLE_POINTS,
+    SPLINE_K,
+    SPLINE_KNOTS,
     CurveOptimizer,
     CurveOptimizerConfig,
     _build_basis_matrix,
@@ -18,12 +21,7 @@ from aquapose.reconstruction.curve_optimizer import (
     _smoothness_penalty,
     get_basis,
 )
-from aquapose.reconstruction.midline import Midline2D
-from aquapose.reconstruction.triangulation import (
-    N_SAMPLE_POINTS,
-    SPLINE_K,
-    SPLINE_KNOTS,
-)
+from aquapose.core.types.midline import Midline2D
 
 # ---------------------------------------------------------------------------
 # Synthetic camera helpers (mirrors test_triangulation.py pattern)

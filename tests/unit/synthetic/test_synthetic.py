@@ -9,13 +9,13 @@ import numpy as np
 import torch
 
 from aquapose.calibration.projection import RefractiveProjectionModel
-from aquapose.reconstruction.triangulation import (
+from aquapose.core.reconstruction.triangulation import (
     N_SAMPLE_POINTS,
     SPLINE_K,
     SPLINE_KNOTS,
     SPLINE_N_CTRL,
-    Midline3D,
 )
+from aquapose.core.types.reconstruction import Midline3D
 from aquapose.synthetic import (
     FishConfig,
     build_fabricated_rig,

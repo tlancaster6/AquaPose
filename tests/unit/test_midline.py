@@ -7,8 +7,7 @@ from dataclasses import dataclass, field
 import cv2
 import numpy as np
 
-from aquapose.reconstruction.midline import (
-    Midline2D,
+from aquapose.core.midline.midline import (
     MidlineExtractor,
     _adaptive_smooth,
     _check_skip_mask,
@@ -17,7 +16,8 @@ from aquapose.reconstruction.midline import (
     _resample_arc_length,
     _skeleton_and_widths,
 )
-from aquapose.segmentation.crop import CropRegion
+from aquapose.core.types.crop import CropRegion
+from aquapose.core.types.midline import Midline2D
 
 # ---------------------------------------------------------------------------
 # Helper fixtures / factories

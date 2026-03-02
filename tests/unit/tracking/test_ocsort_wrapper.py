@@ -52,7 +52,7 @@ def _make_tracker(
     min_hits: int = MIN_HITS,
     max_age: int = MAX_AGE,
 ) -> OcSortTracker:  # noqa: F821
-    from aquapose.tracking.ocsort_wrapper import OcSortTracker
+    from aquapose.core.tracking.ocsort_wrapper import OcSortTracker
 
     return OcSortTracker(
         camera_id=camera_id,
@@ -243,7 +243,7 @@ class TestStateRoundtrip:
         state = tracker1.get_state()
 
         # Restore into a new tracker instance
-        from aquapose.tracking.ocsort_wrapper import OcSortTracker
+        from aquapose.core.tracking.ocsort_wrapper import OcSortTracker
 
         tracker2 = OcSortTracker.from_state("cam1", state)
 
@@ -268,7 +268,7 @@ class TestStateRoundtrip:
 
         state = tracker1.get_state()
 
-        from aquapose.tracking.ocsort_wrapper import OcSortTracker
+        from aquapose.core.tracking.ocsort_wrapper import OcSortTracker
 
         tracker2 = OcSortTracker.from_state("cam1", state)
 

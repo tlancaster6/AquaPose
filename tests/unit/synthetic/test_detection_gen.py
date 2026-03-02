@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from aquapose.segmentation.detector import Detection
+from aquapose.core.types.detection import Detection
 from aquapose.synthetic import (
     NoiseConfig,
     SyntheticDataset,

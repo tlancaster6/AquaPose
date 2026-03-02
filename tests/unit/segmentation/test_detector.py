@@ -7,11 +7,8 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from aquapose.segmentation.detector import (
-    Detection,
-    YOLODetector,
-    make_detector,
-)
+from aquapose.core.detection.backends.yolo import YOLODetector, make_detector
+from aquapose.core.types.detection import Detection
 
 
 class TestDetection:

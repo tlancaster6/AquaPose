@@ -15,12 +15,12 @@ import math
 import numpy as np
 import pytest
 
-from aquapose.segmentation.crop import (
-    AffineCrop,
+from aquapose.core.midline.crop import (
     extract_affine_crop,
     invert_affine_point,
     invert_affine_points,
 )
+from aquapose.core.types.crop import AffineCrop
 
 # ---------------------------------------------------------------------------
 # Output shape

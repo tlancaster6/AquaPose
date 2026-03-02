@@ -8,13 +8,13 @@ import h5py
 import numpy as np
 import pytest
 
-from aquapose.io import Midline3DWriter, read_midline3d_results
-from aquapose.reconstruction.triangulation import (
+from aquapose.core.reconstruction.triangulation import (
     N_SAMPLE_POINTS,
     SPLINE_K,
     SPLINE_KNOTS,
-    Midline3D,
 )
+from aquapose.core.types.reconstruction import Midline3D
+from aquapose.io import Midline3DWriter, read_midline3d_results
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -32,6 +32,8 @@ class Tier1Result:
     per_fish: dict[int, dict[str, float]]
     overall_mean_px: float
     overall_max_px: float
+    fish_reconstructed: int
+    fish_available: int
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,7 @@ def select_frames(frame_indices: tuple[int, ...], n_frames: int = 15) -> list[in
 
 def compute_tier1(
     frame_results: list[tuple[int, dict[int, Midline3D]]],
+    fish_available: int = 0,
 ) -> Tier1Result:
     """Compute Tier 1 reprojection error metrics from triangulation results.
 
@@ -87,6 +90,8 @@ def compute_tier1(
     Args:
         frame_results: List of ``(frame_idx, dict[fish_id, Midline3D])`` pairs
             from triangulation results.
+        fish_available: Total fish-frame pairs available in the evaluated frames.
+            Used to compute reconstruction coverage rate.
 
     Returns:
         Tier1Result with per-camera, per-fish, and overall aggregates.
@@ -134,11 +139,16 @@ def compute_tier1(
     overall_mean = float(np.mean(all_means)) if all_means else 0.0
     overall_max = float(np.max(all_maxes)) if all_maxes else 0.0
 
+    # Reconstruction coverage
+    fish_reconstructed = sum(len(midline_dict) for _, midline_dict in frame_results)
+
     return Tier1Result(
         per_camera=per_camera,
         per_fish=per_fish,
         overall_mean_px=overall_mean,
         overall_max_px=overall_max,
+        fish_reconstructed=fish_reconstructed,
+        fish_available=fish_available,
     )
 
 

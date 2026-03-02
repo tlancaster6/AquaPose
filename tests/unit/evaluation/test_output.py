@@ -28,6 +28,8 @@ def _make_tier1() -> Tier1Result:
         },
         overall_mean_px=3.0,
         overall_max_px=8.0,
+        fish_reconstructed=4,
+        fish_available=5,
     )
 
 
@@ -213,6 +215,8 @@ def test_write_regression_json_numpy_scalars_serialized(tmp_path: Path) -> None:
         per_fish={0: {"mean_px": np.float32(1.5), "max_px": np.float32(3.0)}},
         overall_mean_px=np.float32(1.5),
         overall_max_px=np.float32(3.0),
+        fish_reconstructed=1,
+        fish_available=1,
     )
     tier2 = Tier2Result(per_fish_dropout={0: {"cam0": np.float32(0.001)}})
     output_path = tmp_path / "eval_results.json"

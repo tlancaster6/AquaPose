@@ -68,6 +68,12 @@ def format_summary_table(
     lines.append(
         f"Fixture: {fixture_name}  |  Frames evaluated: {frames_evaluated} / {frames_available}"
     )
+    if tier1.fish_available > 0:
+        rate = tier1.fish_reconstructed / tier1.fish_available * 100
+        lines.append(
+            f"Reconstruction rate: {tier1.fish_reconstructed}/{tier1.fish_available} "
+            f"fish-frames ({rate:.0f}%)"
+        )
     lines.append("")
 
     # ------------------------------------------------------------------
@@ -177,6 +183,12 @@ def format_baseline_report(
     lines.append(
         f"Fixture: {fixture_name}  |  Frames evaluated: {frames_evaluated} / {frames_available}"
     )
+    if tier1.fish_available > 0:
+        rate = tier1.fish_reconstructed / tier1.fish_available * 100
+        lines.append(
+            f"Reconstruction rate: {tier1.fish_reconstructed}/{tier1.fish_available} "
+            f"fish-frames ({rate:.0f}%)"
+        )
     lines.append("")
 
     # ------------------------------------------------------------------
@@ -308,6 +320,15 @@ def write_regression_json(
         "fixture": fixture_name,
         "frames_evaluated": int(frames_evaluated),
         "frames_available": int(frames_available),
+        "reconstruction_rate": {
+            "fish_reconstructed": int(tier1.fish_reconstructed),
+            "fish_available": int(tier1.fish_available),
+            "rate": (
+                round(tier1.fish_reconstructed / tier1.fish_available, 4)
+                if tier1.fish_available > 0
+                else 0.0
+            ),
+        },
         "tier1": {
             "overall_mean_px": float(tier1.overall_mean_px),
             "overall_max_px": float(tier1.overall_max_px),

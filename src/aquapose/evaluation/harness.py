@@ -126,9 +126,11 @@ def run_evaluation(
     frame_results: list[tuple[int, dict]] = []
     # Keep baseline results for Tier 2
     baseline_by_frame: dict[int, dict] = {}
+    fish_available = 0
 
     for fi in selected_frame_indices:
         midline_set: MidlineSet = fixture.frames[frame_to_pos[fi]]
+        fish_available += len(midline_set)
         result = triangulate_midlines(midline_set, models, frame_index=fi)
         frame_results.append((fi, result))
         baseline_by_frame[fi] = result
@@ -174,7 +176,7 @@ def run_evaluation(
                     tier2_data[fish_id][dropout_cam].append(max_displacement)
 
     # 8. Compute metrics
-    tier1 = compute_tier1(frame_results)
+    tier1 = compute_tier1(frame_results, fish_available=fish_available)
     # Convert defaultdict to plain dict for compute_tier2
     tier2_plain: dict[int, dict[str, list[float | None]]] = {
         fid: dict(cam_dict) for fid, cam_dict in tier2_data.items()

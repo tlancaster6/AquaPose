@@ -156,7 +156,7 @@ Plans:
 **Goal:** Legacy top-level domain libraries (reconstruction/, segmentation/, tracking/) are reorganized into core/ submodules alongside the stages that consume them, eliminating cross-package private-helper imports and misleading directory names. Stale docstrings and GUIDEBOOK.md updated to match new paths.
 **Requirements**: STAB-04, REORG-01
 **Depends on:** Phase 38
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 - [ ] 39-01-PLAN.md — Create core/types/ package and relocate implementation files to new core locations

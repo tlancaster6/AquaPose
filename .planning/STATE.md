@@ -6,9 +6,9 @@ status: unknown
 last_updated: "2026-03-02T18:24:18.006Z"
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 5
   total_plans: 14
-  completed_plans: 12
+  completed_plans: 14
 ---
 
 # Project State
@@ -18,20 +18,27 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-01)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 39 — Migrate Legacy Domain Libraries into Core Submodules (Plan 02 complete)
+**Current focus:** Phase 39 — Migrate Legacy Domain Libraries into Core Submodules (ALL PLANS COMPLETE)
 
 ## Current Position
 
 Phase: 39 of 39 (Migrate Legacy Domain Libraries into Core Submodules)
-Plan: 2/4 complete in current phase
-Status: Plan 02 complete (all src/ imports rewired to core paths; legacy directories deleted; import aquapose succeeds; 656 tests passing)
-Last activity: 2026-03-02 — Completed 39-02-PLAN.md (22 files updated, 3 legacy dirs + 2 shim files deleted, zero legacy package references in src/)
+Plan: 4/4 complete in current phase — PHASE COMPLETE
+Status: Plan 04 complete (GUIDEBOOK.md and CLAUDE.md updated; all stale docstring references removed; lint passes; 656 tests passing)
+Last activity: 2026-03-02 — Completed 39-04-PLAN.md (8 files updated, U-Net and legacy path docstring refs purged, STAB-04 fulfilled)
 
-Progress: [█████████░] ~85%
+Progress: [██████████] 100%
 
 ## Accumulated Context
 
 ### Decisions
+
+Key decisions from Phase 39 Plan 04 (2026-03-02):
+
+- GUIDEBOOK.md source layout section now reflects actual post-migration structure (core/types/ added, legacy reconstruction/segmentation/tracking removed)
+- CLAUDE.md Architecture section shows correct directory tree with core/ subtree
+- Backend kind strings ("segmentation", "pose_estimation") in docstrings are runtime names, not Python package paths — intentionally preserved
+- Docstring cross-references use full canonical module paths (~aquapose.core.types.detection, ~aquapose.core.midline.crop)
 
 Key decisions from Phase 36 Plan 02 (2026-03-01):
 
@@ -109,5 +116,5 @@ Full-image ↔ crop-space conversions are a pervasive source of error, especiall
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 39-03-PLAN.md (all test imports updated to core paths, 656 tests passing)
+Stopped at: Completed 39-04-PLAN.md (documentation and docstring cleanup; Phase 39 complete)
 Resume file: None

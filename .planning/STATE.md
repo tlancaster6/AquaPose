@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
+milestone: v3.0
 milestone_name: Ultralytics Unification
 status: unknown
-last_updated: "2026-03-01T23:09:20.602Z"
+last_updated: "2026-03-02T16:46:19.455Z"
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 10
+  completed_plans: 7
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-01)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 37 — Pipeline Integration (Plan 02 complete)
+**Current focus:** Phase 38 — Stabilization and Tech Debt Cleanup (Plan 01 complete)
 
 ## Current Position
 
-Phase: 37 of 37 (Pipeline Integration) — IN PROGRESS
-Plan: 2/3 complete in current phase
-Status: Plan 02 complete (YOLO-seg/pose inference wired into backends); Plan 03 (end-to-end pipeline integration) is next
-Last activity: 2026-03-01 — Completed 37-02-PLAN.md (SegmentationBackend and PoseEstimationBackend with real YOLO inference)
+Phase: 38 of 38 (Stabilization and Tech Debt Cleanup) — IN PROGRESS
+Plan: 1/4 complete in current phase
+Status: Plan 01 complete (config field consolidation + init-config defaults); Plan 02 next
+Last activity: 2026-03-02 — Completed 38-01-PLAN.md (DetectionConfig.model_path -> weights_path, MidlineConfig.keypoint_weights_path removed, init-config updated)
 
-Progress: [███████░░░] ~85%
+Progress: [████████░░] ~90%
 
 ## Accumulated Context
 
@@ -72,6 +72,9 @@ Key decisions entering v3.0:
 - 6 anatomical keypoints: nose, head, spine1, spine2, spine3, tail
 - [Phase 36-training-wrappers]: format_seg_annotation normalizes polygon vertices to [0,1]; generate_seg_dataset uses same affine crop pipeline as pose, OBB from keypoints + polygons from segmentation; annotations missing segmentation silently skipped
 - [Phase 37-02]: SegmentationBackend uses reconstruction/midline.py helpers directly (imported, not duplicated); half_widths in PoseEstimationBackend are zeros; _keypoints_to_midline exposed as module-level function for testability
+- [Phase 38-01]: DetectionConfig.model_path renamed to weights_path; _RENAME_HINTS provides user-facing hints for old YAML configs
+- [Phase 38-01]: MidlineConfig.keypoint_weights_path removed; all backends now use single weights_path field
+- [Phase 38-01]: init-config defaults updated to yolo_obb + pose_estimation with weights_path, matching current production architecture
 
 ### Pending Todos
 
@@ -96,6 +99,6 @@ Full-image ↔ crop-space conversions are a pervasive source of error, especiall
 
 ## Session Continuity
 
-Last session: 2026-03-01
-Stopped at: Completed 37-02-PLAN.md (YOLO-seg skeletonization and YOLO-pose spline interpolation wired into midline backends)
+Last session: 2026-03-02
+Stopped at: Completed 38-01-PLAN.md (config field consolidation and init-config defaults)
 Resume file: None

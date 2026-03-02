@@ -30,6 +30,13 @@ Requirements for Ultralytics Unification milestone. Each maps to roadmap phases.
 - [x] **PIPE-02**: YOLOPoseBackend produces keypoint coordinates with per-point confidence for direct midline construction
 - [x] **PIPE-03**: Config system supports backend selection (yolo_seg, yolo_pose) via midline.backend field
 
+### Stabilization
+
+- [ ] **STAB-01**: Training data script produces standard YOLO txt labels + dataset.yaml (not NDJSON); training wrappers consume txt+yaml
+- [x] **STAB-02**: `weights_path` and `keypoint_weights_path` consolidated into single `weights_path` field
+- [x] **STAB-03**: `init-config` generates correct defaults (YOLO-OBB detection, explicit backend selection, valid weights path)
+- [ ] **STAB-04**: All stale docstrings referencing U-Net, no-op stubs, or Phase 37 pending status are updated
+
 ## Previous Milestone Requirements (v2.2)
 
 All v2.2 requirements completed. See MILESTONES.md for details.
@@ -71,12 +78,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PIPE-01 | Phase 37 | Complete |
 | PIPE-02 | Phase 37 | Complete |
 | PIPE-03 | Phase 37 | Complete |
+| STAB-01 | Phase 38 | Pending |
+| STAB-02 | Phase 38 | Complete |
+| STAB-03 | Phase 38 | Complete |
+| STAB-04 | Phase 38 | Pending |
 
 **Coverage:**
-- v3.0 requirements: 11 total
-- Mapped to phases: 11
+- v3.0 requirements: 15 total
+- Mapped to phases: 15
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-01*
-*Last updated: 2026-03-01 after roadmap creation*
+*Last updated: 2026-03-02 after Phase 38 addition*

@@ -20,15 +20,16 @@ def train_yolo_pose(
     model: str = "yolo26n-pose",
     weights: Path | None = None,
 ) -> Path:
-    """Train a YOLO-pose keypoint estimation model on a project Ultralytics-native NDJSON dataset.
+    """Train a YOLO-pose keypoint estimation model on a standard Ultralytics txt+yaml dataset.
 
-    Passes the ``dataset.ndjson`` file path directly to ``model.train(data=...)``.
+    Passes the ``dataset.yaml`` file path directly to ``model.train(data=...)``.
     After training, copies ``best.pt`` and ``last.pt`` to ``output_dir`` under
     consistent names.
 
     Args:
-        data_dir: Directory containing ``dataset.ndjson`` (with
-            ``images/train/`` and ``images/val/`` subdirectories).
+        data_dir: Directory containing ``dataset.yaml`` (with
+            ``images/train/``, ``images/val/``, ``labels/train/``, and
+            ``labels/val/`` subdirectories).
         output_dir: Directory for model weights and metrics CSV.
         epochs: Number of training epochs.
         batch_size: Images per batch.
@@ -47,7 +48,7 @@ def train_yolo_pose(
         Path to the best model weights file (``output_dir/best_model.pt``).
 
     Raises:
-        FileNotFoundError: If ``dataset.ndjson`` is not found in ``data_dir``.
+        FileNotFoundError: If ``dataset.yaml`` is not found in ``data_dir``.
         ImportError: If the ``ultralytics`` package is not installed.
     """
     from ultralytics import YOLO  # type: ignore[import-untyped]
@@ -59,16 +60,16 @@ def train_yolo_pose(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    ndjson_path = data_dir / "dataset.ndjson"
-    if not ndjson_path.exists():
-        raise FileNotFoundError(f"dataset.ndjson not found in {data_dir}")
+    yaml_path = data_dir / "dataset.yaml"
+    if not yaml_path.exists():
+        raise FileNotFoundError(f"dataset.yaml not found in {data_dir}")
 
     # Initialize model
     yolo_model = YOLO(str(weights)) if weights is not None else YOLO(f"{model}.pt")
 
     # Run ultralytics training
     results = yolo_model.train(
-        data=str(ndjson_path),
+        data=str(yaml_path),
         epochs=epochs,
         batch=batch_size,
         device=device,

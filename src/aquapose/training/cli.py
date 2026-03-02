@@ -17,7 +17,7 @@ def train_group() -> None:
     "--data-dir",
     required=True,
     type=click.Path(exists=True),
-    help="Directory containing dataset.ndjson file.",
+    help="Directory containing dataset.yaml file.",
 )
 @click.option(
     "--output-dir",
@@ -77,7 +77,7 @@ def yolo_obb(
     "--data-dir",
     required=True,
     type=click.Path(exists=True),
-    help="Directory containing dataset.ndjson file.",
+    help="Directory containing dataset.yaml file.",
 )
 @click.option(
     "--output-dir",
@@ -137,7 +137,7 @@ def seg(
     "--data-dir",
     required=True,
     type=click.Path(exists=True),
-    help="Directory containing dataset.ndjson file.",
+    help="Directory containing dataset.yaml file.",
 )
 @click.option(
     "--output-dir",

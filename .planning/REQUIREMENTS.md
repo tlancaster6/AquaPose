@@ -15,10 +15,10 @@ Requirements for reconstruction rebuild milestone. Each maps to roadmap phases.
 ### Evaluation
 
 - [x] **EVAL-01**: Evaluation harness loads MidlineSet fixtures + calibration data and runs metrics without the full pipeline
-- [ ] **EVAL-02**: Frame selection produces 15-20 frames from ~300 frame window via uniform temporal sampling
-- [ ] **EVAL-03**: Tier 1 metric: per-fish, per-camera reprojection error (mean and max) with overall aggregates
-- [ ] **EVAL-04**: Tier 2 metric: leave-one-out camera stability (max control-point displacement across dropout runs)
-- [ ] **EVAL-05**: Evaluation outputs human-readable summary table and machine-diffable regression data
+- [x] **EVAL-02**: Frame selection produces 15-20 frames from ~300 frame window via uniform temporal sampling
+- [x] **EVAL-03**: Tier 1 metric: per-fish, per-camera reprojection error (mean and max) with overall aggregates
+- [x] **EVAL-04**: Tier 2 metric: leave-one-out camera stability (max control-point displacement across dropout runs)
+- [x] **EVAL-05**: Evaluation outputs human-readable summary table and machine-diffable regression data
 - [ ] **EVAL-06**: Baseline evaluation run against current reconstruction backend establishes reference metrics
 
 ### Reconstruction
@@ -73,10 +73,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DIAG-01 | Phase 40 | Complete |
 | DIAG-02 | Phase 40 | Complete |
 | EVAL-01 | Phase 41 | Complete |
-| EVAL-02 | Phase 41 | Pending |
-| EVAL-03 | Phase 41 | Pending |
-| EVAL-04 | Phase 41 | Pending |
-| EVAL-05 | Phase 41 | Pending |
+| EVAL-02 | Phase 41 | Complete |
+| EVAL-03 | Phase 41 | Complete |
+| EVAL-04 | Phase 41 | Complete |
+| EVAL-05 | Phase 41 | Complete |
 | EVAL-06 | Phase 42 | Pending |
 | RECON-01 | Phase 43 | Pending |
 | RECON-02 | Phase 43 | Pending |

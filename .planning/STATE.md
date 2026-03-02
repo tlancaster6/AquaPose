@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: Reconstruction
-status: in_progress
-last_updated: "2026-03-02T20:17:18Z"
+status: unknown
+last_updated: "2026-03-02T20:34:46.257Z"
 progress:
-  total_phases: 2
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_phases: 3
+  completed_phases: 2
+  total_plans: 5
+  completed_plans: 4
 ---
 
 # Project State
@@ -23,9 +23,9 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 ## Current Position
 
 Phase: 41 of 45 (Evaluation Harness)
-Plan: 1 of N in current phase (41-01 complete)
+Plan: 2 of N in current phase (41-02 complete)
 Status: In progress
-Last activity: 2026-03-02 — Completed 41-01: CalibBundle dataclass and NPZ v2.0 format with calibration bundling
+Last activity: 2026-03-02 — Completed 41-02: Evaluation harness with frame selection, Tier 1/Tier 2 metrics, ASCII + JSON output
 
 Progress: [██░░░░░░░░] 10%
 
@@ -55,6 +55,8 @@ v3.1 strategic decisions:
 - [Phase 41-01-calib-bundle]: export_midline_fixtures writes 1.0 (no calib/) when models=None, 2.0 (with calib/) when models provided
 - [Phase 41-01-calib-bundle]: CalibBundle is frozen dataclass; per-camera keys discovered dynamically by scanning NPZ key names
 - [Phase 41-01-calib-bundle]: Shared calibration params (water_z, n_air, n_water, interface_normal) taken from first model in dict
+- [Phase 41-02]: Harness calls triangulate_midlines() directly (not TriangulationBackend) to avoid calibration file dependency
+- [Phase 41-02]: Tier 2 leave-one-out reduced midline_set excludes dropout_cam for ALL fish (not just current fish)
 
 ### Pending Todos
 
@@ -68,5 +70,5 @@ v3.1 strategic decisions:
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 41-evaluation-harness/41-01-PLAN.md
+Stopped at: Completed 41-evaluation-harness/41-02-PLAN.md
 Resume file: None

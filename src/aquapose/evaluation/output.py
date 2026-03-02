@@ -1,7 +1,8 @@
 """Output formatting for evaluation results: ASCII summary table and regression JSON.
 
-Provides format_summary_table for human-readable output and write_regression_json
-for machine-diffable regression data.
+Provides format_summary_table for human-readable output, write_regression_json
+for machine-diffable regression data, flag_outliers for statistical outlier
+detection, and format_baseline_report for outlier-annotated baseline reports.
 """
 
 from __future__ import annotations
@@ -107,6 +108,149 @@ def format_summary_table(
                 disp_str = f"{disp_mm:.3f}"
             lines.append(f"{fish_id:<8} {cam_id:<18} {disp_str:>14}")
 
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+def flag_outliers(values: dict[str, float], threshold_std: float = 2.0) -> set[str]:
+    """Return keys whose values exceed mean + threshold_std * std.
+
+    Args:
+        values: Mapping of key to numeric value to analyse.
+        threshold_std: Number of standard deviations above the mean to use as
+            the outlier threshold. Defaults to 2.0.
+
+    Returns:
+        Set of keys identified as outliers. Returns an empty set when fewer
+        than 2 values are provided or when the standard deviation is zero.
+    """
+    if len(values) < 2:
+        return set()
+    vals = list(values.values())
+    mean = float(np.mean(vals))
+    std = float(np.std(vals))
+    if std == 0.0:
+        return set()
+    threshold = mean + threshold_std * std
+    return {k for k, v in values.items() if v > threshold}
+
+
+def format_baseline_report(
+    tier1: Tier1Result,
+    tier2: Tier2Result,
+    fixture_name: str,
+    frames_evaluated: int,
+    frames_available: int,
+) -> str:
+    """Format evaluation results as an outlier-annotated baseline report.
+
+    Produces the same sections as format_summary_table but marks entries that
+    exceed 2 standard deviations from the mean with an asterisk (``*``).
+
+    Outlier detection is applied to:
+
+    * Tier 1 per-camera mean_px values.
+    * Tier 1 per-fish mean_px values.
+    * Tier 2 per-fish per-dropout-camera displacement values (within each fish).
+
+    A legend line ``* = outlier (>2 std from mean)`` is appended at the bottom.
+
+    Args:
+        tier1: Tier 1 aggregated reprojection error metrics.
+        tier2: Tier 2 aggregated leave-one-out displacement metrics.
+        fixture_name: Name of the fixture file (for display).
+        frames_evaluated: Number of frames evaluated.
+        frames_available: Total frames available in the fixture.
+
+    Returns:
+        Multi-line ASCII string with outlier markers, suitable for printing
+        to stdout or saving as a text report.
+    """
+    lines: list[str] = []
+
+    # ------------------------------------------------------------------
+    # Header
+    # ------------------------------------------------------------------
+    lines.append("Baseline Evaluation Report")
+    lines.append("==========================")
+    lines.append(
+        f"Fixture: {fixture_name}  |  Frames evaluated: {frames_evaluated} / {frames_available}"
+    )
+    lines.append("")
+
+    # ------------------------------------------------------------------
+    # Tier 1: Reprojection Error (with per-camera outlier flagging)
+    # ------------------------------------------------------------------
+    cam_outliers = flag_outliers(
+        {cam: float(stats["mean_px"]) for cam, stats in tier1.per_camera.items()}
+    )
+    fish_outliers = flag_outliers(
+        {str(fid): float(stats["mean_px"]) for fid, stats in tier1.per_fish.items()}
+    )
+
+    lines.append("Tier 1: Reprojection Error (pixels)")
+    lines.append("-" * 50)
+    lines.append(f"{'Camera':<16} {'Mean':>8} {'Max':>8}")
+    lines.append(f"{'------':<16} {'----':>8} {'---':>8}")
+
+    for cam_id, cam_stats in sorted(tier1.per_camera.items()):
+        mean_px = cam_stats["mean_px"]
+        max_px = cam_stats["max_px"]
+        marker = " *" if cam_id in cam_outliers else ""
+        lines.append(f"{cam_id:<16} {mean_px:>8.2f} {max_px:>8.2f}{marker}")
+
+    lines.append(
+        f"{'OVERALL':<16} {tier1.overall_mean_px:>8.2f} {tier1.overall_max_px:>8.2f}"
+    )
+    lines.append("")
+
+    # ------------------------------------------------------------------
+    # Per-fish breakdown
+    # ------------------------------------------------------------------
+    lines.append("Tier 1: Per-Fish Breakdown (pixels)")
+    lines.append("-" * 50)
+    lines.append(f"{'Fish':<8} {'Mean':>8} {'Max':>8}")
+    lines.append(f"{'----':<8} {'----':>8} {'---':>8}")
+
+    for fish_id in sorted(tier1.per_fish.keys()):
+        stats = tier1.per_fish[fish_id]
+        mean_px = stats["mean_px"]
+        max_px = stats["max_px"]
+        marker = " *" if str(fish_id) in fish_outliers else ""
+        lines.append(f"{fish_id:<8} {mean_px:>8.2f} {max_px:>8.2f}{marker}")
+
+    lines.append("")
+
+    # ------------------------------------------------------------------
+    # Tier 2: Leave-One-Out Stability (with per-fish outlier flagging)
+    # ------------------------------------------------------------------
+    lines.append("Tier 2: Leave-One-Out Stability")
+    lines.append("-" * 50)
+    lines.append(f"{'Fish':<8} {'Dropout Camera':<18} {'Max Disp (mm)':>14}")
+    lines.append(f"{'----':<8} {'--------------':<18} {'-------------':>14}")
+
+    for fish_id in sorted(tier2.per_fish_dropout.keys()):
+        dropout_dict = tier2.per_fish_dropout[fish_id]
+        # Compute outliers among non-None displacement values for this fish
+        non_none: dict[str, float] = {
+            cam: float(val) for cam, val in dropout_dict.items() if val is not None
+        }
+        tier2_outliers = flag_outliers(non_none)
+
+        for cam_id in sorted(dropout_dict.keys()):
+            displacement = dropout_dict[cam_id]
+            if displacement is None:
+                disp_str = "N/A"
+                marker = ""
+            else:
+                disp_mm = float(displacement) * 1000.0
+                disp_str = f"{disp_mm:.3f}"
+                marker = " *" if cam_id in tier2_outliers else ""
+            lines.append(f"{fish_id:<8} {cam_id:<18} {disp_str:>14}{marker}")
+
+    lines.append("")
+    lines.append("* = outlier (>2\u03c3 from mean)")
     lines.append("")
 
     return "\n".join(lines)

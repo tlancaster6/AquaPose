@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+import datetime
 import logging
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 
 from aquapose.engine.events import Event, PipelineComplete, StageComplete
+from aquapose.io.midline_fixture import NPZ_VERSION
 
 logger = logging.getLogger(__name__)
 
 _ASSOCIATION_STAGE_NAME = "AssociationStage"
+_MIDLINE_STAGE_NAME = "MidlineStage"
+_CENTROID_MATCH_TOLERANCE_PX = 5.0
 
 # PipelineContext field names that hold per-frame data (list-typed, indexed by frame).
 # detections, annotated_detections, and midlines_3d are all list[...] indexed by frame.
@@ -149,21 +154,205 @@ class DiagnosticObserver:
         self.stages[event.stage_name] = snapshot
 
     def _on_pipeline_complete(self) -> None:
-        """Auto-export centroid correspondences when output_dir is configured."""
+        """Auto-export centroid correspondences and midline fixtures when output_dir is set."""
         if self._output_dir is None:
             return
+
+        # --- centroid correspondences ---
+        if _ASSOCIATION_STAGE_NAME in self.stages:
+            snapshot = self.stages[_ASSOCIATION_STAGE_NAME]
+            if snapshot.tracklet_groups:
+                try:
+                    out = self.export_centroid_correspondences(
+                        self._output_dir / "centroid_correspondences.npz"
+                    )
+                    logger.info("Centroid correspondences exported to %s", out)
+                except Exception:
+                    logger.warning(
+                        "Failed to export centroid correspondences", exc_info=True
+                    )
+
+        # --- midline fixtures ---
+        if (
+            _ASSOCIATION_STAGE_NAME in self.stages
+            and _MIDLINE_STAGE_NAME in self.stages
+        ):
+            try:
+                out_mid = self.export_midline_fixtures(
+                    self._output_dir / "midline_fixtures.npz"
+                )
+                logger.info("Midline fixtures exported to %s", out_mid)
+            except Exception:
+                logger.warning("Failed to export midline fixtures", exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Midline fixture export
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _match_annotated_by_centroid(
+        frame_annotated_for_cam: list,
+        centroid: tuple[float, float],
+    ) -> object | None:
+        """Find the AnnotatedDetection whose Detection centroid is nearest to *centroid*.
+
+        Scans *frame_annotated_for_cam* (a ``list[AnnotatedDetection]``) and
+        returns the element whose bounding-box centre is within
+        ``_CENTROID_MATCH_TOLERANCE_PX`` pixels of *centroid*.  Returns
+        ``None`` if the list is empty or no element is within tolerance.
+
+        Args:
+            frame_annotated_for_cam: List of AnnotatedDetection objects for a
+                single (frame, camera) pair.
+            centroid: ``(u, v)`` pixel coordinate from a Tracklet2D.
+
+        Returns:
+            The closest AnnotatedDetection within tolerance, or None.
+        """
+        cx, cy = centroid
+        best = None
+        best_dist = _CENTROID_MATCH_TOLERANCE_PX
+
+        for ann_det in frame_annotated_for_cam:
+            x, y, w, h = ann_det.detection.bbox
+            det_cx = x + w / 2.0
+            det_cy = y + h / 2.0
+            dist = math.sqrt((det_cx - cx) ** 2 + (det_cy - cy) ** 2)
+            if dist <= best_dist:
+                best_dist = dist
+                best = ann_det
+
+        return best
+
+    def export_midline_fixtures(self, output_path: Path | str) -> Path:
+        """Assemble per-frame MidlineSets from snapshot data and write an NPZ fixture.
+
+        Builds a ``dict[frame_idx, dict[fish_id, dict[camera_id, Midline2D]]]``
+        by matching tracklet centroids to AnnotatedDetections and extracting their
+        ``.midline`` field.  Frames with at least one valid midline are serialised
+        to the compressed NPZ using the key convention documented in
+        ``aquapose.io.midline_fixture``.
+
+        Args:
+            output_path: Destination file path for the NPZ output.
+
+        Returns:
+            Resolved absolute path to the written NPZ file.
+
+        Raises:
+            ValueError: If either ``AssociationStage`` or ``MidlineStage``
+                snapshots are missing.
+        """
         if _ASSOCIATION_STAGE_NAME not in self.stages:
-            return
-        snapshot = self.stages[_ASSOCIATION_STAGE_NAME]
-        if not snapshot.tracklet_groups:
-            return
-        try:
-            out = self.export_centroid_correspondences(
-                self._output_dir / "centroid_correspondences.npz"
+            raise ValueError(
+                "No AssociationStage snapshot found. "
+                "Run the pipeline before calling export_midline_fixtures()."
             )
-            logger.info("Centroid correspondences exported to %s", out)
-        except Exception:
-            logger.warning("Failed to export centroid correspondences", exc_info=True)
+        if _MIDLINE_STAGE_NAME not in self.stages:
+            raise ValueError(
+                "No MidlineStage snapshot found. "
+                "Run the pipeline before calling export_midline_fixtures()."
+            )
+
+        assoc_snap = self.stages[_ASSOCIATION_STAGE_NAME]
+        mid_snap = self.stages[_MIDLINE_STAGE_NAME]
+
+        tracklet_groups = assoc_snap.tracklet_groups or []
+        annotated_detections = mid_snap.annotated_detections or []
+        camera_ids_list: list[str] = list(mid_snap.camera_ids or [])
+        frame_count: int = mid_snap.frame_count or len(annotated_detections)
+
+        # Accumulate per-frame MidlineSet data.
+        # collected: frame_idx -> fish_id -> camera_id -> Midline2D
+        collected: dict[int, dict[int, dict[str, object]]] = {}
+        all_camera_ids: set[str] = set()
+
+        for group in tracklet_groups:
+            if group.tracklets is None:
+                continue
+
+            # Build per-tracklet frame membership: frame_idx -> (camera_id, local_idx)
+            # Only "detected" frames contribute.
+            for tracklet in group.tracklets:  # type: ignore[union-attr]
+                cam_id: str = tracklet.camera_id  # type: ignore[union-attr]
+                for tidx, (frame_idx, status) in enumerate(
+                    zip(
+                        tracklet.frames,  # type: ignore[union-attr]
+                        tracklet.frame_status,  # type: ignore[union-attr]
+                        strict=False,
+                    )
+                ):
+                    if status != "detected":
+                        continue
+                    if frame_idx >= len(annotated_detections):
+                        continue
+
+                    frame_annot = annotated_detections[frame_idx]
+                    if not isinstance(frame_annot, dict):
+                        continue
+                    cam_list = frame_annot.get(cam_id)
+                    if not cam_list:
+                        continue
+
+                    centroid: tuple[float, float] = tracklet.centroids[tidx]  # type: ignore[union-attr]
+                    ann_det = self._match_annotated_by_centroid(cam_list, centroid)
+                    if ann_det is None:
+                        continue
+                    midline = ann_det.midline  # type: ignore[union-attr]
+                    if midline is None:
+                        continue
+
+                    # Store result
+                    all_camera_ids.add(cam_id)
+                    fish_id = group.fish_id
+                    collected.setdefault(frame_idx, {}).setdefault(fish_id, {})[
+                        cam_id
+                    ] = midline
+
+        # Build flat NPZ arrays using the documented key convention.
+        # Use object-typed dict to allow mixed array scalars alongside nd-arrays.
+        npz_arrays: dict[str, object] = {}
+        sorted_frame_indices = sorted(collected.keys())
+
+        # Meta arrays
+        timestamp_str = datetime.datetime.now(datetime.UTC).isoformat()
+        npz_arrays["meta/version"] = np.array(NPZ_VERSION, dtype=object)
+        npz_arrays["meta/camera_ids"] = np.array(
+            camera_ids_list if camera_ids_list else sorted(all_camera_ids), dtype=object
+        )
+        npz_arrays["meta/frame_indices"] = np.array(
+            sorted_frame_indices, dtype=np.int64
+        )
+        npz_arrays["meta/frame_count"] = np.array(frame_count, dtype=np.int64)
+        npz_arrays["meta/timestamp"] = np.array(timestamp_str, dtype=object)
+
+        # Midline data arrays (one set per fish x camera x frame)
+        for frame_idx in sorted_frame_indices:
+            fish_map = collected[frame_idx]
+            for fish_id, cam_map in fish_map.items():
+                for cam_id, midline in cam_map.items():
+                    prefix = f"midline/{frame_idx}/{fish_id}/{cam_id}"
+                    npz_arrays[f"{prefix}/points"] = midline.points.astype(  # type: ignore[union-attr]
+                        np.float32
+                    )
+                    npz_arrays[f"{prefix}/half_widths"] = midline.half_widths.astype(  # type: ignore[union-attr]
+                        np.float32
+                    )
+                    if midline.point_confidence is not None:  # type: ignore[union-attr]
+                        conf = midline.point_confidence.astype(np.float32)  # type: ignore[union-attr]
+                    else:
+                        n = midline.points.shape[0]  # type: ignore[union-attr]
+                        conf = np.ones(n, dtype=np.float32)
+                    npz_arrays[f"{prefix}/point_confidence"] = conf
+                    npz_arrays[f"{prefix}/is_head_to_tail"] = np.array(
+                        midline.is_head_to_tail,  # type: ignore[union-attr]
+                        dtype=np.bool_,
+                    )
+
+        out = Path(output_path).resolve()
+        out.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(str(out), **npz_arrays)  # type: ignore[arg-type]
+        return out
 
     def export_centroid_correspondences(self, output_path: Path | str) -> Path:
         """Export 2D-to-3D centroid correspondences from the Association stage.

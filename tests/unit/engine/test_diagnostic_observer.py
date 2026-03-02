@@ -8,7 +8,10 @@ import numpy as np
 
 from aquapose.core.association.types import TrackletGroup
 from aquapose.core.context import PipelineContext
+from aquapose.core.midline.types import AnnotatedDetection
 from aquapose.core.tracking.types import Tracklet2D
+from aquapose.core.types.detection import Detection
+from aquapose.core.types.midline import Midline2D
 from aquapose.engine.diagnostic_observer import DiagnosticObserver
 from aquapose.engine.events import StageComplete
 from aquapose.engine.observers import Observer
@@ -384,3 +387,200 @@ def test_snapshot_has_tracks_2d_and_tracklet_groups_fields() -> None:
     snapshot = observer.stages["TrackingStubStage"]
     assert snapshot.tracks_2d is ctx.tracks_2d
     assert snapshot.tracklet_groups is ctx.tracklet_groups
+
+
+# ---------------------------------------------------------------------------
+# Helpers for export_midline_fixtures tests (Task 2)
+# ---------------------------------------------------------------------------
+
+
+def _make_midline2d(
+    fish_id: int,
+    camera_id: str,
+    frame_index: int,
+    n_points: int = 5,
+) -> Midline2D:
+    """Create a synthetic Midline2D for test use."""
+    points = np.arange(n_points * 2, dtype=np.float32).reshape(n_points, 2)
+    half_widths = np.ones(n_points, dtype=np.float32) * 2.0
+    return Midline2D(
+        points=points,
+        half_widths=half_widths,
+        fish_id=fish_id,
+        camera_id=camera_id,
+        frame_index=frame_index,
+        is_head_to_tail=True,
+        point_confidence=np.ones(n_points, dtype=np.float32) * 0.9,
+    )
+
+
+def _make_annotated_detection(
+    midline: Midline2D | None,
+    centroid: tuple[float, float],
+) -> AnnotatedDetection:
+    """Build an AnnotatedDetection whose Detection centroid matches given centroid."""
+    cx, cy = centroid
+    # bbox (x, y, w, h) such that centre is (cx, cy)
+    bbox = (int(cx - 5), int(cy - 5), 10, 10)
+    det = Detection(bbox=bbox, mask=None, area=100, confidence=0.95)
+    return AnnotatedDetection(detection=det, midline=midline)
+
+
+def _fire_midline_stage(
+    observer: DiagnosticObserver,
+    annotated_detections: list,
+    frame_count: int,
+    camera_ids: list[str],
+) -> None:
+    """Simulate a MidlineStage StageComplete event."""
+    ctx = PipelineContext()
+    ctx.annotated_detections = annotated_detections
+    ctx.frame_count = frame_count
+    ctx.camera_ids = camera_ids
+    observer.on_event(
+        StageComplete(
+            stage_name="MidlineStage",
+            stage_index=3,
+            elapsed_seconds=0.2,
+            context=ctx,
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tests for export_midline_fixtures (Task 2)
+# ---------------------------------------------------------------------------
+
+
+def test_export_midline_fixtures_writes_npz(tmp_path: Path) -> None:
+    """export_midline_fixtures writes NPZ with expected keys for captured midlines."""
+    observer = DiagnosticObserver()
+    fish_id = 0
+    cam_a, cam_b = "cam_a", "cam_b"
+    frames = (0, 1)
+
+    # Build tracklet group: fish_id=0 observed in cam_a and cam_b for frames 0,1
+    tracklet_a = _make_tracklet2d(cam_a, 0, frames)
+    tracklet_b = _make_tracklet2d(cam_b, 1, frames)
+    group = TrackletGroup(
+        fish_id=fish_id,
+        tracklets=(tracklet_a, tracklet_b),
+        confidence=0.9,
+        per_frame_confidence=(0.9, 0.9),
+        consensus_centroids=None,
+    )
+    _fire_association_stage(observer, [group])
+
+    # Build annotated detections: frame 0 has midlines in cam_a and cam_b
+    #  frame 1 has midline only in cam_a (cam_b returns None)
+    midline_a0 = _make_midline2d(fish_id, cam_a, 0)
+    midline_b0 = _make_midline2d(fish_id, cam_b, 0)
+    midline_a1 = _make_midline2d(fish_id, cam_a, 1)
+
+    # annotated_detections is list[dict[str, list[AnnotatedDetection]]]
+    centroid_a0 = tracklet_a.centroids[0]
+    centroid_b0 = tracklet_b.centroids[0]
+    centroid_a1 = tracklet_a.centroids[1]
+    centroid_b1 = tracklet_b.centroids[1]
+
+    frame0_annot = {
+        cam_a: [_make_annotated_detection(midline_a0, centroid_a0)],
+        cam_b: [_make_annotated_detection(midline_b0, centroid_b0)],
+    }
+    frame1_annot = {
+        cam_a: [_make_annotated_detection(midline_a1, centroid_a1)],
+        cam_b: [_make_annotated_detection(None, centroid_b1)],
+    }
+    _fire_midline_stage(observer, [frame0_annot, frame1_annot], 2, [cam_a, cam_b])
+
+    out_path = tmp_path / "midline_fixtures.npz"
+    result = observer.export_midline_fixtures(out_path)
+
+    assert result.exists()
+    data = np.load(str(result), allow_pickle=True)
+    # Check meta keys
+    assert "meta/version" in data
+    assert "meta/frame_indices" in data
+    # Check midline key for frame 0, fish 0, cam_a
+    key = f"midline/0/{fish_id}/{cam_a}/points"
+    assert key in data
+    assert data[key].shape[1] == 2
+
+
+def test_export_midline_fixtures_raises_without_snapshots(tmp_path: Path) -> None:
+    """ValueError raised when required snapshots are missing."""
+    import pytest
+
+    observer = DiagnosticObserver()
+    out_path = tmp_path / "out.npz"
+
+    # Neither AssociationStage nor MidlineStage snapshot fired
+    with pytest.raises(ValueError, match="AssociationStage"):
+        observer.export_midline_fixtures(out_path)
+
+
+def test_export_midline_fixtures_includes_all_frames(tmp_path: Path) -> None:
+    """Frames with even 1 midline are included (no min_cameras filter)."""
+    observer = DiagnosticObserver()
+    fish_id = 0
+    cam_a = "cam_a"
+    frames = (0, 1, 2)
+
+    # Single-camera tracklet group
+    tracklet_a = _make_tracklet2d(cam_a, 0, frames)
+    group = TrackletGroup(
+        fish_id=fish_id,
+        tracklets=(tracklet_a,),
+        confidence=0.9,
+        per_frame_confidence=(0.9, 0.9, 0.9),
+        consensus_centroids=None,
+    )
+    _fire_association_stage(observer, [group])
+
+    # Each frame has 1 midline from cam_a only
+    annotated: list[dict] = []
+    for fidx, frame_idx in enumerate(frames):
+        midline = _make_midline2d(fish_id, cam_a, frame_idx)
+        centroid = tracklet_a.centroids[fidx]
+        annotated.append({cam_a: [_make_annotated_detection(midline, centroid)]})
+
+    _fire_midline_stage(observer, annotated, len(frames), [cam_a])
+
+    out_path = tmp_path / "midline_fixtures.npz"
+    result = observer.export_midline_fixtures(out_path)
+    data = np.load(str(result), allow_pickle=True)
+
+    frame_indices = data["meta/frame_indices"]
+    assert len(frame_indices) == 3, "All 3 single-camera frames should be included"
+
+
+def test_on_pipeline_complete_exports_midline_fixtures(tmp_path: Path) -> None:
+    """PipelineComplete auto-exports midline_fixtures.npz to output_dir."""
+    from aquapose.engine.events import PipelineComplete
+
+    observer = DiagnosticObserver(output_dir=tmp_path)
+    fish_id = 0
+    cam_a = "cam_a"
+    frames = (0,)
+
+    tracklet_a = _make_tracklet2d(cam_a, 0, frames)
+    group = TrackletGroup(
+        fish_id=fish_id,
+        tracklets=(tracklet_a,),
+        confidence=0.9,
+        per_frame_confidence=(0.9,),
+        consensus_centroids=None,
+    )
+    _fire_association_stage(observer, [group])
+
+    midline_a0 = _make_midline2d(fish_id, cam_a, 0)
+    centroid_a0 = tracklet_a.centroids[0]
+    frame0_annot = {cam_a: [_make_annotated_detection(midline_a0, centroid_a0)]}
+    _fire_midline_stage(observer, [frame0_annot], 1, [cam_a])
+
+    observer.on_event(PipelineComplete())
+
+    out_file = tmp_path / "midline_fixtures.npz"
+    assert out_file.exists(), (
+        "midline_fixtures.npz should be auto-exported on PipelineComplete"
+    )

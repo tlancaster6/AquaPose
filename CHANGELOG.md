@@ -2,6 +2,438 @@
 
 <!-- version list -->
 
+## v1.1.0-dev.4 (2026-03-02)
+
+### Bug Fixes
+
+- Debugging image-space to crop-space coordinate transforms
+  ([`f106a0d`](https://github.com/tlancaster6/AquaPose/commit/f106a0dde99fd306d8d7ae1f7f19ceeb8d87faf3))
+
+- Synthetic frame fallback, video-free overlays, and v2.1 cleanup
+  ([`439d7be`](https://github.com/tlancaster6/AquaPose/commit/439d7bed768b5382033ac8c42b0fc546ad19cbb9))
+
+- Wire DiagnosticObserver to auto-export centroid correspondences on pipeline complete
+  ([`25ba258`](https://github.com/tlancaster6/AquaPose/commit/25ba258e57253183547fc9dbf611df19abe1b976))
+
+- **30**: Default output_dir to project_dir/runs/<run_id> when project_dir is set
+  ([`cc7a23d`](https://github.com/tlancaster6/AquaPose/commit/cc7a23d866357366bdca6e1e28cc0158992e63e1))
+
+- **30**: Update observer_factory to use config.stop_frame instead of config.detection.stop_frame
+  ([`0a6d2a3`](https://github.com/tlancaster6/AquaPose/commit/0a6d2a3d22a4aa1b7f36737ca0a57c1c399eaef9))
+
+- **overlay**: Correct bbox (x,y,w,h) handling and remove dead _draw_bbox method
+  ([`ab5f9b0`](https://github.com/tlancaster6/AquaPose/commit/ab5f9b0fef917e1a8512d9f014526ab3b38f01bb))
+
+- **overlay**: Enable bbox drawing in diagnostic mode and unwrap AnnotatedDetection
+  ([`415b04c`](https://github.com/tlancaster6/AquaPose/commit/415b04c81891f88844341a42fde05a78940dafbb))
+
+- **pose**: Mask background in affine crops to match training letterbox
+  ([`e316911`](https://github.com/tlancaster6/AquaPose/commit/e31691187fd9692093ef47ab59b90982f0fe6e2e))
+
+- **pose**: Match training/inference crop geometry for DirectPoseBackend
+  ([`d4391bd`](https://github.com/tlancaster6/AquaPose/commit/d4391bdb0305976ce3339d079918ff6848bd2382))
+
+- **quick-12**: Fix type error in affine_warp_crop for cv2.getAffineTransform
+  ([`193feb0`](https://github.com/tlancaster6/AquaPose/commit/193feb02b2758b8b81ea50c6867b54f321ffb986))
+
+- **quick-13**: Change OBB NDJSON key from "obbs" to "annotations"
+  ([`93d2b7f`](https://github.com/tlancaster6/AquaPose/commit/93d2b7f4cdb51e92659a23a6a80d2d50149f8313))
+
+### Chores
+
+- Archive v2.2 phase directories (6 phases)
+  ([`5eadd39`](https://github.com/tlancaster6/AquaPose/commit/5eadd3934a954bb03eef7eaba9832e1108bbcd57))
+
+- **training**: Update default OBB model from yolov8s-obb to yolo26n-obb
+  ([`9fa8684`](https://github.com/tlancaster6/AquaPose/commit/9fa86844b5e1bb87bedb567688dfeb59f136ada9))
+
+### Documentation
+
+- Capture todo - Add plain YOLO training path to CLI
+  ([`cd6a062`](https://github.com/tlancaster6/AquaPose/commit/cd6a062e9631718cdbc6ffc82795c29320ed3aea))
+
+- Capture todo - consolidate weights_path and keypoint_weights_path config fields
+  ([`046aed0`](https://github.com/tlancaster6/AquaPose/commit/046aed03e215772314d20f5a1270a24b0787e772))
+
+- Capture todo - Replace custom U-Net with Ultralytics-only model stack
+  ([`9c7d50b`](https://github.com/tlancaster6/AquaPose/commit/9c7d50b8a07db0dadb6e4de32ec485c98453e38b))
+
+- Capture todo - Standardize model naming conventions in CLI and repo
+  ([`36db7cb`](https://github.com/tlancaster6/AquaPose/commit/36db7cbcf37570070bd1c22036669e104905d60b))
+
+- Complete v2.2 Backends research
+  ([`fcbbba2`](https://github.com/tlancaster6/AquaPose/commit/fcbbba2f4e0e7ebac00e2ac70e69eef827fb030a))
+
+- Complete v3.0 Ultralytics Unification research
+  ([`1b2f3db`](https://github.com/tlancaster6/AquaPose/commit/1b2f3dba560d38f363fa56dd1d3c220d7b55010b))
+
+- Create milestone v2.2 roadmap (6 phases)
+  ([`c8be407`](https://github.com/tlancaster6/AquaPose/commit/c8be4071b29f026c1c63c1a46e9d141d708b69ee))
+
+- Create milestone v3.0 roadmap (3 phases)
+  ([`f70c560`](https://github.com/tlancaster6/AquaPose/commit/f70c56067f49fa0b4d2165d9e5d5bde15e11793d))
+
+- Define milestone v2.2 requirements
+  ([`162c886`](https://github.com/tlancaster6/AquaPose/commit/162c88667d415320181a5858f49fa204eab4d0b4))
+
+- Define milestone v3.0 requirements (12 requirements)
+  ([`35c7303`](https://github.com/tlancaster6/AquaPose/commit/35c730321c4ea27133290748656466ce2e59cc2a))
+
+- Fix roadmap plan listings and progress table for phases 29-34
+  ([`8a97b3d`](https://github.com/tlancaster6/AquaPose/commit/8a97b3d042b0dbe3a960bcc7352e738d7d017b45))
+
+- Start milestone v2.2 Backends
+  ([`5403629`](https://github.com/tlancaster6/AquaPose/commit/540362969960453e9d2859dca57302e079d9a632))
+
+- Start milestone v3.0 Ultralytics Unification
+  ([`d9c9cb2`](https://github.com/tlancaster6/AquaPose/commit/d9c9cb21b490630b6e7cf0e65f215375f73ba031))
+
+- **10**: Plan for storing 3D consensus centroids on TrackletGroup
+  ([`ae71423`](https://github.com/tlancaster6/AquaPose/commit/ae71423ba23c08a1543dcd57295500ea2d80377c))
+
+- **10-01**: Complete store-3d-consensus-centroids-on-tracklet quick task
+  ([`ab90ce2`](https://github.com/tlancaster6/AquaPose/commit/ab90ce2aed02e63672469e98437d56c272f36440))
+
+- **11**: Complete quick task 11 — training visualization grids
+  ([`5bf3fc4`](https://github.com/tlancaster6/AquaPose/commit/5bf3fc48aae07d541fa077da6a67fa0290385e52))
+
+- **29**: Capture phase context
+  ([`6f94652`](https://github.com/tlancaster6/AquaPose/commit/6f946526e858417b928064c4505dd2df97b7e1ab))
+
+- **29-01**: Audit and fix stale content in GUIDEBOOK.md
+  ([`a6e2573`](https://github.com/tlancaster6/AquaPose/commit/a6e257363a9bb87c5265fc6b1aa242c8ddefa989))
+
+- **29-01**: Complete Audit and Fix Stale Content plan
+  ([`78b00e7`](https://github.com/tlancaster6/AquaPose/commit/78b00e72417625399b9e657cff629a20fd2e35e0))
+
+- **29-02**: Add backend registry subsection to Section 8
+  ([`31be607`](https://github.com/tlancaster6/AquaPose/commit/31be607f62b2422a73e1999bfeb5816076f2e6bf))
+
+- **29-02**: Add v2.2 planned feature inline tags throughout GUIDEBOOK
+  ([`236fd4b`](https://github.com/tlancaster6/AquaPose/commit/236fd4b9567e8b9cbead992d95ca8f3bc47d6416))
+
+- **29-02**: Complete Add v2.2 Planned Features plan
+  ([`8418d57`](https://github.com/tlancaster6/AquaPose/commit/8418d570811bb2dabea43f8ce2c9d6ddddc7d92a))
+
+- **30**: Capture phase context
+  ([`a5eb66f`](https://github.com/tlancaster6/AquaPose/commit/a5eb66fa35de249322b81ccdacf96fe21b4b7252))
+
+- **30**: Complete phase research, plans, and verification
+  ([`9271f5d`](https://github.com/tlancaster6/AquaPose/commit/9271f5dddd56af96ed2926e8ccb6d658740b5642))
+
+- **30**: Research phase domain
+  ([`c46d748`](https://github.com/tlancaster6/AquaPose/commit/c46d74848eda11f2940216eadf2d7041d72dfb77))
+
+- **30-01**: Complete extend dataclasses and universalize config validation plan
+  ([`eeef9c7`](https://github.com/tlancaster6/AquaPose/commit/eeef9c7f5aa915a893894aeed73c11e668f346f4))
+
+- **30-02**: Complete Config Promotion and Propagation plan
+  ([`f7a29d3`](https://github.com/tlancaster6/AquaPose/commit/f7a29d3d56aea27390345eb1e7e8a8fd47f1068b))
+
+- **30-03**: Complete CLI Project Scaffold and Path Resolution plan
+  ([`f8ac74d`](https://github.com/tlancaster6/AquaPose/commit/f8ac74d1de674c717a10ce71874648cd374b5c15))
+
+- **31**: Capture phase context
+  ([`1482889`](https://github.com/tlancaster6/AquaPose/commit/1482889695c5b5330717be9a222f6a264260c683))
+
+- **31**: Create phase plan for training infrastructure
+  ([`4afc73e`](https://github.com/tlancaster6/AquaPose/commit/4afc73efffe427b8c9914286927b3d67ff49e6c0))
+
+- **31-01**: Complete training infrastructure foundation plan
+  ([`fa6066d`](https://github.com/tlancaster6/AquaPose/commit/fa6066dcf638d6f596717ad8f42357575c200dcb))
+
+- **31-02**: Complete YOLO-OBB and pose training subcommands plan
+  ([`7455db6`](https://github.com/tlancaster6/AquaPose/commit/7455db623c517cc17de4ce80f25e9f4c3a1be846))
+
+- **32**: Capture phase context
+  ([`00fd40a`](https://github.com/tlancaster6/AquaPose/commit/00fd40a71b3df7af59afcef7d813c4ca4278ed91))
+
+- **32**: Research YOLO-OBB detection backend phase
+  ([`d76e523`](https://github.com/tlancaster6/AquaPose/commit/d76e52391afbf1b2a531362f1f4b72cfaed3c043))
+
+- **32-01**: Complete YOLO-OBB backend and affine crop utilities plan
+  ([`f2fd60e`](https://github.com/tlancaster6/AquaPose/commit/f2fd60e9e87ac959773b5f70c3617a515468b863))
+
+- **32-02**: Complete OBB visualization extensions plan
+  ([`0712f66`](https://github.com/tlancaster6/AquaPose/commit/0712f6655b461ce1499654f8a2b58d94877eec65))
+
+- **33**: Capture phase context
+  ([`b5c6e48`](https://github.com/tlancaster6/AquaPose/commit/b5c6e48c01b987e2e452232d61a6e5b85a73887c))
+
+- **33**: Research and plan keypoint midline backend phase
+  ([`ead451d`](https://github.com/tlancaster6/AquaPose/commit/ead451d93a8b2912a533c1094267ebec80c128d6))
+
+- **33**: Research keypoint midline backend phase
+  ([`67c7b8e`](https://github.com/tlancaster6/AquaPose/commit/67c7b8e915eb4a5de934109222e5ef61ff977f00))
+
+- **33-01**: Complete DirectPoseBackend plan - SUMMARY, STATE, ROADMAP, REQUIREMENTS
+  ([`48f4a29`](https://github.com/tlancaster6/AquaPose/commit/48f4a29c48b8f80cbab0bf5dc5be9c318c8404f3))
+
+- **33-02**: Complete confidence-weighted reconstruction plan
+  ([`4b1e75d`](https://github.com/tlancaster6/AquaPose/commit/4b1e75d26098b21fb3aca9002d2a5d921af774dc))
+
+- **33.1**: Capture phase context
+  ([`449e098`](https://github.com/tlancaster6/AquaPose/commit/449e0987cc1b11f68411202d6720ebde574cffab))
+
+- **33.1**: Create phase plan for keypoint training data augmentation
+  ([`5cc8fdd`](https://github.com/tlancaster6/AquaPose/commit/5cc8fddd34744e1bf3e1c90a847beb63871d7109))
+
+- **33.1**: Research phase domain
+  ([`c7681a9`](https://github.com/tlancaster6/AquaPose/commit/c7681a921e0cab2131afe7df2ea8fe76db090115))
+
+- **33.1-01**: Complete keypoint augmentation plan - SUMMARY, STATE, ROADMAP
+  ([`c342616`](https://github.com/tlancaster6/AquaPose/commit/c342616a2a04a353ee4ab9ed7bab60ff323ba831))
+
+- **35**: Capture phase context
+  ([`c200477`](https://github.com/tlancaster6/AquaPose/commit/c200477347482fe3c5f3419d314e33536c02f143))
+
+- **35**: Create phase plan
+  ([`871d47a`](https://github.com/tlancaster6/AquaPose/commit/871d47a8a641724d341a5eab819febc93516bff4))
+
+- **35**: Research phase domain
+  ([`6ba6292`](https://github.com/tlancaster6/AquaPose/commit/6ba6292a420d0c5b1252410631261a3bf558cb9e))
+
+- **35-02**: Complete plan — midline backend stubs, CLEAN-03 done, Phase 35 complete
+  ([`a18212d`](https://github.com/tlancaster6/AquaPose/commit/a18212d5de0a91ddfb020025024d12738913ac03))
+
+- **36**: Capture phase context
+  ([`dd7a169`](https://github.com/tlancaster6/AquaPose/commit/dd7a1690407aae2a9b3dc5f4d0f42ef127b94995))
+
+- **36**: Create phase plan
+  ([`e640a13`](https://github.com/tlancaster6/AquaPose/commit/e640a134d4e92f1cc38b6343cee310c54ec79f54))
+
+- **36**: Research phase domain
+  ([`e56efe9`](https://github.com/tlancaster6/AquaPose/commit/e56efe9b463b4546a5f6b876cd618d6cd7a382e3))
+
+- **36-01**: Complete seg data converter plan execution
+  ([`f6bb4b5`](https://github.com/tlancaster6/AquaPose/commit/f6bb4b5dbb87835edd7023fcbe1ad6d679c0297b))
+
+- **36-02**: Complete training wrappers plan execution
+  ([`354831b`](https://github.com/tlancaster6/AquaPose/commit/354831b8e916662c0a6f3404af893d7580d4ffb1))
+
+- **37**: Capture phase context
+  ([`b41b482`](https://github.com/tlancaster6/AquaPose/commit/b41b482496c02c652572586c5fa36bac62bdf40c))
+
+- **37**: Create phase plan for pipeline integration
+  ([`f81bbdb`](https://github.com/tlancaster6/AquaPose/commit/f81bbdb4cf5108ddc9a9f7996723c7b7894ec2d6))
+
+- **37**: Research pipeline integration phase
+  ([`face555`](https://github.com/tlancaster6/AquaPose/commit/face555cdc8b7130834a55e51a42124dc2f0836f))
+
+- **37**: Update stale docstrings — backends are no longer stubs
+  ([`8b16979`](https://github.com/tlancaster6/AquaPose/commit/8b169798fdc6a7d8a4ee9d3e2d838fc2db0988d4))
+
+- **37-01**: Complete pipeline-integration plan 01 - backend renaming
+  ([`c61fb4f`](https://github.com/tlancaster6/AquaPose/commit/c61fb4f5c70b0b4e3bebeda53e6243e972ef82f0))
+
+- **37-02**: Complete pipeline-integration plan 02 - YOLO backend implementation
+  ([`44cce73`](https://github.com/tlancaster6/AquaPose/commit/44cce730753e6b11b78f15bb356ecbb3759019c8))
+
+- **phase-29**: Complete phase verification and finalize
+  ([`bcc0710`](https://github.com/tlancaster6/AquaPose/commit/bcc0710ca078772ae359d9746bf4d94393d5661f))
+
+- **phase-30**: Complete phase execution and verification
+  ([`e782201`](https://github.com/tlancaster6/AquaPose/commit/e78220152be4d789d0129defe9e61126b68c4441))
+
+- **phase-31**: Complete phase execution, resolve doc gaps, mark verified
+  ([`14c7e02`](https://github.com/tlancaster6/AquaPose/commit/14c7e02ab1c9ec87d3c04f1c2640f22f821143dd))
+
+- **phase-32**: Complete phase execution, mark verified
+  ([`7b79f3e`](https://github.com/tlancaster6/AquaPose/commit/7b79f3e26fe3d18f5acc4349e89af682b7e810e5))
+
+- **phase-33**: Complete phase execution, mark verified
+  ([`53a9ebb`](https://github.com/tlancaster6/AquaPose/commit/53a9ebb836b2b9370282fc0fc94828cc6e31c6d8))
+
+- **phase-33.1**: Complete phase execution — augmentation requirements and traceability
+  ([`c3046bd`](https://github.com/tlancaster6/AquaPose/commit/c3046bd97524a446cf773487573b5eee63092e1e))
+
+- **phase-35**: Complete phase execution
+  ([`00e477f`](https://github.com/tlancaster6/AquaPose/commit/00e477f3934607d1502e375e8131361b831f4542))
+
+- **phase-36**: Complete phase execution
+  ([`56b6f00`](https://github.com/tlancaster6/AquaPose/commit/56b6f0095bb4b0279a3dfee6faab66ad818ccea8))
+
+- **phase-37**: Complete phase execution
+  ([`c6a4b50`](https://github.com/tlancaster6/AquaPose/commit/c6a4b50b7b1de975c3ec0ccdcfaea5743b4b6f1f))
+
+- **quick-10**: Store 3D consensus centroids on TrackletGroup
+  ([`64aef3b`](https://github.com/tlancaster6/AquaPose/commit/64aef3b9343bf17e3eff0ba4e207e9e7deb716d3))
+
+- **quick-11**: Training visualization grids for pose and unet
+  ([`bd50e37`](https://github.com/tlancaster6/AquaPose/commit/bd50e37249f2ea41576ba4f189fb55895a208ec6))
+
+- **quick-12**: Complete YOLO training data builder plan
+  ([`8cc5508`](https://github.com/tlancaster6/AquaPose/commit/8cc55083fcedc7de000ccf65087406292b33fcef))
+
+- **quick-12**: YOLO-OBB and YOLO-pose training set generation
+  ([`4854d0c`](https://github.com/tlancaster6/AquaPose/commit/4854d0c3da25f037dfd2a16edbf5e7fa85388ed4))
+
+- **quick-13**: Complete yolo_obb NDJSON unification plan
+  ([`901e83c`](https://github.com/tlancaster6/AquaPose/commit/901e83c022f01746ecc2b83353acf86884424479))
+
+- **quick-13**: Convert yolo_obb.py to ndjson format and simplify
+  ([`7810997`](https://github.com/tlancaster6/AquaPose/commit/781099787b48449642a543dacea95aa2acde3032))
+
+- **quick-14**: Adopt Ultralytics-native NDJSON format
+  ([`af5f552`](https://github.com/tlancaster6/AquaPose/commit/af5f552ca77cd7e3d9ed1f30b11643880b553ac9))
+
+- **quick-14**: Complete adopt-ultralytics-native-ndjson-format-u task
+  ([`72c1d2e`](https://github.com/tlancaster6/AquaPose/commit/72c1d2e67053d15a3a9f062bc6b702fa7cf4b3c8))
+
+- **state**: Record phase 33.1 context session
+  ([`f4043ad`](https://github.com/tlancaster6/AquaPose/commit/f4043adeca5db3a350a8ff680f461dc7551d9b0a))
+
+### Features
+
+- Support non-square 128x64 input for pose and U-Net training/inference
+  ([`bd5ebb7`](https://github.com/tlancaster6/AquaPose/commit/bd5ebb7eaedf48a2aaedd7c9535658c63f43cfa2))
+
+- **10-01**: Add consensus_centroids field to TrackletGroup and populate in refinement
+  ([`b7a9922`](https://github.com/tlancaster6/AquaPose/commit/b7a99223531485dd97d233ecb0284a6ba677ef01))
+
+- **10-01**: Add export_centroid_correspondences to DiagnosticObserver
+  ([`e8124d1`](https://github.com/tlancaster6/AquaPose/commit/e8124d15811f253741ccf04a181126f6425bc8dc))
+
+- **11-01**: Add training visualization grid utilities
+  ([`cd1e191`](https://github.com/tlancaster6/AquaPose/commit/cd1e191554fdd3e7a8dfff24d5c9c59ca6cb8411))
+
+- **11-02**: Wire viz calls into train_unet and train_pose
+  ([`2881361`](https://github.com/tlancaster6/AquaPose/commit/288136187436e0fe0836fd30588598faa175ecc2))
+
+- **30-01**: Extend Detection and Midline2D dataclasses with v2.2 fields
+  ([`4e9a086`](https://github.com/tlancaster6/AquaPose/commit/4e9a086d3aa44a5ed9a361b7900670a1c508e70e))
+
+- **30-01**: Universalize _filter_fields() with strict reject and rename hints
+  ([`b3d4d5e`](https://github.com/tlancaster6/AquaPose/commit/b3d4d5e282a4681285ae8d312e46c9993e6f1bd9))
+
+- **30-02**: Promote device, n_sample_points, stop_frame, project_dir to PipelineConfig
+  ([`8bcb463`](https://github.com/tlancaster6/AquaPose/commit/8bcb463ccfea3c0410abbdf3c668b627fbe16096))
+
+- **30-02**: Propagate device and n_sample_points through build_stages() and downstream modules
+  ([`6f827b0`](https://github.com/tlancaster6/AquaPose/commit/6f827b03ecec354080abffbbb0e08e6f260a216f))
+
+- **30-03**: Implement project_dir path resolution in load_config()
+  ([`6411329`](https://github.com/tlancaster6/AquaPose/commit/6411329c46133acf248b50c41a01f443f86ea2e0))
+
+- **30-03**: Rewrite init-config CLI with project scaffolding
+  ([`b9fe86c`](https://github.com/tlancaster6/AquaPose/commit/b9fe86c2f339295e71634c22d8dcd07f3e572ec9))
+
+- **31-01**: Create training/ package scaffold with common utilities and datasets
+  ([`54fb2ad`](https://github.com/tlancaster6/AquaPose/commit/54fb2ad56f447ee977a71bf5909f3cceb169b2a8))
+
+- **31-01**: Implement U-Net training subcommand with tests
+  ([`a73b3f5`](https://github.com/tlancaster6/AquaPose/commit/a73b3f55f6c5cd38b99ab47660f2b2103e0b3df4))
+
+- **31-02**: Add YOLO-OBB and pose training subcommands
+  ([`45dadcf`](https://github.com/tlancaster6/AquaPose/commit/45dadcfa0e22ed840a67a0a8879d912b17067563))
+
+- **31-02**: Migration cleanup — delete superseded segmentation files and update imports
+  ([`9ec15bb`](https://github.com/tlancaster6/AquaPose/commit/9ec15bbb5849bd24869ac0128c247ce6672c2581))
+
+- **32-01**: Add YOLOOBBBackend and extend detection backend registry
+  ([`2a34192`](https://github.com/tlancaster6/AquaPose/commit/2a34192fea389120a06c8a0594400ed11bf7a09e))
+
+- **32-01**: Implement affine crop utilities with invertible transform
+  ([`71efa75`](https://github.com/tlancaster6/AquaPose/commit/71efa7551ee9be43daccf0a6f082539af02da78c))
+
+- **32-02**: Extend Overlay2DObserver with OBB polygon rendering
+  ([`0bf97d5`](https://github.com/tlancaster6/AquaPose/commit/0bf97d5cd64b90da8ba78d844be911a7f11dd82c))
+
+- **32-02**: Extend TrackletTrailObserver with OBB polygon at trail head
+  ([`760cf52`](https://github.com/tlancaster6/AquaPose/commit/760cf52a5a1ff3fb535690e22fcbdd5e9b669942))
+
+- **33-01**: Extend MidlineConfig, wire build_stages, add prep CLI
+  ([`0cc522d`](https://github.com/tlancaster6/AquaPose/commit/0cc522da2512f94914fdfc53165ff607a657c1db))
+
+- **33-01**: Implement DirectPoseBackend with keypoint inference and NaN-padding
+  ([`516fbf6`](https://github.com/tlancaster6/AquaPose/commit/516fbf6b989608e4026cba6763753bd81d61e248))
+
+- **33-02**: Add confidence-weighted chamfer to curve_optimizer.py
+  ([`12e274d`](https://github.com/tlancaster6/AquaPose/commit/12e274dc281e78db4fe49f0d762fde74373b289f))
+
+- **33-02**: Add confidence-weighted DLT triangulation to triangulation.py
+  ([`ae88279`](https://github.com/tlancaster6/AquaPose/commit/ae882791df26931350ed588269fff590cc1aa530))
+
+- **33.1-01**: Add augmentation to KeypointDataset and masked loss utilities
+  ([`f2c70ad`](https://github.com/tlancaster6/AquaPose/commit/f2c70ad0b067ace313c2a0b058ad956341ad7159))
+
+- **35-01**: Delete custom model files and SAM2 pseudo-labeler (CLEAN-01 + CLEAN-02)
+  ([`768516f`](https://github.com/tlancaster6/AquaPose/commit/768516f7f0eace404d3fc56635689f6af632dce9))
+
+- **35-01**: Remove MOG2 detector and old training CLI commands (CLEAN-04 + CLEAN-05)
+  ([`623b2c7`](https://github.com/tlancaster6/AquaPose/commit/623b2c70bccf057b4b61cc1c021a663cee814ebf))
+
+- **35-02**: Correct planning documents to reflect CLEAN-03 semantics
+  ([`bb265ca`](https://github.com/tlancaster6/AquaPose/commit/bb265ca55749b1ad06ec5b46136e55bcae5f0d37))
+
+- **35-02**: Stub midline backends as no-ops and add config validation (CLEAN-03)
+  ([`356022e`](https://github.com/tlancaster6/AquaPose/commit/356022e10be4386d898687e123d1b33e8c3bc7ca))
+
+- **36-01**: Add --mode flag and generate_seg_dataset to build_yolo_training_data
+  ([`ba6248a`](https://github.com/tlancaster6/AquaPose/commit/ba6248ab37cf485ab9ee1bf84e460901216f5f4f))
+
+- **36-01**: Add TestFormatSegAnnotation and TestSegConverter test classes
+  ([`a9defaf`](https://github.com/tlancaster6/AquaPose/commit/a9defaf97cf417ee3d0205a20da17f103e8e523e))
+
+- **36-01**: Add yolo_seg/yolo_pose training wrappers and CLI commands
+  ([`e7e41e2`](https://github.com/tlancaster6/AquaPose/commit/e7e41e2b729166d3c056cf0cde50b53011089412))
+
+- **36-02**: Add seg/pose CLI help tests and update test_training_cli.py
+  ([`7c2640e`](https://github.com/tlancaster6/AquaPose/commit/7c2640e8b8ead0207a1c1c078768a098ad6209a0))
+
+- **37-02**: Implement PoseEstimationBackend with YOLO-pose inference and spline fitting
+  ([`cc55961`](https://github.com/tlancaster6/AquaPose/commit/cc559610c4b93ec4ced136f1b8a0fbfd29d8ee27))
+
+- **37-02**: Implement SegmentationBackend with YOLO-seg inference and skeletonization
+  ([`f6b517c`](https://github.com/tlancaster6/AquaPose/commit/f6b517ca9705def48d76435b6d64d1fd54682ce3))
+
+- **quick-12**: Implement YOLO training data builder core
+  ([`a4d57ee`](https://github.com/tlancaster6/AquaPose/commit/a4d57ee6efa50aa65a15ac97a29401a78a081835))
+
+- **quick-14**: Convert build script to emit Ultralytics-native NDJSON
+  ([`f004338`](https://github.com/tlancaster6/AquaPose/commit/f0043388de44acab8157c0a8c3820a7e1502cdb5))
+
+### Refactoring
+
+- **33**: Remove torch parameter threading, simplify config extraction
+  ([`d6e01cc`](https://github.com/tlancaster6/AquaPose/commit/d6e01cc9b119cd96fe363e7e0bcc54d55426b59f))
+
+- **37-01**: Rename midline backends to segmentation/pose_estimation
+  ([`6204312`](https://github.com/tlancaster6/AquaPose/commit/6204312c2591c86dc6e055a344832ab7fee96795))
+
+- **quick-12**: Switch YOLO training data output from per-image txt to NDJSON
+  ([`9c9769a`](https://github.com/tlancaster6/AquaPose/commit/9c9769af740380c28ec6c5b8034827a816fa3bd6))
+
+- **quick-13**: Rewrite yolo_obb.py to use NDJSON pipeline via train_yolo_ndjson
+  ([`cd3e90a`](https://github.com/tlancaster6/AquaPose/commit/cd3e90a913c4e901137b9b15a97aee6431f3f57c))
+
+- **quick-14**: Simplify training wrappers to pass NDJSON directly to model.train()
+  ([`6fddbf7`](https://github.com/tlancaster6/AquaPose/commit/6fddbf78715b621f2c72a41ea0b178ea115238e4))
+
+- **training**: Extract shared COCO helpers and fix metric direction heuristic
+  ([`b2ed161`](https://github.com/tlancaster6/AquaPose/commit/b2ed16144ac354f011b7a96a3d105d90e7d188a6))
+
+- **training**: Extract shared NDJSON/YAML/training helpers into common.py
+  ([`fba52c4`](https://github.com/tlancaster6/AquaPose/commit/fba52c44338f87953c01ad2357416bb63fd46ddf))
+
+### Testing
+
+- **30-01**: Add tests for strict reject, rename hints, and dataclass extensions
+  ([`a2ed4e8`](https://github.com/tlancaster6/AquaPose/commit/a2ed4e8dca7dd352edc6911df3f63866e339b8f7))
+
+- **30-02**: Add config promotion tests and CPU E2E test
+  ([`11d0915`](https://github.com/tlancaster6/AquaPose/commit/11d091531c1f9382e348f98cc2a0dadb44dd2b1f))
+
+- **33.1-01**: Add comprehensive tests for augmentation, visibility, and masked loss
+  ([`b27b126`](https://github.com/tlancaster6/AquaPose/commit/b27b1264cd15b41ca76f5e43dd21e1de851252dd))
+
+- **37-01**: Update tests to use new segmentation/pose_estimation backend names
+  ([`f114194`](https://github.com/tlancaster6/AquaPose/commit/f114194e2655262a983f2fbb8748a83817cc85f2))
+
+- **quick-12**: Add unit and integration tests for YOLO training data builder
+  ([`847e6d7`](https://github.com/tlancaster6/AquaPose/commit/847e6d73b379d25496c1407c77ae3cf5888412f8))
+
+
 ## v1.1.0-dev.3 (2026-02-28)
 
 ### Bug Fixes

@@ -7,10 +7,12 @@ import logging
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
 from aquapose.engine.events import Event, PipelineComplete, StageComplete
+from aquapose.io.midline_fixture import NPZ_VERSION as _NPZ_VERSION_LATEST
 
 _NPZ_VERSION_V1 = "1.0"
 
@@ -225,7 +227,11 @@ class DiagnosticObserver:
 
         return best
 
-    def export_midline_fixtures(self, output_path: Path | str) -> Path:
+    def export_midline_fixtures(
+        self,
+        output_path: Path | str,
+        models: dict[str, Any] | None = None,
+    ) -> Path:
         """Assemble per-frame MidlineSets from snapshot data and write an NPZ fixture.
 
         Builds a ``dict[frame_idx, dict[fish_id, dict[camera_id, Midline2D]]]``
@@ -234,8 +240,19 @@ class DiagnosticObserver:
         to the compressed NPZ using the key convention documented in
         ``aquapose.io.midline_fixture``.
 
+        When ``models`` is provided, the fixture is written as v2.0 with
+        calibration data bundled under ``calib/`` keys.  When ``models`` is
+        ``None``, the fixture is written as v1.0 with no calibration data
+        (backward-compatible behaviour).
+
         Args:
             output_path: Destination file path for the NPZ output.
+            models: Optional dict mapping camera_id to
+                ``RefractiveProjectionModel`` instances.  When provided, the NPZ
+                version is set to "2.0" and calibration parameters are extracted
+                from the models and written to ``calib/`` keys.  All models in a
+                rig share the same ``water_z``, ``normal``, ``n_air``, and
+                ``n_water`` — these are taken from the first model in the dict.
 
         Returns:
             Resolved absolute path to the written NPZ file.
@@ -315,9 +332,12 @@ class DiagnosticObserver:
         npz_arrays: dict[str, object] = {}
         sorted_frame_indices = sorted(collected.keys())
 
+        # Determine version: v2.0 when models are provided, v1.0 otherwise.
+        version_str = _NPZ_VERSION_LATEST if models is not None else _NPZ_VERSION_V1
+
         # Meta arrays
         timestamp_str = datetime.datetime.now(datetime.UTC).isoformat()
-        npz_arrays["meta/version"] = np.array(_NPZ_VERSION_V1, dtype=object)
+        npz_arrays["meta/version"] = np.array(version_str, dtype=object)
         npz_arrays["meta/camera_ids"] = np.array(
             camera_ids_list if camera_ids_list else sorted(all_camera_ids), dtype=object
         )
@@ -326,6 +346,10 @@ class DiagnosticObserver:
         )
         npz_arrays["meta/frame_count"] = np.array(frame_count, dtype=np.int64)
         npz_arrays["meta/timestamp"] = np.array(timestamp_str, dtype=object)
+
+        # Calibration arrays (v2.0 only — written when models dict is provided)
+        if models is not None:
+            _write_calib_arrays(npz_arrays, models)
 
         # Midline data arrays (one set per fish x camera x frame)
         for frame_idx in sorted_frame_indices:
@@ -448,3 +472,40 @@ class DiagnosticObserver:
             centroids_2d=centroids_2d_arr,
         )
         return out
+
+
+def _write_calib_arrays(
+    npz_arrays: dict[str, object],
+    models: dict[str, Any],
+) -> None:
+    """Populate *npz_arrays* with ``calib/`` keys extracted from *models*.
+
+    Extracts calibration parameters from ``RefractiveProjectionModel``
+    instances and writes them into *npz_arrays* in-place.  All models in a rig
+    share the same ``water_z``, ``normal``, ``n_air``, and ``n_water`` values —
+    these are taken from the first model in the dict.
+
+    CUDA safety: all torch tensors are moved to CPU before converting to numpy.
+
+    Args:
+        npz_arrays: Mutable dict that will receive the ``calib/`` keys.
+        models: Dict mapping camera_id to ``RefractiveProjectionModel``
+            instances (or any object with the same attribute names).
+    """
+    if not models:
+        return
+
+    # Shared calibration parameters come from the first model.
+    first_model = next(iter(models.values()))
+    npz_arrays["calib/water_z"] = np.float32(first_model.water_z)
+    npz_arrays["calib/n_air"] = np.float32(first_model.n_air)
+    npz_arrays["calib/n_water"] = np.float32(first_model.n_water)
+    npz_arrays["calib/interface_normal"] = (
+        first_model.normal.cpu().numpy().astype(np.float32)
+    )
+
+    # Per-camera parameters
+    for cam_id, model in models.items():
+        npz_arrays[f"calib/{cam_id}/K_new"] = model.K.cpu().numpy().astype(np.float32)
+        npz_arrays[f"calib/{cam_id}/R"] = model.R.cpu().numpy().astype(np.float32)
+        npz_arrays[f"calib/{cam_id}/t"] = model.t.cpu().numpy().astype(np.float32)

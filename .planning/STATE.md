@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: Reconstruction
 status: unknown
-last_updated: "2026-03-02T20:53:17.992Z"
+last_updated: "2026-03-02T22:08:06.613Z"
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 3
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 7
+  completed_plans: 6
 ---
 
 # Project State
@@ -60,6 +60,8 @@ v3.1 strategic decisions:
 - [Phase 42-01]: flag_outliers returns empty set for <2 values or std==0
 - [Phase 42-01]: Baseline JSON augments eval_results.json with baseline_metadata key (not a new schema)
 - [Phase 42-01]: No tests for measure_baseline.py - manual execution only per CONTEXT.md
+- [Phase 43]: MIN_BODY_POINTS re-exported from triangulation.py via noqa F401 to preserve existing test imports without changing test files
+- [Phase 43]: Backward-compat aliases kept in triangulation.py for zero-change backward compatibility with existing private-function imports
 
 ### Pending Todos
 

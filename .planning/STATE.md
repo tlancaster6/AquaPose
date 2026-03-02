@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-02)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 43 — Triangulation Rebuild
+**Current focus:** Phase 44 — Validation and Tuning
 
 ## Current Position
 
-Phase: 43 of 45 (Triangulation Rebuild)
-Plan: 2 of 2 in current phase (43-02 complete)
+Phase: 44 of 45 (Validation and Tuning)
+Plan: 1 of 2 in current phase (44-01 complete)
 Status: In progress
-Last activity: 2026-03-02 — Completed 43-02: DltBackend with confidence-weighted DLT triangulation, outlier rejection, and B-spline fitting
+Last activity: 2026-03-02 — Completed 44-01: Config wiring + grid search script for DLT threshold tuning
 
 Progress: [██░░░░░░░░] 10%
 
@@ -76,5 +76,5 @@ v3.1 strategic decisions:
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 43-triangulation-rebuild/43-02-PLAN.md
+Stopped at: Completed 44-validation-and-tuning/44-01-PLAN.md — awaiting 44-02 (user runs tune_threshold.py)
 Resume file: None

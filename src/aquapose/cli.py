@@ -165,15 +165,21 @@ def init_config(name: str, synthetic: bool) -> None:
     data: dict[str, Any] = {}
     # --- Paths (edited first by users) ---
     data["project_dir"] = str(project_dir)
-    data["video_dir"] = "videos/"
+    data["video_dir"] = "videos"
     data["calibration_path"] = "geometry/calibration.json"
-    data["output_dir"] = "runs/"
+    data["output_dir"] = "runs"
     # --- Core parameters ---
     data["n_animals"] = "SET_ME"  # required -- must be an integer
     # --- Detection ---
-    data["detection"] = {"detector_kind": "yolo", "model_path": "models/best.pt"}
+    data["detection"] = {
+        "detector_kind": "yolo_obb",  # oriented bounding box detection
+        "weights_path": "models/yolo_obb.pt",
+    }
     # --- Midline ---
-    data["midline"] = {"weights_path": "models/unet_best.pth"}
+    data["midline"] = {
+        "backend": "pose_estimation",  # segmentation or pose_estimation
+        "weights_path": "models/yolo_pose.pt",
+    }
     # --- Synthetic (only with --synthetic) ---
     if synthetic:
         data["synthetic"] = {"frame_count": 30, "noise_std": 0.0, "seed": 42}

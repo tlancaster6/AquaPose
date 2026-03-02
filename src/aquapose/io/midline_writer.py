@@ -133,7 +133,7 @@ class Midline3DWriter:
 
         Args:
             frame_index: Index of the video frame being written.
-            midlines: Dict mapping fish_id to :class:`~aquapose.reconstruction.triangulation.Midline3D`.
+            midlines: Dict mapping fish_id to :class:`~aquapose.core.types.reconstruction.Midline3D`.
                 Pass an empty dict to write a frame with all fill-values.
         """
         i = self._buffer_idx

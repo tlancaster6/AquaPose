@@ -1,8 +1,8 @@
-"""MidlineStage — Stage 4 of the v2.1 5-stage AquaPose pipeline.
+"""MidlineStage — Stage 4 of the AquaPose pipeline.
 
-Reads detection bounding boxes from Stage 1, crops and segments each detection
-via U-Net, then extracts 15-point 2D midlines with half-widths via
-skeletonization + BFS pruning. When tracklet_groups are available from
+Reads detection bounding boxes from Stage 1, crops each detection, and
+extracts 2D midlines via a swappable backend (YOLO-seg segmentation or
+YOLO-pose keypoint estimation). When tracklet_groups are available from
 Stage 3 (Association), only processes detections belonging to confirmed
 tracklet groups and applies head-tail orientation resolution.
 

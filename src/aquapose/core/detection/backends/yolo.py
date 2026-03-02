@@ -3,7 +3,7 @@
 Provides :class:`YOLODetector` (wraps a trained YOLO model),
 :func:`make_detector` (factory), and :class:`YOLOBackend` (pipeline
 backend with fail-fast eager loading). Importing from this module avoids
-any dependency on the legacy ``segmentation.detector`` module.
+any dependency on the legacy ``segmentation`` package.
 """
 
 from __future__ import annotations
@@ -156,7 +156,7 @@ class YOLOBackend:
             frame: BGR image as uint8 array of shape ``(H, W, 3)``.
 
         Returns:
-            List of :class:`~aquapose.segmentation.detector.Detection` objects,
+            List of :class:`~aquapose.core.types.detection.Detection` objects,
             one per detected fish.
         """
         return self._detector.detect(frame)

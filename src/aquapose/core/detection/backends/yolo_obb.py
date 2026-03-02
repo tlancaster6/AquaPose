@@ -2,7 +2,7 @@
 
 Thin wrapper around the ultralytics YOLO model in OBB mode that loads the
 model eagerly at construction time, converting oriented bounding box outputs
-to :class:`~aquapose.segmentation.detector.Detection` objects with
+to :class:`~aquapose.core.types.detection.Detection` objects with
 ``angle`` and ``obb_points`` populated.
 
 Angle convention contract (ONE conversion point):
@@ -32,7 +32,7 @@ class YOLOOBBBackend:
     The angle convention conversion happens here (and only here): ultralytics
     outputs angles clockwise in radians; this backend negates them to standard
     math convention (counter-clockwise) before storing in
-    :attr:`~aquapose.segmentation.detector.Detection.angle`.
+    :attr:`~aquapose.core.types.detection.Detection.angle`.
 
     Args:
         weights_path: Path to trained YOLO-OBB ``.pt`` weights file.
@@ -68,7 +68,7 @@ class YOLOOBBBackend:
         """Detect fish in a single frame using OBB predictions.
 
         Runs YOLO-OBB inference on *frame* and converts each oriented bounding
-        box to a :class:`~aquapose.segmentation.detector.Detection`.  The
+        box to a :class:`~aquapose.core.types.detection.Detection`.  The
         ``angle`` field receives the standard math CCW angle (negated from
         ultralytics clockwise convention).  The ``obb_points`` field receives
         the four corner points of shape ``(4, 2)``.
@@ -77,7 +77,7 @@ class YOLOOBBBackend:
             frame: BGR image as uint8 array of shape ``(H, W, 3)``.
 
         Returns:
-            List of :class:`~aquapose.segmentation.detector.Detection` objects,
+            List of :class:`~aquapose.core.types.detection.Detection` objects,
             one per detected fish, with ``angle`` and ``obb_points`` populated.
         """
         results = self._model.predict(

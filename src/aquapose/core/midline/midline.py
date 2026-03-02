@@ -264,9 +264,8 @@ def _crop_to_frame(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Transform crop-space coordinates to full-frame pixel coordinates.
 
-    Accounts for the resize from crop_h x crop_w (the mask resolution,
-    e.g. 128x128 from U-Net) to the actual crop region dimensions, then
-    translates by the crop origin.
+    Accounts for the resize from crop_h x crop_w (the mask resolution)
+    to the actual crop region dimensions, then translates by the crop origin.
 
     Args:
         xy_crop: Crop-space (x, y) coordinates, shape (N, 2), float32.
@@ -274,9 +273,9 @@ def _crop_to_frame(
         half_widths: Half-widths in crop-space pixels, shape (N,), float32.
         crop_region: CropRegion defining the full-frame position and size.
         crop_h: Height of the mask array (may differ from crop_region.height
-            due to U-Net resize).
+            when the mask was produced at a different resolution).
         crop_w: Width of the mask array (may differ from crop_region.width
-            due to U-Net resize).
+            when the mask was produced at a different resolution).
 
     Returns:
         xy_frame: Full-frame (x, y) pixel coordinates, shape (N, 2), float32.

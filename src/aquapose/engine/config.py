@@ -32,7 +32,7 @@ class DetectionConfig:
             ``None`` means no path configured (caller must supply via
             ``detector_kwargs`` or construct the stage directly).
         crop_size: Output size ``[width, height]`` in pixels for affine crops
-            produced by :func:`~aquapose.segmentation.crop.extract_affine_crop`.
+            produced by :func:`~aquapose.core.midline.crop.extract_affine_crop`.
             Used by downstream stages when ``detector_kind`` is ``"yolo_obb"``.
             Defaults to ``[256, 128]`` — wide enough for a typical elongated fish
             body at standard frame resolutions. Stored as a list so that YAML

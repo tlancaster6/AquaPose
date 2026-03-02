@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Ultralytics Unification
 status: unknown
-last_updated: "2026-03-02T18:16:50.575Z"
+last_updated: "2026-03-02T18:23:00.383Z"
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 14
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-01)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 39 — Migrate Legacy Domain Libraries into Core Submodules (Plan 01 complete)
+**Current focus:** Phase 39 — Migrate Legacy Domain Libraries into Core Submodules (Plans 01+02+03 complete)
 
 ## Current Position
 
 Phase: 39 of 39 (Migrate Legacy Domain Libraries into Core Submodules)
-Plan: 1/4 complete in current phase
-Status: Plan 01 complete (core/types/ package + implementation files relocated + YOLODetector merged); dual-path state established
-Last activity: 2026-03-02 — Completed 39-01-PLAN.md (created core/types/, relocated 5 implementation files, merged YOLODetector into detection backend)
+Plan: 3/4 complete in current phase
+Status: Plan 03 complete (all test imports updated to core paths; zero legacy references in entire repository consumer code; 656 tests passing)
+Last activity: 2026-03-02 — Completed 39-03-PLAN.md (16 test files updated, zero legacy package references in tests/, 656 tests green)
 
-Progress: [████████░░] ~78%
+Progress: [█████████░] ~85%
 
 ## Accumulated Context
 
@@ -81,6 +81,7 @@ Key decisions entering v3.0:
 - [Phase 38-04]: Broader organization concern (misleading directory names, cross-package private imports) deferred to Phase 39
 - [Phase 39]: core/types/ files import only stdlib + numpy — no implementation imports allowed in the types layer
 - [Phase 39]: Dual-path state established: both legacy and new core paths coexist until Plan 02 rewires consumers
+- [Phase 39]: Test imports follow same rewrite map as src/: types to core/types/, implementations to core/<stage>/ — zero legacy references in tests/
 
 ### Pending Todos
 
@@ -107,5 +108,5 @@ Full-image ↔ crop-space conversions are a pervasive source of error, especiall
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 39-01-PLAN.md (core/types/ package + relocated implementation files + YOLODetector merged into detection backend)
+Stopped at: Completed 39-03-PLAN.md (all test imports updated to core paths, 656 tests passing)
 Resume file: None

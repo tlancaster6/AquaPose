@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: Reconstruction
 status: unknown
-last_updated: "2026-03-02T19:49:27.968Z"
+last_updated: "2026-03-02T19:55:07.427Z"
 progress:
-  total_phases: 1
-  completed_phases: 0
+  total_phases: 2
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -23,9 +23,9 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 ## Current Position
 
 Phase: 40 of 45 (Diagnostic Capture)
-Plan: 1 of ? in current phase (40-01 complete)
+Plan: 2 of 2 in current phase (40-01, 40-02 complete)
 Status: In progress
-Last activity: 2026-03-02 — Completed 40-01: MidlineFixture dataclass + DiagnosticObserver NPZ export
+Last activity: 2026-03-02 — Completed 40-02: load_midline_fixture NPZ deserializer with round-trip tests
 
 Progress: [█░░░░░░░░░] 5%
 
@@ -49,6 +49,8 @@ v3.1 strategic decisions:
 - [Phase 40-diagnostic-capture]: NPZ key convention uses flat slash-separated keys for numpy.load compatibility
 - [Phase 40-diagnostic-capture]: MidlineFixture is a data contract only (no loader) - loader deferred to Plan 02
 - [Phase 40-diagnostic-capture]: No min_cameras filter on frame inclusion - all frames with at least one midline captured
+- [Phase 40-diagnostic-capture]: load_midline_fixture derives frame_indices from parsed midline keys (not meta/frame_indices) to handle empty fixtures correctly
+- [Phase 40-diagnostic-capture]: camera_ids in MidlineFixture loaded from meta/camera_ids to preserve original capture ordering
 
 ### Pending Todos
 
@@ -62,5 +64,5 @@ v3.1 strategic decisions:
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 40-diagnostic-capture/40-01-PLAN.md
+Stopped at: Completed 40-diagnostic-capture/40-02-PLAN.md
 Resume file: None

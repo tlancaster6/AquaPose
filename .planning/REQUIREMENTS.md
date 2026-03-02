@@ -10,7 +10,7 @@ Requirements for reconstruction rebuild milestone. Each maps to roadmap phases.
 ### Diagnostics
 
 - [x] **DIAG-01**: Diagnostic observer captures and serializes MidlineSet data from pipeline runs
-- [ ] **DIAG-02**: Serialized MidlineSet fixtures can be loaded independently of the pipeline for offline evaluation
+- [x] **DIAG-02**: Serialized MidlineSet fixtures can be loaded independently of the pipeline for offline evaluation
 
 ### Evaluation
 
@@ -71,7 +71,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | DIAG-01 | Phase 40 | Complete |
-| DIAG-02 | Phase 40 | Pending |
+| DIAG-02 | Phase 40 | Complete |
 | EVAL-01 | Phase 41 | Pending |
 | EVAL-02 | Phase 41 | Pending |
 | EVAL-03 | Phase 41 | Pending |

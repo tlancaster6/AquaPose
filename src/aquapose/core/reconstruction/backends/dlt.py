@@ -1,0 +1,562 @@
+"""DLT reconstruction backend — confidence-weighted triangulation with outlier rejection.
+
+Implements a stripped-down reconstruction backend that replaces the complex
+multi-strategy triangulation logic (pairwise exhaustive search, epipolar
+refinement, orientation alignment) with a single uniform algorithm:
+
+    triangulate all cameras → reject outliers → re-triangulate inliers → fit spline
+
+This eliminates camera-count branching and upstream correspondence assumptions.
+Upstream (pose estimation backend) provides ordered keypoints, so orientation
+alignment and epipolar refinement are not needed.
+"""
+
+from __future__ import annotations
+
+import logging
+import math
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import scipy.interpolate
+import torch
+
+from aquapose.calibration.projection import triangulate_rays
+from aquapose.core.reconstruction.utils import (
+    SPLINE_K,
+    build_spline_knots,
+    fit_spline,
+    pixel_half_width_to_metres,
+    weighted_triangulate_rays,
+)
+from aquapose.core.types.midline import Midline2D
+from aquapose.core.types.reconstruction import Midline3D, MidlineSet
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Module-level constants
+# ---------------------------------------------------------------------------
+
+DEFAULT_OUTLIER_THRESHOLD: float = 50.0
+"""Default maximum reprojection residual (pixels) for inlier classification.
+
+This is a placeholder; empirical tuning via Phase 44 eval harness is required.
+"""
+
+DEFAULT_N_CONTROL_POINTS: int = 7
+"""Default number of B-spline control points."""
+
+DEFAULT_LOW_CONFIDENCE_FRACTION: float = 0.2
+"""Fraction of body points with <3 inlier cameras above which the reconstruction
+is flagged as is_low_confidence=True."""
+
+_MIN_RAY_ANGLE_DEG: float = 5.0
+"""Minimum ray angle (degrees) between two cameras below which the 2-camera
+triangulation is considered ill-conditioned and skipped."""
+
+_COS_MIN_RAY_ANGLE: float = math.cos(math.radians(_MIN_RAY_ANGLE_DEG))
+"""Cosine of the minimum ray angle threshold. When |cos(angle)| > this value
+the rays are too nearly parallel for reliable DLT."""
+
+__all__ = ["DltBackend"]
+
+
+# ---------------------------------------------------------------------------
+# DltBackend
+# ---------------------------------------------------------------------------
+
+
+class DltBackend:
+    """Confidence-weighted DLT triangulation backend for 3D midline reconstruction.
+
+    Uses a single-strategy algorithm regardless of camera count:
+    1. Triangulate all available cameras together.
+    2. Compute per-camera reprojection residuals.
+    3. Reject cameras whose residual exceeds outlier_threshold.
+    4. Re-triangulate with inlier cameras only.
+    5. Fit a B-spline to valid body points.
+
+    Key simplifications over TriangulationBackend:
+    - No orientation alignment (upstream pose backend provides ordered keypoints).
+    - No epipolar refinement (ordered keypoints eliminate correspondence ambiguity).
+    - No camera-count branching (single path: triangulate → reject → re-triangulate).
+
+    Args:
+        calibration_path: Path to the AquaCal calibration JSON file.
+        outlier_threshold: Maximum reprojection error (pixels) for inlier
+            classification after initial all-camera triangulation.
+        n_control_points: Number of B-spline control points per midline.
+        low_confidence_fraction: Fraction of body points with <3 inlier cameras
+            above which is_low_confidence is set True.
+
+    Raises:
+        FileNotFoundError: If calibration_path does not exist.
+    """
+
+    def __init__(
+        self,
+        calibration_path: str | Path,
+        outlier_threshold: float = DEFAULT_OUTLIER_THRESHOLD,
+        n_control_points: int = DEFAULT_N_CONTROL_POINTS,
+        low_confidence_fraction: float = DEFAULT_LOW_CONFIDENCE_FRACTION,
+    ) -> None:
+        self._calibration_path = Path(calibration_path)
+        self._outlier_threshold = outlier_threshold
+        self._n_control_points = n_control_points
+        self._low_confidence_fraction = low_confidence_fraction
+
+        # Eagerly load calibration — fail-fast on missing file
+        self._models = self._load_models(self._calibration_path)
+
+        # Precompute spline parameters
+        self._spline_knots = build_spline_knots(n_control_points)
+        self._min_body_points = n_control_points + 2
+
+    def reconstruct_frame(
+        self,
+        frame_idx: int,
+        midline_set: MidlineSet,
+    ) -> dict[int, Midline3D]:
+        """Triangulate all fish midlines for a single frame.
+
+        For each fish in midline_set, applies confidence-weighted DLT
+        triangulation with outlier rejection and B-spline fitting.
+
+        Args:
+            frame_idx: Frame index to embed in output Midline3D structs.
+            midline_set: Nested dict mapping fish_id to camera_id to Midline2D.
+
+        Returns:
+            Dict mapping fish_id to Midline3D. Only includes fish with
+            sufficient valid body points for spline fitting.
+        """
+        results: dict[int, Midline3D] = {}
+
+        # Derive water_z from models (all cameras share the same value)
+        if not self._models:
+            return results
+        water_z: float = next(iter(self._models.values())).water_z
+
+        for fish_id, cam_midlines in midline_set.items():
+            midline_3d = self._reconstruct_fish(
+                fish_id=fish_id,
+                frame_idx=frame_idx,
+                cam_midlines=cam_midlines,
+                water_z=water_z,
+            )
+            if midline_3d is not None:
+                results[fish_id] = midline_3d
+
+        return results
+
+    def _reconstruct_fish(
+        self,
+        fish_id: int,
+        frame_idx: int,
+        cam_midlines: dict[str, Midline2D],
+        water_z: float,
+    ) -> Midline3D | None:
+        """Reconstruct a single fish's 3D midline from multi-camera observations.
+
+        Args:
+            fish_id: Fish identifier.
+            frame_idx: Frame index.
+            cam_midlines: Per-camera 2D midlines for this fish.
+            water_z: Z coordinate of the water surface in world frame.
+
+        Returns:
+            Midline3D if reconstruction succeeds, None if fish should be skipped.
+        """
+        # Derive body point count from first available midline
+        first_midline = next(iter(cam_midlines.values()))
+        n_body_points = len(first_midline.points)
+
+        valid_indices: list[int] = []
+        pts_3d_list: list[np.ndarray] = []
+        per_point_residuals: list[float] = []
+        per_point_n_cams: list[int] = []
+        per_point_inlier_ids: list[list[str]] = []
+        per_point_hw_px: list[float] = []
+        per_point_depths: list[float] = []
+
+        for i in range(n_body_points):
+            result = self._triangulate_body_point(i, cam_midlines, water_z)
+            if result is None:
+                continue
+
+            pt3d, inlier_ids, mean_res = result
+            pt3d_np = pt3d.detach().cpu().numpy().astype(np.float64)
+
+            valid_indices.append(i)
+            pts_3d_list.append(pt3d_np)
+            per_point_residuals.append(mean_res)
+            per_point_n_cams.append(len(inlier_ids))
+            per_point_inlier_ids.append(inlier_ids)
+
+            # Average half-width across cameras that observed this body point
+            hw_px_list: list[float] = []
+            for cam_id, midline in cam_midlines.items():
+                if cam_id not in self._models:
+                    continue
+                pt = midline.points[i]
+                if not np.any(np.isnan(pt)):
+                    hw_px_list.append(float(midline.half_widths[i]))
+            avg_hw_px = float(np.mean(hw_px_list)) if hw_px_list else 0.0
+            per_point_hw_px.append(avg_hw_px)
+
+            depth_m = max(0.0, float(pt3d_np[2]) - water_z)
+            per_point_depths.append(depth_m)
+
+        if len(valid_indices) < self._min_body_points:
+            logger.debug(
+                "Fish %d skipped: only %d valid body points (need %d)",
+                fish_id,
+                len(valid_indices),
+                self._min_body_points,
+            )
+            return None
+
+        # Build arc-length parameter preserving original body positions
+        u_param = np.array(
+            [i / (n_body_points - 1) for i in valid_indices], dtype=np.float64
+        )
+        pts_3d_arr = np.stack(pts_3d_list, axis=0)  # shape (M, 3)
+
+        spline_result = fit_spline(
+            u_param,
+            pts_3d_arr,
+            knots=self._spline_knots,
+            min_body_points=self._min_body_points,
+        )
+        if spline_result is None:
+            logger.debug("Fish %d skipped: spline fitting failed", fish_id)
+            return None
+
+        control_points, arc_length = spline_result
+
+        # Convert half-widths to world metres via pinhole approximation
+        hw_metres_all = self._convert_half_widths(
+            per_point_hw_px=per_point_hw_px,
+            per_point_depths=per_point_depths,
+            per_point_inlier_ids=per_point_inlier_ids,
+            u_param=u_param,
+            n_body_points=n_body_points,
+        )
+
+        # Compute spline-based per-camera residuals
+        spline_obj = scipy.interpolate.BSpline(
+            self._spline_knots, control_points.astype(np.float64), SPLINE_K
+        )
+        u_sample = np.linspace(0.0, 1.0, n_body_points)
+        spline_pts_3d = torch.from_numpy(
+            spline_obj(u_sample).astype(np.float32)
+        )  # (n_body_points, 3)
+
+        all_residuals: list[float] = []
+        cam_residuals: dict[str, float] = {}
+        cam_ids_active = [cid for cid in cam_midlines if cid in self._models]
+        for cid in cam_ids_active:
+            proj_px, valid = self._models[cid].project(spline_pts_3d)
+            proj_np = proj_px.detach().cpu().numpy()
+            valid_np = valid.detach().cpu().numpy()
+            obs_pts = cam_midlines[cid].points  # (n_body_points, 2)
+            cam_errs: list[float] = []
+            for j in range(n_body_points):
+                if (
+                    valid_np[j]
+                    and not np.any(np.isnan(proj_np[j]))
+                    and not np.any(np.isnan(obs_pts[j]))
+                ):
+                    err = float(np.linalg.norm(proj_np[j] - obs_pts[j]))
+                    cam_errs.append(err)
+                    all_residuals.append(err)
+            if cam_errs:
+                cam_residuals[cid] = float(np.mean(cam_errs))
+
+        mean_residual = float(np.mean(all_residuals)) if all_residuals else 0.0
+        max_residual_val = float(np.max(all_residuals)) if all_residuals else 0.0
+
+        min_n_cams = min(per_point_n_cams) if per_point_n_cams else 0
+        n_weak = sum(1 for nc in per_point_n_cams if nc < 3)
+        is_low_confidence = n_weak > self._low_confidence_fraction * len(
+            per_point_n_cams
+        )
+
+        return Midline3D(
+            fish_id=fish_id,
+            frame_index=frame_idx,
+            control_points=control_points,
+            knots=self._spline_knots.astype(np.float32),
+            degree=SPLINE_K,
+            arc_length=arc_length,
+            half_widths=hw_metres_all,
+            n_cameras=min_n_cams,
+            mean_residual=mean_residual,
+            max_residual=max_residual_val,
+            is_low_confidence=is_low_confidence,
+            per_camera_residuals=cam_residuals,
+        )
+
+    def _triangulate_body_point(
+        self,
+        point_idx: int,
+        cam_midlines: dict[str, Midline2D],
+        water_z: float,
+    ) -> tuple[torch.Tensor, list[str], float] | None:
+        """Triangulate a single body point from all available cameras.
+
+        Algorithm: single-strategy, no camera-count branching.
+        1. Gather valid pixel observations from all cameras (skip NaN).
+        2. Apply ray-angle filter for 2-camera case.
+        3. Triangulate all cameras together (weighted or unweighted).
+        4. Reject points at or above the water surface (Z <= water_z).
+        5. Compute per-camera reprojection residuals.
+        6. Reject cameras with residual > outlier_threshold.
+        7. If <2 inlier cameras remain, drop the point.
+        8. Re-triangulate with inlier cameras only.
+        9. Apply water surface rejection again.
+
+        Args:
+            point_idx: Body point index.
+            cam_midlines: Per-camera 2D midlines for this fish.
+            water_z: Z coordinate of the water surface.
+
+        Returns:
+            Tuple of (point_3d, inlier_cam_ids, mean_residual) or None if dropped.
+        """
+        # Gather valid observations and cast rays
+        cam_ids: list[str] = []
+        origins: dict[str, torch.Tensor] = {}
+        directions: dict[str, torch.Tensor] = {}
+        pixels: dict[str, torch.Tensor] = {}
+        weights: dict[str, float] = {}
+
+        for cam_id, midline in cam_midlines.items():
+            if cam_id not in self._models:
+                continue
+            pt = midline.points[point_idx]
+            if np.any(np.isnan(pt)):
+                continue  # NaN pixel — skip this camera for this body point
+
+            px_tensor = torch.from_numpy(pt).float()  # (2,)
+            pixels[cam_id] = px_tensor
+
+            o, d = self._models[cam_id].cast_ray(px_tensor.unsqueeze(0))
+            origins[cam_id] = o[0]  # (3,)
+            directions[cam_id] = d[0]  # (3,)
+
+            # Collect confidence weight: sqrt(confidence) per plan spec
+            if midline.point_confidence is not None:
+                weights[cam_id] = float(np.sqrt(midline.point_confidence[point_idx]))
+            else:
+                weights[cam_id] = 1.0
+
+            cam_ids.append(cam_id)
+
+        if len(cam_ids) < 2:
+            return None
+
+        # Ray-angle filter for 2-camera case only
+        if len(cam_ids) == 2:
+            pa, pb = cam_ids[0], cam_ids[1]
+            cos_angle = float(torch.dot(directions[pa], directions[pb]).abs().item())
+            if cos_angle > _COS_MIN_RAY_ANGLE:
+                logger.debug(
+                    "2-cam pair (%s, %s) skipped: ray angle too small (cos=%.4f > %.4f)",
+                    pa,
+                    pb,
+                    cos_angle,
+                    _COS_MIN_RAY_ANGLE,
+                )
+                return None
+
+        # Initial triangulation: all cameras together (single strategy)
+        pt3d = self._tri_rays(cam_ids, origins, directions, weights)
+
+        # Water surface rejection: drop if Z <= water_z
+        if float(pt3d[2].item()) <= water_z:
+            logger.debug(
+                "Body point %d rejected (initial): Z=%.3f <= water_z=%.3f",
+                point_idx,
+                float(pt3d[2].item()),
+                water_z,
+            )
+            return None
+
+        # Compute per-camera reprojection residuals
+        pt3d_batch = pt3d.unsqueeze(0)  # (1, 3)
+        residuals: dict[str, float] = {}
+        for cam_id in cam_ids:
+            proj_px, valid = self._models[cam_id].project(pt3d_batch)
+            if valid[0]:
+                err = float(torch.linalg.norm(proj_px[0] - pixels[cam_id]).item())
+                residuals[cam_id] = err
+            else:
+                residuals[cam_id] = float("inf")
+
+        # Outlier rejection: keep cameras within threshold
+        inlier_ids = [
+            cid
+            for cid in cam_ids
+            if residuals.get(cid, float("inf")) <= self._outlier_threshold
+        ]
+
+        if len(inlier_ids) < 2:
+            logger.debug(
+                "Body point %d dropped: only %d inlier cameras after rejection",
+                point_idx,
+                len(inlier_ids),
+            )
+            return None
+
+        # Re-triangulate with inlier cameras only
+        pt3d = self._tri_rays(inlier_ids, origins, directions, weights)
+
+        # Water surface rejection again on re-triangulated point
+        if float(pt3d[2].item()) <= water_z:
+            logger.debug(
+                "Body point %d rejected (re-triangulated): Z=%.3f <= water_z=%.3f",
+                point_idx,
+                float(pt3d[2].item()),
+                water_z,
+            )
+            return None
+
+        # Compute mean residual among inlier cameras for the re-triangulated point
+        pt3d_batch = pt3d.unsqueeze(0)
+        inlier_residuals: list[float] = []
+        for cam_id in inlier_ids:
+            proj_px, valid = self._models[cam_id].project(pt3d_batch)
+            if valid[0]:
+                err = float(torch.linalg.norm(proj_px[0] - pixels[cam_id]).item())
+                inlier_residuals.append(err)
+        mean_res = float(np.mean(inlier_residuals)) if inlier_residuals else 0.0
+
+        return pt3d, inlier_ids, mean_res
+
+    def _tri_rays(
+        self,
+        cam_ids: list[str],
+        origins: dict[str, torch.Tensor],
+        directions: dict[str, torch.Tensor],
+        weights: dict[str, float],
+    ) -> torch.Tensor:
+        """Triangulate from the given camera IDs using weighted or unweighted DLT.
+
+        Weighted path is used when any weight differs from 1.0; otherwise falls
+        back to the unweighted triangulate_rays for backward compatibility.
+
+        Args:
+            cam_ids: Camera IDs to triangulate from.
+            origins: Ray origin tensors per camera, shape (3,).
+            directions: Unit ray direction tensors per camera, shape (3,).
+            weights: Per-camera scalar weights (sqrt of confidence).
+
+        Returns:
+            Triangulated 3D point, shape (3,).
+        """
+        origs = torch.stack([origins[cid] for cid in cam_ids])
+        dirs = torch.stack([directions[cid] for cid in cam_ids])
+
+        use_weights = any(weights.get(cid, 1.0) != 1.0 for cid in cam_ids)
+
+        if use_weights:
+            w = torch.tensor(
+                [weights.get(cid, 1.0) for cid in cam_ids],
+                dtype=origs.dtype,
+                device=origs.device,
+            )
+            return weighted_triangulate_rays(origs, dirs, w)
+
+        return triangulate_rays(origs, dirs)
+
+    def _convert_half_widths(
+        self,
+        per_point_hw_px: list[float],
+        per_point_depths: list[float],
+        per_point_inlier_ids: list[list[str]],
+        u_param: np.ndarray,
+        n_body_points: int,
+    ) -> np.ndarray:
+        """Convert pixel half-widths to world metres and interpolate to full body.
+
+        Args:
+            per_point_hw_px: Average half-width in pixels per valid body point.
+            per_point_depths: Depth below water surface per valid body point.
+            per_point_inlier_ids: Inlier camera IDs per valid body point.
+            u_param: Arc-length parameter values for valid body points.
+            n_body_points: Total number of body points (including invalid).
+
+        Returns:
+            Half-widths in world metres for all n_body_points positions,
+            shape (n_body_points,), float32. Invalid positions are filled
+            via linear interpolation / boundary extension.
+        """
+        hw_metres_valid: list[float] = []
+        for hw_px, depth_m, inlier_ids in zip(
+            per_point_hw_px, per_point_depths, per_point_inlier_ids, strict=True
+        ):
+            if inlier_ids:
+                cam_model = self._models[inlier_ids[0]]
+                focal_px = float(
+                    (cam_model.K[0, 0].item() + cam_model.K[1, 1].item()) / 2.0
+                )
+            else:
+                focal_px = float(next(iter(self._models.values())).K[0, 0].item())
+            hw_m = pixel_half_width_to_metres(hw_px, depth_m, focal_px)
+            hw_metres_valid.append(hw_m)
+
+        hw_metres_all = np.zeros(n_body_points, dtype=np.float32)
+        if len(u_param) >= 2:
+            fill_bounds: tuple[float, float] = (hw_metres_valid[0], hw_metres_valid[-1])
+            interp = scipy.interpolate.interp1d(
+                u_param,
+                np.array(hw_metres_valid, dtype=np.float64),
+                kind="linear",
+                bounds_error=False,
+                fill_value=fill_bounds,  # type: ignore[arg-type]
+            )
+            u_all = np.linspace(0.0, 1.0, n_body_points)
+            hw_metres_all = interp(u_all).astype(np.float32)
+        elif len(u_param) == 1:
+            hw_metres_all[:] = hw_metres_valid[0]
+
+        return hw_metres_all
+
+    @staticmethod
+    def _load_models(
+        calibration_path: Path,
+    ) -> dict[str, Any]:
+        """Load calibration and build per-camera RefractiveProjectionModel dict.
+
+        Args:
+            calibration_path: Path to AquaCal calibration JSON.
+
+        Returns:
+            Dict mapping camera_id to RefractiveProjectionModel.
+
+        Raises:
+            FileNotFoundError: If calibration_path does not exist.
+        """
+        from aquapose.calibration.loader import (
+            compute_undistortion_maps,
+            load_calibration_data,
+        )
+        from aquapose.calibration.projection import RefractiveProjectionModel
+
+        calib = load_calibration_data(str(calibration_path))
+        models: dict[str, Any] = {}
+        for cam_id, cam_data in calib.cameras.items():
+            maps = compute_undistortion_maps(cam_data)
+            models[cam_id] = RefractiveProjectionModel(
+                K=maps.K_new,
+                R=cam_data.R,
+                t=cam_data.t,
+                water_z=calib.water_z,
+                normal=calib.interface_normal,
+                n_air=calib.n_air,
+                n_water=calib.n_water,
+            )
+        return models

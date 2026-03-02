@@ -48,6 +48,8 @@ tests/
 
 - **CUDA tensors → numpy**: Always use `.cpu().numpy()`, never bare `.numpy()`. Projection and model functions may return CUDA tensors.
 - **Running tests**: Always use `hatch run test` (which excludes `@slow` and `@e2e`). Never use `pytest` directly with `-k` for quick confirmation — it bypasses the slow-test exclusion and can pick up GPU/data-dependent tests that take minutes.
+- **Ultralytics OBB corner order**: `obb.xyxyxyxy` returns corners as `[right-bottom, right-top, left-top, left-bottom]` — **not** `[TL, TR, BR, BL]`. The true top-left is `pts[2]`, not `pts[0]`. Training data uses `pca_obb` which returns `[TL, TR, BR, BL]`. When building affine crops from Ultralytics OBB corners, use `src = [pts[2], pts[1], pts[3]]` (TL, TR, BL).
+- **Training-inference crop matching**: Both seg and pose models are trained on stretch-filled crops (3-point affine mapping OBB corners to canvas corners). Inference must use the same stretch-fill — never letterbox/scale-to-fit. Letterboxing was removed from the codebase.
 
 ## Domain Conventions
 

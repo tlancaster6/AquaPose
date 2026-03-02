@@ -150,6 +150,8 @@ class MidlineStage:
         if not self._video_paths:
             raise ValueError("No cameras matched between video_dir and calibration.")
 
+        self._backend_kind = backend
+
         # Eagerly create backend (fail-fast on missing weights, unsupported kind)
         if backend == "pose_estimation":
             # Extract pose_estimation-specific fields from midline_config
@@ -177,6 +179,7 @@ class MidlineStage:
                 n_points=n_points,
                 min_area=min_area,
                 device=device,
+                crop_size=crop_size,
             )
 
     def run(self, context: PipelineContext) -> PipelineContext:
@@ -266,8 +269,14 @@ class MidlineStage:
                 )
                 annotated_per_frame.append(annotated)
 
-        # Apply orientation resolution if LUTs and tracklet groups available
-        if has_groups and self._lut_config is not None:
+        # Apply orientation resolution if LUTs and tracklet groups available.
+        # Skip for pose_estimation backend: keypoints are anatomically ordered
+        # (nose → tail), so midlines are already head-to-tail by construction.
+        if (
+            has_groups
+            and self._lut_config is not None
+            and self._backend_kind != "pose_estimation"
+        ):
             annotated_per_frame = self._apply_orientation(
                 annotated_per_frame,
                 tracklet_groups,  # type: ignore[arg-type]

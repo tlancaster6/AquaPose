@@ -82,7 +82,8 @@ class MidlineConfig:
             ``"pose_estimation"``.
         n_points: Number of midline points to produce per detection.
         min_area: Minimum mask area (pixels) required to attempt midline extraction
-            (``"segmentation"`` only).
+            (``"segmentation"`` only). Default 100 — conservative threshold for
+            128x64 crop space where a full fish body spans ~2000-4000 px².
         detection_tolerance: Maximum pixel distance for matching a tracklet
             centroid to a detection. OC-SORT Kalman predictions can drift
             10-30px from raw centroids during coast/recovery. Default 50.0.
@@ -109,7 +110,7 @@ class MidlineConfig:
     weights_path: str | None = None
     backend: str = "segmentation"
     n_points: int = 15
-    min_area: int = 300
+    min_area: int = 100
     detection_tolerance: float = 50.0
     speed_threshold: float = 2.0
     orientation_weight_geometric: float = 1.0
@@ -143,7 +144,9 @@ class AssociationConfig:
             to classify a frame as an inlier. Default 0.03 (3 cm -- fish are
             ~10 cm long, ~2 cm wide; 3 cm accommodates centroid jitter).
         score_min: Minimum affinity score to create a graph edge. Default 0.3.
-        t_min: Minimum shared frames for a tracklet pair to be scored. Default 10.
+        t_min: Minimum shared frames for a tracklet pair to be scored. Default 3
+            (matches ``n_init`` so tracklets confirmed by tracking can always be
+            scored; raise for longer clips to reduce noise).
         t_saturate: Frame count at which overlap reliability saturates. Default 100.
         early_k: Number of initial frames for early termination check. Default 10.
         expected_fish_count: Number of fish in the tank (fixed). Default 9.
@@ -164,7 +167,7 @@ class AssociationConfig:
 
     ray_distance_threshold: float = 0.03
     score_min: float = 0.3
-    t_min: int = 10
+    t_min: int = 3
     t_saturate: int = 100
     early_k: int = 10
     expected_fish_count: int = 9
@@ -615,7 +618,7 @@ def load_config(
         # Resolve sub-config path fields
         for sub_kwargs, field_names in [
             (det_kwargs, ["model_path"]),
-            (mid_kwargs, ["weights_path"]),
+            (mid_kwargs, ["weights_path", "keypoint_weights_path"]),
         ]:
             for fname in field_names:
                 val = sub_kwargs.get(fname, "")

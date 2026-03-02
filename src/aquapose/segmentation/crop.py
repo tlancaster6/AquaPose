@@ -138,8 +138,8 @@ class AffineCrop:
 
     Attributes:
         image: Cropped image array of shape ``(crop_h, crop_w, C)`` or
-            ``(crop_h, crop_w)``. Pixels outside the source frame are filled
-            with zero (letterbox padding).
+            ``(crop_h, crop_w)``. Pixels outside the source frame are
+            zero-filled.
         M: Affine transform matrix of shape ``(2, 3)``, float64, mapping
             frame coordinates to crop coordinates.
         crop_size: Output canvas size as ``(width, height)`` in pixels.
@@ -159,22 +159,13 @@ def extract_affine_crop(
     obb_w: float,
     obb_h: float,
     crop_size: tuple[int, int],
-    padding_fraction: float = 0.15,
     interpolation: int = cv2.INTER_LINEAR,
-    fit_obb: bool = False,
-    mask_background: bool = False,
 ) -> AffineCrop:
     """Extract a rotation-aligned crop centred on an OBB detection.
 
     Builds an affine warp that rotates the frame so the OBB's long axis is
-    horizontal, then centres the OBB centre in the crop canvas.  Pixels
-    outside the source frame are zero-filled (letterbox padding).
-
-    When ``fit_obb`` is True, the warp also scales the OBB so it fits
-    inside the crop canvas (letterbox-style, preserving aspect ratio).
-    This is needed by backends whose models were trained on letterboxed
-    crops.  ``invert_affine_points`` correctly inverts the combined
-    rotation+scale+translation.
+    horizontal, then centres the OBB centre in the crop canvas at native
+    pixel scale.  Pixels outside the source frame are zero-filled.
 
     Args:
         frame: Source image of shape ``(H, W)`` or ``(H, W, C)``.
@@ -184,20 +175,8 @@ def extract_affine_crop(
         obb_w: OBB width in pixels (along the fish's long axis).
         obb_h: OBB height in pixels (across the fish body).
         crop_size: Output canvas size ``(width, height)`` in pixels.
-        padding_fraction: Reserved for future scaled-canvas support.
-            Currently unused when ``fit_obb`` is False.  When ``fit_obb``
-            is True, leaves this fraction as margin on each side.
         interpolation: OpenCV interpolation flag for ``cv2.warpAffine``.
             Defaults to ``cv2.INTER_LINEAR``.
-        fit_obb: When True, scale the warp so the OBB fits inside the
-            crop canvas.  Defaults to False (native pixel scale).
-        mask_background: When True, zero out pixels outside the OBB
-            region in crop space after the affine warp.  The visible
-            rectangle is centered in the crop at the scaled OBB size
-            plus ``padding_fraction`` margin on each side.  This
-            replicates the letterboxed training appearance for models
-            that were trained on black-background crops.  Defaults to
-            False (preserve all warped pixels).
 
     Returns:
         :class:`AffineCrop` containing the warped image, the transform
@@ -209,11 +188,8 @@ def extract_affine_crop(
     # Convert standard math angle (CCW, radians) -> cv2 angle (CW, degrees)
     angle_cv2_deg = math.degrees(-angle_math_rad)
 
-    # Compute scale: fit OBB into canvas if requested, otherwise native scale
-    scale = min(crop_w / max(obb_w, 1.0), crop_h / max(obb_h, 1.0)) if fit_obb else 1.0
-
-    # Build a rotation+scale matrix about the OBB centre
-    M_rot = cv2.getRotationMatrix2D((cx, cy), angle_cv2_deg, scale=scale)
+    # Build a rotation matrix about the OBB centre (native scale)
+    M_rot = cv2.getRotationMatrix2D((cx, cy), angle_cv2_deg, scale=1.0)
 
     # Translate so that the OBB centre lands at the centre of the crop canvas
     M_rot[0, 2] += crop_w / 2 - cx
@@ -227,22 +203,6 @@ def extract_affine_crop(
         borderMode=cv2.BORDER_CONSTANT,
         borderValue=0,
     )
-
-    if mask_background:
-        # Compute visible rectangle: OBB scaled to crop space + padding margin.
-        # The affine warp rotates the OBB to axis-aligned and (optionally)
-        # scales it, so the visible region is a simple centred rectangle.
-        vis_w = obb_w * scale * (1.0 + 2.0 * padding_fraction)
-        vis_h = obb_h * scale * (1.0 + 2.0 * padding_fraction)
-
-        x0 = max(0, round(crop_w / 2.0 - vis_w / 2.0))
-        y0 = max(0, round(crop_h / 2.0 - vis_h / 2.0))
-        x1 = min(crop_w, round(crop_w / 2.0 + vis_w / 2.0))
-        y1 = min(crop_h, round(crop_h / 2.0 + vis_h / 2.0))
-
-        mask = np.zeros_like(crop_image)
-        mask[y0:y1, x0:x1] = 1
-        crop_image = crop_image * mask
 
     return AffineCrop(
         image=crop_image,

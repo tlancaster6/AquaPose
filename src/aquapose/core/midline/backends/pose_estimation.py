@@ -1,21 +1,29 @@
 """Pose estimation backend for the Midline stage.
 
 Implements YOLO-pose inference with confidence-filtered keypoint spline
-interpolation to produce Midline2D objects in full-frame coordinates.  Uses
-OBB-aligned affine crops prepared by ``extract_affine_crop`` and back-projects
-interpolated keypoints via the inverse affine transform.
+interpolation to produce Midline2D objects in full-frame coordinates.  When
+OBB corner points are available, crops are prepared by directly mapping the
+three OBB corners to the crop canvas corners via ``cv2.getAffineTransform``,
+stretching the fish to fill the entire canvas — matching the training data
+preparation.  Interpolated keypoints are back-projected to full-frame
+coordinates via the inverse affine transform.
 """
 
 from __future__ import annotations
 
 import logging
 
+import cv2
 import numpy as np
 from scipy.interpolate import interp1d
 
 from aquapose.core.midline.types import AnnotatedDetection
 from aquapose.reconstruction.midline import Midline2D
-from aquapose.segmentation.crop import extract_affine_crop, invert_affine_points
+from aquapose.segmentation.crop import (
+    AffineCrop,
+    extract_affine_crop,
+    invert_affine_points,
+)
 from aquapose.segmentation.detector import Detection
 
 __all__ = ["PoseEstimationBackend"]
@@ -283,7 +291,7 @@ class PoseEstimationBackend:
             fish_id=0,
             camera_id=cam_id,
             frame_index=frame_idx,
-            is_head_to_tail=False,
+            is_head_to_tail=True,
             point_confidence=conf_resampled,
         )
 
@@ -300,8 +308,19 @@ class PoseEstimationBackend:
         self,
         det: Detection,
         frame: np.ndarray,
-    ) -> object:
+    ) -> AffineCrop:
         """Extract an OBB-aligned affine crop for a detection.
+
+        When OBB corner points are available, uses ``cv2.getAffineTransform``
+        to map TL→(0,0), TR→(W-1,0), BL→(0,H-1), stretching the OBB to
+        fill the entire crop canvas — matching training data preparation.
+
+        Ultralytics ``obb_points`` (``xyxyxyxy``) are ordered as
+        [right-bottom, right-top, left-top, left-bottom] (i.e. ``pts[2]``
+        is the true top-left corner, not ``pts[0]``).
+
+        Falls back to ``extract_affine_crop`` at native scale when OBB corner
+        points are absent.
 
         Args:
             det: Detection with optional OBB fields.
@@ -310,10 +329,55 @@ class PoseEstimationBackend:
         Returns:
             AffineCrop object.
         """
+        crop_w, crop_h = self._crop_size
+
+        if det.obb_points is not None and len(det.obb_points) >= 4:
+            pts = np.asarray(det.obb_points, dtype=np.float32)
+            # Ultralytics xyxyxyxy corner order (from xywhr2xyxyxyxy):
+            #   pts[0] = right-bottom  (center + long_vec + perp_vec)
+            #   pts[1] = right-top     (center + long_vec - perp_vec)
+            #   pts[2] = left-top      (center - long_vec - perp_vec)  ← LT
+            #   pts[3] = left-bottom   (center - long_vec + perp_vec)  ← LB
+            #
+            # Ultralytics does NOT guarantee w >= h.  When the fish long axis
+            # happens to be in the "h" direction (LT→LB longer than LT→RT),
+            # naively mapping LT→RT to crop-width produces a 90-degree-rotated,
+            # aspect-ratio-flipped crop that does not match training.
+            #
+            # Fix: measure both sides and always map the LONG side to crop-width.
+            #   Normal case  (LT→RT is long): src = [LT, RT, LB]
+            #   Rotated case (LT→LB is long): rotate 90° → src = [LB, LT, RB]
+            #     so that LB→LT (= long axis) maps to crop width, LB→RB maps to height.
+            lt, rt, lb = pts[2], pts[1], pts[3]
+            side_w = float(np.linalg.norm(rt - lt))  # LT→RT ("w" direction)
+            side_h = float(np.linalg.norm(lb - lt))  # LT→LB ("h" direction)
+            if side_h > side_w:
+                # Long axis is h: rotate corner assignment so long axis → crop width
+                rb = pts[0]
+                src = np.array([lb, lt, rb], dtype=np.float32)
+            else:
+                src = np.array([lt, rt, lb], dtype=np.float32)
+            dst = np.array([[0, 0], [crop_w - 1, 0], [0, crop_h - 1]], dtype=np.float32)
+            M = cv2.getAffineTransform(src, dst)
+            crop_image = cv2.warpAffine(
+                frame,
+                M,
+                (crop_w, crop_h),
+                flags=cv2.INTER_LINEAR,
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=0,
+            )
+            return AffineCrop(
+                image=crop_image,
+                M=M.astype(np.float64),
+                crop_size=self._crop_size,
+                frame_shape=frame.shape[:2],
+            )
+
+        # Fallback for non-OBB detectors
         x, y, w, h = det.bbox
         cx = float(x + w / 2.0)
         cy = float(y + h / 2.0)
-
         angle = float(det.angle) if det.angle is not None else 0.0
 
         if det.obb_points is not None and len(det.obb_points) >= 2:
@@ -331,8 +395,6 @@ class PoseEstimationBackend:
             obb_w=obb_w,
             obb_h=obb_h,
             crop_size=self._crop_size,
-            fit_obb=True,
-            mask_background=True,
         )
 
     def _extract_keypoints(

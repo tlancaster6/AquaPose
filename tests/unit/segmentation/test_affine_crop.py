@@ -4,7 +4,7 @@ Validates:
 - extract_affine_crop() produces correctly-sized, rotation-aligned crops
 - invert_affine_point() back-projects with < 1px round-trip error
 - invert_affine_points() batch API works identically
-- Zero-fill letterbox padding for out-of-bounds regions
+- Zero-fill for out-of-bounds regions
 - Round-trip accuracy across multiple rotation angles (DET-03)
 """
 
@@ -221,12 +221,12 @@ def test_round_trip_batch(angle_rad: float) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Border fill / letterbox
+# Border fill
 # ---------------------------------------------------------------------------
 
 
 def test_affine_crop_border_fill_is_zero() -> None:
-    """Pixels outside the source frame are zero-filled (letterbox padding)."""
+    """Pixels outside the source frame are zero-filled."""
     # Small frame, large crop — most of crop canvas will be outside source
     frame = np.ones((50, 50, 3), dtype=np.uint8) * 127  # mid-gray frame
 
@@ -249,95 +249,9 @@ def test_affine_crop_border_fill_is_zero() -> None:
         crop[-1, -1],
     ]
     for corner in corners:
-        assert np.all(corner == 0), (
-            f"Corner pixel should be zero (letterbox), got {corner}"
-        )
+        assert np.all(corner == 0), f"Corner pixel should be zero, got {corner}"
 
     # Check that centre region has non-zero values (from the actual frame)
     cy, cx = 200, 200
     centre_patch = crop[cy - 10 : cy + 10, cx - 10 : cx + 10]
     assert centre_patch.max() > 0, "Centre of crop should contain frame pixels"
-
-
-# ---------------------------------------------------------------------------
-# mask_background
-# ---------------------------------------------------------------------------
-
-
-def test_mask_background_zeros_outside_obb() -> None:
-    """mask_background=True zeros pixels outside the OBB rectangle in crop space."""
-    # White frame so any masked region is visibly black
-    frame = np.ones((400, 600, 3), dtype=np.uint8) * 255
-
-    result = extract_affine_crop(
-        frame=frame,
-        center_xy=(300.0, 200.0),
-        angle_math_rad=0.0,
-        obb_w=200.0,
-        obb_h=60.0,
-        crop_size=(256, 256),
-        fit_obb=True,
-        mask_background=True,
-        padding_fraction=0.15,
-    )
-
-    crop = result.image
-    # Corners should be zeroed (outside the OBB visible rectangle)
-    assert np.all(crop[0, 0] == 0), "Top-left corner should be masked to zero"
-    assert np.all(crop[0, -1] == 0), "Top-right corner should be masked to zero"
-    assert np.all(crop[-1, 0] == 0), "Bottom-left corner should be masked to zero"
-    assert np.all(crop[-1, -1] == 0), "Bottom-right corner should be masked to zero"
-
-    # Centre should still have content (white pixels from the frame)
-    ch, cw = crop.shape[0] // 2, crop.shape[1] // 2
-    centre = crop[ch - 5 : ch + 5, cw - 5 : cw + 5]
-    assert centre.max() > 200, "Centre should retain bright frame pixels"
-
-
-def test_mask_background_respects_padding() -> None:
-    """Visible region grows with padding_fraction."""
-    frame = np.ones((400, 600, 3), dtype=np.uint8) * 255
-    crop_size = (256, 256)
-
-    def count_nonzero_pixels(pad: float) -> int:
-        result = extract_affine_crop(
-            frame=frame,
-            center_xy=(300.0, 200.0),
-            angle_math_rad=0.0,
-            obb_w=100.0,
-            obb_h=40.0,
-            crop_size=crop_size,
-            fit_obb=True,
-            mask_background=True,
-            padding_fraction=pad,
-        )
-        return int(np.count_nonzero(result.image))
-
-    small_pad = count_nonzero_pixels(0.05)
-    large_pad = count_nonzero_pixels(0.50)
-    assert large_pad > small_pad, (
-        f"Larger padding should expose more pixels: {large_pad} <= {small_pad}"
-    )
-
-
-def test_mask_background_false_default() -> None:
-    """Default mask_background=False preserves all warped pixels (backward compat)."""
-    frame = np.ones((200, 300, 3), dtype=np.uint8) * 180
-
-    result = extract_affine_crop(
-        frame=frame,
-        center_xy=(150.0, 100.0),
-        angle_math_rad=0.0,
-        obb_w=100.0,
-        obb_h=50.0,
-        crop_size=(128, 128),
-        fit_obb=True,
-    )
-
-    # With a small frame that fills the crop, corners should NOT be zero
-    # (the default does not apply any background mask)
-    crop = result.image
-    assert crop.max() > 0, "Default should have non-zero pixels"
-    # Centre should definitely have content
-    ch, cw = crop.shape[0] // 2, crop.shape[1] // 2
-    assert crop[ch, cw].max() > 100, "Centre should have frame content"

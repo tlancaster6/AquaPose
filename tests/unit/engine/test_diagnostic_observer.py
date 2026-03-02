@@ -584,3 +584,158 @@ def test_on_pipeline_complete_exports_midline_fixtures(tmp_path: Path) -> None:
     assert out_file.exists(), (
         "midline_fixtures.npz should be auto-exported on PipelineComplete"
     )
+
+
+# ---------------------------------------------------------------------------
+# Helpers for v2.0 export tests (Task 2 of 41-01)
+# ---------------------------------------------------------------------------
+
+
+class _MockProjectionModel:
+    """Minimal mock matching RefractiveProjectionModel attribute structure."""
+
+    def __init__(
+        self,
+        cam_id: str,
+        offset: float = 0.0,
+    ) -> None:
+        import torch
+
+        self.K = torch.eye(3, dtype=torch.float32) * (offset + 1.0)
+        self.R = torch.eye(3, dtype=torch.float32)
+        self.t = torch.tensor([offset, 0.0, 0.0], dtype=torch.float32)
+        self.water_z = -0.5
+        self.normal = torch.tensor([0.0, 0.0, -1.0], dtype=torch.float32)
+        self.n_air = 1.0
+        self.n_water = 1.333
+
+
+def _make_models_dict(cam_ids: tuple[str, ...]) -> dict[str, _MockProjectionModel]:
+    """Build a mock models dict keyed by camera_id."""
+    return {
+        cam_id: _MockProjectionModel(cam_id, float(i))
+        for i, cam_id in enumerate(cam_ids)
+    }
+
+
+def _make_full_fixture_observer(
+    cam_ids: tuple[str, ...],
+    frames: tuple[int, ...],
+    fish_id: int = 0,
+) -> tuple[DiagnosticObserver, list]:
+    """Create observer and annotated_detections list for a full fixture scenario."""
+    observer = DiagnosticObserver()
+
+    tracklets = tuple(
+        _make_tracklet2d(cam_id, i, frames) for i, cam_id in enumerate(cam_ids)
+    )
+    group = TrackletGroup(
+        fish_id=fish_id,
+        tracklets=tracklets,
+        confidence=0.9,
+        per_frame_confidence=tuple(0.9 for _ in frames),
+        consensus_centroids=None,
+    )
+    _fire_association_stage(observer, [group])
+
+    annotated: list[dict] = []
+    for fidx, frame_idx in enumerate(frames):
+        frame_annot: dict = {}
+        for ti, cam_id in enumerate(cam_ids):
+            midline = _make_midline2d(fish_id, cam_id, frame_idx)
+            centroid = tracklets[ti].centroids[fidx]
+            frame_annot[cam_id] = [_make_annotated_detection(midline, centroid)]
+        annotated.append(frame_annot)
+
+    _fire_midline_stage(observer, annotated, len(frames), list(cam_ids))
+    return observer, annotated
+
+
+# ---------------------------------------------------------------------------
+# Tests for export_midline_fixtures v2.0 (Task 2 of 41-01)
+# ---------------------------------------------------------------------------
+
+
+def test_export_without_models_writes_v10(tmp_path: Path) -> None:
+    """export_midline_fixtures with models=None writes version 1.0 (backward compat)."""
+    cam_ids = ("cam_a", "cam_b")
+    observer, _ = _make_full_fixture_observer(cam_ids=cam_ids, frames=(0,))
+
+    out_path = tmp_path / "fixture.npz"
+    observer.export_midline_fixtures(out_path)
+
+    data = np.load(str(out_path), allow_pickle=True)
+    assert str(data["meta/version"]) == "1.0"
+    # No calib/ keys should be written
+    calib_keys = [k for k in data.files if k.startswith("calib/")]
+    assert len(calib_keys) == 0
+
+
+def test_export_with_models_writes_v20(tmp_path: Path) -> None:
+    """export_midline_fixtures with models dict writes version 2.0."""
+    cam_ids = ("cam_a", "cam_b")
+    observer, _ = _make_full_fixture_observer(cam_ids=cam_ids, frames=(0,))
+    models = _make_models_dict(cam_ids)
+
+    out_path = tmp_path / "fixture.npz"
+    observer.export_midline_fixtures(out_path, models=models)
+
+    data = np.load(str(out_path), allow_pickle=True)
+    assert str(data["meta/version"]) == "2.0"
+
+
+def test_export_with_models_writes_calib_keys(tmp_path: Path) -> None:
+    """export_midline_fixtures with models writes expected calib/ keys."""
+    cam_ids = ("cam_a", "cam_b")
+    observer, _ = _make_full_fixture_observer(cam_ids=cam_ids, frames=(0,))
+    models = _make_models_dict(cam_ids)
+
+    out_path = tmp_path / "fixture.npz"
+    observer.export_midline_fixtures(out_path, models=models)
+
+    data = np.load(str(out_path), allow_pickle=True)
+
+    # Shared keys
+    assert "calib/water_z" in data
+    assert "calib/n_air" in data
+    assert "calib/n_water" in data
+    assert "calib/interface_normal" in data
+    assert data["calib/interface_normal"].shape == (3,)
+
+    # Per-camera keys
+    for cam_id in cam_ids:
+        assert f"calib/{cam_id}/K_new" in data
+        assert data[f"calib/{cam_id}/K_new"].shape == (3, 3)
+        assert f"calib/{cam_id}/R" in data
+        assert data[f"calib/{cam_id}/R"].shape == (3, 3)
+        assert f"calib/{cam_id}/t" in data
+        assert data[f"calib/{cam_id}/t"].shape == (3,)
+
+
+def test_export_with_models_round_trip(tmp_path: Path) -> None:
+    """export with models -> load_midline_fixture -> CalibBundle matches originals."""
+    import torch
+
+    from aquapose.io.midline_fixture import load_midline_fixture
+
+    cam_ids = ("cam_a", "cam_b")
+    observer, _ = _make_full_fixture_observer(cam_ids=cam_ids, frames=(0,))
+    models = _make_models_dict(cam_ids)
+
+    out_path = tmp_path / "fixture.npz"
+    observer.export_midline_fixtures(out_path, models=models)
+
+    fixture = load_midline_fixture(out_path)
+    cb = fixture.calib_bundle
+
+    assert cb is not None
+    assert set(cb.camera_ids) == set(cam_ids)
+    assert abs(cb.water_z - (-0.5)) < 1e-6
+    assert abs(cb.n_air - 1.0) < 1e-6
+    assert abs(cb.n_water - 1.333) < 1e-4
+
+    for i, cam_id in enumerate(cam_ids):
+        expected_K = (torch.eye(3, dtype=torch.float32) * float(i + 1)).numpy()
+        np.testing.assert_allclose(cb.K_new[cam_id], expected_K, atol=1e-6)
+        expected_t = np.array([float(i), 0.0, 0.0], dtype=np.float32)
+        np.testing.assert_allclose(cb.t[cam_id], expected_t, atol=1e-6)

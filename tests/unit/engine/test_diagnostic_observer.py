@@ -334,6 +334,36 @@ def test_export_centroid_correspondences_skips_none_consensus(tmp_path: Path) ->
     assert data["centroids_2d"].shape == (0, 2)
 
 
+# ---------------------------------------------------------------------------
+# Tests for MidlineFixture dataclass (Task 1)
+# ---------------------------------------------------------------------------
+
+
+def test_midline_fixture_importable() -> None:
+    """MidlineFixture is importable from aquapose.io.midline_fixture."""
+    from aquapose.io.midline_fixture import NPZ_VERSION, MidlineFixture  # noqa: F401
+
+    assert NPZ_VERSION == "1.0"
+
+
+def test_midline_fixture_is_frozen_dataclass() -> None:
+    """MidlineFixture is a frozen dataclass with the correct fields."""
+    from aquapose.io.midline_fixture import MidlineFixture
+
+    fixture = MidlineFixture(
+        frames=(),
+        frame_indices=(),
+        camera_ids=(),
+        metadata={},
+    )
+    import dataclasses
+
+    import pytest
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        fixture.frames = ()  # type: ignore[misc]
+
+
 def test_snapshot_has_tracks_2d_and_tracklet_groups_fields() -> None:
     """StageSnapshot has tracks_2d and tracklet_groups fields (v2.1)."""
     observer = DiagnosticObserver()

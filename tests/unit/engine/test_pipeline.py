@@ -117,7 +117,8 @@ def test_pipeline_writes_config_artifact(tmp_path: Path) -> None:
     pipeline = PosePipeline(stages=[MockStage("x")], config=config)
     pipeline.run()
 
-    config_file = tmp_path / "config.yaml"
+    # load_config appends run_id as a subdirectory under output_dir
+    config_file = Path(config.output_dir) / "config.yaml"
     assert config_file.exists(), "config.yaml must be written to output_dir"
 
     parsed = yaml.safe_load(config_file.read_text(encoding="utf-8"))
@@ -130,7 +131,8 @@ def test_config_artifact_written_before_stages(tmp_path: Path) -> None:
     config = load_config(
         run_id="test_run", cli_overrides={"n_animals": 3, "output_dir": str(tmp_path)}
     )
-    checker = ConfigCheckStage(output_dir=tmp_path)
+    # load_config appends run_id as a subdirectory under output_dir
+    checker = ConfigCheckStage(output_dir=Path(config.output_dir))
     pipeline = PosePipeline(stages=[checker], config=config)
     pipeline.run()
 

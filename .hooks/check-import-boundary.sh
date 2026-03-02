@@ -4,4 +4,4 @@
 # Invoked by pre-commit with the list of changed Python files as arguments.
 # Passes all arguments through to the Python checker.
 set -euo pipefail
-python tools/import_boundary_checker.py "$@"
+python3 tools/import_boundary_checker.py "$@"

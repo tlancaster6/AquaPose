@@ -11,7 +11,8 @@ from pathlib import Path
 import numpy as np
 
 from aquapose.engine.events import Event, PipelineComplete, StageComplete
-from aquapose.io.midline_fixture import NPZ_VERSION
+
+_NPZ_VERSION_V1 = "1.0"
 
 logger = logging.getLogger(__name__)
 
@@ -316,7 +317,7 @@ class DiagnosticObserver:
 
         # Meta arrays
         timestamp_str = datetime.datetime.now(datetime.UTC).isoformat()
-        npz_arrays["meta/version"] = np.array(NPZ_VERSION, dtype=object)
+        npz_arrays["meta/version"] = np.array(_NPZ_VERSION_V1, dtype=object)
         npz_arrays["meta/camera_ids"] = np.array(
             camera_ids_list if camera_ids_list else sorted(all_camera_ids), dtype=object
         )

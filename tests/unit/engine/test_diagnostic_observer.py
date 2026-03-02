@@ -346,7 +346,7 @@ def test_midline_fixture_importable() -> None:
     """MidlineFixture is importable from aquapose.io.midline_fixture."""
     from aquapose.io.midline_fixture import NPZ_VERSION, MidlineFixture  # noqa: F401
 
-    assert NPZ_VERSION == "1.0"
+    assert NPZ_VERSION == "2.0"
 
 
 def test_midline_fixture_is_frozen_dataclass() -> None:

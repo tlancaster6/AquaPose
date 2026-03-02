@@ -1,8 +1,8 @@
 """Backend registry for the Reconstruction stage.
 
 Provides a factory function that resolves reconstruction backend kind strings
-to configured backend instances. Supports "triangulation" (default) and
-"curve_optimizer".
+to configured backend instances. Supports "triangulation" (default),
+"curve_optimizer", and "dlt".
 """
 
 from __future__ import annotations
@@ -22,6 +22,10 @@ def get_backend(kind: str, **kwargs: Any) -> object:
               fitting backend. Delegates to ``triangulate_midlines()``.
             - ``"curve_optimizer"``: Correspondence-free 3D B-spline optimization
               via chamfer distance. Delegates to ``CurveOptimizer.optimize_midlines()``.
+            - ``"dlt"``: Confidence-weighted DLT triangulation with single-pass
+              outlier rejection. Accepted kwargs: ``calibration_path``,
+              ``outlier_threshold``, ``n_control_points``,
+              ``low_confidence_fraction``.
 
         **kwargs: Forwarded to the backend constructor. For ``"triangulation"``,
             accepted kwargs are: ``calibration_path``, ``inlier_threshold``,
@@ -49,7 +53,12 @@ def get_backend(kind: str, **kwargs: Any) -> object:
 
         return CurveOptimizerBackend(**kwargs)
 
+    if kind == "dlt":
+        from aquapose.core.reconstruction.backends.dlt import DltBackend
+
+        return DltBackend(**kwargs)
+
     raise ValueError(
         f"Unknown reconstruction backend kind: {kind!r}. "
-        f"Supported kinds: ['triangulation', 'curve_optimizer']"
+        f"Supported kinds: ['triangulation', 'curve_optimizer', 'dlt']"
     )

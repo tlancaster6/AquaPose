@@ -16,6 +16,7 @@ from aquapose.core.types.midline import Midline2D
 from aquapose.engine.diagnostic_observer import DiagnosticObserver
 from aquapose.engine.events import StageComplete
 from aquapose.io.midline_fixture import (
+    CalibBundle,
     MidlineFixture,
     load_midline_fixture,
 )
@@ -331,3 +332,143 @@ def test_point_confidence_preserved(tmp_path: Path) -> None:
     assert np.allclose(
         loaded_midline.point_confidence, midline.point_confidence, atol=1e-6
     )
+
+
+# ---------------------------------------------------------------------------
+# CalibBundle and v2.0 NPZ format tests (Task 1 of 41-01)
+# ---------------------------------------------------------------------------
+
+
+def _make_v20_npz(
+    tmp_path: Path,
+    cam_ids: tuple[str, ...] = ("cam_a", "cam_b"),
+    n_points: int = 5,
+) -> Path:
+    """Write a minimal v2.0 NPZ file with calib/ keys and midline data.
+
+    Returns the path to the written file.
+    """
+    npz_path = tmp_path / "fixture_v20.npz"
+
+    arrays: dict[str, object] = {
+        "meta/version": np.array("2.0", dtype=object),
+        "meta/camera_ids": np.array(list(cam_ids), dtype=object),
+        "meta/frame_indices": np.array([0], dtype=np.int64),
+        "meta/frame_count": np.array(1, dtype=np.int64),
+        "meta/timestamp": np.array("2026-01-01T00:00:00+00:00", dtype=object),
+        # calib shared keys
+        "calib/water_z": np.float32(-0.5),
+        "calib/n_air": np.float32(1.0),
+        "calib/n_water": np.float32(1.333),
+        "calib/interface_normal": np.array([0.0, 0.0, -1.0], dtype=np.float32),
+    }
+    # Per-camera calib arrays and one midline entry per camera
+    for i, cam_id in enumerate(cam_ids):
+        K = np.eye(3, dtype=np.float32) * float(i + 1)
+        R = np.eye(3, dtype=np.float32)
+        t = np.array([float(i), 0.0, 0.0], dtype=np.float32)
+        arrays[f"calib/{cam_id}/K_new"] = K
+        arrays[f"calib/{cam_id}/R"] = R
+        arrays[f"calib/{cam_id}/t"] = t
+
+        prefix = f"midline/0/0/{cam_id}"
+        pts = np.arange(n_points * 2, dtype=np.float32).reshape(n_points, 2)
+        arrays[f"{prefix}/points"] = pts
+        arrays[f"{prefix}/half_widths"] = np.ones(n_points, dtype=np.float32)
+        arrays[f"{prefix}/point_confidence"] = np.ones(n_points, dtype=np.float32)
+        arrays[f"{prefix}/is_head_to_tail"] = np.array(True, dtype=np.bool_)
+
+    np.savez_compressed(str(npz_path), **arrays)
+    return npz_path
+
+
+def test_v10_backward_compat_calib_bundle_is_none(tmp_path: Path) -> None:
+    """load_midline_fixture on a v1.0 NPZ returns MidlineFixture with calib_bundle=None."""
+    # Write a standard v1.0 fixture using the round-trip helper from existing tests
+    observer = DiagnosticObserver()
+    cam = "cam_a"
+    frames = (0,)
+    tracklet = _make_tracklet2d(cam, 0, frames)
+    group = TrackletGroup(
+        fish_id=0,
+        tracklets=(tracklet,),
+        confidence=0.9,
+        per_frame_confidence=(0.9,),
+        consensus_centroids=None,
+    )
+    _fire_association_stage(observer, [group])
+    midline = _make_midline2d(0, cam, 0)
+    centroid = tracklet.centroids[0]
+    frame0_annot = {cam: [_make_annotated_detection(midline, centroid)]}
+    _fire_midline_stage(observer, [frame0_annot], 1, [cam])
+
+    npz_path = _write_fixture(tmp_path, observer)
+    fixture = load_midline_fixture(npz_path)
+
+    assert isinstance(fixture, MidlineFixture)
+    assert fixture.calib_bundle is None
+
+
+def test_v20_calib_bundle_populated(tmp_path: Path) -> None:
+    """load_midline_fixture on a v2.0 NPZ returns MidlineFixture with populated CalibBundle."""
+    cam_ids = ("cam_a", "cam_b")
+    npz_path = _make_v20_npz(tmp_path, cam_ids=cam_ids)
+    fixture = load_midline_fixture(npz_path)
+
+    assert isinstance(fixture, MidlineFixture)
+    assert fixture.calib_bundle is not None
+    assert isinstance(fixture.calib_bundle, CalibBundle)
+
+
+def test_v20_calib_bundle_fields_match(tmp_path: Path) -> None:
+    """CalibBundle fields match the arrays written to calib/ keys."""
+    cam_ids = ("cam_a", "cam_b")
+    npz_path = _make_v20_npz(tmp_path, cam_ids=cam_ids)
+    fixture = load_midline_fixture(npz_path)
+
+    cb = fixture.calib_bundle
+    assert cb is not None
+
+    assert abs(cb.water_z - (-0.5)) < 1e-6
+    assert abs(cb.n_air - 1.0) < 1e-6
+    assert abs(cb.n_water - 1.333) < 1e-4
+    np.testing.assert_allclose(
+        cb.interface_normal, np.array([0.0, 0.0, -1.0], dtype=np.float32), atol=1e-6
+    )
+
+    for i, cam_id in enumerate(cam_ids):
+        expected_K = np.eye(3, dtype=np.float32) * float(i + 1)
+        expected_R = np.eye(3, dtype=np.float32)
+        expected_t = np.array([float(i), 0.0, 0.0], dtype=np.float32)
+        np.testing.assert_allclose(cb.K_new[cam_id], expected_K, atol=1e-6)
+        np.testing.assert_allclose(cb.R[cam_id], expected_R, atol=1e-6)
+        np.testing.assert_allclose(cb.t[cam_id], expected_t, atol=1e-6)
+
+
+def test_v20_calib_bundle_camera_ids_match(tmp_path: Path) -> None:
+    """CalibBundle.camera_ids matches the cameras found in calib/ keys."""
+    cam_ids = ("cam_a", "cam_b")
+    npz_path = _make_v20_npz(tmp_path, cam_ids=cam_ids)
+    fixture = load_midline_fixture(npz_path)
+
+    cb = fixture.calib_bundle
+    assert cb is not None
+    assert set(cb.camera_ids) == set(cam_ids)
+
+
+def test_calib_bundle_is_frozen_dataclass() -> None:
+    """CalibBundle is a frozen dataclass that raises on assignment."""
+    import dataclasses
+
+    cb = CalibBundle(
+        camera_ids=("cam_a",),
+        K_new={"cam_a": np.eye(3, dtype=np.float32)},
+        R={"cam_a": np.eye(3, dtype=np.float32)},
+        t={"cam_a": np.zeros(3, dtype=np.float32)},
+        water_z=-0.5,
+        interface_normal=np.array([0.0, 0.0, -1.0], dtype=np.float32),
+        n_air=1.0,
+        n_water=1.333,
+    )
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        cb.water_z = 0.0  # type: ignore[misc]

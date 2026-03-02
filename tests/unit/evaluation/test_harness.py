@@ -7,9 +7,9 @@ from unittest import mock
 
 import numpy as np
 import pytest
-from aquapose.evaluation.harness import EvalResults, run_evaluation
 
 from aquapose.core.types.reconstruction import Midline3D
+from aquapose.evaluation.harness import EvalResults, run_evaluation
 
 # ---------------------------------------------------------------------------
 # Helpers: build synthetic NPZ fixture

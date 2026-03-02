@@ -5,4 +5,13 @@ loading a self-contained MidlineFixture and computing Tier 1 and Tier 2
 reconstruction metrics without running the full pipeline.
 """
 
-__all__: list[str] = []
+from aquapose.evaluation.harness import EvalResults, run_evaluation
+from aquapose.evaluation.metrics import Tier1Result, Tier2Result, select_frames
+
+__all__ = [
+    "EvalResults",
+    "Tier1Result",
+    "Tier2Result",
+    "run_evaluation",
+    "select_frames",
+]

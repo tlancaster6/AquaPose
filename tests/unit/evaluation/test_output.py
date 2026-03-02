@@ -6,9 +6,9 @@ import json
 from pathlib import Path
 
 import numpy as np
-from aquapose.evaluation.output import format_summary_table, write_regression_json
 
 from aquapose.evaluation.metrics import Tier1Result, Tier2Result
+from aquapose.evaluation.output import format_summary_table, write_regression_json
 
 # ---------------------------------------------------------------------------
 # Helpers: synthetic results

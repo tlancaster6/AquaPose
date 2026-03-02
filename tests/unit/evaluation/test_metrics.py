@@ -6,6 +6,8 @@ import warnings
 
 import numpy as np
 import pytest
+
+from aquapose.core.types.reconstruction import Midline3D
 from aquapose.evaluation.metrics import (
     Tier1Result,
     Tier2Result,
@@ -13,8 +15,6 @@ from aquapose.evaluation.metrics import (
     compute_tier2,
     select_frames,
 )
-
-from aquapose.core.types.reconstruction import Midline3D
 
 # ---------------------------------------------------------------------------
 # select_frames tests

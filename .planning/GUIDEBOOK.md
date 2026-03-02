@@ -43,11 +43,12 @@ No exceptions. No `TYPE_CHECKING` backdoors. Enforced by lint rule from the firs
 src/aquapose/
   calibration/        # AquaCal loading, refractive projection, ray casting, LUTs, uncertainty
   core/               # Layer 1: pure computation modules
+    types/            # Cross-stage shared types (Detection, CropRegion, AffineCrop, Midline2D, Midline3D, etc.)
     association/      # Cross-camera tracklet association (scoring, clustering, refinement, types)
-    detection/        # Detection stage, types, backends/ (yolo)
-    midline/          # Midline stage, types, orientation, backends/ (segment_then_extract, direct_pose)
-    reconstruction/   # Reconstruction stage, types, backends/ (triangulation, curve_optimizer)
-    tracking/         # 2D tracking stage, types, backends/
+    detection/        # Detection stage, types, backends/ (yolo.py: YOLODetector, make_detector())
+    midline/          # Midline stage, types, backends/ (segmentation, pose_estimation); midline.py (MidlineExtractor), crop.py (affine crop utilities)
+    reconstruction/   # Reconstruction stage, types, backends/ (triangulation.py, curve_optimizer.py)
+    tracking/         # 2D tracking stage, types, backends/ (ocsort_wrapper.py: OcSortTracker)
     context.py        # PipelineContext
     synthetic.py      # Synthetic data generation utilities
   engine/             # Layer 2 + 3: orchestration and observability
@@ -65,10 +66,8 @@ src/aquapose/
     animation_observer.py  # 3D animation rendering observer
   cli.py              # CLI entrypoint
   io/                 # Video loading, HDF5 writing, discovery
-  reconstruction/     # Legacy: triangulation, curve_optimizer, midline
-  segmentation/       # U-Net model, training, crop, dataset, detector, pseudo-labeler
   synthetic/          # Detection stubs, fish models, rig, scenarios, trajectory
-  tracking/           # OC-SORT wrapper
+  training/           # YOLO training wrappers (yolo_obb, yolo_seg, yolo_pose)
   visualization/      # Overlay, diagnostics, midline_viz, plot3d, triangulation_viz, frames
 ```
 

@@ -131,7 +131,9 @@ Full details: `.planning/milestones/v3.0-ROADMAP.md`
   3. Tier 1 output shows per-fish, per-camera reprojection error with mean, max, and overall aggregates
   4. Tier 2 output shows leave-one-out camera stability as max control-point displacement across dropout runs
   5. Results are printed as a human-readable summary table and saved as machine-diffable regression data
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 41-01-PLAN.md — Extend fixture format with CalibBundle for self-contained evaluation
+- [ ] 41-02-PLAN.md — Evaluation harness core: frame selection, metrics, output
 
 ### Phase 42: Baseline Measurement
 **Goal**: Reference metrics from the current reconstruction backend are recorded and available for comparison
@@ -190,7 +192,7 @@ Phases execute in numeric order: 40 → 41 → 42 → 43 → 44 → 45
 | 29-33.1 | v2.2 | 12/12 | Complete | 2026-03-01 |
 | 35-39 | v3.0 | 14/14 | Complete | 2026-03-02 |
 | 40. Diagnostic Capture | 2/2 | Complete    | 2026-03-02 | - |
-| 41. Evaluation Harness | v3.1 | 0/? | Not started | - |
+| 41. Evaluation Harness | v3.1 | 0/2 | Not started | - |
 | 42. Baseline Measurement | v3.1 | 0/? | Not started | - |
 | 43. Triangulation Rebuild | v3.1 | 0/? | Not started | - |
 | 44. Validation and Tuning | v3.1 | 0/? | Not started | - |

@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Ultralytics Unification
 status: unknown
-last_updated: "2026-03-02T17:21:22.738Z"
+last_updated: "2026-03-02T18:16:50.575Z"
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 10
-  completed_plans: 9
+  total_plans: 14
+  completed_plans: 10
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-01)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 38 — Stabilization and Tech Debt Cleanup (ALL PLANS COMPLETE — Phase 38 done)
+**Current focus:** Phase 39 — Migrate Legacy Domain Libraries into Core Submodules (Plan 01 complete)
 
 ## Current Position
 
-Phase: 38 of 38 (Stabilization and Tech Debt Cleanup) — COMPLETE
-Plan: 4/4 complete in current phase
-Status: Plan 04 complete (dead code analysis, visualization/diagnostics.py deleted); Phase 38 fully complete
-Last activity: 2026-03-02 — Completed 38-04-PLAN.md (import graph analysis confirmed diagnostics.py as dead code, deleted with user approval)
+Phase: 39 of 39 (Migrate Legacy Domain Libraries into Core Submodules)
+Plan: 1/4 complete in current phase
+Status: Plan 01 complete (core/types/ package + implementation files relocated + YOLODetector merged); dual-path state established
+Last activity: 2026-03-02 — Completed 39-01-PLAN.md (created core/types/, relocated 5 implementation files, merged YOLODetector into detection backend)
 
-Progress: [██████████] ~100%
+Progress: [████████░░] ~78%
 
 ## Accumulated Context
 
@@ -79,6 +79,8 @@ Key decisions entering v3.0:
 - [Phase 38-02]: Identity flip_idx used for pose dataset.yaml; kpt_shape derived from annotation data with N_KEYPOINTS fallback
 - [Phase 38-04]: visualization/diagnostics.py deleted — confirmed zero importers via ast import graph; all other legacy directories (reconstruction/, segmentation/, tracking/) classified as canonical and load-bearing, kept in place
 - [Phase 38-04]: Broader organization concern (misleading directory names, cross-package private imports) deferred to Phase 39
+- [Phase 39]: core/types/ files import only stdlib + numpy — no implementation imports allowed in the types layer
+- [Phase 39]: Dual-path state established: both legacy and new core paths coexist until Plan 02 rewires consumers
 
 ### Pending Todos
 
@@ -105,5 +107,5 @@ Full-image ↔ crop-space conversions are a pervasive source of error, especiall
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 38-04-PLAN.md (dead code analysis and cleanup — Phase 38 fully complete)
+Stopped at: Completed 39-01-PLAN.md (core/types/ package + relocated implementation files + YOLODetector merged into detection backend)
 Resume file: None

@@ -39,7 +39,7 @@ Requirements for Ultralytics Unification milestone. Each maps to roadmap phases.
 
 ### Reorganization
 
-- [ ] **REORG-01**: Legacy top-level domain libraries (reconstruction/, segmentation/, tracking/) reorganized into core/ submodules with shared types extracted to core/types/
+- [x] **REORG-01**: Legacy top-level domain libraries (reconstruction/, segmentation/, tracking/) reorganized into core/ submodules with shared types extracted to core/types/
 
 ## Previous Milestone Requirements (v2.2)
 

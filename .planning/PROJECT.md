@@ -69,7 +69,17 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ### Active
 
-(No active milestone — use `/gsd:new-milestone` to start next)
+## Current Milestone: v3.1 Reconstruction
+
+**Goal:** Tear down the over-engineered reconstruction backends and rebuild from a minimal, empirically-validated triangulation baseline with a proper evaluation harness.
+
+**Target features:**
+- Diagnostic observer expansion to capture/serialize MidlineSet intermediate data
+- Evaluation harness with real-data fixtures (~300 frames) and automated metrics (Tier 1 reprojection, Tier 2 leave-one-out)
+- Stripped-down triangulation v1: confidence-weighted DLT, single strategy (no camera-count branching), B-spline fitting
+- Empirical outlier rejection tuning via evaluation harness
+- Dead code cleanup: strip old triangulation and curve optimizer backends
+- Stretch: Tier 3 synthetic ground-truth evaluation (leveraging existing synthetic data kit)
 
 ### Out of Scope
 
@@ -86,7 +96,7 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ## Context
 
-### Current State (v3.0 Ultralytics Unification shipped)
+### Current State (v3.1 Reconstruction in progress)
 
 - **Codebase:** 22,087 LOC source across `src/aquapose/` (calibration, core/, engine/, io, visualization), 18,829 LOC tests (656 tests)
 - **Architecture:** Event-driven 3-layer — Core Computation (5 stages) → PosePipeline (orchestrator) → Observers (6 side-effect handlers)
@@ -95,7 +105,7 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - **Midline backends:** SegmentationBackend (YOLO-seg + skeletonization) and PoseEstimationBackend (YOLO-pose + spline), selectable via `midline.backend` config field
 - **Training infrastructure:** `aquapose train {yolo-obb, seg, pose}` CLI subcommands with standard YOLO txt+yaml data format
 - **Core organization:** Shared types in `core/types/`, implementations in `core/<stage>/`, legacy top-level dirs eliminated
-- **Two reconstruction backends:** Triangulation (primary, fast) and curve optimizer (experimental, correspondence-free) — selected via config
+- **Reconstruction:** Being rebuilt in v3.1 — current triangulation and curve optimizer backends are over-engineered with poor real-data results
 - **Known limitation:** Z-reconstruction uncertainty 132x larger than XY due to top-down camera geometry
 - **Import boundary:** Automated AST-based checker enforced via pre-commit hook — core/ never imports engine/ at runtime
 
@@ -140,7 +150,9 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | RANSAC centroid clustering for cross-view identity | Cast refractive rays, triangulate minimal subsets, score consensus | Superseded by Leiden clustering in v2.1 |
 | Arc-length normalized correspondence | Slender-body assumption preserves cross-view correspondence | ✓ Good |
 | Analysis-by-synthesis retained as optional route | Shelved, not deleted — available for advanced work | ✓ Good |
-| Curve optimizer as alternative to triangulation | Correspondence-free B-spline fitting via chamfer distance | — Pending real-data validation |
+| Curve optimizer as alternative to triangulation | Correspondence-free B-spline fitting via chamfer distance | ✗ Deferred — must beat triangulation baseline on eval harness to justify reintroduction |
+| Reconstruction rebuild from minimal baseline | Both backends over-engineered, poor real-data results; rebuild with eval harness measuring every change | — In progress (v3.1) |
+| Pose estimation backend only for reconstruction | Ordered keypoints eliminate correspondence/orientation machinery in reconstruction | — In progress (v3.1) |
 | XY-only tracking cost matrix | Z uncertainty 132x larger; XY-only prevents Z-noise ID swaps | Superseded — OC-SORT per-camera in v2.1 |
 | Population-constrained tracking | 9 fish always; dead tracks recycled to unmatched observations | Superseded — Leiden clustering handles identity in v2.1 |
 | Stage Protocol via structural typing (not ABC) | typing.Protocol with runtime_checkable — no inheritance required | ✓ Good — clean 5-stage architecture |
@@ -158,4 +170,4 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Import boundary via AST checker + pre-commit | Automated enforcement prevents architectural regression | ✓ Good — 0 violations at milestone completion |
 
 ---
-*Last updated: 2026-03-02 after v3.0 Ultralytics Unification milestone completed*
+*Last updated: 2026-03-02 after v3.1 Reconstruction milestone started*

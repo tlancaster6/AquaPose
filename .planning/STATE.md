@@ -1,9 +1,9 @@
 ---
 gsd_state_version: 1.0
-milestone: null
-milestone_name: null
-status: between_milestones
-last_updated: "2026-03-02T20:00:00Z"
+milestone: v3.1
+milestone_name: Reconstruction
+status: defining_requirements
+last_updated: "2026-03-02T21:00:00Z"
 progress:
   total_phases: 0
   completed_phases: 0
@@ -18,25 +18,33 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-02)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Between milestones — v3.0 Ultralytics Unification shipped 2026-03-02
+**Current focus:** v3.1 Reconstruction — rebuild from minimal triangulation baseline with evaluation harness
 
 ## Current Position
 
-Phase: None (between milestones)
-Plan: N/A
-Status: v3.0 milestone complete, all 16 requirements satisfied, audit passed
-Last activity: 2026-03-02 — Completed v3.0 milestone (5 phases, 14 plans, 656 tests passing)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-02 — Milestone v3.1 started
 
 ## Accumulated Context
 
 ### Decisions
 
-Key decisions from v3.0 (carried forward for next milestone):
+Key decisions from v3.0 (carried forward):
 - Backend names are "segmentation" and "pose_estimation" (not yolo_seg/yolo_pose)
 - Standard YOLO txt+yaml format for all training data (NDJSON was tried and reverted)
 - Single `weights_path` field in both DetectionConfig and MidlineConfig
 - core/types/ contains shared cross-stage types (Detection, CropRegion, AffineCrop, Midline2D, Midline3D, MidlineSet)
 - Legacy reconstruction/, segmentation/, tracking/ dirs eliminated — all code under core/
+
+v3.1 strategic decisions (from reconstruction rebuild proposal):
+- Start with triangulation, not curve optimization — stateless, debuggable, measurable
+- Pose estimation backend only — ordered keypoints eliminate correspondence/orientation machinery
+- Orientation lives in midline stage, not reconstruction
+- Half-widths are pass-through only — not used for decisions, weighting, or rejection
+- Single triangulation strategy regardless of camera count (no 2/3-7/8+ branching)
+- ~300 frames (10 sec) working dataset — chunk processing out of scope
 
 ### Pending Todos
 
@@ -50,5 +58,5 @@ Full-image ↔ crop-space conversions are a pervasive source of error. Both YOLO
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed v3.0 milestone archival
+Stopped at: Defining v3.1 requirements
 Resume file: None

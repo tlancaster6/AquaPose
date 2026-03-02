@@ -254,6 +254,9 @@ class ReconstructionConfig:
             optimization via chamfer distance.
         inlier_threshold: Maximum reprojection error (pixels) for RANSAC
             inlier classification during triangulation.
+        outlier_threshold: Maximum reprojection error (pixels) for DLT
+            backend outlier rejection during triangulation. Empirically
+            tuned via eval harness.
         snap_threshold: Maximum pixel distance from the epipolar curve to
             accept a correspondence during epipolar refinement.
         max_depth: Maximum allowed fish depth below the water surface (metres).
@@ -273,6 +276,7 @@ class ReconstructionConfig:
 
     backend: str = "triangulation"
     inlier_threshold: float = 50.0
+    outlier_threshold: float = 50.0
     snap_threshold: float = 20.0
     max_depth: float | None = None
     min_cameras: int = 3

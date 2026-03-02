@@ -15,7 +15,8 @@ import numpy as np
 import torch
 
 from aquapose.calibration.projection import RefractiveProjectionModel
-from aquapose.core.reconstruction.triangulation import triangulate_midlines
+from aquapose.core.reconstruction.backends.dlt import DltBackend
+from aquapose.core.reconstruction.backends.triangulation import TriangulationBackend
 from aquapose.core.types.reconstruction import MidlineSet
 from aquapose.evaluation.metrics import (
     Tier1Result,
@@ -79,6 +80,8 @@ def run_evaluation(
     fixture_path: Path | str,
     n_frames: int = 15,
     output_dir: Path | None = None,
+    backend: str = "triangulation",
+    outlier_threshold: float | None = None,
 ) -> EvalResults:
     """Run offline evaluation on a self-contained MidlineFixture.
 
@@ -91,12 +94,18 @@ def run_evaluation(
         n_frames: Number of frames to evaluate (default 15).
         output_dir: Directory for writing eval_results.json.  If None, uses
             the fixture's parent directory.
+        backend: Reconstruction backend to use. Supported values:
+            ``"triangulation"`` (default) and ``"dlt"``.
+        outlier_threshold: Maximum reprojection error (pixels) for DLT backend
+            outlier rejection. When None, uses the DltBackend default. Only
+            applies when ``backend="dlt"``.
 
     Returns:
         EvalResults containing metric data, summary table, and JSON path.
 
     Raises:
-        ValueError: If the fixture has no CalibBundle (v1.0 format).
+        ValueError: If the fixture has no CalibBundle (v1.0 format) or if
+            *backend* is not a recognized backend identifier.
     """
     fixture_path = Path(fixture_path)
 
@@ -111,8 +120,23 @@ def run_evaluation(
             "v2.0 fixture with bundled calibration data."
         )
 
-    # 3. Build projection models
+    # 3. Build projection models and reconstruction backend
     models = _build_models_from_calib(fixture.calib_bundle)
+
+    if backend == "triangulation":
+        recon_backend = TriangulationBackend.from_models(models)
+    elif backend == "dlt":
+        if outlier_threshold is not None:
+            recon_backend = DltBackend.from_models(
+                models, outlier_threshold=outlier_threshold
+            )
+        else:
+            recon_backend = DltBackend.from_models(models)
+    else:
+        raise ValueError(
+            f"Unknown evaluation backend: {backend!r}. "
+            f"Supported backends: ['triangulation', 'dlt']"
+        )
 
     # 4. Select frames
     selected_frame_indices = select_frames(fixture.frame_indices, n_frames)
@@ -131,7 +155,7 @@ def run_evaluation(
     for fi in selected_frame_indices:
         midline_set: MidlineSet = fixture.frames[frame_to_pos[fi]]
         fish_available += len(midline_set)
-        result = triangulate_midlines(midline_set, models, frame_index=fi)
+        result = recon_backend.reconstruct_frame(fi, midline_set)
         frame_results.append((fi, result))
         baseline_by_frame[fi] = result
 
@@ -163,7 +187,7 @@ def run_evaluation(
                 if not reduced:
                     tier2_data[fish_id][dropout_cam].append(None)
                     continue
-                dropout_result = triangulate_midlines(reduced, models, frame_index=fi)
+                dropout_result = recon_backend.reconstruct_frame(fi, reduced)
 
                 if fish_id not in dropout_result:
                     tier2_data[fish_id][dropout_cam].append(None)

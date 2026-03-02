@@ -165,7 +165,6 @@ def test_yolo_obb_detect_populates_angle_and_obb_points(tmp_path: Path) -> None:
 _CORE_DETECTION_MODULES = [
     "aquapose.core.detection",
     "aquapose.core.detection.stage",
-    "aquapose.core.detection.types",
     "aquapose.core.detection.backends",
     "aquapose.core.detection.backends.yolo",
     "aquapose.core.detection.backends.yolo_obb",

@@ -119,7 +119,7 @@ Full details: `.planning/milestones/v3.0-ROADMAP.md`
   1. Running the pipeline in diagnostic mode serializes MidlineSet data to disk alongside existing diagnostic outputs
   2. Serialized MidlineSet fixtures can be loaded into a Python session without running the pipeline
   3. Loaded fixtures contain the same per-camera, per-fish midline data that the reconstruction stage receives
-**Plans**: TBD
+**Plans**: 40-01 (Serialization), 40-02 (Loader)
 
 ### Phase 41: Evaluation Harness
 **Goal**: An offline evaluation framework exists that loads fixtures and computes Tier 1 and Tier 2 metrics without running the full pipeline
@@ -143,7 +143,8 @@ Full details: `.planning/milestones/v3.0-ROADMAP.md`
   1. The evaluation harness runs against the current (pre-rebuild) reconstruction backend without error
   2. Baseline Tier 1 and Tier 2 metric values are saved to disk as the regression reference
   3. The baseline report is human-readable and identifies per-fish and per-camera outliers in the current backend
-**Plans**: TBD
+**Plans**: 1 plan
+- [ ] 42-01-PLAN.md — Baseline measurement script with outlier flagging and regression persistence
 
 ### Phase 43: Triangulation Rebuild
 **Goal**: A new reconstruction backend exists that uses confidence-weighted DLT triangulation with outlier rejection and B-spline fitting

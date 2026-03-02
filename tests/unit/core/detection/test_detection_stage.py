@@ -80,14 +80,14 @@ def test_backend_registry_unknown_kind_raises() -> None:
         get_backend("unicorn_detector")
 
 
-def test_backend_registry_yolo_requires_model_path(tmp_path: Path) -> None:
-    """get_backend('yolo') without a model_path raises TypeError or FileNotFoundError."""
+def test_backend_registry_yolo_requires_weights_path(tmp_path: Path) -> None:
+    """get_backend('yolo') without a weights_path raises TypeError or FileNotFoundError."""
     with pytest.raises((TypeError, FileNotFoundError)):
         get_backend("yolo")
 
 
-def test_backend_registry_yolo_obb_requires_model_path() -> None:
-    """get_backend('yolo_obb') without a model_path raises TypeError or FileNotFoundError."""
+def test_backend_registry_yolo_obb_requires_weights_path() -> None:
+    """get_backend('yolo_obb') without a weights_path raises TypeError or FileNotFoundError."""
     with pytest.raises((TypeError, FileNotFoundError)):
         get_backend("yolo_obb")
 
@@ -100,7 +100,7 @@ def test_backend_registry_yolo_obb_with_weights(tmp_path: Path) -> None:
     fake_weights.write_bytes(b"fake")
 
     with patch("ultralytics.YOLO.__init__", return_value=None):
-        backend = get_backend("yolo_obb", model_path=str(fake_weights))
+        backend = get_backend("yolo_obb", weights_path=str(fake_weights))
 
     assert isinstance(backend, YOLOOBBBackend)
 
@@ -139,7 +139,7 @@ def test_yolo_obb_detect_populates_angle_and_obb_points(tmp_path: Path) -> None:
     mock_result.obb = mock_obb
 
     with patch("ultralytics.YOLO.__init__", return_value=None):
-        backend = YOLOOBBBackend(model_path=fake_weights)
+        backend = YOLOOBBBackend(weights_path=fake_weights)
 
     backend._model = MagicMock()
     backend._model.predict.return_value = [mock_result]
@@ -247,7 +247,7 @@ def test_missing_weights_raises_at_construction(tmp_path: Path) -> None:
             video_dir=video_dir,
             calibration_path=calib_path,
             detector_kind="yolo",
-            model_path=str(nonexistent_weights),
+            weights_path=str(nonexistent_weights),
         )
 
 
@@ -317,7 +317,7 @@ def _build_stage(
             video_dir=video_dir,
             calibration_path=calib_path,
             detector_kind="yolo",
-            model_path=str(fake_weights),
+            weights_path=str(fake_weights),
         )
 
     # Replace run() with a deterministic stub that returns synthetic data

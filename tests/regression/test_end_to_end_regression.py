@@ -229,7 +229,7 @@ def test_pipeline_determinism(golden_metadata: dict) -> None:
             "tracking.max_fish": max_fish,
         }
         if yolo_weights is not None and yolo_weights.exists():
-            overrides["detection.model_path"] = str(yolo_weights)
+            overrides["detection.weights_path"] = str(yolo_weights)
         if unet_weights is not None and unet_weights.exists():
             overrides["midline.weights_path"] = str(unet_weights)
         return overrides

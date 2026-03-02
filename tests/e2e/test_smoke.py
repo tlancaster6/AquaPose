@@ -212,7 +212,7 @@ class TestRealData:
                 "stop_frame": stop_frame,
                 "detection": {
                     "detector_kind": "yolo",
-                    "model_path": str(yolo_weights),
+                    "weights_path": str(yolo_weights),
                 },
                 "midline": {
                     "weights_path": str(unet_weights),

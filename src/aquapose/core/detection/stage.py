@@ -42,7 +42,7 @@ class DetectionStage:
         detector_kind: Backend kind — currently only ``"yolo"`` is supported.
         stop_frame: If set, stop processing after this many frames.
         **detector_kwargs: Additional kwargs forwarded to the detector
-            constructor (e.g. ``model_path``, ``conf_threshold``).
+            constructor (e.g. ``weights_path``, ``conf_threshold``).
 
     Raises:
         FileNotFoundError: If *video_dir*, *calibration_path*, or detector

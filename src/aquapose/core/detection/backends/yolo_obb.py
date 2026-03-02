@@ -35,32 +35,32 @@ class YOLOOBBBackend:
     :attr:`~aquapose.segmentation.detector.Detection.angle`.
 
     Args:
-        model_path: Path to trained YOLO-OBB ``.pt`` weights file.
+        weights_path: Path to trained YOLO-OBB ``.pt`` weights file.
         conf_threshold: Minimum confidence score to keep a detection.
         iou_threshold: IoU threshold for non-max suppression.
         device: Device string (e.g. ``"cuda"``, ``"cpu"``). Accepted for
             interface consistency but YOLO auto-selects the device internally.
 
     Raises:
-        FileNotFoundError: If *model_path* does not point to an existing file.
+        FileNotFoundError: If *weights_path* does not point to an existing file.
     """
 
     def __init__(
         self,
-        model_path: str | Path,
+        weights_path: str | Path,
         conf_threshold: float = 0.5,
         iou_threshold: float = 0.45,
         device: str = "cuda",
     ) -> None:
-        model_path = Path(model_path)
-        if not model_path.exists():
+        weights_path = Path(weights_path)
+        if not weights_path.exists():
             raise FileNotFoundError(
-                f"YOLO-OBB weights not found: {model_path}. "
+                f"YOLO-OBB weights not found: {weights_path}. "
                 "Provide a valid path to a trained .pt weights file."
             )
         from ultralytics import YOLO  # lazy import — ultralytics may not be installed
 
-        self._model = YOLO(str(model_path))
+        self._model = YOLO(str(weights_path))
         self._conf = conf_threshold
         self._iou = iou_threshold
 

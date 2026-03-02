@@ -669,7 +669,7 @@ def test_build_stages_returns_stages(tmp_path: Path) -> None:
         calibration_path=str(calib_file),
         detection=__import__(
             "aquapose.engine.config", fromlist=["DetectionConfig"]
-        ).DetectionConfig(model_path=str(model_file)),
+        ).DetectionConfig(weights_path=str(model_file)),
         midline=__import__(
             "aquapose.engine.config", fromlist=["MidlineConfig"]
         ).MidlineConfig(weights_path=str(weights_file)),

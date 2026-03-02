@@ -318,7 +318,7 @@ def build_stages(config: PipelineConfig) -> list:
         calibration_path=config.calibration_path,
         detector_kind=config.detection.detector_kind,
         stop_frame=config.stop_frame,
-        model_path=config.detection.model_path,
+        weights_path=config.detection.weights_path,
         device=config.device,
     )
 

@@ -20,7 +20,7 @@ def get_backend(kind: str, **kwargs: Any) -> YOLOBackend | YOLOOBBBackend:
     Args:
         kind: Backend identifier. Supported values: ``"yolo"``, ``"yolo_obb"``.
         **kwargs: Forwarded to the backend constructor. For ``"yolo"`` and
-            ``"yolo_obb"``, ``model_path`` is required.
+            ``"yolo_obb"``, ``weights_path`` is required.
 
     Returns:
         A configured detector instance with a

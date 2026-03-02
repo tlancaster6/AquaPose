@@ -55,9 +55,9 @@ class MidlineStage:
 
     - ``"segmentation"`` (default): Uses *weights_path* for YOLO-seg weights,
       *confidence_threshold*, *n_points*, *min_area*.
-    - ``"pose_estimation"``: Uses *midline_config.keypoint_weights_path* for
-      YOLO-pose model weights, plus *keypoint_confidence_floor*,
-      *keypoint_t_values*, *min_observed_keypoints* from *midline_config*.
+    - ``"pose_estimation"``: Uses *midline_config.weights_path* for YOLO-pose
+      model weights, plus *keypoint_confidence_floor*, *keypoint_t_values*,
+      *min_observed_keypoints* from *midline_config*.
 
     Args:
         video_dir: Directory containing per-camera video files.
@@ -77,9 +77,8 @@ class MidlineStage:
             for orientation resolution). None skips orientation resolution.
         midline_config: Optional MidlineConfig-like object with orientation
             weights (speed_threshold, orientation_weight_*) and pose_estimation
-            fields (keypoint_weights_path, keypoint_t_values,
-            keypoint_confidence_floor, min_observed_keypoints). None uses
-            defaults.
+            fields (weights_path, keypoint_t_values, keypoint_confidence_floor,
+            min_observed_keypoints). None uses defaults.
 
     Raises:
         FileNotFoundError: If *video_dir*, *calibration_path*, or required
@@ -158,7 +157,7 @@ class MidlineStage:
             mc = midline_config
             self._backend = get_backend(
                 "pose_estimation",
-                weights_path=mc.keypoint_weights_path if mc is not None else None,
+                weights_path=mc.weights_path if mc is not None else None,
                 device=device,
                 n_points=n_points,
                 n_keypoints=mc.n_keypoints if mc is not None else _DEFAULT_N_KEYPOINTS,

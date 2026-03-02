@@ -28,7 +28,7 @@ class DetectionConfig:
 
     Attributes:
         detector_kind: Detector backend to use (e.g. "yolo", "yolo_obb").
-        model_path: Path to detector weights file (required for YOLO/YOLO-OBB).
+        weights_path: Path to model weights for the active detection backend.
             ``None`` means no path configured (caller must supply via
             ``detector_kwargs`` or construct the stage directly).
         crop_size: Output size ``[width, height]`` in pixels for affine crops
@@ -47,7 +47,7 @@ class DetectionConfig:
     """
 
     detector_kind: str = "yolo"
-    model_path: str | None = None
+    weights_path: str | None = None
     crop_size: list[int] = field(default_factory=lambda: [128, 64])
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -76,8 +76,8 @@ class MidlineConfig:
     Attributes:
         confidence_threshold: Minimum confidence for mask acceptance by the
             segmentation backend.
-        weights_path: Path to YOLO-seg model weights for the ``"segmentation"``
-            backend.
+        weights_path: Path to model weights for the active midline backend
+            (segmentation or pose estimation).
         backend: Midline backend to use. ``"segmentation"`` (default) or
             ``"pose_estimation"``.
         n_points: Number of midline points to produce per detection.
@@ -95,8 +95,6 @@ class MidlineConfig:
             Default 0.5.
         orientation_weight_temporal: Weight for temporal prior signal.
             Default 0.3.
-        keypoint_weights_path: Path to YOLO-pose model weights for the
-            ``"pose_estimation"`` backend.
         n_keypoints: Number of anatomical keypoints. Default 6.
         keypoint_t_values: Per-keypoint arc-fraction values in [0, 1] from nose
             (0.0) to tail (1.0). If ``None``, defaults to uniform spacing.
@@ -117,7 +115,6 @@ class MidlineConfig:
     orientation_weight_velocity: float = 0.5
     orientation_weight_temporal: float = 0.3
     # pose_estimation backend fields
-    keypoint_weights_path: str | None = None
     n_keypoints: int = 6
     keypoint_t_values: list[float] | None = None
     keypoint_confidence_floor: float = 0.3
@@ -474,6 +471,7 @@ _RENAME_HINTS: dict[str, str] = {
     "expect_fish_count": "n_animals (top-level)",
     "device": "device (top-level)",
     "stop_frame": "stop_frame (top-level)",
+    "model_path": "weights_path",
 }
 
 
@@ -617,8 +615,8 @@ def load_config(
                 top_kwargs[key] = str(project_dir / val)
         # Resolve sub-config path fields
         for sub_kwargs, field_names in [
-            (det_kwargs, ["model_path"]),
-            (mid_kwargs, ["weights_path", "keypoint_weights_path"]),
+            (det_kwargs, ["weights_path"]),
+            (mid_kwargs, ["weights_path"]),
         ]:
             for fname in field_names:
                 val = sub_kwargs.get(fname, "")

@@ -35,7 +35,7 @@ Requirements for Ultralytics Unification milestone. Each maps to roadmap phases.
 - [x] **STAB-01**: Training data script produces standard YOLO txt labels + dataset.yaml (not NDJSON); training wrappers consume txt+yaml
 - [x] **STAB-02**: `weights_path` and `keypoint_weights_path` consolidated into single `weights_path` field
 - [x] **STAB-03**: `init-config` generates correct defaults (YOLO-OBB detection, explicit backend selection, valid weights path)
-- [ ] **STAB-04**: All stale docstrings referencing U-Net, no-op stubs, or Phase 37 pending status are updated
+- [x] **STAB-04**: All stale docstrings referencing U-Net, no-op stubs, or Phase 37 pending status are updated
 
 ## Previous Milestone Requirements (v2.2)
 
@@ -81,7 +81,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STAB-01 | Phase 38 | Complete |
 | STAB-02 | Phase 38 | Complete |
 | STAB-03 | Phase 38 | Complete |
-| STAB-04 | Phase 38 | Pending |
+| STAB-04 | Phase 38 | Complete |
 
 **Coverage:**
 - v3.0 requirements: 15 total

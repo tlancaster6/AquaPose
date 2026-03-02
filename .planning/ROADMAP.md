@@ -90,7 +90,7 @@ Full details: `.planning/phases/29-*` through `.planning/phases/33.1-*`
 - [x] **Phase 35: Codebase Cleanup** — Remove custom U-Net, SAM2 pipeline, old midline backends, MOG2 backend, and legacy training CLI commands (completed 2026-03-01)
 - [x] **Phase 36: Training Wrappers** — Add NDJSON seg data converter and YOLO-seg/pose training wrappers following existing yolo_obb.py pattern (completed 2026-03-01)
 - [x] **Phase 37: Pipeline Integration** — Rename and implement SegmentationBackend and PoseEstimationBackend as selectable midline backends with YOLO-seg/pose inference (completed 2026-03-01)
-- [ ] **Phase 38: Stabilization and Tech Debt Cleanup** — Switch NDJSON to standard YOLO txt+yaml labels, consolidate config fields, update init-config defaults, fix stale docstrings
+- [ ] **Phase 38: Stabilization and Tech Debt Cleanup** — Switch NDJSON to standard YOLO txt+yaml labels, consolidate config fields, update init-config defaults, dead code analysis
 
 ## Phase Details
 
@@ -140,13 +140,23 @@ Plans:
 | 37. Pipeline Integration | 2/2 | Complete    | 2026-03-01 | - |
 
 ### Phase 38: Stabilization and Tech Debt Cleanup
-**Goal**: Training data and config infrastructure uses standard YOLO txt+yaml format (not NDJSON), config fields are consolidated and init-config generates correct defaults, stale docstrings are updated, GUIDEBOOK.md is audited, and dead legacy code is analyzed
+**Goal**: Training data and config infrastructure uses standard YOLO txt+yaml format (not NDJSON), config fields are consolidated and init-config generates correct defaults, and dead legacy code is analyzed
 **Depends on**: Phase 37 (backends must be implemented before cleaning up references to them)
-**Requirements**: STAB-01, STAB-02, STAB-03, STAB-04
-**Plans**: 4 plans
+**Requirements**: STAB-01, STAB-02, STAB-03
+**Plans**: 3 plans (38-03 deferred to phase 39)
 
 Plans:
 - [ ] 38-01-PLAN.md — Config field consolidation (weights_path rename) and init-config defaults
 - [ ] 38-02-PLAN.md — NDJSON to standard YOLO txt+yaml label format migration
-- [ ] 38-03-PLAN.md — Stale docstring cleanup and GUIDEBOOK.md accuracy audit
+- ~~38-03-PLAN.md~~ — Deferred to phase 39 (docstring/guidebook audit after module reorg)
 - [ ] 38-04-PLAN.md — Dead code import analysis report and user-approved cleanup
+
+### Phase 39: Migrate legacy domain libraries into core submodules
+
+**Goal:** Legacy top-level domain libraries (reconstruction/, segmentation/, tracking/) are reorganized into core/ submodules alongside the stages that consume them, eliminating cross-package private-helper imports and misleading directory names. Stale docstrings and GUIDEBOOK.md updated to match new paths.
+**Requirements**: STAB-04 (deferred from phase 38), TBD
+**Depends on:** Phase 38
+**Plans:** 3/4 plans executed
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 39 to break down)

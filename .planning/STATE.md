@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Ultralytics Unification
 status: unknown
-last_updated: "2026-03-02T16:48:00.000Z"
+last_updated: "2026-03-02T17:16:11Z"
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 10
-  completed_plans: 8
+  completed_plans: 10
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-01)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 38 — Stabilization and Tech Debt Cleanup (Plan 02 complete)
+**Current focus:** Phase 38 — Stabilization and Tech Debt Cleanup (ALL PLANS COMPLETE — Phase 38 done)
 
 ## Current Position
 
-Phase: 38 of 38 (Stabilization and Tech Debt Cleanup) — IN PROGRESS
-Plan: 2/4 complete in current phase
-Status: Plan 02 complete (NDJSON->txt+yaml format migration); Plan 03 next
-Last activity: 2026-03-02 — Completed 38-02-PLAN.md (build script and training wrappers migrated from NDJSON to standard YOLO txt+yaml format)
+Phase: 38 of 38 (Stabilization and Tech Debt Cleanup) — COMPLETE
+Plan: 4/4 complete in current phase
+Status: Plan 04 complete (dead code analysis, visualization/diagnostics.py deleted); Phase 38 fully complete
+Last activity: 2026-03-02 — Completed 38-04-PLAN.md (import graph analysis confirmed diagnostics.py as dead code, deleted with user approval)
 
-Progress: [█████████░] ~92%
+Progress: [██████████] ~100%
 
 ## Accumulated Context
 
@@ -77,6 +77,8 @@ Key decisions entering v3.0:
 - [Phase 38-01]: init-config defaults updated to yolo_obb + pose_estimation with weights_path, matching current production architecture
 - [Phase 38-02]: Training data format migrated from NDJSON to standard YOLO txt+yaml (labels/ dir + dataset.yaml); training wrappers pass dataset.yaml to model.train()
 - [Phase 38-02]: Identity flip_idx used for pose dataset.yaml; kpt_shape derived from annotation data with N_KEYPOINTS fallback
+- [Phase 38-04]: visualization/diagnostics.py deleted — confirmed zero importers via ast import graph; all other legacy directories (reconstruction/, segmentation/, tracking/) classified as canonical and load-bearing, kept in place
+- [Phase 38-04]: Broader organization concern (misleading directory names, cross-package private imports) deferred to Phase 39
 
 ### Pending Todos
 
@@ -85,6 +87,7 @@ Key decisions entering v3.0:
 ### Roadmap Evolution
 
 - Phase 38 added: Stabilization and Tech Debt Cleanup (NDJSON→txt labels, init-config defaults, weights_path consolidation, stale docstrings)
+- Phase 39 added: Migrate legacy domain libraries into core submodules
 
 ### Blockers/Concerns
 
@@ -102,5 +105,5 @@ Full-image ↔ crop-space conversions are a pervasive source of error, especiall
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 38-02-PLAN.md (NDJSON to txt+yaml format migration)
+Stopped at: Completed 38-04-PLAN.md (dead code analysis and cleanup — Phase 38 fully complete)
 Resume file: None

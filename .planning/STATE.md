@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Ultralytics Unification
 status: unknown
-last_updated: "2026-03-02T16:46:19.455Z"
+last_updated: "2026-03-02T16:48:00.000Z"
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 10
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-01)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 38 — Stabilization and Tech Debt Cleanup (Plan 01 complete)
+**Current focus:** Phase 38 — Stabilization and Tech Debt Cleanup (Plan 02 complete)
 
 ## Current Position
 
 Phase: 38 of 38 (Stabilization and Tech Debt Cleanup) — IN PROGRESS
-Plan: 1/4 complete in current phase
-Status: Plan 01 complete (config field consolidation + init-config defaults); Plan 02 next
-Last activity: 2026-03-02 — Completed 38-01-PLAN.md (DetectionConfig.model_path -> weights_path, MidlineConfig.keypoint_weights_path removed, init-config updated)
+Plan: 2/4 complete in current phase
+Status: Plan 02 complete (NDJSON->txt+yaml format migration); Plan 03 next
+Last activity: 2026-03-02 — Completed 38-02-PLAN.md (build script and training wrappers migrated from NDJSON to standard YOLO txt+yaml format)
 
-Progress: [████████░░] ~90%
+Progress: [█████████░] ~92%
 
 ## Accumulated Context
 
@@ -75,6 +75,8 @@ Key decisions entering v3.0:
 - [Phase 38-01]: DetectionConfig.model_path renamed to weights_path; _RENAME_HINTS provides user-facing hints for old YAML configs
 - [Phase 38-01]: MidlineConfig.keypoint_weights_path removed; all backends now use single weights_path field
 - [Phase 38-01]: init-config defaults updated to yolo_obb + pose_estimation with weights_path, matching current production architecture
+- [Phase 38-02]: Training data format migrated from NDJSON to standard YOLO txt+yaml (labels/ dir + dataset.yaml); training wrappers pass dataset.yaml to model.train()
+- [Phase 38-02]: Identity flip_idx used for pose dataset.yaml; kpt_shape derived from annotation data with N_KEYPOINTS fallback
 
 ### Pending Todos
 
@@ -100,5 +102,5 @@ Full-image ↔ crop-space conversions are a pervasive source of error, especiall
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 38-01-PLAN.md (config field consolidation and init-config defaults)
+Stopped at: Completed 38-02-PLAN.md (NDJSON to txt+yaml format migration)
 Resume file: None

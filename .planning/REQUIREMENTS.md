@@ -70,31 +70,31 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DIAG-01 | — | Pending |
-| DIAG-02 | — | Pending |
-| EVAL-01 | — | Pending |
-| EVAL-02 | — | Pending |
-| EVAL-03 | — | Pending |
-| EVAL-04 | — | Pending |
-| EVAL-05 | — | Pending |
-| EVAL-06 | — | Pending |
-| RECON-01 | — | Pending |
-| RECON-02 | — | Pending |
-| RECON-03 | — | Pending |
-| RECON-04 | — | Pending |
-| RECON-05 | — | Pending |
-| RECON-06 | — | Pending |
-| RECON-07 | — | Pending |
-| RECON-08 | — | Pending |
-| CLEAN-01 | — | Pending |
-| CLEAN-02 | — | Pending |
-| CLEAN-03 | — | Pending |
+| DIAG-01 | Phase 40 | Pending |
+| DIAG-02 | Phase 40 | Pending |
+| EVAL-01 | Phase 41 | Pending |
+| EVAL-02 | Phase 41 | Pending |
+| EVAL-03 | Phase 41 | Pending |
+| EVAL-04 | Phase 41 | Pending |
+| EVAL-05 | Phase 41 | Pending |
+| EVAL-06 | Phase 42 | Pending |
+| RECON-01 | Phase 43 | Pending |
+| RECON-02 | Phase 43 | Pending |
+| RECON-03 | Phase 43 | Pending |
+| RECON-04 | Phase 43 | Pending |
+| RECON-05 | Phase 43 | Pending |
+| RECON-06 | Phase 43 | Pending |
+| RECON-07 | Phase 43 | Pending |
+| RECON-08 | Phase 44 | Pending |
+| CLEAN-01 | Phase 45 | Pending |
+| CLEAN-02 | Phase 45 | Pending |
+| CLEAN-03 | Phase 45 | Pending |
 
 **Coverage:**
 - v3.1 requirements: 19 total
-- Mapped to phases: 0
-- Unmapped: 19 ⚠️
+- Mapped to phases: 19
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-02*
-*Last updated: 2026-03-02 after initial definition*
+*Last updated: 2026-03-02 after roadmap creation (v3.1)*

@@ -7,6 +7,7 @@
 - ✅ **v2.1 Identity** — Phases 22-28 (shipped 2026-02-28)
 - ✅ **v2.2 Backends** — Phases 29-33.1 (shipped 2026-03-01)
 - ✅ **v3.0 Ultralytics Unification** — Phases 35-39 (shipped 2026-03-02)
+- 🚧 **v3.1 Reconstruction** — Phases 40-45 (in progress)
 
 ## Phases
 
@@ -95,7 +96,91 @@ Full details: `.planning/milestones/v3.0-ROADMAP.md`
 
 </details>
 
+### 🚧 v3.1 Reconstruction (In Progress)
+
+**Milestone Goal:** Tear down over-engineered reconstruction backends and rebuild from a minimal, empirically-validated triangulation baseline with a proper evaluation harness.
+
+## Phases
+
+- [ ] **Phase 40: Diagnostic Capture** - Expand diagnostic observer to capture and serialize MidlineSet data as loadable fixtures
+- [ ] **Phase 41: Evaluation Harness** - Build offline evaluation framework with real-data fixtures, frame selection, and Tier 1/2 metrics
+- [ ] **Phase 42: Baseline Measurement** - Run evaluation against current reconstruction backend to establish reference metrics
+- [ ] **Phase 43: Triangulation Rebuild** - Implement stripped-down confidence-weighted DLT triangulation with outlier rejection and B-spline fitting
+- [ ] **Phase 44: Validation and Tuning** - Confirm new backend meets or beats baseline on Tier 1 and Tier 2 metrics
+- [ ] **Phase 45: Dead Code Cleanup** - Remove old triangulation backend, curve optimizer, and other dead reconstruction code
+
+## Phase Details
+
+### Phase 40: Diagnostic Capture
+**Goal**: MidlineSet data from pipeline runs can be captured and loaded independently for offline evaluation
+**Depends on**: Phase 39 (v3.0 codebase)
+**Requirements**: DIAG-01, DIAG-02
+**Success Criteria** (what must be TRUE):
+  1. Running the pipeline in diagnostic mode serializes MidlineSet data to disk alongside existing diagnostic outputs
+  2. Serialized MidlineSet fixtures can be loaded into a Python session without running the pipeline
+  3. Loaded fixtures contain the same per-camera, per-fish midline data that the reconstruction stage receives
+**Plans**: TBD
+
+### Phase 41: Evaluation Harness
+**Goal**: An offline evaluation framework exists that loads fixtures and computes Tier 1 and Tier 2 metrics without running the full pipeline
+**Depends on**: Phase 40
+**Requirements**: EVAL-01, EVAL-02, EVAL-03, EVAL-04, EVAL-05
+**Success Criteria** (what must be TRUE):
+  1. The harness loads a MidlineSet fixture + calibration data and runs reconstruction metrics without a video or live pipeline
+  2. Frame selection produces 15-20 frames from a ~300-frame window via uniform temporal sampling
+  3. Tier 1 output shows per-fish, per-camera reprojection error with mean, max, and overall aggregates
+  4. Tier 2 output shows leave-one-out camera stability as max control-point displacement across dropout runs
+  5. Results are printed as a human-readable summary table and saved as machine-diffable regression data
+**Plans**: TBD
+
+### Phase 42: Baseline Measurement
+**Goal**: Reference metrics from the current reconstruction backend are recorded and available for comparison
+**Depends on**: Phase 41
+**Requirements**: EVAL-06
+**Success Criteria** (what must be TRUE):
+  1. The evaluation harness runs against the current (pre-rebuild) reconstruction backend without error
+  2. Baseline Tier 1 and Tier 2 metric values are saved to disk as the regression reference
+  3. The baseline report is human-readable and identifies per-fish and per-camera outliers in the current backend
+**Plans**: TBD
+
+### Phase 43: Triangulation Rebuild
+**Goal**: A new reconstruction backend exists that uses confidence-weighted DLT triangulation with outlier rejection and B-spline fitting
+**Depends on**: Phase 42
+**Requirements**: RECON-01, RECON-02, RECON-03, RECON-04, RECON-05, RECON-06, RECON-07
+**Success Criteria** (what must be TRUE):
+  1. Each body point is triangulated via confidence-weighted DLT using all available cameras (single strategy, no branching on camera count)
+  2. Cameras whose reprojection residual exceeds the rejection threshold are flagged as outliers and the point is re-triangulated with inlier cameras only
+  3. A B-spline with 7 control points is fit to the triangulated points; frames where fewer than the minimum valid-point threshold are available are skipped
+  4. Points with Z at or below water_z are rejected before fitting
+  5. Reconstructions where a configurable fraction of body points had fewer than 3 inlier cameras are flagged as low-confidence
+  6. Half-widths from upstream are passed through to the output without being used in triangulation logic
+**Plans**: TBD
+
+### Phase 44: Validation and Tuning
+**Goal**: The new triangulation backend is confirmed to meet or beat the baseline on Tier 1 and Tier 2 metrics
+**Depends on**: Phase 43
+**Requirements**: RECON-08
+**Success Criteria** (what must be TRUE):
+  1. Running the evaluation harness against the new backend produces Tier 1 reprojection error at or below the Phase 42 baseline
+  2. Running the evaluation harness against the new backend produces Tier 2 leave-one-out stability at or below the Phase 42 baseline
+  3. The outlier rejection threshold has been empirically set based on evaluation output (value recorded in PROJECT.md decisions)
+**Plans**: TBD
+
+### Phase 45: Dead Code Cleanup
+**Goal**: The codebase contains only the new triangulation backend with no orphaned reconstruction code
+**Depends on**: Phase 44
+**Requirements**: CLEAN-01, CLEAN-02, CLEAN-03
+**Success Criteria** (what must be TRUE):
+  1. The old triangulation backend module is deleted and no code imports from it
+  2. The curve optimizer backend module is deleted and no code imports from it
+  3. The refine_midline_lm stub and unused orientation/epipolar code paths are removed
+  4. All existing tests pass after cleanup and no test references deleted modules
+**Plans**: TBD
+
 ## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 40 → 41 → 42 → 43 → 44 → 45
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -104,3 +189,9 @@ Full details: `.planning/milestones/v3.0-ROADMAP.md`
 | 22-28 | v2.1 | 12/12 | Complete | 2026-02-28 |
 | 29-33.1 | v2.2 | 12/12 | Complete | 2026-03-01 |
 | 35-39 | v3.0 | 14/14 | Complete | 2026-03-02 |
+| 40. Diagnostic Capture | v3.1 | 0/? | Not started | - |
+| 41. Evaluation Harness | v3.1 | 0/? | Not started | - |
+| 42. Baseline Measurement | v3.1 | 0/? | Not started | - |
+| 43. Triangulation Rebuild | v3.1 | 0/? | Not started | - |
+| 44. Validation and Tuning | v3.1 | 0/? | Not started | - |
+| 45. Dead Code Cleanup | v3.1 | 0/? | Not started | - |

@@ -145,7 +145,10 @@ Full details: `.planning/milestones/v3.2-ROADMAP.md`
   2. A frame source yields `(frame_idx, dict[str, ndarray])` — local frame index plus per-camera undistorted frames
   3. Running the pipeline with the new frame source produces identical outputs to the prior direct-VideoSet path
   4. `stop_frame` is absent from PipelineConfig; existing tests and configs that relied on it are updated or removed
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 51-01-PLAN.md — Define FrameSource protocol + VideoFrameSource, migrate stages and build_stages
+- [ ] 51-02-PLAN.md — Migrate observers, remove stop_frame, delete VideoSet, update tests
 
 ### Phase 52: Chunk Orchestrator and Handoff
 **Goal**: Videos can be processed in fixed-size temporal chunks with state carried across boundaries

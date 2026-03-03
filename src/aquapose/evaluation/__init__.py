@@ -29,6 +29,13 @@ from aquapose.evaluation.stages import (
     evaluate_reconstruction,
     evaluate_tracking,
 )
+from aquapose.evaluation.tuning import (
+    TuningOrchestrator,
+    TuningResult,
+    format_comparison_table,
+    format_config_diff,
+    format_yield_matrix,
+)
 
 __all__ = [
     "ASSOCIATION_DEFAULT_GRID",
@@ -43,6 +50,8 @@ __all__ = [
     "Tier1Result",
     "Tier2Result",
     "TrackingMetrics",
+    "TuningOrchestrator",
+    "TuningResult",
     "evaluate_association",
     "evaluate_detection",
     "evaluate_midline",
@@ -50,8 +59,11 @@ __all__ = [
     "evaluate_tracking",
     "flag_outliers",
     "format_baseline_report",
+    "format_comparison_table",
+    "format_config_diff",
     "format_eval_json",
     "format_eval_report",
+    "format_yield_matrix",
     "generate_fixture",
     "run_evaluation",
     "select_frames",

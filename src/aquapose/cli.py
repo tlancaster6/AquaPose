@@ -214,6 +214,52 @@ def init_config(name: str, synthetic: bool) -> None:
     click.echo(f"Project created at {project_dir}")
 
 
+@cli.command("eval")
+@click.argument("run_dir", type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.option(
+    "--report",
+    type=click.Choice(["text", "json"], case_sensitive=False),
+    default="text",
+    help="Output format (default: text).",
+)
+@click.option(
+    "--n-frames",
+    "n_frames",
+    type=int,
+    default=None,
+    help="Number of frames to evaluate (default: all frames).",
+)
+def eval_cmd(run_dir: str, report: str, n_frames: int | None) -> None:
+    """Evaluate a diagnostic run directory and print a quality report."""
+    import json as _json
+
+    from aquapose.core.context import StaleCacheError
+    from aquapose.evaluation.output import (
+        _NumpySafeEncoder,
+        format_eval_json,
+        format_eval_report,
+    )
+    from aquapose.evaluation.runner import EvalRunner
+
+    runner = EvalRunner(Path(run_dir))
+    try:
+        result = runner.run(n_frames=n_frames)
+    except StaleCacheError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if report == "json":
+        output = format_eval_json(result)
+    else:
+        output = format_eval_report(result)
+
+    click.echo(output)
+
+    # Write eval_results.json to run directory on every invocation
+    results_path = Path(run_dir) / "eval_results.json"
+    with results_path.open("w") as f:
+        _json.dump(result.to_dict(), f, cls=_NumpySafeEncoder, indent=2)
+
+
 cli.add_command(train_group)
 cli.add_command(prep_group)
 

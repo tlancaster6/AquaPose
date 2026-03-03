@@ -67,7 +67,7 @@ v3.1 strategic decisions:
 ### Roadmap Evolution
 
 - Phase 43.1 inserted after Phase 43: Association Tuning (URGENT)
-- Phase 46 added: Evaluation Unification and Optimization
+- Phase 46 removed: Evaluation Unification and Optimization
 
 ### Pending Todos
 

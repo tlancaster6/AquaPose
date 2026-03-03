@@ -8,7 +8,7 @@ import h5py
 import numpy as np
 import pytest
 
-from aquapose.core.reconstruction.triangulation import (
+from aquapose.core.reconstruction.utils import (
     N_SAMPLE_POINTS,
     SPLINE_K,
     SPLINE_KNOTS,

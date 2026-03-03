@@ -43,7 +43,7 @@ def test_load_config_defaults() -> None:
     assert config.tracking.max_coast_frames == 30
 
     # Reconstruction stage defaults (Stage 5)
-    assert config.reconstruction.backend == "triangulation"
+    assert config.reconstruction.backend == "dlt"
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +217,7 @@ def test_serialize_config_roundtrip() -> None:
     assert parsed["detection"]["detector_kind"] == "yolo"
     assert parsed["tracking"]["max_coast_frames"] == 30
     assert parsed["midline"]["confidence_threshold"] == pytest.approx(0.5)
-    assert parsed["reconstruction"]["backend"] == "triangulation"
+    assert parsed["reconstruction"]["backend"] == "dlt"
 
 
 def test_serialize_config_is_string() -> None:

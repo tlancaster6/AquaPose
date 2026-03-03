@@ -559,7 +559,7 @@ class TestModuleConstants:
             DEFAULT_OUTLIER_THRESHOLD,
         )
 
-        assert DEFAULT_OUTLIER_THRESHOLD == 50.0
+        assert DEFAULT_OUTLIER_THRESHOLD == 10.0
         assert DEFAULT_N_CONTROL_POINTS == 7
         assert DEFAULT_LOW_CONFIDENCE_FRACTION == 0.2
         assert _MIN_RAY_ANGLE_DEG == 5.0

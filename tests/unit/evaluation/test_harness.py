@@ -113,33 +113,25 @@ def _make_midline3d_result(
     )
 
 
-def _make_triangulate_side_effect(
-    cam_ids: tuple[str, ...] = _CAM_IDS,
-) -> object:
-    """Return a mock side_effect for triangulate_midlines that returns synthetic results.
+def _mock_reconstruct_frame(
+    frame_idx: int,
+    midline_set: object,
+) -> dict[int, Midline3D]:
+    """Mock reconstruct_frame that returns synthetic Midline3D results."""
+    result = {}
+    for fish_id, cam_map in midline_set.items():  # type: ignore[union-attr]
+        available_cams = tuple(cam_map.keys())
+        if len(available_cams) < 2:
+            continue
+        result[fish_id] = _make_midline3d_result(fish_id, frame_idx, available_cams)
+    return result
 
-    Returns a result dict {fish_id: Midline3D} based on the midline_set arg.
-    When the reduced set has only 1 camera (leave-one-out with 1 remaining), return {}.
-    """
 
-    def _side_effect(
-        midline_set: object,
-        models: object,
-        frame_index: int = 0,
-        **kwargs: object,
-    ) -> dict[int, Midline3D]:
-        # midline_set: fish_id -> cam_id -> Midline2D
-        result = {}
-        for fish_id, cam_map in midline_set.items():  # type: ignore[union-attr]
-            available_cams = tuple(cam_map.keys())
-            if len(available_cams) < 2:
-                continue  # Not enough cameras — skip
-            result[fish_id] = _make_midline3d_result(
-                fish_id, frame_index, available_cams
-            )
-        return result
-
-    return _side_effect
+def _make_mock_backend(*_args: object, **_kwargs: object) -> mock.MagicMock:
+    """Create a fresh mock backend for each from_models call."""
+    backend = mock.MagicMock()
+    backend.reconstruct_frame.side_effect = _mock_reconstruct_frame
+    return backend
 
 
 # ---------------------------------------------------------------------------
@@ -147,12 +139,14 @@ def _make_triangulate_side_effect(
 # ---------------------------------------------------------------------------
 
 
-@mock.patch("aquapose.evaluation.harness.triangulate_midlines")
+@mock.patch(
+    "aquapose.evaluation.harness.DltBackend.from_models",
+    side_effect=_make_mock_backend,
+)
 def test_run_evaluation_returns_eval_results(
-    mock_tri: mock.MagicMock, tmp_path: Path
+    mock_from: mock.MagicMock, tmp_path: Path
 ) -> None:
     """run_evaluation returns EvalResults with populated tier1 and tier2."""
-    mock_tri.side_effect = _make_triangulate_side_effect()
     fixture_path = _write_fixture(tmp_path / "fixture.npz")
     results = run_evaluation(fixture_path, n_frames=5)
     assert isinstance(results, EvalResults)
@@ -162,22 +156,26 @@ def test_run_evaluation_returns_eval_results(
     assert results.frames_available == _N_FRAMES
 
 
-@mock.patch("aquapose.evaluation.harness.triangulate_midlines")
-def test_run_evaluation_writes_json(mock_tri: mock.MagicMock, tmp_path: Path) -> None:
+@mock.patch(
+    "aquapose.evaluation.harness.DltBackend.from_models",
+    side_effect=_make_mock_backend,
+)
+def test_run_evaluation_writes_json(mock_from: mock.MagicMock, tmp_path: Path) -> None:
     """run_evaluation writes eval_results.json next to the fixture."""
-    mock_tri.side_effect = _make_triangulate_side_effect()
     fixture_path = _write_fixture(tmp_path / "fixture.npz")
     results = run_evaluation(fixture_path, n_frames=5)
     assert results.json_path.exists()
     assert results.json_path.parent == tmp_path
 
 
-@mock.patch("aquapose.evaluation.harness.triangulate_midlines")
+@mock.patch(
+    "aquapose.evaluation.harness.DltBackend.from_models",
+    side_effect=_make_mock_backend,
+)
 def test_run_evaluation_summary_table_has_sections(
-    mock_tri: mock.MagicMock, tmp_path: Path
+    mock_from: mock.MagicMock, tmp_path: Path
 ) -> None:
     """Summary table from run_evaluation contains Tier 1 and Tier 2 sections."""
-    mock_tri.side_effect = _make_triangulate_side_effect()
     fixture_path = _write_fixture(tmp_path / "fixture.npz")
     results = run_evaluation(fixture_path, n_frames=5)
     assert "Tier 1" in results.summary_table
@@ -193,14 +191,29 @@ def test_run_evaluation_raises_for_missing_calib(tmp_path: Path) -> None:
         run_evaluation(fixture_path, n_frames=5)
 
 
-@mock.patch("aquapose.evaluation.harness.triangulate_midlines")
+@mock.patch(
+    "aquapose.evaluation.harness.DltBackend.from_models",
+    side_effect=_make_mock_backend,
+)
 def test_run_evaluation_custom_output_dir(
-    mock_tri: mock.MagicMock, tmp_path: Path
+    mock_from: mock.MagicMock, tmp_path: Path
 ) -> None:
     """run_evaluation writes JSON to custom output_dir when provided."""
-    mock_tri.side_effect = _make_triangulate_side_effect()
     fixture_path = _write_fixture(tmp_path / "fixture.npz")
     output_dir = tmp_path / "results"
     output_dir.mkdir()
     results = run_evaluation(fixture_path, n_frames=5, output_dir=output_dir)
     assert results.json_path.parent == output_dir
+
+
+@mock.patch(
+    "aquapose.evaluation.harness.DltBackend.from_models",
+    side_effect=_make_mock_backend,
+)
+def test_run_evaluation_dlt_backend(mock_from: mock.MagicMock, tmp_path: Path) -> None:
+    """run_evaluation uses DltBackend when backend='dlt'."""
+    fixture_path = _write_fixture(tmp_path / "fixture.npz")
+    results = run_evaluation(fixture_path, n_frames=5, backend="dlt")
+    mock_from.assert_called_once()
+    assert isinstance(results, EvalResults)
+    assert results.frames_evaluated > 0

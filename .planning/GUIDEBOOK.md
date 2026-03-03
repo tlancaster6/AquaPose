@@ -47,7 +47,7 @@ src/aquapose/
     association/      # Cross-camera tracklet association (scoring, clustering, refinement, types)
     detection/        # Detection stage, types, backends/ (yolo.py: YOLODetector, make_detector())
     midline/          # Midline stage, types, backends/ (segmentation, pose_estimation); midline.py (MidlineExtractor), crop.py (affine crop utilities)
-    reconstruction/   # Reconstruction stage, types, backends/ (triangulation.py, curve_optimizer.py)
+    reconstruction/   # Reconstruction stage, types, backends/ (dlt.py)
     tracking/         # 2D tracking stage, types, backends/ (ocsort_wrapper.py: OcSortTracker)
     context.py        # PipelineContext
     synthetic.py      # Synthetic data generation utilities
@@ -68,7 +68,7 @@ src/aquapose/
   io/                 # Video loading, HDF5 writing, discovery
   synthetic/          # Detection stubs, fish models, rig, scenarios, trajectory
   training/           # YOLO training wrappers (yolo_obb, yolo_seg, yolo_pose)
-  visualization/      # Overlay, diagnostics, midline_viz, plot3d, triangulation_viz, frames
+  visualization/      # Overlay, diagnostics, midline_viz, plot3d, frames
 ```
 
 ---
@@ -168,15 +168,15 @@ Detection → 2D Tracking → Cross-Camera Association → Midline → Reconstru
 - Cross-camera group membership (from Stage 3) provides a head-tail consistency signal — if most cameras agree on head direction, flip outliers
 
 ### Stage 5 — Reconstruction
-*Swappable backend: triangulation / curve optimizer*
+*Backend: DLT (confidence-weighted triangulation with outlier rejection)*
 
 - **In:** `tracklet_groups`, `annotated_detections`, calibration
 - **Out:** `midlines_3d` — per-frame `dict[fish_id, Spline3D]` (B-spline 3D midlines) + `dropped: dict[fish_id, DropReason]` for fish that failed reconstruction.
 - Triangulates using only the cameras known to observe each fish (from tracklet association). Per-fish, per-frame with known correspondence — no RANSAC needed for cross-view matching.
-- Both backends must resolve head-tail orientation before or during reconstruction
+- Head-tail orientation is resolved before reconstruction
 - Single-view fish cannot be reconstructed; they appear in `dropped` with an appropriate reason
 - Output spline control point count is config, not hardcoded
-- Both triangulation and curve optimizer backends support confidence-weighted observations — per-point confidence from the YOLO-pose keypoint backend is used to weight triangulation; when confidence is None (e.g. from segment-then-extract), uniform weights are applied
+- The DLT backend supports confidence-weighted observations — per-point confidence from the YOLO-pose keypoint backend is used to weight triangulation; when confidence is None (e.g. from segment-then-extract), uniform weights are applied
 
 ### PipelineContext Data Flow
 
@@ -218,7 +218,7 @@ Stage ordering is an explicit ordered list, not a dependency DAG.
 
 ## 8. Swappable Backends vs Configurable Models
 
-A **backend** represents a fundamentally different approach to a stage's task — different algorithm, different execution pattern, or different intermediate representations. Backends are registered in a stage-level registry and resolved from config at pipeline construction time. Examples: segment-then-extract vs direct pose estimation, triangulation vs curve optimization.
+A **backend** represents a fundamentally different approach to a stage's task — different algorithm, different execution pattern, or different intermediate representations. Backends are registered in a stage-level registry and resolved from config at pipeline construction time. Examples: segment-then-extract vs direct pose estimation for midline extraction.
 
 A **configurable model** is a choice within a backend — a different trained model, architecture, or parameter set that doesn't change the backend's structure or data flow. Model selection is handled via backend config, not by registering a new backend. Examples: YOLO vs DETR within the model-based detection backend, YOLO26n-seg vs a future segmentation model within the segment-then-extract midline backend.
 

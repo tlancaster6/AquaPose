@@ -9,7 +9,7 @@ Validates:
 - Gap > max_interp_gap: NOT interpolated (stays dropped)
 - Triangulation backend delegates to triangulate_midlines()
 - Curve optimizer backend delegates to CurveOptimizer.optimize_midlines()
-- Backend selection via "triangulation" and "curve_optimizer" strings
+- Backend registry supports only "dlt"
 - Backend registry raises ValueError for unknown kinds
 - Import boundary (ENG-07): no engine/ runtime imports in core/reconstruction/
 - All 5 stages importable from core/
@@ -456,112 +456,6 @@ def test_coasted_frames_excluded_from_camera_count(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Backend delegation
-# ---------------------------------------------------------------------------
-
-
-def test_triangulation_backend_delegates(tmp_path: Path) -> None:
-    """TriangulationBackend.reconstruct_frame delegates to triangulate_midlines."""
-    from aquapose.core.reconstruction.backends.triangulation import TriangulationBackend
-
-    calib_file = tmp_path / "calibration.json"
-    calib_file.write_text("{}")
-
-    mock_models = {"cam1": MagicMock(), "cam2": MagicMock()}
-    ml = _make_midline2d(fish_id=0, camera_id="cam1")
-    midline_set = {0: {"cam1": ml}}
-
-    expected_result = {0: MagicMock()}
-
-    with (
-        patch(
-            "aquapose.core.reconstruction.backends.triangulation.TriangulationBackend._load_models",
-            return_value=mock_models,
-        ),
-        patch(
-            "aquapose.core.reconstruction.backends.triangulation.triangulate_midlines",
-            return_value=expected_result,
-        ) as mock_tri,
-    ):
-        backend = TriangulationBackend(calibration_path=calib_file)
-        result = backend.reconstruct_frame(frame_idx=5, midline_set=midline_set)
-
-    assert result == expected_result
-    mock_tri.assert_called_once()
-    call_kwargs = mock_tri.call_args
-    assert call_kwargs.kwargs["frame_index"] == 5
-    assert call_kwargs.kwargs["midline_set"] == midline_set
-
-
-def test_curve_optimizer_backend_delegates(tmp_path: Path) -> None:
-    """CurveOptimizerBackend.reconstruct_frame delegates to CurveOptimizer.optimize_midlines."""
-    from aquapose.core.reconstruction.backends.curve_optimizer import (
-        CurveOptimizerBackend,
-    )
-
-    calib_file = tmp_path / "calibration.json"
-    calib_file.write_text("{}")
-
-    mock_models = {"cam1": MagicMock()}
-    ml = _make_midline2d(fish_id=0, camera_id="cam1")
-    midline_set = {0: {"cam1": ml}}
-
-    expected_result = {0: MagicMock()}
-
-    with patch(
-        "aquapose.core.reconstruction.backends.curve_optimizer.CurveOptimizerBackend._load_models",
-        return_value=mock_models,
-    ):
-        backend = CurveOptimizerBackend(calibration_path=calib_file)
-        backend._optimizer.optimize_midlines = MagicMock(return_value=expected_result)
-        result = backend.reconstruct_frame(frame_idx=3, midline_set=midline_set)
-
-    assert result == expected_result
-    backend._optimizer.optimize_midlines.assert_called_once()
-    call_kwargs = backend._optimizer.optimize_midlines.call_args
-    assert call_kwargs.kwargs["frame_index"] == 3
-
-
-# ---------------------------------------------------------------------------
-# Backend selection
-# ---------------------------------------------------------------------------
-
-
-def test_backend_selection_triangulation(tmp_path: Path) -> None:
-    """Backend kind 'triangulation' resolves to TriangulationBackend."""
-    from aquapose.core.reconstruction.backends.triangulation import TriangulationBackend
-
-    calib_file = tmp_path / "calibration.json"
-    calib_file.write_text("{}")
-
-    with patch(
-        "aquapose.core.reconstruction.backends.triangulation.TriangulationBackend._load_models",
-        return_value={},
-    ):
-        backend = get_backend("triangulation", calibration_path=calib_file)
-
-    assert isinstance(backend, TriangulationBackend)
-
-
-def test_backend_selection_curve_optimizer(tmp_path: Path) -> None:
-    """Backend kind 'curve_optimizer' resolves to CurveOptimizerBackend."""
-    from aquapose.core.reconstruction.backends.curve_optimizer import (
-        CurveOptimizerBackend,
-    )
-
-    calib_file = tmp_path / "calibration.json"
-    calib_file.write_text("{}")
-
-    with patch(
-        "aquapose.core.reconstruction.backends.curve_optimizer.CurveOptimizerBackend._load_models",
-        return_value={},
-    ):
-        backend = get_backend("curve_optimizer", calibration_path=calib_file)
-
-    assert isinstance(backend, CurveOptimizerBackend)
-
-
-# ---------------------------------------------------------------------------
 # Backend registry -- unknown kind
 # ---------------------------------------------------------------------------
 
@@ -583,8 +477,6 @@ def test_import_boundary() -> None:
         "aquapose.core.reconstruction",
         "aquapose.core.reconstruction.stage",
         "aquapose.core.reconstruction.backends",
-        "aquapose.core.reconstruction.backends.triangulation",
-        "aquapose.core.reconstruction.backends.curve_optimizer",
     ]
 
     for mod_name in modules_to_check:

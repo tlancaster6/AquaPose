@@ -5,13 +5,15 @@ from __future__ import annotations
 import datetime
 import logging
 import math
+import pickle
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from aquapose.engine.events import Event, PipelineComplete, StageComplete
+from aquapose.core.context import context_fingerprint
+from aquapose.engine.events import Event, PipelineComplete, PipelineStart, StageComplete
 from aquapose.io.midline_fixture import NPZ_VERSION as _NPZ_VERSION_LATEST
 
 _NPZ_VERSION_V1 = "1.0"
@@ -132,6 +134,7 @@ class DiagnosticObserver:
         self._calibration_path = (
             Path(calibration_path) if calibration_path is not None else None
         )
+        self._run_id: str = ""
 
     def on_event(self, event: Event) -> None:
         """Receive a dispatched event and capture stage snapshots.
@@ -139,6 +142,10 @@ class DiagnosticObserver:
         Args:
             event: The event instance from the pipeline event bus.
         """
+        if isinstance(event, PipelineStart):
+            self._run_id = event.run_id
+            return
+
         if isinstance(event, PipelineComplete):
             self._on_pipeline_complete()
             return
@@ -164,6 +171,38 @@ class DiagnosticObserver:
         )
 
         self.stages[event.stage_name] = snapshot
+
+        if self._output_dir is not None:
+            self._write_stage_cache(event, context)
+
+    def _write_stage_cache(self, event: StageComplete, context: object) -> None:
+        """Write a pickle cache file for the completed stage.
+
+        The cache is stored as a metadata envelope dict containing run_id,
+        timestamp, stage_name, version_fingerprint, and the full PipelineContext
+        snapshot at that stage.
+
+        Args:
+            event: The StageComplete event carrying stage name and index.
+            context: The PipelineContext after this stage has run.
+        """
+        diagnostics_dir = self._output_dir / "diagnostics"  # type: ignore[operator]
+        diagnostics_dir.mkdir(parents=True, exist_ok=True)
+
+        # Normalize stage name for filename: "DetectionStage" -> "detection"
+        stage_key = event.stage_name.removesuffix("Stage").lower()
+        cache_path = diagnostics_dir / f"{stage_key}_cache.pkl"
+
+        envelope = {
+            "run_id": self._run_id,
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
+            "stage_name": event.stage_name,
+            "version_fingerprint": context_fingerprint(context),  # type: ignore[arg-type]
+            "context": context,
+        }
+
+        cache_path.write_bytes(pickle.dumps(envelope, protocol=pickle.HIGHEST_PROTOCOL))
+        logger.info("Stage cache written: %s", cache_path)
 
     def _on_pipeline_complete(self) -> None:
         """Auto-export pipeline diagnostics and midline fixtures when output_dir is set."""

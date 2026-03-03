@@ -35,6 +35,23 @@ from aquapose.engine.observers import EventBus, Observer
 
 logger = logging.getLogger(__name__)
 
+# Maps stage class name to the PipelineContext output fields it populates.
+# Used by PosePipeline.run() to detect pre-populated stages when initial_context
+# is provided, enabling skip of already-completed stages.
+_STAGE_OUTPUT_FIELDS: dict[str, tuple[str, ...]] = {
+    "DetectionStage": ("frame_count", "camera_ids", "detections"),
+    "SyntheticDataStage": (
+        "frame_count",
+        "camera_ids",
+        "detections",
+        "annotated_detections",
+    ),
+    "TrackingStage": ("tracks_2d",),
+    "AssociationStage": ("tracklet_groups",),
+    "MidlineStage": ("annotated_detections",),
+    "ReconstructionStage": ("midlines_3d",),
+}
+
 
 class PosePipeline:
     """Orchestrates the AquaPose pipeline by executing stages in order.
@@ -117,18 +134,32 @@ class PosePipeline:
         """
         self._bus.unsubscribe(event_type, observer)
 
-    def run(self) -> PipelineContext:
+    def run(self, initial_context: PipelineContext | None = None) -> PipelineContext:
         """Execute all stages in order and return the accumulated context.
+
+        When *initial_context* is provided, stages whose output fields are
+        already populated (non-None) in that context are skipped automatically.
+        Skipped stages still emit ``StageStart`` and ``StageComplete`` events
+        (with ``elapsed_seconds=0.0`` and ``summary={"skipped": True}``) so that
+        observers see a complete event timeline.
 
         Steps:
 
         1. Resolve and create the output directory.
         2. Write ``config.yaml`` (serialized config) as the first artifact.
         3. Emit ``PipelineStart``.
-        4. For each stage: emit ``StageStart``, call ``stage.run(context)``,
+        4. For each stage: if outputs are already populated and
+           *initial_context* was provided, emit skipped events and continue;
+           otherwise emit ``StageStart``, call ``stage.run(context)``,
            record timing in ``context.stage_timing``, emit ``StageComplete``.
         5. On success: emit ``PipelineComplete`` and return the context.
         6. On failure: emit ``PipelineFailed``, then re-raise the exception.
+
+        Args:
+            initial_context: Optional pre-populated PipelineContext. When
+                provided, stages whose output fields are all non-None are
+                skipped and their carry_forward state is extracted from this
+                context. Defaults to None (fresh context).
 
         Returns:
             The final :class:`PipelineContext` after all stages have run.
@@ -152,23 +183,48 @@ class PosePipeline:
         self._bus.emit(PipelineStart(run_id=self._config.run_id, config=self._config))
 
         # --- 4. Initialize context ----------------------------------------
-        context = PipelineContext()
+        context = initial_context if initial_context is not None else PipelineContext()
 
         # --- 5. Execute stages in order -----------------------------------
         # TrackingStage uses a different run() signature:
         # (context, carry) -> (context, carry).
         # We maintain carry state across all batches on the pipeline instance.
         carry: CarryForward | None = None
+        if initial_context is not None:
+            carry = initial_context.carry_forward
 
         try:
             for i, stage in enumerate(self._stages):
                 from aquapose.core.tracking import TrackingStage
 
                 stage_name = type(stage).__name__
+                output_fields = _STAGE_OUTPUT_FIELDS.get(stage_name, ())
+                already_populated = bool(output_fields) and all(
+                    getattr(context, f, None) is not None for f in output_fields
+                )
+
+                if already_populated:
+                    logger.info(
+                        "Skipping %s -- outputs already populated in context",
+                        stage_name,
+                    )
+                    self._bus.emit(StageStart(stage_name=stage_name, stage_index=i))
+                    self._bus.emit(
+                        StageComplete(
+                            stage_name=stage_name,
+                            stage_index=i,
+                            elapsed_seconds=0.0,
+                            summary={"skipped": True},
+                            context=context,
+                        ),
+                    )
+                    continue
+
                 self._bus.emit(StageStart(stage_name=stage_name, stage_index=i))
                 stage_start = time.monotonic()
                 if isinstance(stage, TrackingStage):
                     context, carry = stage.run(context, carry)  # type: ignore[arg-type]
+                    context.carry_forward = carry
                 else:
                     context = stage.run(context)
                 elapsed = time.monotonic() - stage_start

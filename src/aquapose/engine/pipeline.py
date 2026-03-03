@@ -326,7 +326,7 @@ def build_stages(config: PipelineConfig) -> list:
         confidence_threshold=config.midline.confidence_threshold,
         backend=config.midline.backend,
         device=config.device,
-        n_points=config.midline.n_points,
+        n_points=config.n_sample_points,
         min_area=config.midline.min_area,
         lut_config=config.lut,
         midline_config=config.midline,

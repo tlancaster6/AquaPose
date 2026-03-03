@@ -291,30 +291,30 @@ def test_device_auto_detected() -> None:
     assert config.device in ("cuda:0", "cpu")
 
 
-def test_n_sample_points_default_is_10() -> None:
-    """PipelineConfig() n_sample_points defaults to 10."""
+def test_n_sample_points_default_is_15() -> None:
+    """PipelineConfig() n_sample_points defaults to 15."""
     config = PipelineConfig()
-    assert config.n_sample_points == 10
+    assert config.n_sample_points == 15
 
 
-def test_n_sample_points_propagates_to_midline(tmp_path: Path) -> None:
-    """n_sample_points in YAML propagates to midline.n_points when not explicitly set."""
+def test_n_sample_points_propagates_to_reconstruction(tmp_path: Path) -> None:
+    """n_sample_points in YAML propagates to reconstruction.n_sample_points."""
     yaml_content = {"n_animals": 3, "n_sample_points": 8}
     cfg_file = tmp_path / "config.yaml"
     cfg_file.write_text(yaml.dump(yaml_content))
 
     config = load_config(yaml_path=cfg_file)
-    assert config.midline.n_points == 8
+    assert config.reconstruction.n_sample_points == 8
 
 
-def test_midline_n_points_overrides_top_level(tmp_path: Path) -> None:
-    """Explicit midline.n_points wins over n_sample_points propagation."""
-    yaml_content = {"n_animals": 3, "n_sample_points": 8, "midline": {"n_points": 12}}
+def test_midline_n_points_raises_with_hint(tmp_path: Path) -> None:
+    """midline.n_points in YAML raises ValueError with 'did you mean' hint."""
+    yaml_content = {"n_animals": 3, "midline": {"n_points": 12}}
     cfg_file = tmp_path / "config.yaml"
     cfg_file.write_text(yaml.dump(yaml_content))
 
-    config = load_config(yaml_path=cfg_file)
-    assert config.midline.n_points == 12
+    with pytest.raises(ValueError, match="did you mean"):
+        load_config(yaml_path=cfg_file)
 
 
 def test_stop_frame_at_top_level(tmp_path: Path) -> None:

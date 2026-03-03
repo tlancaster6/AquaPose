@@ -80,7 +80,6 @@ class MidlineConfig:
             (segmentation or pose estimation).
         backend: Midline backend to use. ``"segmentation"`` (default) or
             ``"pose_estimation"``.
-        n_points: Number of midline points to produce per detection.
         min_area: Minimum mask area (pixels) required to attempt midline extraction
             (``"segmentation"`` only). Default 100 — conservative threshold for
             128x64 crop space where a full fish body spans ~2000-4000 px².
@@ -107,7 +106,6 @@ class MidlineConfig:
     confidence_threshold: float = 0.5
     weights_path: str | None = None
     backend: str = "segmentation"
-    n_points: int = 15
     min_area: int = 100
     detection_tolerance: float = 50.0
     speed_threshold: float = 2.0
@@ -260,6 +258,9 @@ class ReconstructionConfig:
             (~167ms at 30fps, within fish trajectory smoothness).
         n_control_points: Fixed B-spline control point count per fish per
             frame. Default 7.
+        n_sample_points: Number of sample points along each midline for
+            triangulation output. Default 15. Propagated from top-level
+            n_sample_points when not explicitly overridden.
     """
 
     backend: str = "dlt"
@@ -267,6 +268,7 @@ class ReconstructionConfig:
     min_cameras: int = 3
     max_interp_gap: int = 5
     n_control_points: int = 7
+    n_sample_points: int = 15
 
 
 # ---------------------------------------------------------------------------
@@ -311,8 +313,9 @@ class PipelineConfig:
             Auto-detected from :func:`_default_device` when absent from YAML.
             Propagates to DetectionStage and MidlineStage via :func:`build_stages`.
         n_sample_points: Number of 2D midline points produced per detection and
-            used throughout the reconstruction pipeline. Default is 10. Propagates
-            to ``midline.n_points`` when that field is not explicitly overridden.
+            used throughout the reconstruction pipeline. Default is 15. Propagates
+            to ``reconstruction.n_sample_points`` when that field is not explicitly
+            overridden.
         stop_frame: If set, stop processing after this frame index. Moved from
             ``detection.stop_frame`` to the top level so a single parameter
             controls early termination across all input stages.
@@ -337,7 +340,7 @@ class PipelineConfig:
     mode: str = "production"
     n_animals: int = 0
     device: str = dataclasses.field(default_factory=_default_device)
-    n_sample_points: int = 10
+    n_sample_points: int = 15
     stop_frame: int | None = None
     project_dir: str = ""
     detection: DetectionConfig = dataclasses.field(default_factory=DetectionConfig)
@@ -461,6 +464,7 @@ _RENAME_HINTS: dict[str, str] = {
     "device": "device (top-level)",
     "stop_frame": "stop_frame (top-level)",
     "model_path": "weights_path",
+    "n_points": "n_sample_points (top-level)",
 }
 
 
@@ -637,9 +641,9 @@ def load_config(
     if "fish_count" not in syn_kwargs:
         syn_kwargs["fish_count"] = n_animals
 
-    # --- propagate n_sample_points to midline.n_points --------------------
-    if "n_points" not in mid_kwargs:
-        mid_kwargs["n_points"] = top_kwargs.get("n_sample_points", 10)
+    # --- propagate n_sample_points to reconstruction.n_sample_points -------
+    if "n_sample_points" not in rec_kwargs:
+        rec_kwargs["n_sample_points"] = top_kwargs.get("n_sample_points", 15)
 
     # --- construct & freeze -----------------------------------------------
     # Apply _filter_fields() to all stage configs and the top-level config.

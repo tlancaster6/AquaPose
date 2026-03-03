@@ -131,7 +131,7 @@ Full details: `.planning/milestones/v3.2-ROADMAP.md`
 ### v3.3 Chunk Mode (Phases 51-53) — ACTIVE
 
 - [x] **Phase 51: Frame Source Refactor** - Extract video I/O from stages into injectable frame source (1/2 plans complete)
-- [ ] **Phase 52: Chunk Orchestrator and Handoff** - Implement chunk loop, ChunkHandoff, identity stitching, per-chunk HDF5 flush (0/3 plans)
+- [x] **Phase 52: Chunk Orchestrator and Handoff** - Implement chunk loop, ChunkHandoff, identity stitching, per-chunk HDF5 flush (0/3 plans) (completed 2026-03-03)
 - [ ] **Phase 53: Integration and Validation** - Wire orchestrator into CLI, disable HDF5 observer under chunk mode, validate output equivalence
 
 ## Phase Details
@@ -187,5 +187,5 @@ Plans:
 | 40-45 | v3.1 | 13/13 | Complete | 2026-03-03 |
 | 46-50 | v3.2 | 11/11 | Complete | 2026-03-03 |
 | 51 | 2/2 | Complete    | 2026-03-03 | - |
-| 52 | 2/3 | In Progress|  | - |
+| 52 | 3/3 | Complete   | 2026-03-03 | - |
 | 53 | v3.3 | 0/TBD | Not started | - |

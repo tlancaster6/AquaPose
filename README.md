@@ -40,6 +40,20 @@ hatch run lint
 hatch run typecheck
 ```
 
+### GPU Support
+
+Hatch installs the CPU-only PyTorch by default. For GPU support, manually install
+the CUDA build after creating the environment:
+
+```bash
+hatch run pip install torch torchvision --force-reinstall --index-url https://download.pytorch.org/whl/cu124
+```
+
+> **Tip:** If you see `nvrtc: error: failed to open libnvrtc-builtins.so` during
+> training, your PyTorch CUDA version may not match the bundled NVIDIA library
+> layout. Reinstalling with an explicit CUDA 12 index URL (as shown above)
+> typically resolves this.
+
 See [Contributing](docs/contributing.md) for full development guidelines.
 
 ## Documentation

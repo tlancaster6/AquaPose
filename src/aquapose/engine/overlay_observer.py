@@ -212,24 +212,7 @@ class Overlay2DObserver:
                     if frame_idx >= n_frames:
                         break
 
-                    # Draw reprojected 3D midlines.
-                    frame_midlines = midlines_3d[frame_idx]
-                    if isinstance(frame_midlines, dict):
-                        for _fish_id, spline in frame_midlines.items():
-                            for cam_id in camera_ids:
-                                if cam_id not in frames or cam_id not in models:
-                                    continue
-                                pts_2d = self._reproject_3d_midline(
-                                    spline, cam_id, models[cam_id]
-                                )
-                                if pts_2d is not None:
-                                    self._draw_midline(
-                                        frames[cam_id],
-                                        pts_2d,
-                                        self._reprojected_color,
-                                    )
-
-                    # Draw original 2D midlines.
+                    # Draw original 2D midlines (bottom layer).
                     if annotated_detections is not None and frame_idx < len(
                         annotated_detections
                     ):
@@ -244,7 +227,7 @@ class Overlay2DObserver:
                                         pts = getattr(midline, "points", None)
                                         if pts is not None:
                                             pts_arr = np.asarray(pts, dtype=np.float32)
-                                            self._draw_midline(
+                                            self._draw_midline_points(
                                                 frames[cam_id],
                                                 pts_arr,
                                                 self._midline_2d_color,
@@ -269,6 +252,23 @@ class Overlay2DObserver:
                                                 fish_id=fish_id_label,
                                                 confidence=conf,
                                             )
+
+                    # Draw reprojected 3D midlines (top layer).
+                    frame_midlines = midlines_3d[frame_idx]
+                    if isinstance(frame_midlines, dict):
+                        for _fish_id, spline in frame_midlines.items():
+                            for cam_id in camera_ids:
+                                if cam_id not in frames or cam_id not in models:
+                                    continue
+                                pts_2d = self._reproject_3d_midline(
+                                    spline, cam_id, models[cam_id]
+                                )
+                                if pts_2d is not None:
+                                    self._draw_midline(
+                                        frames[cam_id],
+                                        pts_2d,
+                                        self._reprojected_color,
+                                    )
 
                     # Scale frames down for output.
                     if self._scale != 1.0:
@@ -352,10 +352,7 @@ class Overlay2DObserver:
         color: tuple[int, int, int],
         thickness: int = 2,
     ) -> None:
-        """Draw a polyline with a head-direction arrowhead on the frame.
-
-        Points are assumed head-to-tail order (index 0 = head). A small
-        filled arrowhead is drawn at the head end pointing forwards.
+        """Draw a polyline on the frame.
 
         Args:
             frame: BGR image to draw on (modified in-place).
@@ -368,27 +365,31 @@ class Overlay2DObserver:
             return
         cv2.polylines(frame, [pts], isClosed=False, color=color, thickness=thickness)
 
-        # Draw arrowhead at the head end (pts[0]), pointing forwards.
-        head = pts[0].astype(np.float64)
-        neck = pts[1].astype(np.float64)
-        direction = head - neck
-        length = np.linalg.norm(direction)
-        if length < 1e-3:
+    @staticmethod
+    def _draw_midline_points(
+        frame: np.ndarray,
+        points_2d: np.ndarray,
+        color: tuple[int, int, int],
+        radius: int = 3,
+    ) -> None:
+        """Draw individual points with a head-direction arrowhead on the frame.
+
+        Points are assumed head-to-tail order (index 0 = head). A small
+        filled arrowhead is drawn at the head end pointing forwards.
+
+        Args:
+            frame: BGR image to draw on (modified in-place).
+            points_2d: (N, 2) array of pixel coordinates, head-to-tail.
+            color: BGR color tuple.
+            radius: Circle radius in pixels.
+        """
+        pts = np.asarray(points_2d, dtype=np.int32)
+        if len(pts) < 2:
             return
-        direction /= length
-
-        # Arrow size scales with line thickness.
-        arrow_len = max(thickness * 4.0, 8.0)
-        arrow_half_w = max(thickness * 2.0, 4.0)
-
-        # Perpendicular vector.
-        perp = np.array([-direction[1], direction[0]])
-
-        tip = head + direction * arrow_len
-        left = head - perp * arrow_half_w
-        right = head + perp * arrow_half_w
-        triangle = np.array([tip, left, right], dtype=np.int32)
-        cv2.fillPoly(frame, [triangle], (255, 255, 255))
+        # Head point (index 0) in red, rest in the given color.
+        cv2.circle(frame, (pts[0][0], pts[0][1]), radius, (0, 0, 255), -1)
+        for pt in pts[1:]:
+            cv2.circle(frame, (pt[0], pt[1]), radius, color, -1)
 
     @staticmethod
     def _build_mosaic(

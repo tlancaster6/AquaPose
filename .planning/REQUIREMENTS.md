@@ -32,6 +32,13 @@ Requirements for reconstruction rebuild milestone. Each maps to roadmap phases.
 - [x] **RECON-07**: Half-widths passed through from upstream (defaults if absent), not used in reconstruction logic
 - [ ] **RECON-08**: New triangulation backend outperforms or matches current backend on Tier 1 and Tier 2 metrics
 
+### Association Tuning
+
+- [ ] **ASSOC-01**: Evaluation harness supports fast Tier-1-only evaluation via skip_tier2 flag
+- [ ] **ASSOC-02**: Helper function generates fixtures from varied AssociationConfig values by running the pipeline
+- [ ] **ASSOC-03**: Tuning script sweeps association parameters in priority order with carry-forward
+- [ ] **ASSOC-04**: Winning association config maximizes fish yield (target: 9 fish per frame)
+
 ### Cleanup
 
 - [ ] **CLEAN-01**: Old triangulation backend code removed
@@ -86,15 +93,19 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RECON-06 | Phase 43 | Complete |
 | RECON-07 | Phase 43 | Complete |
 | RECON-08 | Phase 44 | Pending |
+| ASSOC-01 | Phase 43.1 | Pending |
+| ASSOC-02 | Phase 43.1 | Pending |
+| ASSOC-03 | Phase 43.1 | Pending |
+| ASSOC-04 | Phase 43.1 | Pending |
 | CLEAN-01 | Phase 45 | Pending |
 | CLEAN-02 | Phase 45 | Pending |
 | CLEAN-03 | Phase 45 | Pending |
 
 **Coverage:**
-- v3.1 requirements: 19 total
-- Mapped to phases: 19
+- v3.1 requirements: 23 total
+- Mapped to phases: 23
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-02*
-*Last updated: 2026-03-02 after roadmap creation (v3.1)*
+*Last updated: 2026-03-02 after phase 43.1 planning*

@@ -159,6 +159,22 @@ Full details: `.planning/milestones/v3.0-ROADMAP.md`
   6. Half-widths from upstream are passed through to the output without being used in triangulation logic
 **Plans**: TBD
 
+### Phase 43.1: Association Tuning (INSERTED)
+
+**Goal:** Association parameters are empirically tuned so that all 9 fish receive multi-camera coverage and can be reconstructed
+**Requirements**: ASSOC-01, ASSOC-02, ASSOC-03, ASSOC-04
+**Depends on:** Phase 43
+**Success Criteria** (what must be TRUE):
+  1. The evaluation harness supports fast Tier-1-only evaluation via skip_tier2 flag
+  2. A helper function can generate fixtures from different AssociationConfig values
+  3. A tuning script sweeps association parameters in priority order and identifies the best config
+  4. The winning config produces 9 reconstructed fish per frame (or the best achievable yield is documented)
+**Plans:** 2 plans
+
+Plans:
+- [ ] 43.1-01-PLAN.md — Extend evaluation harness with skip_tier2, association_overrides, and generate_fixture helper
+- [ ] 43.1-02-PLAN.md — Association parameter tuning script with staged sweep and console report
+
 ### Phase 44: Validation and Tuning
 **Goal**: The new triangulation backend is confirmed to meet or beat the baseline on Tier 1 and Tier 2 metrics
 **Depends on**: Phase 43

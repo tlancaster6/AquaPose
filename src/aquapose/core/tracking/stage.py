@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from aquapose.core.context import CarryForward, PipelineContext
+from aquapose.core.context import ChunkHandoff, PipelineContext
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +26,8 @@ class TrackingStage:
     camera ID.
 
     Each camera's detections are independently tracked by an OcSortTracker.
-    Tracker state is preserved between pipeline batches via ``CarryForward``,
-    enabling continuous track identity across batch boundaries.
+    Tracker state is preserved between pipeline chunks via ``ChunkHandoff``,
+    enabling continuous track identity across chunk boundaries.
 
     Only confirmed tracklets (those that have accumulated at least
     ``config.n_init`` matched detection frames) appear in the output.
@@ -51,21 +51,22 @@ class TrackingStage:
     def run(
         self,
         context: PipelineContext,
-        carry: CarryForward | None = None,
-    ) -> tuple[PipelineContext, CarryForward]:
+        carry: object | None = None,
+    ) -> tuple[PipelineContext, ChunkHandoff]:
         """Run per-camera OC-SORT tracking on this batch of frames.
 
         Reads ``context.detections`` (``list[dict[str, list[Detection]]]``) and
         ``context.camera_ids`` (``list[str]``). For each camera, restores or
         creates an OcSortTracker, feeds all frames to the tracker, then collects
-        confirmed Tracklet2D objects. A new ``CarryForward`` is built from the
-        per-camera tracker states for the next batch.
+        confirmed Tracklet2D objects. A new ``ChunkHandoff`` is built from the
+        per-camera tracker states for the next chunk.
 
         Args:
             context: Accumulated pipeline state from the Detection stage.
                 ``context.detections`` must be set.
-            carry: Cross-batch carry state from a prior ``TrackingStage.run()``
+            carry: Cross-chunk carry state from a prior ``TrackingStage.run()``
                 call. When ``None``, fresh trackers are created for all cameras.
+                Expected runtime type: ``ChunkHandoff | None``.
 
         Returns:
             Tuple of ``(context, new_carry)``. ``context.tracks_2d`` is set to
@@ -75,8 +76,9 @@ class TrackingStage:
         """
         from aquapose.core.tracking.ocsort_wrapper import OcSortTracker
 
-        if carry is None:
-            carry = CarryForward()
+        prev_tracks_2d_state: dict = {}
+        if carry is not None and hasattr(carry, "tracks_2d_state"):
+            prev_tracks_2d_state = carry.tracks_2d_state  # type: ignore[union-attr]
 
         detections: list = context.detections or []
         camera_ids: list[str] = context.camera_ids or []
@@ -84,9 +86,9 @@ class TrackingStage:
         # Build or restore one OcSortTracker per camera
         trackers: dict[str, OcSortTracker] = {}
         for cam_id in camera_ids:
-            if cam_id in carry.tracks_2d_state:
+            if cam_id in prev_tracks_2d_state:
                 trackers[cam_id] = OcSortTracker.from_state(
-                    cam_id, carry.tracks_2d_state[cam_id]
+                    cam_id, prev_tracks_2d_state[cam_id]
                 )
             else:
                 trackers[cam_id] = OcSortTracker(
@@ -110,11 +112,23 @@ class TrackingStage:
 
         context.tracks_2d = tracks_2d
 
-        # Build new carry from updated tracker states
-        new_carry = CarryForward(
-            tracks_2d_state={
-                cam_id: trackers[cam_id].get_state() for cam_id in camera_ids
-            }
-        )
+        # Build new carry from updated tracker states, preserving identity fields
+        new_tracks_2d_state = {
+            cam_id: trackers[cam_id].get_state() for cam_id in camera_ids
+        }
+        if isinstance(carry, ChunkHandoff):
+            new_carry = ChunkHandoff(
+                tracks_2d_state=new_tracks_2d_state,
+                identity_map=carry.identity_map,
+                track_id_to_global=carry.track_id_to_global,
+                next_global_id=carry.next_global_id,
+            )
+        else:
+            new_carry = ChunkHandoff(
+                tracks_2d_state=new_tracks_2d_state,
+                identity_map={},
+                track_id_to_global={},
+                next_global_id=0,
+            )
 
         return context, new_carry

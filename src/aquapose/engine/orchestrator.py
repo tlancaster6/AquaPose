@@ -1,4 +1,8 @@
-"""ChunkOrchestrator, ChunkHandoff, and chunk-mode infrastructure for AquaPose."""
+"""ChunkOrchestrator and chunk-mode infrastructure for AquaPose.
+
+ChunkHandoff is defined in aquapose.core.context and re-exported here for
+backward compatibility and public API surface (aquapose.engine.ChunkHandoff).
+"""
 
 from __future__ import annotations
 
@@ -6,40 +10,15 @@ import logging
 import os
 import pickle
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from aquapose.core.context import ChunkHandoff
 
 if TYPE_CHECKING:
     from aquapose.engine.config import PipelineConfig
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class ChunkHandoff:
-    """Cross-chunk state carried between chunk invocations.
-
-    Frozen so it is replaced wholesale each chunk, never mutated.
-
-    Attributes:
-        tracks_2d_state: Per-camera opaque OC-SORT tracker state blobs.
-            Keys are camera IDs; values are dicts from OcSortTracker.get_state().
-            Used to restore tracker continuity at the start of the next chunk.
-        identity_map: Maps chunk-local fish IDs to globally consistent fish IDs.
-            Keys are chunk-local fish IDs (from TrackletGroup.fish_id in the
-            just-completed chunk); values are global fish IDs.
-            Built by the identity stitcher after each chunk.
-        track_id_to_global: Maps (camera_id, track_id) tuples to global fish IDs.
-            Used for track-continuity-based identity stitching across chunk boundaries.
-        next_global_id: Next globally unique fish ID to assign to an unmatched
-            fish. Monotonically increasing across chunks to prevent ID reuse.
-    """
-
-    tracks_2d_state: dict  # camera_id -> OcSortTracker.get_state() blob
-    identity_map: dict  # local_fish_id -> global_fish_id
-    track_id_to_global: dict  # (camera_id, track_id) -> global_fish_id
-    next_global_id: int
 
 
 def _stitch_identities(
@@ -188,7 +167,7 @@ class ChunkOrchestrator:
         """Execute the full video in chunks and write HDF5 output."""
         import time
 
-        from aquapose.core.context import CarryForward, PipelineContext
+        from aquapose.core.context import PipelineContext
         from aquapose.core.types.frame_source import ChunkFrameSource, VideoFrameSource
         from aquapose.engine.pipeline import PosePipeline
         from aquapose.io.midline_writer import Midline3DWriter
@@ -237,10 +216,11 @@ class ChunkOrchestrator:
                 stages = _build_stages_for_chunk(config, chunk_source)
 
                 # PipelineContext is a mutable dataclass — direct field assignment is safe
+                # Pass the full ChunkHandoff directly so TrackingStage can preserve
+                # identity fields (identity_map, track_id_to_global, next_global_id).
                 initial_context = PipelineContext()
                 if prev_handoff is not None:
-                    carry = CarryForward(tracks_2d_state=prev_handoff.tracks_2d_state)
-                    initial_context.carry_forward = carry
+                    initial_context.carry_forward = prev_handoff
 
                 # Build observers; suppress ConsoleObserver (and HDF5) unless verbose
                 try:

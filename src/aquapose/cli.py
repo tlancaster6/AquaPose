@@ -260,6 +260,111 @@ def eval_cmd(run_dir: str, report: str, n_frames: int | None) -> None:
         _json.dump(result.to_dict(), f, cls=_NumpySafeEncoder, indent=2)
 
 
+@cli.command("tune")
+@click.option(
+    "--stage",
+    "-s",
+    required=True,
+    type=click.Choice(["association", "reconstruction"], case_sensitive=False),
+    help="Stage to tune.",
+)
+@click.option(
+    "--config",
+    "-c",
+    required=True,
+    type=click.Path(exists=True),
+    help="Path to the run-generated exhaustive config YAML.",
+)
+@click.option(
+    "--n-frames",
+    "n_frames",
+    type=int,
+    default=30,
+    help="Frame count for fast sweep (default: 30).",
+)
+@click.option(
+    "--n-frames-validate",
+    "n_frames_validate",
+    type=int,
+    default=100,
+    help="Frame count for top-N validation (default: 100).",
+)
+@click.option(
+    "--top-n",
+    "top_n",
+    type=int,
+    default=3,
+    help="Number of top candidates for validation (default: 3).",
+)
+def tune_cmd(
+    stage: str,
+    config: str,
+    n_frames: int,
+    n_frames_validate: int,
+    top_n: int,
+) -> None:
+    """Sweep stage parameters and output a recommended config diff."""
+    from pathlib import Path as _Path
+
+    from aquapose.core.context import StaleCacheError
+    from aquapose.evaluation.tuning import (
+        TuningOrchestrator,
+        format_comparison_table,
+        format_config_diff,
+        format_yield_matrix,
+    )
+
+    config_path = _Path(config)
+    try:
+        orchestrator = TuningOrchestrator(config_path)
+    except StaleCacheError as exc:
+        raise click.ClickException(str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    try:
+        if stage == "association":
+            result = orchestrator.sweep_association(
+                n_frames=n_frames,
+                n_frames_validate=n_frames_validate,
+                top_n=top_n,
+            )
+        else:
+            result = orchestrator.sweep_reconstruction(
+                n_frames=n_frames,
+                n_frames_validate=n_frames_validate,
+                top_n=top_n,
+            )
+    except StaleCacheError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    # Print 2D yield matrix for association sweeps
+    if result.joint_grid_results is not None:
+        from aquapose.evaluation.stages.association import DEFAULT_GRID as ASSOC_GRID
+
+        click.echo(
+            format_yield_matrix(
+                result.joint_grid_results,
+                "ray_distance_threshold",
+                ASSOC_GRID["ray_distance_threshold"],
+                "score_min",
+                ASSOC_GRID["score_min"],
+            )
+        )
+        click.echo()
+
+    # Print comparison table
+    click.echo(format_comparison_table(result.baseline_metrics, result.winner_metrics))
+    click.echo()
+
+    # Print config diff
+    from aquapose.engine.config import load_config as _load_config
+
+    baseline_config = _load_config(config_path)
+    stage_config = getattr(baseline_config, stage)
+    click.echo(format_config_diff(stage, result.winner_params, stage_config))
+
+
 cli.add_command(train_group)
 cli.add_command(prep_group)
 

@@ -1,4 +1,4 @@
-"""Unit tests for select_frames, compute_tier1, and compute_tier2 in metrics.py."""
+"""Unit tests for select_frames and compute_tier1 in metrics.py."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from aquapose.evaluation.metrics import (
     Tier1Result,
     Tier2Result,
     compute_tier1,
-    compute_tier2,
     select_frames,
 )
 
@@ -174,38 +173,30 @@ def test_compute_tier1_overall_aggregates() -> None:
 
 
 # ---------------------------------------------------------------------------
-# compute_tier2 tests
+# Tier1Result and Tier2Result dataclass tests
 # ---------------------------------------------------------------------------
 
 
-def test_compute_tier2_with_known_displacements() -> None:
-    """compute_tier2 returns max displacement for each (fish, dropout_cam)."""
-    tier2_data = {
-        0: {
-            "cam0": [1.0, 2.0, 3.0],  # max = 3.0
-            "cam1": [0.5, 0.5],  # max = 0.5
-        }
-    }
-    result = compute_tier2(tier2_data)
-    assert isinstance(result, Tier2Result)
-    assert result.per_fish_dropout[0]["cam0"] == pytest.approx(3.0)
-    assert result.per_fish_dropout[0]["cam1"] == pytest.approx(0.5)
+def test_tier1_result_is_frozen() -> None:
+    """Tier1Result is a frozen dataclass."""
+    import dataclasses
+
+    result = Tier1Result(
+        per_camera={},
+        per_fish={},
+        overall_mean_px=0.0,
+        overall_max_px=0.0,
+        fish_reconstructed=0,
+        fish_available=0,
+    )
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        result.overall_mean_px = 1.0  # type: ignore[misc]
 
 
-def test_compute_tier2_none_entries() -> None:
-    """compute_tier2 returns None when all displacement values are None."""
-    tier2_data = {
-        0: {
-            "cam0": [None, None],  # all None -> result is None
-            "cam1": [None, 2.0],  # mixed -> max of non-None = 2.0
-        }
-    }
-    result = compute_tier2(tier2_data)
-    assert result.per_fish_dropout[0]["cam0"] is None
-    assert result.per_fish_dropout[0]["cam1"] == pytest.approx(2.0)
+def test_tier2_result_is_frozen() -> None:
+    """Tier2Result is a frozen dataclass."""
+    import dataclasses
 
-
-def test_compute_tier2_empty_input() -> None:
-    """compute_tier2 handles empty tier2_data."""
-    result = compute_tier2({})
-    assert result.per_fish_dropout == {}
+    result = Tier2Result(per_fish_dropout={})
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        result.per_fish_dropout = {}  # type: ignore[misc]

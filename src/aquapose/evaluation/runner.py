@@ -297,8 +297,7 @@ class EvalRunner:
         """Build per-frame MidlineSets from PipelineContext data.
 
         Assembles MidlineSets by matching TrackletGroup tracklet centroids to
-        AnnotatedDetection midlines using a centroid proximity threshold. This
-        mirrors the logic in DiagnosticObserver.export_midline_fixtures.
+        AnnotatedDetection midlines using a centroid proximity threshold.
 
         Args:
             ctx: PipelineContext from the midline (or reconstruction) stage cache.

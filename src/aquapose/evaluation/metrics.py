@@ -1,8 +1,7 @@
 """Frame selection and metric computation for offline evaluation.
 
-Provides select_frames for deterministic frame sampling, plus compute_tier1
-and compute_tier2 for reprojection error and leave-one-out displacement
-metrics respectively.
+Provides select_frames for deterministic frame sampling, and compute_tier1
+for reprojection error metrics.
 """
 
 from __future__ import annotations

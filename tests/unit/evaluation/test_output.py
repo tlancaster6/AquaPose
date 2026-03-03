@@ -1,14 +1,9 @@
-"""Unit tests for format_summary_table and write_regression_json in output.py."""
+"""Unit tests for flag_outliers and format_baseline_report in output.py."""
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
-import numpy as np
-
 from aquapose.evaluation.metrics import Tier1Result, Tier2Result
-from aquapose.evaluation.output import format_summary_table, write_regression_json
+from aquapose.evaluation.output import flag_outliers, format_baseline_report
 
 # ---------------------------------------------------------------------------
 # Helpers: synthetic results
@@ -44,206 +39,85 @@ def _make_tier2() -> Tier2Result:
 
 
 # ---------------------------------------------------------------------------
-# format_summary_table tests
+# flag_outliers tests
 # ---------------------------------------------------------------------------
 
 
-def test_summary_table_contains_tier1_header() -> None:
-    """format_summary_table output contains 'Tier 1' section header."""
-    table = format_summary_table(
-        _make_tier1(),
-        _make_tier2(),
-        "test.npz",
-        frames_evaluated=15,
-        frames_available=300,
-    )
-    assert "Tier 1" in table
+def test_flag_outliers_identifies_high_value() -> None:
+    """flag_outliers returns keys that exceed mean + 2*std."""
+    # 9 baseline values near 1.0, one extreme outlier at 1000.0
+    # mean≈100.9, std≈299.7, threshold≈700.3 — outlier is clearly flagged
+    values = {f"c{i}": 1.0 for i in range(9)}
+    values["outlier"] = 1000.0
+    outliers = flag_outliers(values)
+    assert "outlier" in outliers
+    assert "c0" not in outliers
 
 
-def test_summary_table_contains_tier2_header() -> None:
-    """format_summary_table output contains 'Tier 2' section header."""
-    table = format_summary_table(
-        _make_tier1(),
-        _make_tier2(),
-        "test.npz",
-        frames_evaluated=15,
-        frames_available=300,
-    )
-    assert "Tier 2" in table
+def test_flag_outliers_empty_for_single_value() -> None:
+    """flag_outliers returns empty set for fewer than 2 values."""
+    outliers = flag_outliers({"cam0": 5.0})
+    assert outliers == set()
 
 
-def test_summary_table_contains_overall_row() -> None:
-    """format_summary_table output contains an 'OVERALL' aggregate row."""
-    table = format_summary_table(
-        _make_tier1(),
-        _make_tier2(),
-        "test.npz",
-        frames_evaluated=15,
-        frames_available=300,
-    )
-    assert "OVERALL" in table
+def test_flag_outliers_empty_for_uniform_values() -> None:
+    """flag_outliers returns empty set when std is zero."""
+    values = {"cam0": 2.0, "cam1": 2.0, "cam2": 2.0}
+    outliers = flag_outliers(values)
+    assert outliers == set()
 
 
-def test_summary_table_contains_fixture_name() -> None:
-    """format_summary_table output contains the fixture name."""
-    table = format_summary_table(
-        _make_tier1(),
-        _make_tier2(),
-        "my_fixture.npz",
-        frames_evaluated=15,
-        frames_available=300,
-    )
-    assert "my_fixture.npz" in table
-
-
-def test_summary_table_contains_frame_counts() -> None:
-    """format_summary_table output contains evaluated and available frame counts."""
-    table = format_summary_table(
-        _make_tier1(),
-        _make_tier2(),
-        "test.npz",
-        frames_evaluated=15,
-        frames_available=300,
-    )
-    assert "15" in table
-    assert "300" in table
-
-
-def test_summary_table_contains_known_camera_ids() -> None:
-    """format_summary_table contains camera IDs from Tier1Result."""
-    table = format_summary_table(
-        _make_tier1(),
-        _make_tier2(),
-        "test.npz",
-        frames_evaluated=15,
-        frames_available=300,
-    )
-    assert "cam0" in table
-    assert "cam1" in table
-
-
-def test_summary_table_na_for_none_tier2() -> None:
-    """format_summary_table displays N/A for None Tier 2 dropout entries."""
-    table = format_summary_table(
-        _make_tier1(),
-        _make_tier2(),
-        "test.npz",
-        frames_evaluated=15,
-        frames_available=300,
-    )
-    assert "N/A" in table
-
-
-def test_summary_table_is_string() -> None:
-    """format_summary_table returns a non-empty string."""
-    table = format_summary_table(
-        _make_tier1(),
-        _make_tier2(),
-        "test.npz",
-        frames_evaluated=15,
-        frames_available=300,
-    )
-    assert isinstance(table, str)
-    assert len(table) > 0
+def test_flag_outliers_custom_threshold() -> None:
+    """flag_outliers respects threshold_std parameter."""
+    values = {"cam0": 1.0, "cam1": 2.0, "cam2": 3.0}
+    # With threshold_std=0.5, more values become outliers
+    outliers_tight = flag_outliers(values, threshold_std=0.5)
+    outliers_wide = flag_outliers(values, threshold_std=3.0)
+    assert len(outliers_tight) >= len(outliers_wide)
 
 
 # ---------------------------------------------------------------------------
-# write_regression_json tests
+# format_baseline_report tests
 # ---------------------------------------------------------------------------
 
 
-def test_write_regression_json_produces_valid_json(tmp_path: Path) -> None:
-    """write_regression_json writes a file loadable with json.load."""
-    output_path = tmp_path / "eval_results.json"
-    write_regression_json(
-        _make_tier1(),
-        _make_tier2(),
-        fixture_name="test.npz",
-        frames_evaluated=15,
-        frames_available=300,
-        output_path=output_path,
+def test_format_baseline_report_contains_headers() -> None:
+    """format_baseline_report output contains expected section headers."""
+    report = format_baseline_report(_make_tier1(), _make_tier2(), "test.npz", 15, 300)
+    assert "Tier 1" in report
+    assert "Tier 2" in report
+    assert "Baseline" in report
+
+
+def test_format_baseline_report_contains_fixture_name() -> None:
+    """format_baseline_report includes fixture name in output."""
+    report = format_baseline_report(
+        _make_tier1(), _make_tier2(), "my_fixture.npz", 15, 300
     )
-    assert output_path.exists()
-    with output_path.open() as f:
-        data = json.load(f)
-    assert isinstance(data, dict)
+    assert "my_fixture.npz" in report
 
 
-def test_write_regression_json_has_required_keys(tmp_path: Path) -> None:
-    """JSON output contains required top-level keys."""
-    output_path = tmp_path / "eval_results.json"
-    write_regression_json(
-        _make_tier1(),
-        _make_tier2(),
-        fixture_name="test.npz",
-        frames_evaluated=15,
-        frames_available=300,
-        output_path=output_path,
-    )
-    with output_path.open() as f:
-        data = json.load(f)
-    assert "tier1" in data
-    assert "tier2" in data
-    assert "fixture" in data
-    assert "frames_evaluated" in data
-    assert "frames_available" in data
+def test_format_baseline_report_contains_frame_counts() -> None:
+    """format_baseline_report includes evaluated and available frame counts."""
+    report = format_baseline_report(_make_tier1(), _make_tier2(), "test.npz", 15, 300)
+    assert "15" in report
+    assert "300" in report
 
 
-def test_write_regression_json_null_for_none_tier2(tmp_path: Path) -> None:
-    """JSON output contains null (not absent key) for N/A Tier 2 entries."""
-    output_path = tmp_path / "eval_results.json"
-    write_regression_json(
-        _make_tier1(),
-        _make_tier2(),
-        fixture_name="test.npz",
-        frames_evaluated=15,
-        frames_available=300,
-        output_path=output_path,
-    )
-    with output_path.open() as f:
-        data = json.load(f)
-    # Fish 0, cam1 was None in Tier2Result
-    tier2_fish0 = data["tier2"]["per_fish_dropout"]["0"]
-    assert "cam1" in tier2_fish0
-    assert tier2_fish0["cam1"] is None
+def test_format_baseline_report_contains_na_for_none_tier2() -> None:
+    """format_baseline_report shows N/A for None Tier 2 dropout entries."""
+    report = format_baseline_report(_make_tier1(), _make_tier2(), "test.npz", 15, 300)
+    assert "N/A" in report
 
 
-def test_write_regression_json_numpy_scalars_serialized(tmp_path: Path) -> None:
-    """Numpy scalar values are serialized without TypeError."""
-    tier1 = Tier1Result(
-        per_camera={"cam0": {"mean_px": np.float32(1.5), "max_px": np.float32(3.0)}},
-        per_fish={0: {"mean_px": np.float32(1.5), "max_px": np.float32(3.0)}},
-        overall_mean_px=np.float32(1.5),
-        overall_max_px=np.float32(3.0),
-        fish_reconstructed=1,
-        fish_available=1,
-    )
-    tier2 = Tier2Result(per_fish_dropout={0: {"cam0": np.float32(0.001)}})
-    output_path = tmp_path / "eval_results.json"
-    # Should not raise
-    returned = write_regression_json(
-        tier1,
-        tier2,
-        fixture_name="test.npz",
-        frames_evaluated=np.int64(15),
-        frames_available=np.int64(300),
-        output_path=output_path,
-    )
-    assert returned == output_path
-    with output_path.open() as f:
-        data = json.load(f)
-    assert data["frames_evaluated"] == 15
+def test_format_baseline_report_is_string() -> None:
+    """format_baseline_report returns a non-empty string."""
+    report = format_baseline_report(_make_tier1(), _make_tier2(), "test.npz", 15, 300)
+    assert isinstance(report, str)
+    assert len(report) > 0
 
 
-def test_write_regression_json_returns_output_path(tmp_path: Path) -> None:
-    """write_regression_json returns the output path."""
-    output_path = tmp_path / "eval_results.json"
-    returned = write_regression_json(
-        _make_tier1(),
-        _make_tier2(),
-        fixture_name="test.npz",
-        frames_evaluated=15,
-        frames_available=300,
-        output_path=output_path,
-    )
-    assert returned == output_path
+def test_format_baseline_report_contains_outlier_legend() -> None:
+    """format_baseline_report includes outlier legend when data has outliers."""
+    report = format_baseline_report(_make_tier1(), _make_tier2(), "test.npz", 15, 300)
+    assert "outlier" in report.lower()

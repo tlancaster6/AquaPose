@@ -69,8 +69,9 @@ def format_baseline_report(
 ) -> str:
     """Format evaluation results as an outlier-annotated baseline report.
 
-    Produces the same sections as format_summary_table but marks entries that
-    exceed 2 standard deviations from the mean with an asterisk (``*``).
+    Produces a reprojection error section and leave-one-out stability section,
+    marking entries that exceed 2 standard deviations from the mean with an
+    asterisk (``*``).
 
     Outlier detection is applied to:
 

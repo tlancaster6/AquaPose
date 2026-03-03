@@ -18,8 +18,8 @@ Requirements for the evaluation ecosystem milestone. Each maps to roadmap phases
 
 - [x] **EVAL-01**: Detection stage evaluator computes yield, confidence distribution, yield stability, and per-camera balance metrics
 - [x] **EVAL-02**: Tracking stage evaluator computes track count, track length distribution, coast frequency, and detection coverage metrics
-- [ ] **EVAL-03**: Association stage evaluator computes fish yield ratio, singleton rate, camera coverage, and cluster quality metrics
-- [ ] **EVAL-04**: Midline stage evaluator computes keypoint confidence, midline completeness, and temporal smoothness metrics
+- [x] **EVAL-03**: Association stage evaluator computes fish yield ratio, singleton rate, camera coverage, and cluster quality metrics
+- [x] **EVAL-04**: Midline stage evaluator computes keypoint confidence, midline completeness, and temporal smoothness metrics
 - [ ] **EVAL-05**: Reconstruction stage evaluator computes mean reprojection error, Tier 2 stability, inlier ratio, and low-confidence flag rate
 - [ ] **EVAL-06**: `aquapose eval <run-dir>` CLI produces multi-stage human-readable report to stdout
 - [ ] **EVAL-07**: `aquapose eval <run-dir> --report json` produces machine-readable JSON output
@@ -31,7 +31,7 @@ Requirements for the evaluation ecosystem milestone. Each maps to roadmap phases
 - [ ] **TUNE-03**: Two-tier frame counts: configurable fast-sweep and thorough-validation frame counts via CLI flags
 - [ ] **TUNE-04**: Top-N validation runs full pipeline for sweep winners to verify E2E quality
 - [ ] **TUNE-05**: Tuning output includes before/after metric comparison and recommended config diff block
-- [ ] **TUNE-06**: DEFAULT_GRIDS for association and reconstruction parameters colocated with stage evaluator modules
+- [x] **TUNE-06**: DEFAULT_GRIDS for association and reconstruction parameters colocated with stage evaluator modules
 
 ### Cleanup
 
@@ -86,8 +86,8 @@ Requirements for the evaluation ecosystem milestone. Each maps to roadmap phases
 | INFRA-04 | Phase 46 | Complete |
 | EVAL-01 | Phase 47 | Complete |
 | EVAL-02 | Phase 47 | Complete |
-| EVAL-03 | Phase 47 | Pending |
-| EVAL-04 | Phase 47 | Pending |
+| EVAL-03 | Phase 47 | Complete |
+| EVAL-04 | Phase 47 | Complete |
 | EVAL-05 | Phase 47 | Pending |
 | EVAL-06 | Phase 48 | Pending |
 | EVAL-07 | Phase 48 | Pending |
@@ -96,7 +96,7 @@ Requirements for the evaluation ecosystem milestone. Each maps to roadmap phases
 | TUNE-03 | Phase 49 | Pending |
 | TUNE-04 | Phase 49 | Pending |
 | TUNE-05 | Phase 49 | Pending |
-| TUNE-06 | Phase 47 | Pending |
+| TUNE-06 | Phase 47 | Complete |
 | CLEAN-01 | Phase 49 | Pending |
 | CLEAN-02 | Phase 49 | Pending |
 | CLEAN-03 | Phase 48 | Pending |

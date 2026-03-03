@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: Evaluation Ecosystem
 status: unknown
-last_updated: "2026-03-03T18:49:38.743Z"
+last_updated: "2026-03-03T18:50:00Z"
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-03-03)
 ## Current Position
 
 Phase: 47 of 50 (Evaluation Primitives) — In Progress
-Plan: 1 of 3 complete — advancing to Plan 02
+Plan: 2 of 3 complete — advancing to Plan 03
 Status: Executing Phase 47
-Last activity: 2026-03-03 — Completed 47-01 (detection and tracking stage evaluators, 20 unit tests)
+Last activity: 2026-03-03 — Completed 47-02 (association and midline stage evaluators, DEFAULT_GRID, 29 unit tests)
 
-Progress: [████░░░░░░] 20% (4/6 plans complete; phase 47 plan 1/3 done)
+Progress: [█████░░░░░] 25% (5/6 plans complete; phase 47 plan 2/3 done)
 
 ## Performance Metrics
 
@@ -45,6 +45,7 @@ Progress: [████░░░░░░] 20% (4/6 plans complete; phase 47 pla
 *Updated after each plan completion*
 | Phase 46 P03 | 8 | 5 tasks | 6 files |
 | Phase 47 P01 | 4 | 2 tasks | 5 files |
+| Phase 47 P02 | 5 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,10 @@ v3.2 design decisions:
 - [Phase 47]: mean_jitter defined as mean(abs(diff(counts))) per camera averaged over cameras — stable cameras contribute 0.0, flickering cameras raise the mean
 - [Phase 47]: detection_coverage = 1.0 - coast_frequency since every Tracklet2D frame is either detected or coasted — no third state
 - [Phase 47]: stages/__init__.py left as placeholder; exports deferred to Plan 03 once all evaluators exist
+- [Phase 47 P02]: DEFAULT_GRID early_k values stored as float [5.0, 10.0, ...] to satisfy dict[str, list[float]] type; source uses int
+- [Phase 47 P02]: camera_distribution int keys converted to str in to_dict() for JSON compatibility
+- [Phase 47 P02]: temporal_smoothness returns 0.0 for fish with only one frame (no consecutive pairs)
+- [Phase 47 P02]: point_confidence=None treated as uniform 1.0 for confidence stats and completeness
 
 ### Pending Todos
 
@@ -84,6 +89,6 @@ v3.2 design decisions:
 
 ## Session Continuity
 
-Last session: 2026-03-03T18:48:37Z
-Stopped at: Completed 47-01-PLAN.md — detection and tracking stage evaluators with frozen dataclasses and 20 unit tests
+Last session: 2026-03-03T18:50:00Z
+Stopped at: Completed 47-02-PLAN.md — association and midline stage evaluators with DEFAULT_GRID and 29 unit tests
 Resume file: None

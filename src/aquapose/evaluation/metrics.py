@@ -150,34 +150,3 @@ def compute_tier1(
         fish_reconstructed=fish_reconstructed,
         fish_available=fish_available,
     )
-
-
-def compute_tier2(
-    tier2_data: dict[int, dict[str, list[float | None]]],
-) -> Tier2Result:
-    """Compute Tier 2 leave-one-out displacement metrics.
-
-    For each (fish, dropout_camera) pair, computes the maximum control-point
-    displacement across all evaluated frames. Returns None when all frames
-    produced failed reconstructions for that dropout.
-
-    Args:
-        tier2_data: Pre-accumulated displacement data from the harness.
-            Structured as fish_id -> dropout_cam_id -> list of per-frame
-            displacements (float in metres) or None for failed frames.
-
-    Returns:
-        Tier2Result with per-fish-dropout aggregates.
-    """
-    per_fish_dropout: dict[int, dict[str, float | None]] = {}
-
-    for fish_id, dropout_dict in tier2_data.items():
-        per_fish_dropout[fish_id] = {}
-        for cam_id, displacements in dropout_dict.items():
-            non_none = [d for d in displacements if d is not None]
-            if not non_none:
-                per_fish_dropout[fish_id][cam_id] = None
-            else:
-                per_fish_dropout[fish_id][cam_id] = float(max(non_none))
-
-    return Tier2Result(per_fish_dropout=per_fish_dropout)

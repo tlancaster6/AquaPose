@@ -113,7 +113,7 @@ def build_observers(
         observers.append(Animation3DObserver(output_dir=config.output_dir))
         observers.append(
             DiagnosticObserver(
-                output_dir=config.output_dir, calibration_path=config.calibration_path
+                output_dir=config.output_dir,
             )
         )
         observers.append(
@@ -151,7 +151,6 @@ def build_observers(
             observers.append(
                 DiagnosticObserver(
                     output_dir=config.output_dir,
-                    calibration_path=config.calibration_path,
                 )
             )
         elif cls is ConsoleObserver:

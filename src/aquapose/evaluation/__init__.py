@@ -1,12 +1,11 @@
 """Offline evaluation harness for reconstruction quality metrics.
 
-Provides run_evaluation, EvalResults, select_frames, flag_outliers,
-format_baseline_report, format_eval_report, format_eval_json, EvalRunner,
-EvalRunnerResult, and related types for loading evaluation data and computing
-multi-stage quality metrics without running the full pipeline.
+Provides select_frames, flag_outliers, format_baseline_report, format_eval_report,
+format_eval_json, EvalRunner, EvalRunnerResult, and related types for loading
+evaluation data and computing multi-stage quality metrics without running the
+full pipeline.
 """
 
-from aquapose.evaluation.harness import EvalResults, generate_fixture, run_evaluation
 from aquapose.evaluation.metrics import Tier1Result, Tier2Result, select_frames
 from aquapose.evaluation.output import (
     flag_outliers,
@@ -42,7 +41,6 @@ __all__ = [
     "RECONSTRUCTION_DEFAULT_GRID",
     "AssociationMetrics",
     "DetectionMetrics",
-    "EvalResults",
     "EvalRunner",
     "EvalRunnerResult",
     "MidlineMetrics",
@@ -64,7 +62,5 @@ __all__ = [
     "format_eval_json",
     "format_eval_report",
     "format_yield_matrix",
-    "generate_fixture",
-    "run_evaluation",
     "select_frames",
 ]

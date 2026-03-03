@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 Phase: 44 of 45 (Validation and Tuning)
 Plan: 1 of 2 in current phase (44-01 complete)
 Status: In progress
-Last activity: 2026-03-02 — Completed 44-01: Config wiring + grid search script for DLT threshold tuning
+Last activity: 2026-03-03 - Completed quick task 15: Replace binary inlier counting with soft linear scoring kernel and remove ghost penalty
 
 Progress: [██░░░░░░░░] 10%
 
@@ -76,6 +76,12 @@ v3.1 strategic decisions:
 
 - Phase 43 outlier rejection threshold cannot be set a priori; depends on Phase 41 eval harness output
 - Coordinate space conversions (full-image <-> crop-space) remain a cross-cutting concern for midline backends
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 15 | Replace binary inlier counting with soft linear scoring kernel and remove ghost penalty | 2026-03-03 | df0e470 | [15-replace-binary-inlier-counting-with-soft](./quick/15-replace-binary-inlier-counting-with-soft/) |
 
 ## Session Continuity
 

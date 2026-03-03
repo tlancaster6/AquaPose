@@ -3,6 +3,8 @@
 Defines the structural typing contract that all pipeline stages must satisfy,
 and the typed accumulator that flows data between stages. Also defines
 CarryForward for persisting per-camera 2D track state across pipeline batches.
+Provides StaleCacheError, load_stage_cache, and context_fingerprint for
+working with stage-output pickle caches written by DiagnosticObserver.
 
 These types live in core/ because they are pure data containers with no engine
 logic. Placing them here eliminates all TYPE_CHECKING backdoors where core/
@@ -11,8 +13,84 @@ stage files previously needed to import from engine/.
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
+import pickle
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Protocol, runtime_checkable
+
+
+class StaleCacheError(Exception):
+    """Raised when a stage cache cannot be deserialized due to class evolution."""
+
+
+def context_fingerprint(ctx: PipelineContext) -> str:
+    """Return a stable hash of PipelineContext field names.
+
+    The hash changes whenever the dataclass structure changes (fields added,
+    renamed, or removed), making it suitable as a version fingerprint in cache
+    envelopes written by DiagnosticObserver.
+
+    Args:
+        ctx: Any PipelineContext instance (only field names are hashed, not values).
+
+    Returns:
+        12-character hex string derived from SHA-256 of sorted field names.
+
+    """
+    names = sorted(f.name for f in dataclasses.fields(ctx))
+    return hashlib.sha256("|".join(names).encode()).hexdigest()[:12]
+
+
+def load_stage_cache(path: str | Path) -> PipelineContext:
+    """Load a stage cache pickle file and return the embedded PipelineContext.
+
+    Args:
+        path: Path to a *_cache.pkl file written by DiagnosticObserver.
+
+    Returns:
+        The deserialized PipelineContext.
+
+    Raises:
+        StaleCacheError: If deserialization fails (AttributeError,
+            ModuleNotFoundError, pickle.UnpicklingError) or the envelope
+            format is invalid or basic shape validation fails.
+        FileNotFoundError: If path does not exist.
+
+    """
+    p = Path(path)
+    raw = p.read_bytes()
+    try:
+        envelope = pickle.loads(raw)
+    except (AttributeError, ModuleNotFoundError, pickle.UnpicklingError) as exc:
+        raise StaleCacheError(
+            f"Cache file '{p}' is incompatible with the current codebase. "
+            f"Re-run the pipeline in diagnostic mode to regenerate it. "
+            f"Original error: {exc}"
+        ) from exc
+
+    if not isinstance(envelope, dict) or "context" not in envelope:
+        raise StaleCacheError(
+            f"Cache file '{p}' does not contain a valid envelope dict with a "
+            f"'context' key. The cache predates the envelope format — "
+            f"re-run the pipeline in diagnostic mode to regenerate it."
+        )
+
+    ctx: PipelineContext = envelope["context"]
+
+    if (
+        ctx.frame_count is not None
+        and ctx.detections is not None
+        and ctx.frame_count != len(ctx.detections)
+    ):
+        raise StaleCacheError(
+            f"Cache file '{p}' has inconsistent shape: "
+            f"frame_count={ctx.frame_count} but len(detections)={len(ctx.detections)}. "
+            f"The cache may be corrupt — re-run the pipeline in diagnostic mode."
+        )
+
+    return ctx
 
 
 @runtime_checkable
@@ -106,6 +184,9 @@ class PipelineContext:
             Each entry maps fish_id to a Spline3D (or Midline3D) object.
             Type: ``list[dict[int, Spline3D]]``
         stage_timing: Wall-clock seconds per stage, keyed by stage class name.
+        carry_forward: Cross-batch state persisted between pipeline invocations.
+            Holds per-camera 2D tracker state so tracking is continuous across
+            batch boundaries. None when no prior batch has been processed.
 
     """
 
@@ -117,6 +198,7 @@ class PipelineContext:
     annotated_detections: list | None = None
     midlines_3d: list | None = None
     stage_timing: dict = field(default_factory=dict)
+    carry_forward: CarryForward | None = None
 
     def get(self, field_name: str) -> object:
         """Return the value of a field, raising ValueError if it is None.

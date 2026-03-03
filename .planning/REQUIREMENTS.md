@@ -26,11 +26,11 @@ Requirements for the evaluation ecosystem milestone. Each maps to roadmap phases
 
 ### Tuning
 
-- [ ] **TUNE-01**: `aquapose tune --stage association` sweeps association parameters using grid search with fish yield as primary metric
-- [ ] **TUNE-02**: `aquapose tune --stage reconstruction` sweeps reconstruction parameters using grid search with mean reprojection error as primary metric
-- [ ] **TUNE-03**: Two-tier frame counts: configurable fast-sweep and thorough-validation frame counts via CLI flags
-- [ ] **TUNE-04**: Top-N validation runs full pipeline for sweep winners to verify E2E quality
-- [ ] **TUNE-05**: Tuning output includes before/after metric comparison and recommended config diff block
+- [x] **TUNE-01**: `aquapose tune --stage association` sweeps association parameters using grid search with fish yield as primary metric
+- [x] **TUNE-02**: `aquapose tune --stage reconstruction` sweeps reconstruction parameters using grid search with mean reprojection error as primary metric
+- [x] **TUNE-03**: Two-tier frame counts: configurable fast-sweep and thorough-validation frame counts via CLI flags
+- [x] **TUNE-04**: Top-N validation runs full pipeline for sweep winners to verify E2E quality
+- [x] **TUNE-05**: Tuning output includes before/after metric comparison and recommended config diff block
 - [x] **TUNE-06**: DEFAULT_GRIDS for association and reconstruction parameters colocated with stage evaluator modules
 
 ### Cleanup
@@ -91,11 +91,11 @@ Requirements for the evaluation ecosystem milestone. Each maps to roadmap phases
 | EVAL-05 | Phase 47 | Complete |
 | EVAL-06 | Phase 48 | Complete |
 | EVAL-07 | Phase 48 | Complete |
-| TUNE-01 | Phase 49 | Pending |
-| TUNE-02 | Phase 49 | Pending |
-| TUNE-03 | Phase 49 | Pending |
-| TUNE-04 | Phase 49 | Pending |
-| TUNE-05 | Phase 49 | Pending |
+| TUNE-01 | Phase 49 | Complete |
+| TUNE-02 | Phase 49 | Complete |
+| TUNE-03 | Phase 49 | Complete |
+| TUNE-04 | Phase 49 | Complete |
+| TUNE-05 | Phase 49 | Complete |
 | TUNE-06 | Phase 47 | Complete |
 | CLEAN-01 | Phase 49 | Pending |
 | CLEAN-02 | Phase 49 | Pending |

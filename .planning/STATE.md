@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: Evaluation Ecosystem
 status: unknown
-last_updated: "2026-03-03T19:30:18.080Z"
+last_updated: "2026-03-03T20:00:12.355Z"
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 10
+  completed_plans: 9
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-03)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.2 Evaluation Ecosystem — Phase 48 complete, advancing to Phase 49
+**Current focus:** v3.2 Evaluation Ecosystem — Phase 49 in progress (49-01 complete)
 
 ## Current Position
 
-Phase: 48 of 50 (EvalRunner and aquapose eval CLI) — Complete
-Plan: 2 of 2 complete — 48-01 and 48-02 both done
-Status: Phase 48 complete — EvalRunner, formatters, aquapose eval CLI all implemented
-Last activity: 2026-03-03 — Completed 48-02 (ASCII/JSON formatters, CLI eval command, deleted measure_baseline.py)
+Phase: 49 of 50 (TuningOrchestrator and aquapose tune CLI) — In Progress
+Plan: 1 of 2 complete — 49-01 (TuningOrchestrator) done
+Status: Phase 49 plan 1 complete — TuningOrchestrator with grid sweep, two-tier validation, output formatters
+Last activity: 2026-03-03 — Completed 49-01 (TuningOrchestrator, sweep_association, sweep_reconstruction, formatting)
 
-Progress: [████████░░] 50% (8/8 plans for phases 46-48; advancing to phase 49)
+Progress: [█████████░] 90% (9/10 plans for phases 46-49)
 
 ## Performance Metrics
 
@@ -50,6 +50,7 @@ Progress: [████████░░] 50% (8/8 plans for phases 46-48; adva
 | Phase 47 P03 | 6 | 2 tasks | 4 files |
 | Phase 48 P01 | 7 | 1 tasks | 3 files |
 | Phase 48 P02 | 3 | 2 tasks | 5 files |
+| Phase 49 P01 | 29 | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,9 @@ v3.2 design decisions:
 - [Phase 48]: eval_cmd function name avoids shadowing Python built-in eval; registered as @cli.command('eval')
 - [Phase 48]: format_eval_json delegates to result.to_dict() + json.dumps — no duplication of to_dict() logic
 - [Phase 48]: eval_results.json always written to run_dir on every eval invocation regardless of --report flag
+- [Phase 49]: early_k grid values (float) cast to int before dataclasses.replace() on AssociationConfig in TuningOrchestrator
+- [Phase 49]: n_points grid key maps to n_sample_points in ReconstructionConfig via _patch_reconstruction_config()
+- [Phase 49]: TuningOrchestrator exports added to evaluation/__init__.py per code-style public API requirements
 
 ### Pending Todos
 
@@ -97,11 +101,10 @@ v3.2 design decisions:
 
 ### Blockers/Concerns
 
-- Phase 49 (TuningOrchestrator) has the most moving parts: cascade config propagation and two-tier frame count logic warrant a pre-implementation sketch during planning
-- `stop_after` field presence in PipelineConfig should be confirmed at Phase 49 planning time (ARCHITECTURE.md states it exists; verify before building cascade orchestrator)
+None currently. Phase 49-01 (TuningOrchestrator) complete; stop_after confirmed present in PipelineConfig.
 
 ## Session Continuity
 
-Last session: 2026-03-03T19:24:37Z
-Stopped at: Completed 48-02-PLAN.md — ASCII/JSON formatters and aquapose eval CLI
+Last session: 2026-03-03T19:59:04Z
+Stopped at: Completed 49-01-PLAN.md — TuningOrchestrator with grid sweep engine
 Resume file: None

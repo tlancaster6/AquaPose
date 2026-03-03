@@ -16,7 +16,6 @@ import torch
 
 from aquapose.calibration.projection import RefractiveProjectionModel
 from aquapose.core.reconstruction.utils import (
-    N_SAMPLE_POINTS,
     SPLINE_K,
     SPLINE_KNOTS,
 )
@@ -45,7 +44,7 @@ class FishConfig:
             Default 1.0 gives an S-shape; 0.5 gives a C-shape; 2.0 gives a
             double-S. Only used when sinusoidal_amplitude != 0.
         scale: Total body arc length in metres. Default 0.085 (85mm).
-        n_points: Number of evenly spaced body points. Default N_SAMPLE_POINTS.
+        n_points: Number of evenly spaced body points. Default 15.
         velocity: Per-frame position displacement in metres (dx, dy, dz).
             Applied linearly: position_t = position + t * velocity. Default (0, 0, 0)
             produces a stationary fish (backward compatible).
@@ -59,7 +58,7 @@ class FishConfig:
     sinusoidal_amplitude: float = 0.0
     sinusoidal_periods: float = 1.0
     scale: float = 0.085
-    n_points: int = N_SAMPLE_POINTS
+    n_points: int = 15
     velocity: tuple[float, float, float] = (0.0, 0.0, 0.0)
     angular_velocity: float = 0.0
 
@@ -125,7 +124,7 @@ def generate_fish_3d(config: FishConfig) -> np.ndarray:
 
 
 def generate_fish_half_widths(
-    n_points: int = N_SAMPLE_POINTS,
+    n_points: int = 15,
     max_ratio: float = 0.08,
     scale: float = 0.085,
 ) -> np.ndarray:
@@ -136,7 +135,7 @@ def generate_fish_half_widths(
     is at 40% of the body length from the head.
 
     Args:
-        n_points: Number of body points. Default N_SAMPLE_POINTS.
+        n_points: Number of body points. Default 15.
         max_ratio: Maximum half-width as a fraction of ``scale``. Default 0.08
             gives approximately 6.8mm max half-width for an 85mm fish.
         scale: Fish body arc length in metres.

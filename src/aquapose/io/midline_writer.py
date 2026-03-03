@@ -13,7 +13,6 @@ import h5py
 import numpy as np
 
 from aquapose.core.reconstruction.utils import (
-    N_SAMPLE_POINTS,
     SPLINE_K,
     SPLINE_KNOTS,
 )
@@ -37,7 +36,7 @@ class Midline3DWriter:
         fish_id           (N, max_fish)           int32,   fillvalue=-1
         control_points    (N, max_fish, 7, 3)     float32, fillvalue=NaN
         arc_length        (N, max_fish)           float32, fillvalue=NaN
-        half_widths       (N, max_fish, 15)       float32, fillvalue=NaN
+        half_widths       (N, max_fish, n_sample_points) float32, fillvalue=NaN
         n_cameras         (N, max_fish)           int32,   fillvalue=0
         mean_residual     (N, max_fish)           float32, fillvalue=-1.0
         max_residual      (N, max_fish)           float32, fillvalue=-1.0
@@ -57,7 +56,7 @@ class Midline3DWriter:
         output_path: str | Path,
         max_fish: int = 9,
         chunk_frames: int = 1000,
-        n_sample_points: int = N_SAMPLE_POINTS,
+        n_sample_points: int = 15,
     ) -> None:
         self._path = Path(output_path)
         self._max_fish = max_fish
@@ -231,7 +230,7 @@ def read_midline3d_results(path: str | Path) -> dict[str, Any]:
         - ``fish_id``: shape ``(N, max_fish)``, int32
         - ``control_points``: shape ``(N, max_fish, 7, 3)``, float32
         - ``arc_length``: shape ``(N, max_fish)``, float32
-        - ``half_widths``: shape ``(N, max_fish, 15)``, float32
+        - ``half_widths``: shape ``(N, max_fish, n_sample_points)``, float32
         - ``n_cameras``: shape ``(N, max_fish)``, int32
         - ``mean_residual``: shape ``(N, max_fish)``, float32
         - ``max_residual``: shape ``(N, max_fish)``, float32

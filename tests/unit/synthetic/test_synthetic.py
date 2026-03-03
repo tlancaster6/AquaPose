@@ -10,7 +10,6 @@ import torch
 
 from aquapose.calibration.projection import RefractiveProjectionModel
 from aquapose.core.reconstruction.utils import (
-    N_SAMPLE_POINTS,
     SPLINE_K,
     SPLINE_KNOTS,
     SPLINE_N_CTRL,
@@ -60,7 +59,7 @@ def test_generate_fish_3d_straight() -> None:
     )
     pts = generate_fish_3d(cfg)
 
-    assert pts.shape == (N_SAMPLE_POINTS, 3)
+    assert pts.shape == (15, 3)
     assert pts.dtype == np.float32
 
     # Total arc length should be ~= scale (0.085m)
@@ -76,7 +75,7 @@ def test_generate_fish_3d_arc() -> None:
     )
     pts = generate_fish_3d(cfg)
 
-    assert pts.shape == (N_SAMPLE_POINTS, 3)
+    assert pts.shape == (15, 3)
 
     # Arc length should be ~= scale (0.085m)
     diffs = np.diff(pts, axis=0)
@@ -149,8 +148,8 @@ def test_project_fish_returns_midline2d() -> None:
     )
 
     assert result is not None
-    assert result.points.shape == (N_SAMPLE_POINTS, 2)
-    assert result.half_widths.shape == (N_SAMPLE_POINTS,)
+    assert result.points.shape == (15, 2)
+    assert result.half_widths.shape == (15,)
     assert result.fish_id == 0
     assert result.camera_id == "test_cam"
     assert result.frame_index == 0
@@ -287,7 +286,7 @@ def test_round_trip_accuracy() -> None:
     valid_np = valid.detach().cpu().numpy()
 
     # For every valid point, the projected pixel should match directly
-    for i in range(N_SAMPLE_POINTS):
+    for i in range(15):
         if valid_np[i] and not np.any(np.isnan(ml.points[i])):
             err = float(np.linalg.norm(ml.points[i] - direct_np[i]))
             assert err < 1.0, f"Point {i}: round-trip error {err:.3f}px > 1px"
@@ -400,7 +399,7 @@ def test_generate_fish_3d_sinusoidal() -> None:
     pts_straight = generate_fish_3d(cfg_straight)
     pts_sine = generate_fish_3d(cfg_sine)
 
-    assert pts_sine.shape == (N_SAMPLE_POINTS, 3)
+    assert pts_sine.shape == (15, 3)
 
     # Y extent should be larger for sinusoidal fish
     y_range_straight = float(pts_straight[:, 1].max() - pts_straight[:, 1].min())

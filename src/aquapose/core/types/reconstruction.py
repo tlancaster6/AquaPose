@@ -23,11 +23,11 @@ class Midline3D:
         knots: B-spline knot vector, shape (11,), float32.
         degree: B-spline degree (always 3).
         arc_length: Total arc length of the spline in world metres.
-        half_widths: Half-width of the fish at each of the 15 body positions
-            in world metres, shape (N_SAMPLE_POINTS,), float32.
+        half_widths: Half-width of the fish at each sample body position
+            in world metres, shape (n_sample_points,), float32.
         n_cameras: Minimum number of camera observations across body points.
         mean_residual: Mean spline reprojection residual in pixels.  Computed
-            by evaluating the fitted spline at N_SAMPLE_POINTS positions,
+            by evaluating the fitted spline at n_sample_points positions,
             reprojecting into every observing camera, and averaging the pixel
             distance to the corresponding observed 2D midline point.
         max_residual: Maximum single-point spline reprojection residual in

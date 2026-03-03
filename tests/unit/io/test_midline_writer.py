@@ -9,7 +9,6 @@ import numpy as np
 import pytest
 
 from aquapose.core.reconstruction.utils import (
-    N_SAMPLE_POINTS,
     SPLINE_K,
     SPLINE_KNOTS,
 )
@@ -31,11 +30,11 @@ def _make_midline3d(
 ) -> Midline3D:
     """Create a synthetic Midline3D for testing.
 
-    Uses the module-level SPLINE_KNOTS, SPLINE_K, N_SAMPLE_POINTS constants.
+    Uses the module-level SPLINE_KNOTS, SPLINE_K, 15 constants.
     """
     rng = np.random.default_rng(seed=fish_id + frame_index * 100)
     control_points = rng.random((7, 3)).astype(np.float32)
-    half_widths = rng.random(N_SAMPLE_POINTS).astype(np.float32) * 0.01
+    half_widths = rng.random(15).astype(np.float32) * 0.01
     return Midline3D(
         fish_id=fish_id,
         frame_index=frame_index,
@@ -88,7 +87,7 @@ def test_write_read_round_trip(tmp_path: Path) -> None:
     assert result["fish_id"].shape == (3, max_fish)
     assert result["control_points"].shape == (3, max_fish, 7, 3)
     assert result["arc_length"].shape == (3, max_fish)
-    assert result["half_widths"].shape == (3, max_fish, N_SAMPLE_POINTS)
+    assert result["half_widths"].shape == (3, max_fish, 15)
     assert result["n_cameras"].shape == (3, max_fish)
     assert result["mean_residual"].shape == (3, max_fish)
     assert result["max_residual"].shape == (3, max_fish)

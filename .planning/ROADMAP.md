@@ -201,7 +201,11 @@ Plans:
   2. The curve optimizer backend module is deleted and no code imports from it
   3. The refine_midline_lm stub and unused orientation/epipolar code paths are removed
   4. All existing tests pass after cleanup and no test references deleted modules
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 45-01-PLAN.md — Delete dead modules, migrate surviving symbols, update production-code imports and config
+- [ ] 45-02-PLAN.md — Update/delete test files, update GUIDEBOOK.md and project config
 
 ## Progress
 
@@ -221,4 +225,4 @@ Phases execute in numeric order: 40 → 41 → 42 → 43 → 43.1 → 44 → 45
 | 43. Triangulation Rebuild | 2/2 | Complete    | 2026-03-02 | - |
 | 43.1 Association Tuning | 2/2 | Complete    | 2026-03-03 | - |
 | 44. Validation and Tuning | 2/2 | Complete    | 2026-03-03 | - |
-| 45. Dead Code Cleanup | v3.1 | 0/? | Not started | - |
+| 45. Dead Code Cleanup | v3.1 | 0/2 | Not started | - |

@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: Evaluation Ecosystem
 status: unknown
-last_updated: "2026-03-03T18:31:04.761Z"
+last_updated: "2026-03-03T18:35:04.693Z"
 progress:
-  total_phases: 2
-  completed_phases: 0
+  total_phases: 3
+  completed_phases: 1
   total_plans: 6
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-03-03)
 
 ## Current Position
 
-Phase: 46 of 50 (Engine Primitives)
-Plan: 3 of 3 in current phase (Plans 01, 02 complete)
-Status: In Progress
-Last activity: 2026-03-03 — Completed 46-02 (DiagnosticObserver pickle cache writing, PosePipeline stage-skip logic)
+Phase: 46 of 50 (Engine Primitives) — COMPLETE
+Plan: 3 of 3 complete — Phase 46 finished
+Status: Ready for Phase 47
+Last activity: 2026-03-03 — Completed 46-03 (--resume-from CLI flag, integration tests, Plan 02 prerequisite)
 
-Progress: [██░░░░░░░░] 10% (2/3 plans in phase 46)
+Progress: [███░░░░░░░] 15% (3/3 plans in phase 46 complete; advancing to phase 47)
 
 ## Performance Metrics
 
@@ -43,6 +43,7 @@ Progress: [██░░░░░░░░] 10% (2/3 plans in phase 46)
 | 46 | 2 complete | 10 min | 5 min |
 
 *Updated after each plan completion*
+| Phase 46 P03 | 8 | 5 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -65,6 +66,8 @@ v3.2 design decisions:
 - [Phase 46]: Stage name lookup uses type(stage).__name__ matched against _STAGE_OUTPUT_FIELDS dict — pure string matching, no isinstance
 - [Phase 46]: DiagnosticObserver captures run_id from PipelineStart event (not __init__) to keep signature stable
 - [Phase 46]: Cache envelope format: {run_id, timestamp, stage_name, version_fingerprint, context} written to diagnostics/<stage>_cache.pkl
+- [Phase 46]: Inline import of load_stage_cache/StaleCacheError inside CLI run() avoids top-level import coupling
+- [Phase 46]: CLI --resume-from uses click.Path(exists=True) for automatic missing-file validation; StaleCacheError converts to ClickException
 
 ### Pending Todos
 
@@ -77,6 +80,6 @@ v3.2 design decisions:
 
 ## Session Continuity
 
-Last session: 2026-03-03T18:31:00Z
-Stopped at: Completed 46-02-PLAN.md — DiagnosticObserver pickle cache writing and PosePipeline stage-skip logic
+Last session: 2026-03-03T18:33:00Z
+Stopped at: Completed 46-03-PLAN.md — --resume-from CLI flag, integration tests, and Plan 02 prerequisite (stage-skip logic)
 Resume file: None

@@ -21,8 +21,8 @@ Requirements for the evaluation ecosystem milestone. Each maps to roadmap phases
 - [x] **EVAL-03**: Association stage evaluator computes fish yield ratio, singleton rate, camera coverage, and cluster quality metrics
 - [x] **EVAL-04**: Midline stage evaluator computes keypoint confidence, midline completeness, and temporal smoothness metrics
 - [x] **EVAL-05**: Reconstruction stage evaluator computes mean reprojection error, Tier 2 stability, inlier ratio, and low-confidence flag rate
-- [ ] **EVAL-06**: `aquapose eval <run-dir>` CLI produces multi-stage human-readable report to stdout
-- [ ] **EVAL-07**: `aquapose eval <run-dir> --report json` produces machine-readable JSON output
+- [x] **EVAL-06**: `aquapose eval <run-dir>` CLI produces multi-stage human-readable report to stdout
+- [x] **EVAL-07**: `aquapose eval <run-dir> --report json` produces machine-readable JSON output
 
 ### Tuning
 
@@ -89,8 +89,8 @@ Requirements for the evaluation ecosystem milestone. Each maps to roadmap phases
 | EVAL-03 | Phase 47 | Complete |
 | EVAL-04 | Phase 47 | Complete |
 | EVAL-05 | Phase 47 | Complete |
-| EVAL-06 | Phase 48 | Pending |
-| EVAL-07 | Phase 48 | Pending |
+| EVAL-06 | Phase 48 | Complete |
+| EVAL-07 | Phase 48 | Complete |
 | TUNE-01 | Phase 49 | Pending |
 | TUNE-02 | Phase 49 | Pending |
 | TUNE-03 | Phase 49 | Pending |

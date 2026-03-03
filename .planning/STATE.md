@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: Evaluation Ecosystem
 status: unknown
-last_updated: "2026-03-03T19:04:35.715Z"
+last_updated: "2026-03-03T19:19:59.655Z"
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 8
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-03)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.2 Evaluation Ecosystem — Phase 47 in progress
+**Current focus:** v3.2 Evaluation Ecosystem — Phase 48 in progress
 
 ## Current Position
 
-Phase: 47 of 50 (Evaluation Primitives) — Complete
-Plan: 3 of 3 complete — Phase 47 done, advancing to Phase 48
-Status: Phase 47 complete, ready for Phase 48 (ContextLoader)
-Last activity: 2026-03-03 — Completed 47-03 (reconstruction evaluator, DEFAULT_GRID, full __init__.py wiring, 26 unit tests)
+Phase: 48 of 50 (EvalRunner and aquapose eval CLI) — In Progress
+Plan: 1 of 2 complete — 48-01 done, advancing to 48-02
+Status: Phase 48 Plan 01 complete — EvalRunner orchestration class built with 10 unit tests
+Last activity: 2026-03-03 — Completed 48-01 (EvalRunner, EvalRunnerResult, TDD with synthetic cache fixtures)
 
-Progress: [██████░░░░] 33% (6/6 plans complete; phase 47 fully done)
+Progress: [███████░░░] 44% (7/8+ plans; phase 47 complete, phase 48 in progress)
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Progress: [██████░░░░] 33% (6/6 plans complete; phase 47 ful
 | Phase 47 P01 | 4 | 2 tasks | 5 files |
 | Phase 47 P02 | 5 | 2 tasks | 4 files |
 | Phase 47 P03 | 6 | 2 tasks | 4 files |
+| Phase 48 P01 | 7 | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,9 @@ v3.2 design decisions:
 - [Phase 47 P03]: ReconstructionMetrics is a fresh frozen dataclass, NOT a subclass of Tier1Result — keeps evaluation types independent
 - [Phase 47 P03]: tier2_stability = max of all non-None displacement values in Tier2Result.per_fish_dropout (None if all None or empty)
 - [Phase 47 P03]: evaluate_reconstruction() wraps compute_tier1() internally; tier2_result is keyword-only param
+- [Phase 48-01]: EvalRunner._read_n_animals() uses inline import of load_config to avoid top-level engine coupling
+- [Phase 48-01]: MidlineSet construction for evaluate_association uses tracklet_groups + annotated_detections centroid proximity matching (same as DiagnosticObserver)
+- [Phase 48-01]: evaluate_midline receives first-camera Midline2D per fish per frame from MidlineSet (single-camera representative)
 
 ### Pending Todos
 
@@ -94,6 +98,6 @@ v3.2 design decisions:
 
 ## Session Continuity
 
-Last session: 2026-03-03T18:58:28Z
-Stopped at: Completed 47-03-PLAN.md — reconstruction evaluator with DEFAULT_GRID, full __init__.py wiring, Phase 47 complete
+Last session: 2026-03-03T19:18:00Z
+Stopped at: Completed 48-01-PLAN.md — EvalRunner with EvalRunnerResult, 10 unit tests, TDD pattern
 Resume file: None

@@ -293,31 +293,25 @@ def extrapolate_edge_keypoints(
     def _extrapolate_toward_edge(
         anchor: np.ndarray, direction: np.ndarray
     ) -> np.ndarray:
-        """Move anchor along direction until it hits the image boundary."""
-        # Normalize direction
-        norm = np.linalg.norm(direction)
-        if norm < 1e-9:
-            return anchor.copy()
-        d = direction / norm
+        """Snap anchor perpendicularly to the nearest image boundary.
 
-        # Find how far we can travel in direction d before hitting boundary
-        t_max = float("inf")
-        if d[0] > 1e-9:
-            t_max = min(t_max, (img_w - anchor[0]) / d[0])
-        elif d[0] < -1e-9:
-            t_max = min(t_max, -anchor[0] / d[0])
-        if d[1] > 1e-9:
-            t_max = min(t_max, (img_h - anchor[1]) / d[1])
-        elif d[1] < -1e-9:
-            t_max = min(t_max, -anchor[1] / d[1])
-
-        if t_max == float("inf") or t_max < 0:
-            return anchor.copy()
-
-        new_pt = anchor + d * t_max
-        # Clamp to image bounds
-        new_pt[0] = float(np.clip(new_pt[0], 0, img_w - 1))
-        new_pt[1] = float(np.clip(new_pt[1], 0, img_h - 1))
+        The chain direction is ignored — we simply move the point straight
+        to the closest edge.  This ensures the OBB extends to capture
+        off-frame fish body without overshooting along a nearly-parallel
+        direction.
+        """
+        x, y = anchor
+        dists = [x, img_w - 1 - x, y, img_h - 1 - y]
+        idx = int(np.argmin(dists))
+        new_pt = anchor.copy()
+        if idx == 0:  # left
+            new_pt[0] = 0.0
+        elif idx == 1:  # right
+            new_pt[0] = float(img_w - 1)
+        elif idx == 2:  # top
+            new_pt[1] = 0.0
+        else:  # bottom
+            new_pt[1] = float(img_h - 1)
         return new_pt
 
     # Check first visible keypoint (nose end)
@@ -726,8 +720,8 @@ def generate_pose_dataset(
     image_lookup: dict[int, dict] = coco["_image_lookup"]
     ann_lookup: dict[int, list[dict]] = coco["_ann_lookup"]
 
-    # Collect crops: (crop_stem, pose_row, n_keypoints)
-    crop_entries: list[tuple[str, list[float], int]] = []
+    # Collect crops: (crop_stem, pose_rows, n_keypoints)
+    crop_entries: list[tuple[str, list[list[float]], int]] = []
 
     n_keypoints = 0
 
@@ -759,18 +753,45 @@ def generate_pose_dataset(
             corners = pca_obb(coords_ext, visible_ext, lateral_pad)
 
             warped, affine_mat = affine_warp_crop(img, corners, crop_w, crop_h)
-            kp_crop, vis_crop = transform_keypoints(
-                coords, visible, affine_mat, crop_w, crop_h
-            )
 
-            pose_row = format_pose_annotation(
-                0.5, 0.5, 1.0, 1.0, kp_crop, vis_crop, crop_w, crop_h
-            )
+            # Include keypoints from ALL fish visible in this crop
+            pose_rows: list[list[float]] = []
+            for other_ann in annotations:
+                other_coords, other_vis = parse_keypoints(other_ann)
+                kp_crop, vis_crop = transform_keypoints(
+                    other_coords, other_vis, affine_mat, crop_w, crop_h
+                )
+                if int(vis_crop.sum()) < min_visible:
+                    continue
+
+                # Compute PCA OBB on crop-space keypoints for the bbox.
+                # This gives proper lateral padding around the fish as it
+                # appears in the crop, without inflation from projecting a
+                # rotated image-space OBB through the affine.
+                crop_obb = pca_obb(kp_crop, vis_crop, lateral_pad)
+                # Clip to crop bounds and take AABB
+                crop_obb[:, 0] = np.clip(crop_obb[:, 0], 0, crop_w - 1)
+                crop_obb[:, 1] = np.clip(crop_obb[:, 1], 0, crop_h - 1)
+                x_min, y_min = crop_obb.min(axis=0)
+                x_max, y_max = crop_obb.max(axis=0)
+                cx = (x_min + x_max) / 2.0 / crop_w
+                cy = (y_min + y_max) / 2.0 / crop_h
+                bw = (x_max - x_min) / crop_w
+                bh = (y_max - y_min) / crop_h
+
+                pose_rows.append(
+                    format_pose_annotation(
+                        cx, cy, bw, bh, kp_crop, vis_crop, crop_w, crop_h
+                    )
+                )
+
+            if not pose_rows:
+                continue
 
             crop_stem = f"{img_stem}_{ann_idx:03d}"
             crop_img_path = tmp_dir / f"{crop_stem}.jpg"
             cv2.imwrite(str(crop_img_path), warped)
-            crop_entries.append((crop_stem, pose_row, n_keypoints))
+            crop_entries.append((crop_stem, pose_rows, n_keypoints))
 
     # Shuffle and split
     rng = random.Random(seed)
@@ -781,17 +802,19 @@ def generate_pose_dataset(
 
     counts: dict[str, int] = {"train": 0, "val": 0}
 
-    for crop_stem, pose_row, _n_kp in crop_entries:
+    for crop_stem, pose_rows, _n_kp in crop_entries:
         split = "val" if crop_stem in val_set else "train"
         src_img = tmp_dir / f"{crop_stem}.jpg"
         dst_img = pose_root / "images" / split / f"{crop_stem}.jpg"
         if src_img.exists():
             shutil.move(str(src_img), str(dst_img))
 
-        # Write per-crop label .txt file (one line = one annotation)
+        # Write per-crop label .txt file (one line per fish in crop)
         label_path = pose_root / "labels" / split / f"{crop_stem}.txt"
+        label_lines = [" ".join(str(v) for v in row) for row in pose_rows]
         label_path.write_text(
-            " ".join(str(v) for v in pose_row) + "\n", encoding="utf-8"
+            "\n".join(label_lines) + ("\n" if label_lines else ""),
+            encoding="utf-8",
         )
 
         counts[split] += 1

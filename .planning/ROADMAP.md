@@ -7,7 +7,7 @@
 - ✅ **v2.1 Identity** — Phases 22-28 (shipped 2026-02-28)
 - ✅ **v2.2 Backends** — Phases 29-33.1 (shipped 2026-03-01)
 - ✅ **v3.0 Ultralytics Unification** — Phases 35-39 (shipped 2026-03-02)
-- 🚧 **v3.1 Reconstruction** — Phases 40-45 (in progress)
+- ✅ **v3.1 Reconstruction** — Phases 40-45 (shipped 2026-03-03)
 
 ## Phases
 
@@ -96,7 +96,7 @@ Full details: `.planning/milestones/v3.0-ROADMAP.md`
 
 </details>
 
-### 🚧 v3.1 Reconstruction (In Progress)
+### ✅ v3.1 Reconstruction (Shipped 2026-03-03)
 
 **Milestone Goal:** Tear down over-engineered reconstruction backends and rebuild from a minimal, empirically-validated triangulation baseline with a proper evaluation harness.
 
@@ -108,7 +108,7 @@ Full details: `.planning/milestones/v3.0-ROADMAP.md`
 - [x] **Phase 43: Triangulation Rebuild** - Implement stripped-down confidence-weighted DLT triangulation with outlier rejection and B-spline fitting (completed 2026-03-02)
 - [x] **Phase 43.1: Association Tuning** - Sweep association parameters; marginal gains only, current defaults accepted (completed 2026-03-03)
 - [x] **Phase 44: Validation and Tuning** - DLT validated against baseline; outlier_threshold tuned from 50.0 to 10.0 (completed 2026-03-03)
-- [ ] **Phase 45: Dead Code Cleanup** - Remove old triangulation backend, curve optimizer, and other dead reconstruction code
+- [x] **Phase 45: Dead Code Cleanup** - Remove old triangulation backend, curve optimizer, and other dead reconstruction code (completed 2026-03-03)
 
 ## Phase Details
 
@@ -203,9 +203,11 @@ Plans:
   4. All existing tests pass after cleanup and no test references deleted modules
 **Plans**: 2 plans
 
+**Outcome:** 5 dead modules deleted (~3,200 lines removed), surviving constants migrated to utils.py, all imports updated, config simplified, GUIDEBOOK.md updated. DLT is the sole reconstruction backend.
+
 Plans:
-- [ ] 45-01-PLAN.md — Delete dead modules, migrate surviving symbols, update production-code imports and config
-- [ ] 45-02-PLAN.md — Update/delete test files, update GUIDEBOOK.md and project config
+- [x] 45-01-PLAN.md — Delete dead modules, migrate surviving symbols, update production-code imports and config
+- [x] 45-02-PLAN.md — Update/delete test files, update GUIDEBOOK.md and project config
 
 ## Progress
 
@@ -225,4 +227,4 @@ Phases execute in numeric order: 40 → 41 → 42 → 43 → 43.1 → 44 → 45
 | 43. Triangulation Rebuild | 2/2 | Complete    | 2026-03-02 | - |
 | 43.1 Association Tuning | 2/2 | Complete    | 2026-03-03 | - |
 | 44. Validation and Tuning | 2/2 | Complete    | 2026-03-03 | - |
-| 45. Dead Code Cleanup | v3.1 | 0/2 | Not started | - |
+| 45. Dead Code Cleanup | v3.1 | 2/2 | Complete    | 2026-03-03 |

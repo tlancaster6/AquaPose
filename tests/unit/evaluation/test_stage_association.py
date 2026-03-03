@@ -7,14 +7,14 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+
+from aquapose.core.types.midline import Midline2D
+from aquapose.core.types.reconstruction import MidlineSet
 from aquapose.evaluation.stages.association import (
     DEFAULT_GRID,
     AssociationMetrics,
     evaluate_association,
 )
-
-from aquapose.core.types.midline import Midline2D
-from aquapose.core.types.reconstruction import MidlineSet
 
 # ---------------------------------------------------------------------------
 # Helper: build synthetic MidlineSet
@@ -297,7 +297,7 @@ def test_to_dict_camera_distribution_str_keyed() -> None:
 def test_no_engine_imports_in_association_module() -> None:
     """association.py must not import from aquapose.engine."""
     module_path = (
-        Path(__file__).parents[4]
+        Path(__file__).parents[3]
         / "src"
         / "aquapose"
         / "evaluation"

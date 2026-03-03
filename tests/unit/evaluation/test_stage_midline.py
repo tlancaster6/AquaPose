@@ -8,9 +8,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from aquapose.evaluation.stages.midline import MidlineMetrics, evaluate_midline
 
 from aquapose.core.types.midline import Midline2D
+from aquapose.evaluation.stages.midline import MidlineMetrics, evaluate_midline
 
 # ---------------------------------------------------------------------------
 # Helper: build synthetic Midline2D

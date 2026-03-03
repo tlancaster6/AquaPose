@@ -180,6 +180,51 @@
 
 ---
 
+## Milestone: v3.2 — Evaluation Ecosystem
+
+**Shipped:** 2026-03-03
+**Phases:** 5 | **Plans:** 11 | **Timeline:** 1 day
+
+### What Was Built
+- Per-stage pickle caching system with StaleCacheError and ContextLoader for sweep isolation
+- Five typed stage evaluators (detection, tracking, association, midline, reconstruction) with frozen metric dataclasses
+- `aquapose eval` CLI for multi-stage quality reports (human-readable + JSON)
+- `aquapose tune` CLI with grid sweeps, two-tier validation, and config diff output
+- Partial pipeline execution via `--resume-from` and `initial_context`
+- Full removal of legacy evaluation machinery (harness.py, NPZ export, 3 standalone scripts)
+
+### What Worked
+- **Clean dependency chain:** Phase ordering (46→47→48→49→50) had perfect dependency isolation — each phase consumed only what the previous produced
+- **Evaluation-first pattern continued:** Building stage evaluators (Phase 47) before the runner (Phase 48) and tuner (Phase 49) meant each layer had tested foundations
+- **Single-day velocity:** 5 phases and 11 plans completed in one day — tight scope and well-understood domain from v3.1 foundations
+- **Zero engine imports in evaluators:** The constraint that stage evaluators take explicit params (not config objects) paid off — evaluators are testable with synthetic data and reusable
+- **Aggressive cleanup in final phase:** Deleting legacy code immediately (not deprecating with shims) eliminated maintenance burden
+
+### What Was Inefficient
+- **SUMMARY one_liner fields still not populated:** Fifth consecutive milestone where automated accomplishment extraction fails — pattern is now endemic
+- **NPZ fixture system built in v3.1 then removed in v3.2:** The MidlineFixture + NPZ serialization pattern (Phase 41) was replaced by per-stage pickle caches — could have gone directly to pickle caches if v3.2 had been planned first
+- **STATE.md velocity metrics incomplete:** Only 2 of 5 phases had timing data — metric tracking degraded mid-milestone
+
+### Patterns Established
+- Per-stage pickle cache envelope format: `{run_id, timestamp, stage_name, version_fingerprint, context}`
+- ContextLoader shallow copy for sweep isolation (immutable-by-convention stage outputs)
+- Stage evaluator pattern: pure function + frozen dataclass metrics + DEFAULT_GRID colocation
+- Two-tier validation: fast sweep (few frames) → thorough top-N (many frames) → config diff
+- Inline imports in CLI commands to avoid top-level engine coupling
+
+### Key Lessons
+1. **Plan evaluation infrastructure across milestones** — NPZ fixtures built in v3.1 were immediately replaced; coordinating v3.1+v3.2 design upfront would have avoided the throwaway work
+2. **Aggressive deletion is better than deprecation** — removing legacy code entirely (not shimming) resulted in a cleaner codebase with no confusion about which path to use
+3. **Per-stage caching enables efficient sweeps** — pickle caches as the single evaluation data source eliminated the monolithic NPZ bottleneck and enabled partial pipeline execution
+4. **Enforce SUMMARY frontmatter in tooling** — five milestones of unfilled one_liner fields means the tooling should either auto-fill or block plan completion until populated
+
+### Cost Observations
+- Model mix: ~60% sonnet (executors), ~30% opus (orchestrator), ~10% haiku (verifiers)
+- Sessions: 1-2 across 1 day
+- Notable: Most efficient milestone yet — 11 plans in a single day with full audit passing 22/22 requirements
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -190,6 +235,7 @@
 | v2.0 | 3 days | 10 | Full architectural refactor; audit-then-remediate pattern |
 | v3.0 | 2 days | 5 | Ultralytics migration; incremental file relocation strategy |
 | v3.1 | 2 days | 7 | Reconstruction rebuild with evaluation-first approach |
+| v3.2 | 1 day | 5 | Evaluation ecosystem; per-stage caching + CLI tools |
 
 ### Cumulative Quality
 
@@ -199,6 +245,7 @@
 | v2.0 | 18,660 + 14,826 test | 514 | 1 |
 | v3.0 | 22,087 + 18,829 test | 656 | 3 |
 | v3.1 | 19,493 source | - | 3 |
+| v3.2 | 20,789 source | ~788 | 0 |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -208,3 +255,5 @@
 4. Audit phases produce better remediation than fix-as-you-go
 5. Go directly to the right format — intermediate format churn wastes effort (v3.0 NDJSON→txt lesson)
 6. Build evaluation infrastructure before making changes — every change should be measurable (v3.1)
+7. Plan infrastructure across milestones to avoid throwaway work (v3.1 NPZ → v3.2 pickle replacement)
+8. Aggressive deletion beats deprecation — remove legacy code entirely, don't shim (v3.2)

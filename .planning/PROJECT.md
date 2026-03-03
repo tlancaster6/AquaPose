@@ -2,7 +2,7 @@
 
 ## What This Is
 
-AquaPose is a 3D fish pose estimation system that reconstructs the position, orientation, and body shape of cichlids from a 13-camera aquarium rig. Built as an event-driven computation engine with strict 3-layer architecture (Core Computation → PosePipeline → Observers), the pipeline executes 5 stages — Detection (YOLO-OBB), 2D Tracking (OC-SORT per-camera), Association (ray-ray scoring + Leiden clustering), Midline (YOLO-seg or YOLO-pose backends), and Reconstruction (confidence-weighted DLT triangulation + B-spline fitting) — producing dense 3D trajectories and midline kinematics for behavioral research. Precomputed refractive lookup tables (forward pixel→ray and inverse voxel→pixel) eliminate per-frame refraction math during association. An offline evaluation harness with real-data fixtures enables data-driven tuning of reconstruction parameters via Tier 1 (reprojection error) and Tier 2 (leave-one-out stability) metrics. Invoked via `aquapose run --config path.yaml` with production, diagnostic, synthetic, and benchmark execution modes.
+AquaPose is a 3D fish pose estimation system that reconstructs the position, orientation, and body shape of cichlids from a 13-camera aquarium rig. Built as an event-driven computation engine with strict 3-layer architecture (Core Computation → PosePipeline → Observers), the pipeline executes 5 stages — Detection (YOLO-OBB), 2D Tracking (OC-SORT per-camera), Association (ray-ray scoring + Leiden clustering), Midline (YOLO-seg or YOLO-pose backends), and Reconstruction (confidence-weighted DLT triangulation + B-spline fitting) — producing dense 3D trajectories and midline kinematics for behavioral research. Precomputed refractive lookup tables (forward pixel→ray and inverse voxel→pixel) eliminate per-frame refraction math during association. Per-stage pickle caching enables offline evaluation via `aquapose eval` (multi-stage quality reports) and `aquapose tune` (parameter sweeps with two-tier validation). Invoked via `aquapose run --config path.yaml` with production, diagnostic, synthetic, and benchmark execution modes.
 
 ## Core Value
 
@@ -74,17 +74,16 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - ✓ Association parameter sweep infrastructure (ASSOC-01 through ASSOC-04) — v3.1
 - ✓ Dead reconstruction code removed: old triangulation, curve optimizer, epipolar/orientation (CLEAN-01 through CLEAN-03) — v3.1
 
+- ✓ Per-stage pickle caching with StaleCacheError and ContextLoader (INFRA-01 through INFRA-04) — v3.2
+- ✓ Five typed stage evaluators with frozen metric dataclasses and DEFAULT_GRIDs (EVAL-01 through EVAL-05, TUNE-06) — v3.2
+- ✓ `aquapose eval` CLI for multi-stage quality reports (EVAL-06, EVAL-07) — v3.2
+- ✓ `aquapose tune` CLI with grid sweeps, two-tier validation, config diff output (TUNE-01 through TUNE-05) — v3.2
+- ✓ Legacy evaluation machinery removed: harness.py, NPZ export, standalone scripts (CLEAN-01 through CLEAN-05) — v3.2
+- ✓ Partial pipeline execution via --resume-from and initial_context (INFRA-02, INFRA-03) — v3.2
+
 ### Active
 
-<!-- Current milestone: v3.2 Evaluation Ecosystem -->
-
-- [ ] Unified evaluation and parameter tuning system with `aquapose eval` and `aquapose tune` CLI subcommands
-- [ ] Per-stage proxy metrics for all 5 pipeline stages (detection, tracking, association, midline, reconstruction)
-- [ ] Single-stage parameter sweeps with stage-specific primary metrics
-- [ ] Cascade tuning (association → reconstruction) with proper caching and E2E validation
-- [ ] Partial pipeline execution via pre-populated PipelineContext
-- [ ] Per-stage diagnostic files replacing monolithic NPZ
-- [ ] Retirement of standalone tuning scripts
+(No active requirements — next milestone not yet defined)
 
 ### Out of Scope
 
@@ -101,15 +100,15 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ## Context
 
-### Current State (v3.1 shipped)
+### Current State (v3.2 shipped)
 
-- **Codebase:** 19,493 LOC source across `src/aquapose/` (calibration, core/, engine/, io, evaluation, visualization)
+- **Codebase:** 20,789 LOC source across `src/aquapose/` (calibration, core/, engine/, io, evaluation, visualization)
 - **Architecture:** Event-driven 3-layer — Core Computation (5 stages) → PosePipeline (orchestrator) → Observers (6 side-effect handlers)
 - **Pipeline order:** Detection (YOLO-OBB) → 2D Tracking (OC-SORT) → Association (Leiden) → Midline (YOLO-seg or YOLO-pose) → Reconstruction (DLT triangulation + B-spline)
 - **Tech stack:** Python 3.11, PyTorch, PyTorch3D, scikit-image, OpenCV, h5py, ultralytics (YOLO), Click (CLI), Plotly (3D viz), boxmot (OC-SORT), leidenalg/igraph, hatch build system
 - **Midline backends:** SegmentationBackend (YOLO-seg + skeletonization) and PoseEstimationBackend (YOLO-pose + spline), selectable via `midline.backend` config field
 - **Reconstruction:** Single DLT backend — confidence-weighted triangulation with outlier rejection (threshold=10.0), B-spline fitting (7 control points)
-- **Evaluation:** Offline harness with NPZ fixtures, CalibBundle, Tier 1 reprojection + Tier 2 leave-one-out metrics
+- **Evaluation:** Per-stage pickle caching, five typed stage evaluators, `aquapose eval` (quality reports), `aquapose tune` (parameter sweeps with two-tier validation)
 - **Training infrastructure:** `aquapose train {yolo-obb, seg, pose}` CLI subcommands with standard YOLO txt+yaml data format
 - **Core organization:** Shared types in `core/types/`, implementations in `core/<stage>/`, legacy top-level dirs eliminated
 - **Known limitation:** Z-reconstruction uncertainty 132x larger than XY due to top-down camera geometry; ~70% singleton rate in association (upstream detection/tracking bottleneck)
@@ -178,19 +177,11 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Precomputed LUTs over per-frame refraction | Forward+inverse LUTs eliminate ~ms/frame refraction math during association | ✓ Good — enables trajectory-level scoring at scale |
 | Auto-generate LUTs on first pipeline run | No separate CLI subcommand; LUTs built lazily in AssociationStage | ✓ Good — zero setup friction |
 | Import boundary via AST checker + pre-commit | Automated enforcement prevents architectural regression | ✓ Good — 0 violations at milestone completion |
+| Per-stage pickle caching over monolithic NPZ | One file per StageComplete event; ContextLoader for sweep isolation | ✓ Good — enables efficient parameter sweeps |
+| Stage evaluators with zero engine imports | Pipeline config passes as explicit function params | ✓ Good — clean separation |
+| No automatic config mutation from tuning | Config diff block for manual application preserves reproducibility | ✓ Good — researcher reviews all changes |
+| Legacy evaluation fully removed (not shimmed) | harness.py, NPZ export, 3 standalone scripts deleted | ✓ Good — no dead code maintenance |
+| Two-tier validation for parameter sweeps | Fast sweep (few frames) → thorough top-N validation (many frames) | ✓ Good — balances speed and reliability |
 
 ---
-## Current Milestone: v3.2 Evaluation Ecosystem
-
-**Goal:** Unified evaluation and parameter tuning system that measures stage-specific quality at every pipeline stage, supports single-stage sweeps and cascade tuning, and leverages the diagnostic observer as the caching layer.
-
-**Target features:**
-- Per-stage proxy metrics for all 5 pipeline stages
-- `aquapose eval` CLI for evaluating diagnostic runs
-- `aquapose tune` CLI for parameter sweeps and cascade tuning
-- Partial pipeline execution via pre-populated PipelineContext
-- Per-stage diagnostic files replacing monolithic NPZ
-- Orchestrator pattern over PosePipeline for sweep logic
-
----
-*Last updated: 2026-03-03 after v3.2 Evaluation Ecosystem milestone started*
+*Last updated: 2026-03-03 after v3.2 Evaluation Ecosystem milestone*

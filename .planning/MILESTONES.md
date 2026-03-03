@@ -1,5 +1,28 @@
 # Milestones
 
+## v3.2 Evaluation Ecosystem (Shipped: 2026-03-03)
+
+**Phases completed:** 5 phases (46-50), 11 plans
+**Timeline:** 1 day (2026-03-03)
+**Codebase:** 20,789 LOC source
+**Git range:** 58 commits, 42 files changed (+5,850 / -2,936)
+
+**Key accomplishments:**
+1. Per-stage pickle caching system with StaleCacheError, ContextLoader, and envelope format for offline evaluation data
+2. Five typed stage evaluators (detection, tracking, association, midline, reconstruction) with frozen metric dataclasses and DEFAULT_GRIDs
+3. `aquapose eval <run-dir>` CLI producing multi-stage quality reports in human-readable and JSON format
+4. `aquapose tune --stage` CLI with grid sweeps, two-tier validation (fast sweep + thorough top-N), and config diff output
+5. Removed all legacy evaluation machinery — harness.py, midline_fixture.py, NPZ export, and 3 standalone scripts
+6. Partial pipeline execution via `--resume-from` and `initial_context` for efficient parameter sweeps
+
+**Delivered:** Unified evaluation and parameter tuning system replacing standalone scripts with `aquapose eval` and `aquapose tune` CLI subcommands, measuring stage-specific quality at every pipeline stage with per-stage pickle caching as the data source. All 22 requirements satisfied, audit passed.
+
+**Tech debt (non-blocking):**
+- 4 stale docstring references to deleted artifacts (dlt.py, evaluation/__init__.py, config.py)
+- 4 pre-existing issues (test_pose_dataset_structure failure, 40 typecheck errors, 2 skipped test modules)
+
+---
+
 ## v3.1 Reconstruction (Shipped: 2026-03-03)
 
 **Phases completed:** 7 phases (40-45 including 43.1), 13 plans

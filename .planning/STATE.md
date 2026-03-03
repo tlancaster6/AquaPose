@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: Evaluation Ecosystem
 status: unknown
-last_updated: "2026-03-03T18:58:28Z"
+last_updated: "2026-03-03T19:04:35.715Z"
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 6
+  total_plans: 8
   completed_plans: 6
 ---
 

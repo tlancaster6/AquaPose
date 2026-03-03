@@ -25,7 +25,7 @@ from aquapose.io.discovery import discover_camera_videos
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-__all__ = ["FrameSource", "VideoFrameSource"]
+__all__ = ["ChunkFrameSource", "FrameSource", "VideoFrameSource"]
 
 logger = logging.getLogger(__name__)
 
@@ -246,3 +246,78 @@ class VideoFrameSource:
             frames[cam_id] = frame
 
         return frames
+
+
+class ChunkFrameSource:
+    """Windowed view into a VideoFrameSource for chunk-mode processing.
+
+    Wraps a :class:`VideoFrameSource` and presents a contiguous window of
+    frames as a zero-based local index space. The underlying source must
+    already be open (context-managed) before iterating or reading.
+
+    The context manager is a no-op: the orchestrator opens the underlying
+    :class:`VideoFrameSource` once for the entire run and creates
+    :class:`ChunkFrameSource` views over it without re-opening/closing.
+
+    Args:
+        source: An open :class:`VideoFrameSource` instance.
+        start_frame: Global first frame index (inclusive).
+        end_frame: Global last frame index (exclusive).
+    """
+
+    def __init__(
+        self,
+        source: VideoFrameSource,
+        start_frame: int,
+        end_frame: int,
+    ) -> None:
+        self._source = source
+        self.start_frame = start_frame
+        self.end_frame = end_frame
+
+    @property
+    def camera_ids(self) -> list[str]:
+        """Sorted list of camera identifiers (delegates to underlying source)."""
+        return self._source.camera_ids
+
+    def __len__(self) -> int:
+        """Number of frames in this chunk window."""
+        return self.end_frame - self.start_frame
+
+    def __enter__(self) -> ChunkFrameSource:
+        """No-op context manager — returns self."""
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        """No-op context manager exit — does nothing."""
+
+    def __iter__(self) -> Iterator[tuple[int, dict[str, np.ndarray]]]:
+        """Yield ``(local_idx, {cam_id: frame})`` for each frame in the window.
+
+        Local indices run from 0 to ``len(self) - 1``, corresponding to
+        global frames ``start_frame`` through ``end_frame - 1``.
+        """
+        for local_idx in range(self.end_frame - self.start_frame):
+            global_idx = self.start_frame + local_idx
+            frames = self._source.read_frame(global_idx)
+            yield local_idx, frames
+
+    def read_frame(self, idx: int) -> dict[str, np.ndarray]:
+        """Read a specific frame by chunk-local index.
+
+        Args:
+            idx: Zero-based local frame index within this chunk window.
+
+        Returns:
+            Dictionary mapping camera_id to BGR uint8 frame array.
+        """
+        return self._source.read_frame(self.start_frame + idx)
+
+    @property
+    def global_frame_offset(self) -> int:
+        """Global frame index of the first frame in this chunk.
+
+        Used by the orchestrator to compute global HDF5 frame indices from
+        chunk-local indices.
+        """
+        return self.start_frame

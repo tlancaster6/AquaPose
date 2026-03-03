@@ -15,7 +15,7 @@ Requirements for chunk processing milestone. Each maps to roadmap phases.
 
 ### Chunk Orchestration
 
-- [ ] **CHUNK-01**: ChunkOrchestrator processes video in fixed-size temporal chunks, each running full 5-stage pipeline independently
+- [x] **CHUNK-01**: ChunkOrchestrator processes video in fixed-size temporal chunks, each running full 5-stage pipeline independently
 - [x] **CHUNK-02**: `chunk_size` config field in pipeline config with null/0 fallback to full-video mode (no behavioral change)
 - [x] **CHUNK-03**: Warning emitted when `chunk_size < 100` frames (insufficient temporal evidence for reliable association scoring)
 - [x] **CHUNK-04**: ChunkHandoff frozen dataclass replaces CarryForward — carries tracker state + identity map across chunk boundaries
@@ -23,12 +23,12 @@ Requirements for chunk processing milestone. Each maps to roadmap phases.
 
 ### Identity
 
-- [ ] **IDENT-01**: Post-chunk identity stitching maps chunk-local fish IDs to globally consistent IDs via track ID continuity from OC-SORT carry-forward
-- [ ] **IDENT-02**: Unmatched tracklet groups (no known track IDs) receive fresh global IDs; matched groups inherit existing global fish IDs
+- [x] **IDENT-01**: Post-chunk identity stitching maps chunk-local fish IDs to globally consistent IDs via track ID continuity from OC-SORT carry-forward
+- [x] **IDENT-02**: Unmatched tracklet groups (no known track IDs) receive fresh global IDs; matched groups inherit existing global fish IDs
 
 ### Output
 
-- [ ] **OUT-01**: Per-chunk HDF5 flush via existing Midline3DWriter with global frame offset applied
+- [x] **OUT-01**: Per-chunk HDF5 flush via existing Midline3DWriter with global frame offset applied
 - [ ] **OUT-02**: HDF5Observer disabled when chunk mode is active — orchestrator owns HDF5 output as a run-level concern
 
 ### Integration
@@ -75,14 +75,14 @@ Requirements for chunk processing milestone. Each maps to roadmap phases.
 | FRAME-01 | Phase 51 | Complete (51-01) |
 | FRAME-02 | Phase 51 | Complete (51-01) |
 | FRAME-03 | Phase 51 | Complete |
-| CHUNK-01 | Phase 52 | Pending |
+| CHUNK-01 | Phase 52 | Complete |
 | CHUNK-02 | Phase 52 | Complete |
 | CHUNK-03 | Phase 52 | Complete |
 | CHUNK-04 | Phase 52 | Complete |
 | CHUNK-05 | Phase 52 | Complete |
-| IDENT-01 | Phase 52 | Pending |
-| IDENT-02 | Phase 52 | Pending |
-| OUT-01 | Phase 52 | Pending |
+| IDENT-01 | Phase 52 | Complete |
+| IDENT-02 | Phase 52 | Complete |
+| OUT-01 | Phase 52 | Complete |
 | OUT-02 | Phase 53 | Pending |
 | INTEG-01 | Phase 53 | Pending |
 | INTEG-02 | Phase 53 | Pending |

@@ -187,5 +187,5 @@ Plans:
 | 40-45 | v3.1 | 13/13 | Complete | 2026-03-03 |
 | 46-50 | v3.2 | 11/11 | Complete | 2026-03-03 |
 | 51 | 2/2 | Complete    | 2026-03-03 | - |
-| 52 | 1/3 | In Progress|  | - |
+| 52 | 2/3 | In Progress|  | - |
 | 53 | v3.3 | 0/TBD | Not started | - |

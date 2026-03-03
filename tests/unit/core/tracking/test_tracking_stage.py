@@ -4,7 +4,7 @@ Tests verify:
 - Empty detections produce an empty tracks_2d dict
 - Single camera single fish produces a Tracklet2D with correct fields
 - Multiple cameras are tracked independently
-- CarryForward preserves tracker state between batches (same track IDs)
+- ChunkHandoff preserves tracker state between chunks (same track IDs)
 - Tracklet2D fields conform to spec (tuples, correct types)
 """
 
@@ -131,7 +131,7 @@ class TestSingleCameraSingleFish:
 
 
 class TestCarryForward:
-    """CarryForward preserves tracker state between batches."""
+    """ChunkHandoff preserves tracker state between chunks."""
 
     def test_carry_forward_preserves_track_ids(self) -> None:
         """Track IDs from batch 1 persist into batch 2."""
@@ -172,15 +172,15 @@ class TestCarryForward:
         assert tracklets[0].track_id == 0
 
     def test_carry_returned_has_camera_state(self) -> None:
-        """CarryForward returned by run() has per-camera state."""
-        from aquapose.core.context import CarryForward
+        """ChunkHandoff returned by run() has per-camera state."""
+        from aquapose.core.context import ChunkHandoff
 
         stage = _make_stage()
         dets = [{"cam1": [_make_det()], "cam2": [_make_det()]}]
         ctx = _make_context(camera_ids=["cam1", "cam2"], detections=dets)
         _, carry = stage.run(ctx)
 
-        assert isinstance(carry, CarryForward)
+        assert isinstance(carry, ChunkHandoff)
         assert "cam1" in carry.tracks_2d_state
         assert "cam2" in carry.tracks_2d_state
 

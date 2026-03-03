@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from aquapose.core.context import (
-    CarryForward,
+    ChunkHandoff,
     PipelineContext,
     StaleCacheError,
     context_fingerprint,
@@ -94,5 +94,11 @@ def test_carry_forward_field_exists() -> None:
     ctx_default = PipelineContext()
     assert ctx_default.carry_forward is None
 
-    ctx_with_carry = PipelineContext(carry_forward=CarryForward())
+    handoff = ChunkHandoff(
+        tracks_2d_state={},
+        identity_map={},
+        track_id_to_global={},
+        next_global_id=0,
+    )
+    ctx_with_carry = PipelineContext(carry_forward=handoff)
     assert ctx_with_carry.carry_forward is not None

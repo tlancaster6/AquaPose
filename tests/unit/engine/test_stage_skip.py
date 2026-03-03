@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from aquapose.core.context import CarryForward, PipelineContext
+from aquapose.core.context import ChunkHandoff, PipelineContext
 from aquapose.engine import (
     Event,
     PosePipeline,
@@ -148,10 +148,15 @@ def test_pipeline_extracts_carry_from_initial_context(tmp_path: Path) -> None:
 
     carry_state = {"cam1": {"some": "state"}}
     initial_ctx = PipelineContext()
-    initial_ctx.carry_forward = CarryForward(tracks_2d_state=carry_state)
+    initial_ctx.carry_forward = ChunkHandoff(
+        tracks_2d_state=carry_state,
+        identity_map={},
+        track_id_to_global={},
+        next_global_id=0,
+    )
 
     # Use a stage that records the carry passed to it
-    received_carry: list[CarryForward | None] = []
+    received_carry: list[ChunkHandoff | None] = []
 
     class CarryCapture:
         def run(self, ctx: PipelineContext) -> PipelineContext:
@@ -183,7 +188,12 @@ def test_carry_forward_injected_after_tracking_stage(tmp_path: Path) -> None:
     # Verify: if a stage sets context.carry_forward directly, it persists.
     class CarrySettingStage:
         def run(self, ctx: PipelineContext) -> PipelineContext:
-            ctx.carry_forward = CarryForward(tracks_2d_state={"cam1": {}})
+            ctx.carry_forward = ChunkHandoff(
+                tracks_2d_state={"cam1": {}},
+                identity_map={},
+                track_id_to_global={},
+                next_global_id=0,
+            )
             return ctx
 
     pipeline = PosePipeline(stages=[CarrySettingStage()], config=config)

@@ -225,8 +225,8 @@ class TestTrackingStageDirectly:
         assert isinstance(result_ctx.tracks_2d, dict)
 
     def test_tracking_stage_creates_default_carry_if_none(self) -> None:
-        """TrackingStage creates a valid CarryForward when carry=None."""
-        from aquapose.core.context import CarryForward, PipelineContext
+        """TrackingStage creates a valid ChunkHandoff when carry=None."""
+        from aquapose.core.context import ChunkHandoff, PipelineContext
         from aquapose.core.tracking import TrackingStage
         from aquapose.engine.config import TrackingConfig
 
@@ -235,7 +235,7 @@ class TestTrackingStageDirectly:
         ctx.detections = []
         stage = TrackingStage(config=TrackingConfig())
         _, carry = stage.run(ctx)
-        assert isinstance(carry, CarryForward)
+        assert isinstance(carry, ChunkHandoff)
         assert isinstance(carry.tracks_2d_state, dict)
 
     def test_tracking_stage_present_in_production_build(self) -> None:

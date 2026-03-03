@@ -283,7 +283,7 @@ class OcSortTracker:
         state needed to continue tracking in the next batch.
 
         Returns:
-            State dict suitable for storage in CarryForward.tracks_2d_state.
+            State dict suitable for storage in ChunkHandoff.tracks_2d_state.
         """
         return {
             "tracker": self._tracker,

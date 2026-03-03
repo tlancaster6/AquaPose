@@ -2,6 +2,254 @@
 
 <!-- version list -->
 
+## v1.1.0-dev.6 (2026-03-03)
+
+### Bug Fixes
+
+- Wire calibration into DiagnosticObserver for v2.0 fixture export
+  ([`e93cf8d`](https://github.com/tlancaster6/AquaPose/commit/e93cf8d07abb61d3794d27571ff0f3497cad2f58))
+
+### Chores
+
+- Complete v3.1 Reconstruction milestone
+  ([`92e3eb8`](https://github.com/tlancaster6/AquaPose/commit/92e3eb86a2759dc2ab6418e536a4fb7e1636525f))
+
+- Remove phase 46 (evaluation-unification-and-optimization)
+  ([`b9e56c9`](https://github.com/tlancaster6/AquaPose/commit/b9e56c9b7aefbbb183f3dd8e47666df7d00d6c09))
+
+### Documentation
+
+- Create milestone v3.1 roadmap (6 phases)
+  ([`d9efb3d`](https://github.com/tlancaster6/AquaPose/commit/d9efb3d40dff44c128c6dcd32394c191a3dab401))
+
+- Define milestone v3.1 requirements
+  ([`0b92fd6`](https://github.com/tlancaster6/AquaPose/commit/0b92fd65ac233771a5eb9f9182a763fee4a9f6e2))
+
+- Start milestone v3.1 Reconstruction
+  ([`14f7eec`](https://github.com/tlancaster6/AquaPose/commit/14f7eecf19e18013649a604f9f6c4847776d92d4))
+
+- **40**: Capture phase context
+  ([`993e133`](https://github.com/tlancaster6/AquaPose/commit/993e13373811197bfe594b928bd0b5d51c87ac40))
+
+- **40-01**: Complete midline fixture serialization plan
+  ([`3479982`](https://github.com/tlancaster6/AquaPose/commit/3479982ac12da1bc97411fdbb9c7baf2f3fe5451))
+
+- **40-02**: Complete midline fixture loader plan
+  ([`bc094df`](https://github.com/tlancaster6/AquaPose/commit/bc094df6ca63b6cf0495fd9c3e6f59eb53631836))
+
+- **41**: Create evaluation harness phase plan
+  ([`9eb4719`](https://github.com/tlancaster6/AquaPose/commit/9eb4719233f2e5f939852a2fd6cd3289284ebb97))
+
+- **41**: Research evaluation harness phase domain
+  ([`060ab5d`](https://github.com/tlancaster6/AquaPose/commit/060ab5d27fb93234ba9943a5674a740ce592708b))
+
+- **41-01**: Complete CalibBundle and NPZ v2.0 calibration bundling plan
+  ([`7bf02ef`](https://github.com/tlancaster6/AquaPose/commit/7bf02ef622a342ea0b57d5187eb057d76016769d))
+
+- **41-02**: Complete evaluation harness plan
+  ([`b653232`](https://github.com/tlancaster6/AquaPose/commit/b653232978422993a84226cd9e1b7ea2121e8cfc))
+
+- **42**: Capture phase context
+  ([`5473b9b`](https://github.com/tlancaster6/AquaPose/commit/5473b9bda9073b8abeb67cd9798fd1d4dbddbb44))
+
+- **42**: Create phase plan
+  ([`35638d7`](https://github.com/tlancaster6/AquaPose/commit/35638d75e2329c0bff40ea8dc0baf2f9a8642de1))
+
+- **42-01**: Complete baseline measurement plan
+  ([`5054377`](https://github.com/tlancaster6/AquaPose/commit/50543775fdf7c5293aad4f13009d8ac05d31e4eb))
+
+- **43**: Capture phase context
+  ([`092a358`](https://github.com/tlancaster6/AquaPose/commit/092a3587b7f07a3e408bc9a990345c8537ded302))
+
+- **43-01**: Complete helper extraction plan - utils.py created
+  ([`016038e`](https://github.com/tlancaster6/AquaPose/commit/016038e11782de09864932f4f2af1ed0d28fe38c))
+
+- **43-02**: Complete DltBackend plan
+  ([`5cdab52`](https://github.com/tlancaster6/AquaPose/commit/5cdab52cf91ffb0e9783a83b682d7ce83d06d0a1))
+
+- **43.1**: Capture phase context
+  ([`fb286b3`](https://github.com/tlancaster6/AquaPose/commit/fb286b3b43d70b3adb1665f7dc4305c98bc8ad0b))
+
+- **43.1**: Complete phase research
+  ([`fc96905`](https://github.com/tlancaster6/AquaPose/commit/fc96905f3f8fef4e3427ec0369b2e84b9d02a1b4))
+
+- **43.1**: Create phase plans and update requirements
+  ([`45c44ff`](https://github.com/tlancaster6/AquaPose/commit/45c44fffeb1c7c050342642ec7bf2df461cd7856))
+
+- **43.1**: Research phase domain
+  ([`b1b8c70`](https://github.com/tlancaster6/AquaPose/commit/b1b8c7046278e8280229d0a730ad39a8a1823af4))
+
+- **43.1-01**: Complete plan execution summary
+  ([`01ffe7c`](https://github.com/tlancaster6/AquaPose/commit/01ffe7c5739c5236f9da4d24500b0db6b6ffec13))
+
+- **43.1-02**: Complete plan execution summary
+  ([`f307f05`](https://github.com/tlancaster6/AquaPose/commit/f307f05e3dbf5ac0cb47ca91ea8f0303174bc38d))
+
+- **44**: Capture phase context
+  ([`b7f9857`](https://github.com/tlancaster6/AquaPose/commit/b7f985787e0f9e9a5ef2151ca471ed69310edff4))
+
+- **44-01**: Complete plan execution summary and update tracking
+  ([`bce98c2`](https://github.com/tlancaster6/AquaPose/commit/bce98c239a605b7542518745d2d09546b9783b77))
+
+- **45**: Capture phase context
+  ([`fe6b278`](https://github.com/tlancaster6/AquaPose/commit/fe6b2788496cc10faca7d296a83d3a56e062dad7))
+
+- **45**: Create phase plan
+  ([`f4921dd`](https://github.com/tlancaster6/AquaPose/commit/f4921dd35311f4c86e59e83f398111db70a7a706))
+
+- **45**: Research phase domain
+  ([`b1f9b4a`](https://github.com/tlancaster6/AquaPose/commit/b1f9b4abdfa1711c70ba07227fa19dc4fd0c1fef))
+
+- **45-01**: Add plan summary
+  ([`6247179`](https://github.com/tlancaster6/AquaPose/commit/6247179d13701e9ea81d1e6ed4d33790b400c6d2))
+
+- **45-02**: Add plan summary
+  ([`1e8d4a3`](https://github.com/tlancaster6/AquaPose/commit/1e8d4a3ed700228eb7f9667f1c75ae04422e0565))
+
+- **phase-40**: Complete phase execution
+  ([`ac4c719`](https://github.com/tlancaster6/AquaPose/commit/ac4c71977c32b0444d133c79d2387616765a44cd))
+
+- **phase-41**: Complete phase execution
+  ([`5a10bba`](https://github.com/tlancaster6/AquaPose/commit/5a10bbad0c57dc36368726ad47cfd5971662cef0))
+
+- **phase-42**: Complete phase execution
+  ([`7445722`](https://github.com/tlancaster6/AquaPose/commit/744572222a0ec117d8c8263d5679ff5cb1e1cada))
+
+- **phase-43**: Complete phase execution
+  ([`6458689`](https://github.com/tlancaster6/AquaPose/commit/64586899c1403f41526325451dcb4520f3ad97ad))
+
+- **phase-43.1**: Complete phase execution
+  ([`658841e`](https://github.com/tlancaster6/AquaPose/commit/658841ebac0f64b0a4116f2bcc8011d7f36aac11))
+
+- **quick-15**: Complete soft scoring kernel plan execution
+  ([`df0e470`](https://github.com/tlancaster6/AquaPose/commit/df0e470d8e4e69f6135a5acff40d40f7588fd8ef))
+
+- **quick-15**: Create plan for soft scoring kernel and ghost penalty removal
+  ([`736fd6a`](https://github.com/tlancaster6/AquaPose/commit/736fd6a80adda6cf3922a53f25d5da4d3cf37412))
+
+- **quick-15**: Replace binary inlier counting with soft linear scoring kernel and remove ghost
+  penalty
+  ([`3640a54`](https://github.com/tlancaster6/AquaPose/commit/3640a543fd32dfdc2746f6146d0eeaf59c7165e0))
+
+- **quick-16**: Complete plan execution summary
+  ([`f5a40a4`](https://github.com/tlancaster6/AquaPose/commit/f5a40a479f409224028b20bd4e5863f4e114f7d4))
+
+- **quick-16**: Restructure tune_association.py with joint 2D grid sweep and widened ranges
+  ([`ea852f0`](https://github.com/tlancaster6/AquaPose/commit/ea852f0071c06e56affecc53b023715fff6a7d6f))
+
+- **quick-17**: Complete plan execution summary
+  ([`473a86a`](https://github.com/tlancaster6/AquaPose/commit/473a86abe791622a7a29a146b1bb529f06074e11))
+
+- **quick-17**: Create plan to unify n_sample_points config
+  ([`5961266`](https://github.com/tlancaster6/AquaPose/commit/5961266f7c39579745bd0a1d79acbbe3e2ba2575))
+
+- **state**: Mark phase 45 complete, v3.1 milestone shipped
+  ([`f1dce77`](https://github.com/tlancaster6/AquaPose/commit/f1dce774276cc47dc5fcabc8dd62a597435da1b5))
+
+- **state**: Record phase 43.1 context session
+  ([`f12c840`](https://github.com/tlancaster6/AquaPose/commit/f12c8401b1d22f887f54032e208bda87e976fb4e))
+
+- **state**: Record phase 45 context session
+  ([`0aa20fa`](https://github.com/tlancaster6/AquaPose/commit/0aa20fa0adea4d86c41de75b65d37fe23847ec17))
+
+### Features
+
+- Add reconstruction coverage rate to evaluation metrics
+  ([`044112d`](https://github.com/tlancaster6/AquaPose/commit/044112d01fefa1f7b7891f7be521529e301c00ef))
+
+- **40-01**: Add MidlineSet assembly and NPZ export to DiagnosticObserver
+  ([`e61e002`](https://github.com/tlancaster6/AquaPose/commit/e61e0025d3f5e88499916fd57384343f3b083ea5))
+
+- **40-01**: Create MidlineFixture dataclass and NPZ key convention
+  ([`10d7b5f`](https://github.com/tlancaster6/AquaPose/commit/10d7b5f44e951c125b61b0f3cde4f56764c91679))
+
+- **40-02**: Implement load_midline_fixture for NPZ deserialization
+  ([`7ec4f96`](https://github.com/tlancaster6/AquaPose/commit/7ec4f967d0667c80683ae90a60090754a9a4a283))
+
+- **41-01**: Add CalibBundle dataclass and v2.0 NPZ loading support
+  ([`e2aa926`](https://github.com/tlancaster6/AquaPose/commit/e2aa926ba4082a3c6b445d4be9f130d53991ae6b))
+
+- **41-01**: Extend export_midline_fixtures to write calib/ keys for v2.0
+  ([`e6b3369`](https://github.com/tlancaster6/AquaPose/commit/e6b33696adbec5394c4abfdc95cf1c2febea1f68))
+
+- **41-02**: Implement format_summary_table and write_regression_json
+  ([`855f593`](https://github.com/tlancaster6/AquaPose/commit/855f5931eb8d9bdedb03ca06be3f52b6af7c3b35))
+
+- **41-02**: Implement run_evaluation harness orchestrator
+  ([`57a32b1`](https://github.com/tlancaster6/AquaPose/commit/57a32b18d193af3c6fbcd06b9691f87569b475b1))
+
+- **41-02**: Implement select_frames, compute_tier1, compute_tier2
+  ([`a81993d`](https://github.com/tlancaster6/AquaPose/commit/a81993d26f870fcacb97463a1385c1937699e3de))
+
+- **42-01**: Add flag_outliers and format_baseline_report to evaluation output
+  ([`b0d7999`](https://github.com/tlancaster6/AquaPose/commit/b0d79993f97bf585bd9beba8be04dc022ed399a6))
+
+- **42-01**: Create measure_baseline.py baseline measurement script
+  ([`fb1fe2f`](https://github.com/tlancaster6/AquaPose/commit/fb1fe2f136f1ad62cb7901a14aa6eda226bb2a3d))
+
+- **43-01**: Extract shared reconstruction helpers to utils.py
+  ([`4777375`](https://github.com/tlancaster6/AquaPose/commit/47773756548ec530759755f3ae0f1bceeb9a7c72))
+
+- **43-02**: Implement DltBackend with confidence-weighted DLT triangulation
+  ([`210c0e7`](https://github.com/tlancaster6/AquaPose/commit/210c0e781b79042442f9394728bf3444173c53e5))
+
+- **43-02**: Register DltBackend in backends/__init__.py factory
+  ([`1c54c11`](https://github.com/tlancaster6/AquaPose/commit/1c54c11e2d6a8f48a0d68de7030fde13e6fb5c40))
+
+- **43.1-01**: Add skip_tier2 flag and generate_fixture helper to evaluation harness
+  ([`682b3f0`](https://github.com/tlancaster6/AquaPose/commit/682b3f0c997860a564a9369aa28b6ad97bd8a831))
+
+- **43.1-02**: Create association parameter tuning sweep script
+  ([`e1b3fc8`](https://github.com/tlancaster6/AquaPose/commit/e1b3fc80984861c03ea99d5d37115c72e0540d63))
+
+- **44-01**: Add outlier_threshold to ReconstructionConfig and wire through run_evaluation
+  ([`83631bc`](https://github.com/tlancaster6/AquaPose/commit/83631bc583d49e3a2ebb6481422da79a736b04e2))
+
+- **44-01**: Create grid search and comparison script for DLT threshold tuning
+  ([`ca560f8`](https://github.com/tlancaster6/AquaPose/commit/ca560f8790fdd522863ced477c0841382ebaab9b))
+
+- **45-01**: Delete dead reconstruction backends and update production code
+  ([`8f9983b`](https://github.com/tlancaster6/AquaPose/commit/8f9983b1728c5e3cb11455c607672182b36e3088))
+
+- **45-02**: Update tests and docs for DLT-only reconstruction
+  ([`42c72e7`](https://github.com/tlancaster6/AquaPose/commit/42c72e78fd6167ffccd63a6ad411dae99bd63dfb))
+
+- **quick-15**: Replace binary inlier counting with soft kernel, remove ghost penalty
+  ([`f76e676`](https://github.com/tlancaster6/AquaPose/commit/f76e6768bdd5ef4456f487b21fadd2fdb344dbfd))
+
+- **quick-16**: Restructure tune_association.py with joint grid sweep
+  ([`4905671`](https://github.com/tlancaster6/AquaPose/commit/4905671f4e4365f0695835caae5975a7be4ea65c))
+
+- **quick-17**: Remove N_SAMPLE_POINTS constant and update all consumers
+  ([`07a8314`](https://github.com/tlancaster6/AquaPose/commit/07a8314432d759588dc2b452c57c43be2d5a163f))
+
+- **quick-17**: Update config hierarchy for n_sample_points
+  ([`4cc3f81`](https://github.com/tlancaster6/AquaPose/commit/4cc3f81b4e8f678cc94c0a66c92c33ac3a8aa61c))
+
+### Testing
+
+- **40-02**: Add failing tests for load_midline_fixture round-trip and validation
+  ([`ce66995`](https://github.com/tlancaster6/AquaPose/commit/ce669954babf8abd4531be02095d8190165d4fe5))
+
+- **41-01**: Add failing tests for CalibBundle and v2.0 NPZ loading
+  ([`2c99a75`](https://github.com/tlancaster6/AquaPose/commit/2c99a75f6f5a1c78586a2db359b58dae8a5d0d3a))
+
+- **41-01**: Add failing tests for export_midline_fixtures v2.0 with models
+  ([`4a90ff7`](https://github.com/tlancaster6/AquaPose/commit/4a90ff7006cdec3211e8c7320cd5a4b343d7cfb2))
+
+- **41-02**: Add failing tests for format_summary_table and write_regression_json
+  ([`5882338`](https://github.com/tlancaster6/AquaPose/commit/58823382e576c525045c8dc322b283c3efabfc20))
+
+- **41-02**: Add failing tests for run_evaluation harness
+  ([`9fddea0`](https://github.com/tlancaster6/AquaPose/commit/9fddea091fbd21d1147a2561b5e1353f4183f928))
+
+- **41-02**: Add failing tests for select_frames and metric computation
+  ([`491ace4`](https://github.com/tlancaster6/AquaPose/commit/491ace42a7e2e0fd0729842f98fd5e1680f1020a))
+
+- **quick-15**: Update scoring tests for soft kernel, remove ghost penalty tests
+  ([`d9e48a7`](https://github.com/tlancaster6/AquaPose/commit/d9e48a72784bd1c924980def728ff0488b92f497))
+
+
 ## v1.1.0-dev.5 (2026-03-02)
 
 ### Bug Fixes

@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 Phase: 44 of 45 (Validation and Tuning)
 Plan: 1 of 2 in current phase (44-01 complete)
 Status: In progress
-Last activity: 2026-03-03 - Completed quick task 15: Replace binary inlier counting with soft linear scoring kernel and remove ghost penalty
+Last activity: 2026-03-03 - Completed quick task 16: Restructure tune_association.py with joint 2D grid sweep for ray_distance_threshold x score_min
 
 Progress: [██░░░░░░░░] 10%
 
@@ -82,9 +82,10 @@ v3.1 strategic decisions:
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 15 | Replace binary inlier counting with soft linear scoring kernel and remove ghost penalty | 2026-03-03 | df0e470 | [15-replace-binary-inlier-counting-with-soft](./quick/15-replace-binary-inlier-counting-with-soft/) |
+| 16 | Restructure tune_association.py with joint 2D grid sweep for ray_distance_threshold x score_min | 2026-03-03 | 4905671 | [16-restructure-tune-association-py-with-joi](./quick/16-restructure-tune-association-py-with-joi/) |
 
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed quick task 15 — soft scoring kernel replacing binary inlier counting in association scoring
+Stopped at: Completed quick task 16 — tune_association.py restructured with joint 2D grid sweep
 Resume file: None

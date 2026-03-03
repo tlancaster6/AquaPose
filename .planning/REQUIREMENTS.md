@@ -80,34 +80,34 @@ Requirements for the evaluation ecosystem milestone. Each maps to roadmap phases
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFRA-01 | — | Pending |
-| INFRA-02 | — | Pending |
-| INFRA-03 | — | Pending |
-| INFRA-04 | — | Pending |
-| EVAL-01 | — | Pending |
-| EVAL-02 | — | Pending |
-| EVAL-03 | — | Pending |
-| EVAL-04 | — | Pending |
-| EVAL-05 | — | Pending |
-| EVAL-06 | — | Pending |
-| EVAL-07 | — | Pending |
-| TUNE-01 | — | Pending |
-| TUNE-02 | — | Pending |
-| TUNE-03 | — | Pending |
-| TUNE-04 | — | Pending |
-| TUNE-05 | — | Pending |
-| TUNE-06 | — | Pending |
-| CLEAN-01 | — | Pending |
-| CLEAN-02 | — | Pending |
-| CLEAN-03 | — | Pending |
-| CLEAN-04 | — | Pending |
-| CLEAN-05 | — | Pending |
+| INFRA-01 | Phase 46 | Pending |
+| INFRA-02 | Phase 46 | Pending |
+| INFRA-03 | Phase 46 | Pending |
+| INFRA-04 | Phase 46 | Pending |
+| EVAL-01 | Phase 47 | Pending |
+| EVAL-02 | Phase 47 | Pending |
+| EVAL-03 | Phase 47 | Pending |
+| EVAL-04 | Phase 47 | Pending |
+| EVAL-05 | Phase 47 | Pending |
+| EVAL-06 | Phase 48 | Pending |
+| EVAL-07 | Phase 48 | Pending |
+| TUNE-01 | Phase 49 | Pending |
+| TUNE-02 | Phase 49 | Pending |
+| TUNE-03 | Phase 49 | Pending |
+| TUNE-04 | Phase 49 | Pending |
+| TUNE-05 | Phase 49 | Pending |
+| TUNE-06 | Phase 47 | Pending |
+| CLEAN-01 | Phase 49 | Pending |
+| CLEAN-02 | Phase 49 | Pending |
+| CLEAN-03 | Phase 48 | Pending |
+| CLEAN-04 | Phase 50 | Pending |
+| CLEAN-05 | Phase 50 | Pending |
 
 **Coverage:**
 - v3.2 requirements: 22 total
-- Mapped to phases: 0
-- Unmapped: 22 (pending roadmap creation)
+- Mapped to phases: 22
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-03*
-*Last updated: 2026-03-03 after initial definition*
+*Last updated: 2026-03-03 after roadmap creation*

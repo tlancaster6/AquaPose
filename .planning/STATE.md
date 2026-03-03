@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: Evaluation Ecosystem
-status: defining_requirements
+status: roadmap_created
 last_updated: "2026-03-03"
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -18,14 +18,31 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-03)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.2 Evaluation Ecosystem — defining requirements
+**Current focus:** v3.2 Evaluation Ecosystem — Phase 46 ready to plan
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-03 — Milestone v3.2 started
+Phase: 46 of 50 (Engine Primitives)
+Plan: — of — in current phase
+Status: Ready to plan
+Last activity: 2026-03-03 — Roadmap created for v3.2 Evaluation Ecosystem (5 phases, 22 requirements)
+
+Progress: [░░░░░░░░░░] 0%
+
+## Performance Metrics
+
+**Velocity:**
+- Total plans completed: 0 (this milestone)
+- Average duration: — min
+- Total execution time: — hours
+
+**By Phase:**
+
+| Phase | Plans | Total | Avg/Plan |
+|-------|-------|-------|----------|
+| - | - | - | - |
+
+*Updated after each plan completion*
 
 ## Accumulated Context
 
@@ -35,8 +52,14 @@ Carried forward from v3.1:
 - DLT is the sole reconstruction backend (old triangulation + curve optimizer removed)
 - Outlier rejection threshold tuned to 10.0 (from 50.0)
 - Association defaults accepted (sweep showed marginal gains; ~70% singleton rate is upstream bottleneck)
-- NPZ fixture v2.0 format with CalibBundle for self-contained offline evaluation
-- Pose estimation backend only for reconstruction — ordered keypoints eliminate correspondence machinery
+- NPZ fixture v2.0 format with CalibBundle (being replaced by per-stage pickle caches in v3.2)
+
+v3.2 design decisions:
+- Per-stage pickle files replace monolithic NPZ as evaluation data source (one file per StageComplete event)
+- ContextLoader uses shallow copy (not deepcopy) for sweep combo isolation — safe because stage outputs are immutable by convention
+- Stage evaluators have zero engine imports — pipeline config passes as explicit function parameters
+- No automatic config file mutation — tuning output is a config diff block for manual application
+- Legacy evaluation code (harness.py, tune_association.py, tune_threshold.py, measure_baseline.py, pipeline_diagnostics.npz) fully removed, not shimmed
 
 ### Pending Todos
 
@@ -44,19 +67,11 @@ Carried forward from v3.1:
 
 ### Blockers/Concerns
 
-- Coordinate space conversions (full-image <-> crop-space) remain a cross-cutting concern for midline backends
-- ~70% singleton rate in association — upstream detection/tracking coverage is the bottleneck
-
-### Quick Tasks Completed
-
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 15 | Replace binary inlier counting with soft linear scoring kernel and remove ghost penalty | 2026-03-03 | df0e470 | [15-replace-binary-inlier-counting-with-soft](./quick/15-replace-binary-inlier-counting-with-soft/) |
-| 16 | Restructure tune_association.py with joint 2D grid sweep for ray_distance_threshold x score_min | 2026-03-03 | 4905671 | [16-restructure-tune-association-py-with-joi](./quick/16-restructure-tune-association-py-with-joi/) |
-| 17 | Unify n_sample_points config: remove N_SAMPLE_POINTS constant, remove MidlineConfig.n_points, add ReconstructionConfig.n_sample_points, default to 15 | 2026-03-03 | 07a8314 | [17-unify-n-sample-points-config](./quick/17-unify-n-sample-points-config/) |
+- Phase 49 (TuningOrchestrator) has the most moving parts: cascade config propagation and two-tier frame count logic warrant a pre-implementation sketch during planning
+- `stop_after` field presence in PipelineConfig should be confirmed at Phase 49 planning time (ARCHITECTURE.md states it exists; verify before building cascade orchestrator)
 
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Milestone v3.2 started — defining requirements
+Stopped at: Roadmap created — v3.2 Evaluation Ecosystem, Phases 46-50
 Resume file: None

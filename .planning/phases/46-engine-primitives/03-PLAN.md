@@ -1,5 +1,3 @@
-# Plan 46.3: CLI --resume-from Flag and Integration Test
-
 ---
 wave: 2
 depends_on:
@@ -14,6 +12,8 @@ requirements:
   - INFRA-04
 autonomous: true
 ---
+
+# Plan 46.3: CLI --resume-from Flag and Integration Test
 
 ## Goal
 

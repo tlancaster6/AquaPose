@@ -1,5 +1,3 @@
-# Plan 46.1: StaleCacheError, load_stage_cache, and PipelineContext.carry_forward
-
 ---
 wave: 1
 depends_on: []
@@ -12,6 +10,8 @@ requirements:
   - INFRA-04
 autonomous: true
 ---
+
+# Plan 46.1: StaleCacheError, load_stage_cache, and PipelineContext.carry_forward
 
 ## Goal
 

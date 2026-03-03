@@ -1,5 +1,3 @@
-# Plan 46.2: Per-Stage Pickle Cache Writing and Stage-Skip Logic
-
 ---
 wave: 2
 depends_on:
@@ -14,6 +12,8 @@ requirements:
   - INFRA-02
 autonomous: true
 ---
+
+# Plan 46.2: Per-Stage Pickle Cache Writing and Stage-Skip Logic
 
 ## Goal
 

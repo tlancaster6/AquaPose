@@ -198,4 +198,4 @@ Full details: `.planning/milestones/v3.1-ROADMAP.md`
 | 47. Evaluation Primitives | 3/3 | Complete    | 2026-03-03 | - |
 | 48. EvalRunner and eval CLI | 2/2 | Complete    | 2026-03-03 | - |
 | 49. TuningOrchestrator and tune CLI | 2/2 | Complete    | 2026-03-03 | - |
-| 50. Cleanup and Replacement | 1/1 | Complete   | 2026-03-03 | - |
+| 50. Cleanup and Replacement | 1/1 | Complete    | 2026-03-03 | - |

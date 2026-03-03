@@ -1,8 +1,8 @@
 """Core domain logic for 3D fish pose estimation.
 
 Exports the active pipeline stage classes, core data contracts (PipelineContext,
-CarryForward, Stage Protocol), and domain types. Each stage satisfies the Stage
-Protocol via structural typing (no inheritance required).
+CarryForward, Stage Protocol), domain types, and cache utilities. Each stage
+satisfies the Stage Protocol via structural typing (no inheritance required).
 
 Stage ordering (v2.1):
 1. DetectionStage      — raw fish detection per-camera
@@ -12,7 +12,14 @@ Stage ordering (v2.1):
 5. ReconstructionStage — 3D B-spline midline triangulation
 """
 
-from aquapose.core.context import CarryForward, PipelineContext, Stage
+from aquapose.core.context import (
+    CarryForward,
+    PipelineContext,
+    Stage,
+    StaleCacheError,
+    context_fingerprint,
+    load_stage_cache,
+)
 from aquapose.core.detection import DetectionStage
 from aquapose.core.midline import MidlineStage
 from aquapose.core.reconstruction import ReconstructionStage
@@ -25,5 +32,8 @@ __all__ = [
     "PipelineContext",
     "ReconstructionStage",
     "Stage",
+    "StaleCacheError",
     "SyntheticDataStage",
+    "context_fingerprint",
+    "load_stage_cache",
 ]

@@ -71,6 +71,13 @@ def cli() -> None:
     help="Stop pipeline after the named stage (skip later stages).",
 )
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Verbose output.")
+@click.option(
+    "--resume-from",
+    "resume_from",
+    type=click.Path(exists=True),
+    default=None,
+    help="Path to a stage cache pickle file. Skips stages whose outputs are already populated.",
+)
 def run(
     config: str,
     mode: str | None,
@@ -78,6 +85,7 @@ def run(
     extra_observers: tuple[str, ...],
     stop_after: str | None,
     verbose: bool,
+    resume_from: str | None,
 ) -> None:
     """Run the AquaPose pipeline."""
     # 1. Parse --set overrides into dict
@@ -113,6 +121,20 @@ def run(
     # 5. Build stages
     stages = build_stages(pipeline_config)
 
+    # 5.5. Load initial context from cache if --resume-from provided.
+    # Each resumed run gets its own run_id (not inherited from cache).
+    initial_context = None
+    if resume_from is not None:
+        from aquapose.core.context import StaleCacheError, load_stage_cache
+
+        try:
+            initial_context = load_stage_cache(resume_from)
+            click.echo(f"Loaded stage cache from {resume_from}")
+        except StaleCacheError as exc:
+            raise click.ClickException(str(exc)) from exc
+        except FileNotFoundError:
+            raise click.ClickException(f"Cache file not found: {resume_from}") from None
+
     # 6. Assemble observers
     observers = build_observers(
         config=pipeline_config,
@@ -130,7 +152,7 @@ def run(
     )
 
     try:
-        pipeline.run()
+        pipeline.run(initial_context=initial_context)
     except Exception:
         import traceback
 

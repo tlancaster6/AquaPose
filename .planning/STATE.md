@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: Reconstruction
 status: unknown
-last_updated: "2026-03-03T02:21:14.885Z"
+last_updated: "2026-03-03T15:27:32.597Z"
 progress:
   total_phases: 6
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 11
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # Project State
@@ -22,7 +22,7 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 44 of 45 (Validation and Tuning)
+Phase: 44 of 44 (Validation and Tuning)
 Plan: 1 of 2 in current phase (44-01 complete)
 Status: In progress
 Last activity: 2026-03-03 - Completed quick task 16: Restructure tune_association.py with joint 2D grid sweep for ray_distance_threshold x score_min
@@ -67,6 +67,7 @@ v3.1 strategic decisions:
 ### Roadmap Evolution
 
 - Phase 43.1 inserted after Phase 43: Association Tuning (URGENT)
+- Phase 46 added: Evaluation Unification and Optimization
 
 ### Pending Todos
 

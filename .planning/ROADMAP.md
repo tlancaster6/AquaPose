@@ -106,7 +106,8 @@ Full details: `.planning/milestones/v3.0-ROADMAP.md`
 - [x] **Phase 41: Evaluation Harness** - Build offline evaluation framework with real-data fixtures, frame selection, and Tier 1/2 metrics (completed 2026-03-02)
 - [x] **Phase 42: Baseline Measurement** - Run evaluation against current reconstruction backend to establish reference metrics (completed 2026-03-02)
 - [x] **Phase 43: Triangulation Rebuild** - Implement stripped-down confidence-weighted DLT triangulation with outlier rejection and B-spline fitting (completed 2026-03-02)
-- [ ] **Phase 44: Validation and Tuning** - Confirm new backend meets or beats baseline on Tier 1 and Tier 2 metrics
+- [x] **Phase 43.1: Association Tuning** - Sweep association parameters; marginal gains only, current defaults accepted (completed 2026-03-03)
+- [x] **Phase 44: Validation and Tuning** - DLT validated against baseline; outlier_threshold tuned from 50.0 to 10.0 (completed 2026-03-03)
 - [ ] **Phase 45: Dead Code Cleanup** - Remove old triangulation backend, curve optimizer, and other dead reconstruction code
 
 ## Phase Details
@@ -170,10 +171,11 @@ Full details: `.planning/milestones/v3.0-ROADMAP.md`
   3. A tuning script sweeps association parameters in priority order and identifies the best config
   4. The winning config produces 9 reconstructed fish per frame (or the best achievable yield is documented)
 **Plans:** 2/2 plans complete
+**Outcome:** Sweeps showed marginal gains only (~1% yield improvement). ~70% singleton rate indicates upstream detection/tracking coverage is the bottleneck, not association parameters. Current defaults accepted.
 
 Plans:
-- [ ] 43.1-01-PLAN.md — Extend evaluation harness with skip_tier2, association_overrides, and generate_fixture helper
-- [ ] 43.1-02-PLAN.md — Association parameter tuning script with staged sweep and console report
+- [x] 43.1-01-PLAN.md — Extend evaluation harness with skip_tier2, association_overrides, and generate_fixture helper
+- [x] 43.1-02-PLAN.md — Association parameter tuning script with staged sweep and console report
 
 ### Phase 44: Validation and Tuning
 **Goal**: The new triangulation backend is confirmed to meet or beat the baseline on Tier 1 and Tier 2 metrics
@@ -183,7 +185,12 @@ Plans:
   1. Running the evaluation harness against the new backend produces Tier 1 reprojection error at or below the Phase 42 baseline
   2. Running the evaluation harness against the new backend produces Tier 2 leave-one-out stability at or below the Phase 42 baseline
   3. The outlier rejection threshold has been empirically set based on evaluation output (value recorded in PROJECT.md decisions)
-**Plans**: TBD
+**Plans:** 2/2 plans complete
+**Outcome:** DLT backend meets baseline. Outlier threshold tuned from 50.0 to 10.0 in dlt.py and config.py.
+
+Plans:
+- [x] 44-01-PLAN.md — Config wiring + grid search script (tune_threshold.py)
+- [x] 44-02-PLAN.md — Record tuned threshold in codebase defaults
 
 ### Phase 45: Dead Code Cleanup
 **Goal**: The codebase contains only the new triangulation backend with no orphaned reconstruction code
@@ -199,7 +206,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 40 → 41 → 42 → 43 → 44 → 45
+Phases execute in numeric order: 40 → 41 → 42 → 43 → 43.1 → 44 → 45
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -212,5 +219,6 @@ Phases execute in numeric order: 40 → 41 → 42 → 43 → 44 → 45
 | 41. Evaluation Harness | 2/2 | Complete    | 2026-03-02 | - |
 | 42. Baseline Measurement | 1/1 | Complete    | 2026-03-02 | - |
 | 43. Triangulation Rebuild | 2/2 | Complete    | 2026-03-02 | - |
-| 44. Validation and Tuning | v3.1 | 0/? | Not started | - |
+| 43.1 Association Tuning | 2/2 | Complete    | 2026-03-03 | - |
+| 44. Validation and Tuning | 2/2 | Complete    | 2026-03-03 | - |
 | 45. Dead Code Cleanup | v3.1 | 0/? | Not started | - |

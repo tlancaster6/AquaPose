@@ -83,7 +83,14 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ### Active
 
-(No active requirements — next milestone not yet defined)
+<!-- Current milestone: v3.3 Chunk Mode -->
+
+- [ ] Frame source abstraction replacing direct VideoSet usage in stages
+- [ ] ChunkOrchestrator managing fixed-size temporal chunk processing above PosePipeline
+- [ ] ChunkHandoff carrying tracker state + identity map across chunk boundaries
+- [ ] Identity stitching mapping chunk-local fish IDs to globally consistent IDs
+- [ ] Per-chunk HDF5 flush via existing Midline3DWriter with global frame offsets
+- [ ] Validation that chunked output matches non-chunked output
 
 ### Out of Scope
 
@@ -184,4 +191,17 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Two-tier validation for parameter sweeps | Fast sweep (few frames) → thorough top-N validation (many frames) | ✓ Good — balances speed and reliability |
 
 ---
-*Last updated: 2026-03-03 after v3.2 Evaluation Ecosystem milestone*
+## Current Milestone: v3.3 Chunk Mode
+
+**Goal:** Process videos in fixed-size temporal chunks to bound association complexity, enabling reliable processing of long recordings without O(T²) scaling.
+
+**Target features:**
+- Frame source abstraction decoupling stages from video I/O
+- ChunkOrchestrator above PosePipeline for chunk loop management
+- ChunkHandoff replacing CarryForward with tracker state + identity map
+- Post-chunk identity stitching via track ID continuity
+- Per-chunk HDF5 flush with global frame indexing
+- Mutual exclusivity with diagnostic mode
+
+---
+*Last updated: 2026-03-03 after v3.3 Chunk Mode milestone started*

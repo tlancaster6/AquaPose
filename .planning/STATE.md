@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.2
-milestone_name: Evaluation Ecosystem
-status: complete
-last_updated: "2026-03-03T22:10:00.000Z"
+milestone: v3.3
+milestone_name: Chunk Mode
+status: defining_requirements
+last_updated: "2026-03-03T22:30:00.000Z"
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 11
-  completed_plans: 11
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-03)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.2 Evaluation Ecosystem — SHIPPED 2026-03-03
+**Current focus:** v3.3 Chunk Mode — Defining requirements
 
 ## Current Position
 
-Milestone v3.2 complete. All 5 phases (46-50), 11 plans shipped.
-Last activity: 2026-03-03 — Milestone archived
-
-Progress: [██████████] 100% (11/11 plans)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-03 — Milestone v3.3 started
 
 ## Accumulated Context
 
@@ -35,14 +35,14 @@ See PROJECT.md Key Decisions table for full history.
 
 ### Pending Todos
 
-17 pending todos from v2.2 — see .planning/todos/pending/ (review for relevance in next milestone)
+17 pending todos from v2.2 — see .planning/todos/pending/ (review for relevance)
 
 ### Blockers/Concerns
 
-None. Milestone complete.
+None.
 
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: v3.2 milestone archived
+Stopped at: Starting v3.3 Chunk Mode milestone
 Resume file: None

@@ -36,6 +36,7 @@ from aquapose.engine.events import (
 from aquapose.engine.hdf5_observer import HDF5ExportObserver
 from aquapose.engine.observer_factory import build_observers
 from aquapose.engine.observers import EventBus, Observer
+from aquapose.engine.orchestrator import ChunkHandoff, write_handoff
 from aquapose.engine.overlay_observer import Overlay2DObserver
 from aquapose.engine.pipeline import PosePipeline
 from aquapose.engine.timing import TimingObserver
@@ -44,6 +45,7 @@ from aquapose.engine.tracklet_trail_observer import TrackletTrailObserver
 __all__ = [
     "Animation3DObserver",
     "AssociationConfig",
+    "ChunkHandoff",
     "ConsoleObserver",
     "DetectionConfig",
     "DiagnosticObserver",
@@ -72,4 +74,5 @@ __all__ = [
     "build_observers",
     "load_config",
     "serialize_config",
+    "write_handoff",
 ]

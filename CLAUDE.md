@@ -65,6 +65,6 @@ tests/
 
 ### discuss-phase
 When running `gsd:discuss-phase`, before doing anything else:
-1. Inform the user: "I noticed project instructions to read refactoring context documents — reading them now."
-2. Read this documents and incorporate its content as context for the discussion: .planning/GUIDEBOOK.md
+1. Inform the user: "I noticed project instructions to read the guidebook — reading it now."
+2. Read this document and incorporate its content as context for the discussion: .planning/GUIDEBOOK.md
 3. Then proceed with the normal discuss-phase workflow.

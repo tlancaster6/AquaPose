@@ -24,8 +24,20 @@ from pathlib import Path
 
 from aquapose.evaluation import run_evaluation
 from aquapose.evaluation.harness import EvalResults, generate_fixture
-from aquapose.evaluation.metrics import select_frames
+from aquapose.evaluation.metrics import Tier2Result, select_frames
 from aquapose.io.midline_fixture import load_midline_fixture
+
+
+def _tier2_max_displacement(t2: Tier2Result) -> float | None:
+    """Compute overall max displacement from per-fish dropout data."""
+    vals = [
+        v
+        for cam_map in t2.per_fish_dropout.values()
+        for v in cam_map.values()
+        if v is not None
+    ]
+    return max(vals) if vals else None
+
 
 # ---------------------------------------------------------------------------
 # Sweep ranges (widened for overnight run)
@@ -257,9 +269,10 @@ def _print_final_report(
     # Tier 2 stability (if available)
     base_t2 = baseline_results.tier2
     win_t2 = winner_results.tier2
-    if base_t2.overall_max_displacement is not None:
-        base_disp = base_t2.overall_max_displacement * 1000.0
-        win_disp_raw = win_t2.overall_max_displacement
+    base_disp_raw = _tier2_max_displacement(base_t2)
+    if base_disp_raw is not None:
+        base_disp = base_disp_raw * 1000.0
+        win_disp_raw = _tier2_max_displacement(win_t2)
         if win_disp_raw is not None:
             win_disp = win_disp_raw * 1000.0
             delta_disp = win_disp - base_disp
@@ -863,11 +876,9 @@ def main() -> None:
             f"    yield={fish_r}/{fish_a} ({yield_pct:.0f}%), "
             f"mean={results.tier1.overall_mean_px:.2f} px"
         )
-        if results.tier2.overall_max_displacement is not None:
-            print(
-                f"    max displacement: "
-                f"{results.tier2.overall_max_displacement * 1000.0:.2f} mm"
-            )
+        max_disp = _tier2_max_displacement(results.tier2)
+        if max_disp is not None:
+            print(f"    max displacement: {max_disp * 1000.0:.2f} mm")
         top_results.append((config, results, assoc_metrics))
 
     # ------------------------------------------------------------------

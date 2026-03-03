@@ -1,5 +1,24 @@
 # Milestones
 
+## v3.1 Reconstruction (Shipped: 2026-03-03)
+
+**Phases completed:** 7 phases (40-45 including 43.1), 13 plans
+**Timeline:** 2 days (2026-03-02 → 2026-03-03)
+**Codebase:** 19,493 LOC source
+**Git range:** 108 commits, 219 files changed (+19,532 / -10,256)
+
+**Key accomplishments:**
+1. Built diagnostic fixture system (MidlineFixture + NPZ serialization) for capturing pipeline intermediate data as offline-loadable evaluation fixtures
+2. Created offline evaluation harness with CalibBundle, frame selection, Tier 1 reprojection error and Tier 2 leave-one-out camera stability metrics
+3. Implemented confidence-weighted DLT triangulation backend with outlier rejection, replacing over-engineered RANSAC triangulation and curve optimizer
+4. Empirically tuned outlier rejection threshold from 50.0 to 10.0 via grid search on real data evaluation
+5. Systematic association parameter sweep revealed ~70% singleton rate as upstream detection/tracking bottleneck, not association parameters
+6. Removed ~3,200 lines of dead reconstruction code (old triangulation, curve optimizer, epipolar/orientation machinery) — DLT is the sole reconstruction backend
+
+**Delivered:** Complete reconstruction rebuild from over-engineered dual-backend system to minimal, empirically-validated DLT triangulation with proper evaluation infrastructure. Evaluation harness enables data-driven tuning of all reconstruction parameters.
+
+---
+
 ## v3.0 Ultralytics Unification (Shipped: 2026-03-02)
 
 **Phases completed:** 5 phases, 14 plans

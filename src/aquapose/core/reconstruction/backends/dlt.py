@@ -39,10 +39,11 @@ logger = logging.getLogger(__name__)
 # Module-level constants
 # ---------------------------------------------------------------------------
 
-DEFAULT_OUTLIER_THRESHOLD: float = 50.0
+DEFAULT_OUTLIER_THRESHOLD: float = 10.0
 """Default maximum reprojection residual (pixels) for inlier classification.
 
-This is a placeholder; empirical tuning via Phase 44 eval harness is required.
+Tuned empirically via tune_threshold.py on YH dataset (2026-03-03).
+Balances yield (74/403 = 18%) against mean error (2.91 px).
 """
 
 DEFAULT_N_CONTROL_POINTS: int = 7
@@ -97,22 +98,58 @@ class DltBackend:
 
     def __init__(
         self,
-        calibration_path: str | Path,
+        calibration_path: str | Path | None = None,
         outlier_threshold: float = DEFAULT_OUTLIER_THRESHOLD,
         n_control_points: int = DEFAULT_N_CONTROL_POINTS,
         low_confidence_fraction: float = DEFAULT_LOW_CONFIDENCE_FRACTION,
+        *,
+        models: dict[str, Any] | None = None,
     ) -> None:
-        self._calibration_path = Path(calibration_path)
         self._outlier_threshold = outlier_threshold
         self._n_control_points = n_control_points
         self._low_confidence_fraction = low_confidence_fraction
 
-        # Eagerly load calibration — fail-fast on missing file
-        self._models = self._load_models(self._calibration_path)
+        if models is not None:
+            self._models = models
+        elif calibration_path is not None:
+            self._models = self._load_models(Path(calibration_path))
+        else:
+            raise TypeError("DltBackend requires either calibration_path or models.")
 
         # Precompute spline parameters
         self._spline_knots = build_spline_knots(n_control_points)
         self._min_body_points = n_control_points + 2
+
+    @classmethod
+    def from_models(
+        cls,
+        models: dict[str, Any],
+        outlier_threshold: float = DEFAULT_OUTLIER_THRESHOLD,
+        n_control_points: int = DEFAULT_N_CONTROL_POINTS,
+        low_confidence_fraction: float = DEFAULT_LOW_CONFIDENCE_FRACTION,
+    ) -> DltBackend:
+        """Create a DltBackend from pre-built projection models.
+
+        Bypasses calibration file loading — useful when models are already
+        constructed (e.g. from a fixture's CalibBundle in the evaluation harness).
+
+        Args:
+            models: Dict mapping camera_id to RefractiveProjectionModel.
+            outlier_threshold: Maximum reprojection error (pixels) for inlier
+                classification.
+            n_control_points: Number of B-spline control points per midline.
+            low_confidence_fraction: Fraction of body points with <3 inlier
+                cameras above which is_low_confidence is set True.
+
+        Returns:
+            Configured DltBackend instance.
+        """
+        return cls(
+            outlier_threshold=outlier_threshold,
+            n_control_points=n_control_points,
+            low_confidence_fraction=low_confidence_fraction,
+            models=models,
+        )
 
     def reconstruct_frame(
         self,

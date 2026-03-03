@@ -49,7 +49,7 @@ class Tier2Result:
     per_fish_dropout: dict[int, dict[str, float | None]]
 
 
-def select_frames(frame_indices: tuple[int, ...], n_frames: int = 15) -> list[int]:
+def select_frames(frame_indices: tuple[int, ...], n_frames: int = 100) -> list[int]:
     """Select a deterministic subset of frame indices via np.linspace.
 
     Args:

@@ -18,6 +18,8 @@ _NPZ_VERSION_V1 = "1.0"
 
 logger = logging.getLogger(__name__)
 
+_DETECTION_STAGE_NAME = "DetectionStage"
+_TRACKING_STAGE_NAME = "TrackingStage"
 _ASSOCIATION_STAGE_NAME = "AssociationStage"
 _MIDLINE_STAGE_NAME = "MidlineStage"
 _CENTROID_MATCH_TOLERANCE_PX = 5.0
@@ -164,23 +166,18 @@ class DiagnosticObserver:
         self.stages[event.stage_name] = snapshot
 
     def _on_pipeline_complete(self) -> None:
-        """Auto-export centroid correspondences and midline fixtures when output_dir is set."""
+        """Auto-export pipeline diagnostics and midline fixtures when output_dir is set."""
         if self._output_dir is None:
             return
 
-        # --- centroid correspondences ---
-        if _ASSOCIATION_STAGE_NAME in self.stages:
-            snapshot = self.stages[_ASSOCIATION_STAGE_NAME]
-            if snapshot.tracklet_groups:
-                try:
-                    out = self.export_centroid_correspondences(
-                        self._output_dir / "centroid_correspondences.npz"
-                    )
-                    logger.info("Centroid correspondences exported to %s", out)
-                except Exception:
-                    logger.warning(
-                        "Failed to export centroid correspondences", exc_info=True
-                    )
+        # --- pipeline diagnostics (unified NPZ) ---
+        try:
+            out = self.export_pipeline_diagnostics(
+                self._output_dir / "pipeline_diagnostics.npz"
+            )
+            logger.info("Pipeline diagnostics exported to %s", out)
+        except Exception:
+            logger.warning("Failed to export pipeline diagnostics", exc_info=True)
 
         # --- midline fixtures ---
         if (
@@ -430,36 +427,111 @@ class DiagnosticObserver:
         np.savez_compressed(str(out), **npz_arrays)  # type: ignore[arg-type]
         return out
 
-    def export_centroid_correspondences(self, output_path: Path | str) -> Path:
-        """Export 2D-to-3D centroid correspondences from the Association stage.
+    def export_pipeline_diagnostics(self, output_path: Path | str) -> Path:
+        """Export unified pipeline diagnostics NPZ with 5 sections.
 
-        Iterates over all TrackletGroups that have non-None ``consensus_centroids``,
-        and for each (frame_idx, point_3d) pair with a valid 3D point, collects
-        the 2D pixel centroid from each contributing tracklet that has the frame.
-        Saves results as a compressed NPZ file for calibration fine-tuning.
+        Sections:
+            - ``tracking/``: Per-(tracklet, frame) rows from ``tracks_2d``.
+            - ``groups/``: Per-TrackletGroup summary rows.
+            - ``correspondences/``: Per-(fish, frame, camera) 3D consensus rows.
+            - ``detection_counts/``: (n_frames, n_cameras) detection count matrix.
+            - ``midline_counts/``: (n_frames, n_cameras) midline count matrix.
+
+        Each section is populated from the corresponding stage snapshot when
+        available.  Missing snapshots produce empty arrays for that section.
 
         Args:
             output_path: Destination file path for the NPZ output.
 
         Returns:
             Resolved absolute path to the written NPZ file.
-
-        Raises:
-            ValueError: If no AssociationStage snapshot is found, or if the
-                snapshot contains no tracklet groups.
         """
-        if _ASSOCIATION_STAGE_NAME not in self.stages:
-            raise ValueError(
-                "No AssociationStage snapshot found. "
-                "Run the pipeline before calling export_centroid_correspondences()."
-            )
+        npz: dict[str, object] = {}
 
-        snapshot = self.stages[_ASSOCIATION_STAGE_NAME]
-        if not snapshot.tracklet_groups:
-            raise ValueError(
-                "AssociationStage snapshot has no tracklet_groups. "
-                "Ensure the pipeline ran with a populated association stage."
-            )
+        self._collect_tracking_section(npz)
+        self._collect_groups_section(npz)
+        self._collect_correspondences_section(npz)
+        self._collect_detection_counts_section(npz)
+        self._collect_midline_counts_section(npz)
+
+        out = Path(output_path).resolve()
+        out.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(str(out), **npz)  # type: ignore[arg-type]
+        return out
+
+    # ------------------------------------------------------------------
+    # Pipeline diagnostics: per-section collectors
+    # ------------------------------------------------------------------
+
+    def _collect_tracking_section(self, npz: dict[str, object]) -> None:
+        """Populate ``tracking/`` keys from the TrackingStage snapshot."""
+        snap = self.stages.get(_TRACKING_STAGE_NAME)
+        tracks_2d = snap.tracks_2d if snap else None
+
+        cam_ids_list: list[str] = []
+        track_ids_list: list[int] = []
+        frame_indices_list: list[int] = []
+        centroids_list: list[tuple[float, float]] = []
+        status_list: list[str] = []
+
+        if tracks_2d:
+            for cam_id, tracklets in tracks_2d.items():
+                for tracklet in tracklets:
+                    for i, frame_idx in enumerate(tracklet.frames):  # type: ignore[union-attr]
+                        cam_ids_list.append(cam_id)
+                        track_ids_list.append(tracklet.track_id)  # type: ignore[union-attr]
+                        frame_indices_list.append(frame_idx)
+                        centroids_list.append(tracklet.centroids[i])  # type: ignore[union-attr]
+                        status_list.append(tracklet.frame_status[i])  # type: ignore[union-attr]
+
+        n = len(cam_ids_list)
+        npz["tracking/camera_ids"] = np.array(cam_ids_list, dtype=object)
+        npz["tracking/track_ids"] = np.array(track_ids_list, dtype=np.int64)
+        npz["tracking/frame_indices"] = np.array(frame_indices_list, dtype=np.int64)
+        npz["tracking/centroids"] = (
+            np.array(centroids_list, dtype=np.float32)
+            if n > 0
+            else np.empty((0, 2), dtype=np.float32)
+        )
+        npz["tracking/frame_status"] = np.array(status_list, dtype=object)
+
+    def _collect_groups_section(self, npz: dict[str, object]) -> None:
+        """Populate ``groups/`` keys from the AssociationStage snapshot."""
+        snap = self.stages.get(_ASSOCIATION_STAGE_NAME)
+        groups = snap.tracklet_groups if snap else None
+
+        fish_ids_list: list[int] = []
+        n_cameras_list: list[int] = []
+        n_frames_list: list[int] = []
+        confidence_list: list[float] = []
+        camera_ids_csv_list: list[str] = []
+
+        if groups:
+            for group in groups:
+                fish_ids_list.append(group.fish_id)
+                tracklets = group.tracklets or ()
+                cam_ids = [t.camera_id for t in tracklets]  # type: ignore[union-attr]
+                n_cameras_list.append(len(cam_ids))
+                # Union of all tracklet frames
+                all_frames: set[int] = set()
+                for t in tracklets:
+                    all_frames.update(t.frames)  # type: ignore[union-attr]
+                n_frames_list.append(len(all_frames))
+                confidence_list.append(
+                    group.confidence if group.confidence is not None else 0.0
+                )
+                camera_ids_csv_list.append(",".join(cam_ids))
+
+        npz["groups/fish_ids"] = np.array(fish_ids_list, dtype=np.int64)
+        npz["groups/n_cameras"] = np.array(n_cameras_list, dtype=np.int64)
+        npz["groups/n_frames"] = np.array(n_frames_list, dtype=np.int64)
+        npz["groups/confidence"] = np.array(confidence_list, dtype=np.float32)
+        npz["groups/camera_ids_csv"] = np.array(camera_ids_csv_list, dtype=object)
+
+    def _collect_correspondences_section(self, npz: dict[str, object]) -> None:
+        """Populate ``correspondences/`` keys from TrackletGroup consensus."""
+        snap = self.stages.get(_ASSOCIATION_STAGE_NAME)
+        groups = snap.tracklet_groups if snap else None
 
         fish_ids_list: list[int] = []
         frame_indices_list: list[int] = []
@@ -467,62 +539,107 @@ class DiagnosticObserver:
         camera_ids_list: list[str] = []
         centroids_2d_list: list[tuple[float, float]] = []
 
-        for group in snapshot.tracklet_groups:
-            if group.consensus_centroids is None:
-                continue
-
-            # Build per-tracklet frame-to-centroid lookup.
-            # group.tracklets is typed as generic tuple to preserve the core/ import
-            # boundary; elements are Tracklet2D at runtime (see TrackletGroup docstring).
-            tracklet_frame_maps: list[
-                tuple[object, dict[int, tuple[float, float]]]
-            ] = []
-            for tracklet in group.tracklets:  # type: ignore[union-attr]
-                frame_map: dict[int, tuple[float, float]] = {
-                    f: tracklet.centroids[i]  # type: ignore[union-attr]
-                    for i, f in enumerate(tracklet.frames)  # type: ignore[union-attr]
-                }
-                tracklet_frame_maps.append((tracklet, frame_map))
-
-            for frame_idx, point_3d in group.consensus_centroids:
-                if point_3d is None:
+        if groups:
+            for group in groups:
+                if group.consensus_centroids is None:
                     continue
 
-                for tracklet, frame_map in tracklet_frame_maps:
-                    if frame_idx not in frame_map:
+                tracklet_frame_maps: list[
+                    tuple[object, dict[int, tuple[float, float]]]
+                ] = []
+                for tracklet in group.tracklets:  # type: ignore[union-attr]
+                    frame_map: dict[int, tuple[float, float]] = {
+                        f: tracklet.centroids[i]  # type: ignore[union-attr]
+                        for i, f in enumerate(tracklet.frames)  # type: ignore[union-attr]
+                    }
+                    tracklet_frame_maps.append((tracklet, frame_map))
+
+                for frame_idx, point_3d in group.consensus_centroids:
+                    if point_3d is None:
                         continue
-                    u, v = frame_map[frame_idx]
-                    fish_ids_list.append(group.fish_id)
-                    frame_indices_list.append(frame_idx)
-                    points_3d_list.append(point_3d)
-                    camera_ids_list.append(tracklet.camera_id)  # type: ignore[union-attr]
-                    centroids_2d_list.append((u, v))
+                    for tracklet, frame_map in tracklet_frame_maps:
+                        if frame_idx not in frame_map:
+                            continue
+                        u, v = frame_map[frame_idx]
+                        fish_ids_list.append(group.fish_id)
+                        frame_indices_list.append(frame_idx)
+                        points_3d_list.append(point_3d)
+                        camera_ids_list.append(tracklet.camera_id)  # type: ignore[union-attr]
+                        centroids_2d_list.append((u, v))
 
         n = len(fish_ids_list)
-        fish_ids_arr = np.array(fish_ids_list, dtype=np.int64)
-        frame_indices_arr = np.array(frame_indices_list, dtype=np.int64)
-        points_3d_arr = (
+        npz["correspondences/fish_ids"] = np.array(fish_ids_list, dtype=np.int64)
+        npz["correspondences/frame_indices"] = np.array(
+            frame_indices_list, dtype=np.int64
+        )
+        npz["correspondences/points_3d"] = (
             np.stack(points_3d_list, axis=0).astype(np.float64)
             if n > 0
             else np.empty((0, 3), dtype=np.float64)
         )
-        camera_ids_arr = np.array(camera_ids_list, dtype=object)
-        centroids_2d_arr = (
+        npz["correspondences/camera_ids"] = np.array(camera_ids_list, dtype=object)
+        npz["correspondences/centroids_2d"] = (
             np.array(centroids_2d_list, dtype=np.float64)
             if n > 0
             else np.empty((0, 2), dtype=np.float64)
         )
 
-        out = Path(output_path).resolve()
-        np.savez_compressed(
-            str(out),
-            fish_ids=fish_ids_arr,
-            frame_indices=frame_indices_arr,
-            points_3d=points_3d_arr,
-            camera_ids=camera_ids_arr,
-            centroids_2d=centroids_2d_arr,
-        )
-        return out
+    def _collect_detection_counts_section(self, npz: dict[str, object]) -> None:
+        """Populate ``detection_counts/`` keys from the DetectionStage snapshot."""
+        snap = self.stages.get(_DETECTION_STAGE_NAME)
+        detections = snap.detections if snap else None
+        camera_ids = snap.camera_ids if snap else None
+        frame_count = snap.frame_count if snap else None
+
+        if detections and camera_ids and frame_count:
+            n_frames = frame_count
+            cam_list = list(camera_ids)
+            matrix = np.zeros((n_frames, len(cam_list)), dtype=np.int16)
+            for fi, frame_dict in enumerate(detections):
+                if not isinstance(frame_dict, dict):
+                    continue
+                for ci, cam_id in enumerate(cam_list):
+                    dets = frame_dict.get(cam_id)
+                    if dets is not None:
+                        matrix[fi, ci] = len(dets)
+            npz["detection_counts/matrix"] = matrix
+            npz["detection_counts/camera_ids"] = np.array(cam_list, dtype=object)
+            npz["detection_counts/frame_indices"] = np.arange(n_frames, dtype=np.int64)
+        else:
+            npz["detection_counts/matrix"] = np.empty((0, 0), dtype=np.int16)
+            npz["detection_counts/camera_ids"] = np.array([], dtype=object)
+            npz["detection_counts/frame_indices"] = np.array([], dtype=np.int64)
+
+    def _collect_midline_counts_section(self, npz: dict[str, object]) -> None:
+        """Populate ``midline_counts/`` keys from the MidlineStage snapshot."""
+        snap = self.stages.get(_MIDLINE_STAGE_NAME)
+        annotated = snap.annotated_detections if snap else None
+        camera_ids = snap.camera_ids if snap else None
+        frame_count = snap.frame_count if snap else None
+
+        if annotated and camera_ids and frame_count:
+            n_frames = frame_count
+            cam_list = list(camera_ids)
+            matrix = np.zeros((n_frames, len(cam_list)), dtype=np.int16)
+            for fi, frame_dict in enumerate(annotated):
+                if not isinstance(frame_dict, dict):
+                    continue
+                for ci, cam_id in enumerate(cam_list):
+                    ann_list = frame_dict.get(cam_id)
+                    if ann_list is not None:
+                        count = sum(
+                            1
+                            for ann in ann_list
+                            if getattr(ann, "midline", None) is not None
+                        )
+                        matrix[fi, ci] = count
+            npz["midline_counts/matrix"] = matrix
+            npz["midline_counts/camera_ids"] = np.array(cam_list, dtype=object)
+            npz["midline_counts/frame_indices"] = np.arange(n_frames, dtype=np.int64)
+        else:
+            npz["midline_counts/matrix"] = np.empty((0, 0), dtype=np.int16)
+            npz["midline_counts/camera_ids"] = np.array([], dtype=object)
+            npz["midline_counts/frame_indices"] = np.array([], dtype=np.int64)
 
 
 def _write_calib_arrays(

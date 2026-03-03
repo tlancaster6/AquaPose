@@ -136,6 +136,50 @@
 
 ---
 
+## Milestone: v3.1 — Reconstruction
+
+**Shipped:** 2026-03-03
+**Phases:** 7 | **Plans:** 13 | **Timeline:** 2 days
+
+### What Was Built
+- Diagnostic fixture system (MidlineFixture + NPZ serialization) for offline evaluation
+- Evaluation harness with CalibBundle, Tier 1 reprojection error, Tier 2 leave-one-out stability
+- Confidence-weighted DLT triangulation backend with outlier rejection
+- Association parameter tuning infrastructure with grid sweep
+- Empirical threshold tuning via evaluation harness (50.0 → 10.0)
+- Dead code cleanup: removed ~3,200 lines of old reconstruction code
+
+### What Worked
+- **Evaluation-first approach:** Building the harness before the new backend meant every change was measurable — no guesswork
+- **Empirical threshold tuning:** Grid search on real data outperformed manual parameter selection
+- **Clean backend replacement:** Old triangulation and curve optimizer removed in a single phase with no orphaned imports
+- **Inserted phase (43.1) for association tuning:** Quick insertion to investigate a real concern, properly scoped and concluded with clear findings
+- **Quick tasks for targeted improvements:** 3 quick tasks (soft scoring kernel, grid sweep restructure, config unification) handled cross-cutting improvements efficiently
+
+### What Was Inefficient
+- **SUMMARY one_liner fields still not populated:** Automated accomplishment extraction continues to fail; manual extraction required at milestone completion
+- **Traceability table in REQUIREMENTS.md went stale:** 8 requirements showed "Pending" status despite checkboxes being checked — dual bookkeeping creates drift
+- **Association tuning yielded marginal gains:** Two full phases of work (43.1 + quick tasks 15-16) confirmed that association params aren't the bottleneck — earlier data analysis might have revealed this sooner
+
+### Patterns Established
+- NPZ fixture pattern: versioned (v1.0/v2.0) with flat slash-separated keys for numpy.load compatibility
+- Evaluation harness as gatekeeper: no reconstruction change ships without Tier 1/Tier 2 measurement
+- Single-backend simplicity: one reconstruction backend (DLT) instead of registry with multiple backends
+- Parameter tuning via scripts + eval harness, not manual experimentation
+
+### Key Lessons
+1. **Build evaluation infrastructure first** — the harness paid for itself immediately; every subsequent phase used it for validation
+2. **Data analysis before parameter sweeps** — the ~70% singleton rate meant association tuning had a low ceiling; analyzing the data distribution first would have saved effort
+3. **Single-backend simplicity beats multi-backend flexibility** — removing the curve optimizer and backend registry simplified the codebase with no capability loss
+4. **Populate SUMMARY frontmatter** — this is the fourth milestone where automated extraction fails; needs to be enforced in the plan execution workflow
+
+### Cost Observations
+- Model mix: ~60% sonnet (executors), ~30% opus (orchestrator), ~10% haiku (verifiers)
+- Sessions: ~5-6 across 2 days
+- Notable: Quick tasks 15-17 handled 3 improvements in a single session with minimal overhead
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -145,6 +189,7 @@
 | v1.0 | 11 days | 12 | Initial development; architecture pivot mid-milestone |
 | v2.0 | 3 days | 10 | Full architectural refactor; audit-then-remediate pattern |
 | v3.0 | 2 days | 5 | Ultralytics migration; incremental file relocation strategy |
+| v3.1 | 2 days | 7 | Reconstruction rebuild with evaluation-first approach |
 
 ### Cumulative Quality
 
@@ -153,6 +198,7 @@
 | v1.0 | 50,802 | ~300 | 8 |
 | v2.0 | 18,660 + 14,826 test | 514 | 1 |
 | v3.0 | 22,087 + 18,829 test | 656 | 3 |
+| v3.1 | 19,493 source | - | 3 |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -161,3 +207,4 @@
 3. Align on canonical domain models before coding — mismatches compound
 4. Audit phases produce better remediation than fix-as-you-go
 5. Go directly to the right format — intermediate format churn wastes effort (v3.0 NDJSON→txt lesson)
+6. Build evaluation infrastructure before making changes — every change should be measurable (v3.1)

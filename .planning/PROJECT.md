@@ -2,7 +2,7 @@
 
 ## What This Is
 
-AquaPose is a 3D fish pose estimation system that reconstructs the position, orientation, and body shape of cichlids from a 13-camera aquarium rig. Built as an event-driven computation engine with strict 3-layer architecture (Core Computation → PosePipeline → Observers), the pipeline executes 5 stages — Detection (YOLO-OBB), 2D Tracking (OC-SORT per-camera), Association (ray-ray scoring + Leiden clustering), Midline (YOLO-seg or YOLO-pose backends), and Reconstruction (multi-view triangulation + B-spline fitting) — producing dense 3D trajectories and midline kinematics for behavioral research. Precomputed refractive lookup tables (forward pixel→ray and inverse voxel→pixel) eliminate per-frame refraction math during association. A curve-based optimizer provides an alternative correspondence-free reconstruction backend. Invoked via `aquapose run --config path.yaml` with production, diagnostic, synthetic, and benchmark execution modes.
+AquaPose is a 3D fish pose estimation system that reconstructs the position, orientation, and body shape of cichlids from a 13-camera aquarium rig. Built as an event-driven computation engine with strict 3-layer architecture (Core Computation → PosePipeline → Observers), the pipeline executes 5 stages — Detection (YOLO-OBB), 2D Tracking (OC-SORT per-camera), Association (ray-ray scoring + Leiden clustering), Midline (YOLO-seg or YOLO-pose backends), and Reconstruction (confidence-weighted DLT triangulation + B-spline fitting) — producing dense 3D trajectories and midline kinematics for behavioral research. Precomputed refractive lookup tables (forward pixel→ray and inverse voxel→pixel) eliminate per-frame refraction math during association. An offline evaluation harness with real-data fixtures enables data-driven tuning of reconstruction parameters via Tier 1 (reprojection error) and Tier 2 (leave-one-out stability) metrics. Invoked via `aquapose run --config path.yaml` with production, diagnostic, synthetic, and benchmark execution modes.
 
 ## Core Value
 
@@ -67,19 +67,16 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - ✓ Consolidated weights_path config field (STAB-02) — v3.0
 - ✓ Legacy dirs reorganized into core/ submodules with core/types/ package (REORG-01) — v3.0
 
+- ✓ Diagnostic fixture system: MidlineFixture + NPZ serialization for offline evaluation (DIAG-01, DIAG-02) — v3.1
+- ✓ Offline evaluation harness with CalibBundle, frame selection, Tier 1/Tier 2 metrics (EVAL-01 through EVAL-06) — v3.1
+- ✓ Confidence-weighted DLT triangulation with outlier rejection, single strategy (RECON-01 through RECON-07) — v3.1
+- ✓ DLT validated against baseline; outlier threshold tuned 50→10 (RECON-08) — v3.1
+- ✓ Association parameter sweep infrastructure (ASSOC-01 through ASSOC-04) — v3.1
+- ✓ Dead reconstruction code removed: old triangulation, curve optimizer, epipolar/orientation (CLEAN-01 through CLEAN-03) — v3.1
+
 ### Active
 
-## Current Milestone: v3.1 Reconstruction
-
-**Goal:** Tear down the over-engineered reconstruction backends and rebuild from a minimal, empirically-validated triangulation baseline with a proper evaluation harness.
-
-**Target features:**
-- Diagnostic observer expansion to capture/serialize MidlineSet intermediate data
-- Evaluation harness with real-data fixtures (~300 frames) and automated metrics (Tier 1 reprojection, Tier 2 leave-one-out)
-- Stripped-down triangulation v1: confidence-weighted DLT, single strategy (no camera-count branching), B-spline fitting
-- Empirical outlier rejection tuning via evaluation harness
-- Dead code cleanup: strip old triangulation and curve optimizer backends
-- Stretch: Tier 3 synthetic ground-truth evaluation (leveraging existing synthetic data kit)
+(No active requirements — next milestone not yet defined)
 
 ### Out of Scope
 
@@ -96,17 +93,18 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ## Context
 
-### Current State (v3.1 Reconstruction in progress)
+### Current State (v3.1 shipped)
 
-- **Codebase:** 22,087 LOC source across `src/aquapose/` (calibration, core/, engine/, io, visualization), 18,829 LOC tests (656 tests)
+- **Codebase:** 19,493 LOC source across `src/aquapose/` (calibration, core/, engine/, io, evaluation, visualization)
 - **Architecture:** Event-driven 3-layer — Core Computation (5 stages) → PosePipeline (orchestrator) → Observers (6 side-effect handlers)
-- **Pipeline order:** Detection (YOLO-OBB) → 2D Tracking (OC-SORT) → Association (Leiden) → Midline (YOLO-seg or YOLO-pose) → Reconstruction (triangulation + B-spline)
+- **Pipeline order:** Detection (YOLO-OBB) → 2D Tracking (OC-SORT) → Association (Leiden) → Midline (YOLO-seg or YOLO-pose) → Reconstruction (DLT triangulation + B-spline)
 - **Tech stack:** Python 3.11, PyTorch, PyTorch3D, scikit-image, OpenCV, h5py, ultralytics (YOLO), Click (CLI), Plotly (3D viz), boxmot (OC-SORT), leidenalg/igraph, hatch build system
 - **Midline backends:** SegmentationBackend (YOLO-seg + skeletonization) and PoseEstimationBackend (YOLO-pose + spline), selectable via `midline.backend` config field
+- **Reconstruction:** Single DLT backend — confidence-weighted triangulation with outlier rejection (threshold=10.0), B-spline fitting (7 control points)
+- **Evaluation:** Offline harness with NPZ fixtures, CalibBundle, Tier 1 reprojection + Tier 2 leave-one-out metrics
 - **Training infrastructure:** `aquapose train {yolo-obb, seg, pose}` CLI subcommands with standard YOLO txt+yaml data format
 - **Core organization:** Shared types in `core/types/`, implementations in `core/<stage>/`, legacy top-level dirs eliminated
-- **Reconstruction:** Being rebuilt in v3.1 — current triangulation and curve optimizer backends are over-engineered with poor real-data results
-- **Known limitation:** Z-reconstruction uncertainty 132x larger than XY due to top-down camera geometry
+- **Known limitation:** Z-reconstruction uncertainty 132x larger than XY due to top-down camera geometry; ~70% singleton rate in association (upstream detection/tracking bottleneck)
 - **Import boundary:** Automated AST-based checker enforced via pre-commit hook — core/ never imports engine/ at runtime
 
 ### Rig Geometry
@@ -131,7 +129,7 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 ## Constraints
 
 - **Dependency**: AquaCal library must be importable (calibration data loading)
-- **Hardware**: GPU required for PyTorch3D and curve optimization
+- **Hardware**: GPU required for YOLO inference and PyTorch operations
 - **Data**: Real multi-camera recordings and calibration data available
 - **Processing**: Batch mode only; v1 targets 5-30 minute clips
 
@@ -150,9 +148,13 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | RANSAC centroid clustering for cross-view identity | Cast refractive rays, triangulate minimal subsets, score consensus | Superseded by Leiden clustering in v2.1 |
 | Arc-length normalized correspondence | Slender-body assumption preserves cross-view correspondence | ✓ Good |
 | Analysis-by-synthesis retained as optional route | Shelved, not deleted — available for advanced work | ✓ Good |
-| Curve optimizer as alternative to triangulation | Correspondence-free B-spline fitting via chamfer distance | ✗ Deferred — must beat triangulation baseline on eval harness to justify reintroduction |
-| Reconstruction rebuild from minimal baseline | Both backends over-engineered, poor real-data results; rebuild with eval harness measuring every change | — In progress (v3.1) |
-| Pose estimation backend only for reconstruction | Ordered keypoints eliminate correspondence/orientation machinery in reconstruction | — In progress (v3.1) |
+| Curve optimizer as alternative to triangulation | Correspondence-free B-spline fitting via chamfer distance | ✗ Removed v3.1 — must beat DLT baseline on eval harness to justify reintroduction |
+| Reconstruction rebuild from minimal baseline | Both backends over-engineered, poor real-data results; rebuild with eval harness measuring every change | ✓ Good — DLT meets baseline, ~3,200 lines dead code removed |
+| Pose estimation backend only for reconstruction | Ordered keypoints eliminate correspondence/orientation machinery in reconstruction | ✓ Good — v3.1 shipped, DLT is sole backend |
+| Confidence-weighted DLT over RANSAC triangulation | Single strategy regardless of camera count; no branching, no orientation alignment | ✓ Good — simpler and matches baseline quality |
+| Outlier rejection threshold 10.0 (not 50.0) | Empirical grid search on real data via evaluation harness | ✓ Good — best Tier 1 reprojection |
+| NPZ fixtures for offline evaluation | Flat slash-separated keys for numpy.load compatibility; versioned (v1.0/v2.0) | ✓ Good — enables data-driven parameter tuning |
+| Association params: keep defaults | Sweep showed marginal gains (~1% yield); ~70% singleton rate is upstream bottleneck | ✓ Good — no over-tuning |
 | XY-only tracking cost matrix | Z uncertainty 132x larger; XY-only prevents Z-noise ID swaps | Superseded — OC-SORT per-camera in v2.1 |
 | Population-constrained tracking | 9 fish always; dead tracks recycled to unmatched observations | Superseded — Leiden clustering handles identity in v2.1 |
 | Stage Protocol via structural typing (not ABC) | typing.Protocol with runtime_checkable — no inheritance required | ✓ Good — clean 5-stage architecture |
@@ -170,4 +172,4 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Import boundary via AST checker + pre-commit | Automated enforcement prevents architectural regression | ✓ Good — 0 violations at milestone completion |
 
 ---
-*Last updated: 2026-03-02 after v3.1 Reconstruction milestone started*
+*Last updated: 2026-03-03 after v3.1 Reconstruction milestone shipped*

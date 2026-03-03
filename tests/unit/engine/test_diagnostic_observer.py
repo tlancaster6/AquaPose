@@ -186,7 +186,7 @@ def test_all_stages_captured_in_full_sequence() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Helpers for export_centroid_correspondences tests
+# Helpers for export_pipeline_diagnostics tests
 # ---------------------------------------------------------------------------
 
 
@@ -232,13 +232,60 @@ def _make_group_with_consensus(
     )
 
 
+def _fire_detection_stage(
+    observer: DiagnosticObserver,
+    detections: list,
+    frame_count: int,
+    camera_ids: list[str],
+) -> None:
+    """Simulate a DetectionStage StageComplete event."""
+    ctx = PipelineContext()
+    ctx.detections = detections
+    ctx.frame_count = frame_count
+    ctx.camera_ids = camera_ids
+    observer.on_event(
+        StageComplete(
+            stage_name="DetectionStage",
+            stage_index=0,
+            elapsed_seconds=0.1,
+            context=ctx,
+        )
+    )
+
+
+def _fire_tracking_stage(
+    observer: DiagnosticObserver,
+    tracks_2d: dict,
+    frame_count: int,
+    camera_ids: list[str],
+) -> None:
+    """Simulate a TrackingStage StageComplete event."""
+    ctx = PipelineContext()
+    ctx.tracks_2d = tracks_2d
+    ctx.frame_count = frame_count
+    ctx.camera_ids = camera_ids
+    observer.on_event(
+        StageComplete(
+            stage_name="TrackingStage",
+            stage_index=1,
+            elapsed_seconds=0.1,
+            context=ctx,
+        )
+    )
+
+
 def _fire_association_stage(
-    observer: DiagnosticObserver, groups: list[TrackletGroup]
+    observer: DiagnosticObserver,
+    groups: list[TrackletGroup],
+    frame_count: int = 1,
+    camera_ids: list[str] | None = None,
 ) -> None:
     """Simulate an AssociationStage StageComplete event."""
     ctx = PipelineContext()
     ctx.tracklet_groups = groups
-    ctx.frame_count = 1
+    ctx.frame_count = frame_count
+    if camera_ids is not None:
+        ctx.camera_ids = camera_ids
     observer.on_event(
         StageComplete(
             stage_name="AssociationStage",
@@ -250,72 +297,129 @@ def _fire_association_stage(
 
 
 # ---------------------------------------------------------------------------
-# Tests for export_centroid_correspondences
+# Tests for export_pipeline_diagnostics
 # ---------------------------------------------------------------------------
 
 
-def test_export_centroid_correspondences_writes_npz(tmp_path: Path) -> None:
-    """export_centroid_correspondences writes NPZ with correct arrays and shapes."""
+def test_export_pipeline_diagnostics_all_sections(tmp_path: Path) -> None:
+    """export_pipeline_diagnostics writes NPZ with all 5 sections."""
     observer = DiagnosticObserver()
+    cam_ids = ["cam_a", "cam_b"]
     frames = (0, 1, 2)
-    cam_ids = ("cam_a", "cam_b")
-    group = _make_group_with_consensus(fish_id=0, frames=frames, cam_ids=cam_ids)
-    _fire_association_stage(observer, [group])
+    n_frames = len(frames)
 
-    out_path = tmp_path / "correspondences.npz"
-    result = observer.export_centroid_correspondences(out_path)
+    # Detection stage
+    detections = [
+        {"cam_a": [object(), object()], "cam_b": [object()]},
+        {"cam_a": [object()], "cam_b": []},
+        {"cam_a": [], "cam_b": [object(), object(), object()]},
+    ]
+    _fire_detection_stage(observer, detections, n_frames, cam_ids)
+
+    # Tracking stage
+    tracklet_a = _make_tracklet2d("cam_a", 0, frames)
+    tracklet_b = _make_tracklet2d("cam_b", 1, frames)
+    _fire_tracking_stage(
+        observer,
+        {"cam_a": [tracklet_a], "cam_b": [tracklet_b]},
+        n_frames,
+        cam_ids,
+    )
+
+    # Association stage
+    group = _make_group_with_consensus(
+        fish_id=0, frames=frames, cam_ids=("cam_a", "cam_b")
+    )
+    _fire_association_stage(observer, [group], n_frames, cam_ids)
+
+    # Midline stage
+    midline_a0 = _make_midline2d(0, "cam_a", 0)
+    midline_b0 = _make_midline2d(0, "cam_b", 0)
+    annotated = [
+        {
+            "cam_a": [_make_annotated_detection(midline_a0, tracklet_a.centroids[0])],
+            "cam_b": [_make_annotated_detection(midline_b0, tracklet_b.centroids[0])],
+        },
+        {
+            "cam_a": [_make_annotated_detection(None, tracklet_a.centroids[1])],
+            "cam_b": [_make_annotated_detection(None, tracklet_b.centroids[1])],
+        },
+        {
+            "cam_a": [],
+            "cam_b": [],
+        },
+    ]
+    _fire_midline_stage(observer, annotated, n_frames, cam_ids)
+
+    out_path = tmp_path / "pipeline_diagnostics.npz"
+    result = observer.export_pipeline_diagnostics(out_path)
 
     assert result.exists()
     data = np.load(str(result), allow_pickle=True)
 
-    assert "fish_ids" in data
-    assert "frame_indices" in data
-    assert "points_3d" in data
-    assert "camera_ids" in data
-    assert "centroids_2d" in data
+    # --- Section 1: tracking ---
+    assert data["tracking/camera_ids"].shape == (6,)  # 2 tracklets * 3 frames
+    assert data["tracking/track_ids"].shape == (6,)
+    assert data["tracking/frame_indices"].shape == (6,)
+    assert data["tracking/centroids"].shape == (6, 2)
+    assert data["tracking/frame_status"].shape == (6,)
 
-    n = len(frames) * len(cam_ids)  # 3 frames * 2 cameras = 6 rows
-    assert data["fish_ids"].shape == (n,)
-    assert data["frame_indices"].shape == (n,)
-    assert data["points_3d"].shape == (n, 3)
-    assert data["camera_ids"].shape == (n,)
-    assert data["centroids_2d"].shape == (n, 2)
+    # --- Section 2: groups ---
+    assert data["groups/fish_ids"].shape == (1,)
+    assert data["groups/n_cameras"].tolist() == [2]
+    assert data["groups/n_frames"].tolist() == [3]
+    assert data["groups/confidence"].shape == (1,)
+    assert "cam_a" in str(data["groups/camera_ids_csv"][0])
 
-    # All rows reference fish_id=0
-    assert np.all(data["fish_ids"] == 0)
-    # Both camera IDs appear
-    assert set(data["camera_ids"]) == {"cam_a", "cam_b"}
+    # --- Section 3: correspondences ---
+    n_corr = n_frames * 2  # 3 frames * 2 cameras
+    assert data["correspondences/fish_ids"].shape == (n_corr,)
+    assert data["correspondences/points_3d"].shape == (n_corr, 3)
+    assert data["correspondences/centroids_2d"].shape == (n_corr, 2)
+
+    # --- Section 4: detection_counts ---
+    assert data["detection_counts/matrix"].shape == (n_frames, 2)
+    assert data["detection_counts/camera_ids"].shape == (2,)
+    assert data["detection_counts/frame_indices"].shape == (n_frames,)
+    # Frame 0: cam_a=2, cam_b=1
+    assert data["detection_counts/matrix"][0, 0] == 2
+    assert data["detection_counts/matrix"][0, 1] == 1
+
+    # --- Section 5: midline_counts ---
+    assert data["midline_counts/matrix"].shape == (n_frames, 2)
+    # Frame 0: both cameras have 1 midline each
+    assert data["midline_counts/matrix"][0, 0] == 1
+    assert data["midline_counts/matrix"][0, 1] == 1
+    # Frame 1: no midlines (both are None)
+    assert data["midline_counts/matrix"][1, 0] == 0
+    assert data["midline_counts/matrix"][1, 1] == 0
 
 
-def test_export_centroid_correspondences_raises_without_association(
+def test_export_pipeline_diagnostics_empty_observer(tmp_path: Path) -> None:
+    """export_pipeline_diagnostics works with no stage snapshots (all empty)."""
+    observer = DiagnosticObserver()
+    out_path = tmp_path / "pipeline_diagnostics.npz"
+    result = observer.export_pipeline_diagnostics(out_path)
+
+    assert result.exists()
+    data = np.load(str(result), allow_pickle=True)
+
+    # All sections should have zero-length arrays
+    assert data["tracking/camera_ids"].shape == (0,)
+    assert data["tracking/centroids"].shape == (0, 2)
+    assert data["groups/fish_ids"].shape == (0,)
+    assert data["correspondences/fish_ids"].shape == (0,)
+    assert data["correspondences/points_3d"].shape == (0, 3)
+    assert data["detection_counts/matrix"].shape == (0, 0)
+    assert data["midline_counts/matrix"].shape == (0, 0)
+
+
+def test_export_pipeline_diagnostics_correspondences_skips_none_consensus(
     tmp_path: Path,
 ) -> None:
-    """ValueError raised when no AssociationStage snapshot is present."""
-    import pytest
-
-    observer = DiagnosticObserver()
-    # Fire a different stage, not AssociationStage
-    ctx = PipelineContext()
-    ctx.frame_count = 1
-    observer.on_event(
-        StageComplete(
-            stage_name="DetectionStage",
-            stage_index=0,
-            elapsed_seconds=0.1,
-            context=ctx,
-        )
-    )
-
-    out_path = tmp_path / "correspondences.npz"
-    with pytest.raises(ValueError, match="AssociationStage"):
-        observer.export_centroid_correspondences(out_path)
-
-
-def test_export_centroid_correspondences_skips_none_consensus(tmp_path: Path) -> None:
-    """Groups with consensus_centroids=None produce no rows (not an error)."""
+    """Groups with consensus_centroids=None produce no correspondence rows."""
     observer = DiagnosticObserver()
     frames = (0, 1)
-    # Group with no consensus_centroids
     group = TrackletGroup(
         fish_id=0,
         tracklets=(
@@ -326,15 +430,12 @@ def test_export_centroid_correspondences_skips_none_consensus(tmp_path: Path) ->
     )
     _fire_association_stage(observer, [group])
 
-    out_path = tmp_path / "correspondences.npz"
-    result = observer.export_centroid_correspondences(out_path)
+    out_path = tmp_path / "pipeline_diagnostics.npz"
+    result = observer.export_pipeline_diagnostics(out_path)
 
-    assert result.exists()
     data = np.load(str(result), allow_pickle=True)
-    # Zero rows — group was skipped
-    assert data["fish_ids"].shape == (0,)
-    assert data["points_3d"].shape == (0, 3)
-    assert data["centroids_2d"].shape == (0, 2)
+    assert data["correspondences/fish_ids"].shape == (0,)
+    assert data["correspondences/points_3d"].shape == (0, 3)
 
 
 # ---------------------------------------------------------------------------
@@ -583,6 +684,11 @@ def test_on_pipeline_complete_exports_midline_fixtures(tmp_path: Path) -> None:
     out_file = tmp_path / "midline_fixtures.npz"
     assert out_file.exists(), (
         "midline_fixtures.npz should be auto-exported on PipelineComplete"
+    )
+
+    diag_file = tmp_path / "pipeline_diagnostics.npz"
+    assert diag_file.exists(), (
+        "pipeline_diagnostics.npz should be auto-exported on PipelineComplete"
     )
 
 

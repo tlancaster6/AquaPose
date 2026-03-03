@@ -9,8 +9,8 @@ Requirements for chunk processing milestone. Each maps to roadmap phases.
 
 ### Frame Source
 
-- [ ] **FRAME-01**: DetectionStage and MidlineStage receive frames from an injectable frame source instead of opening VideoSet directly
-- [ ] **FRAME-02**: Frame source yields `(frame_idx, dict[str, ndarray])` — local frame index plus per-camera undistorted frames
+- [x] **FRAME-01**: DetectionStage and MidlineStage receive frames from an injectable frame source instead of opening VideoSet directly
+- [x] **FRAME-02**: Frame source yields `(frame_idx, dict[str, ndarray])` — local frame index plus per-camera undistorted frames
 - [ ] **FRAME-03**: `stop_frame` removed from pipeline config — frame windowing is a frame-source concern managed by the orchestrator
 
 ### Chunk Orchestration
@@ -72,8 +72,8 @@ Requirements for chunk processing milestone. Each maps to roadmap phases.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FRAME-01 | Phase 51 | Pending |
-| FRAME-02 | Phase 51 | Pending |
+| FRAME-01 | Phase 51 | Complete (51-01) |
+| FRAME-02 | Phase 51 | Complete (51-01) |
 | FRAME-03 | Phase 51 | Pending |
 | CHUNK-01 | Phase 52 | Pending |
 | CHUNK-02 | Phase 52 | Pending |

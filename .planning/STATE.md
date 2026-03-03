@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-03-03)
 ## Current Position
 
 Phase: 51 of 53 (Frame Source Refactor)
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-03-03 — Roadmap created for v3.3 Chunk Mode (Phases 51-53)
+Plan: 1 of 2 complete
+Status: In progress
+Last activity: 2026-03-03 — Completed 51-01 FrameSource protocol + stage migration
 
-Progress: [░░░░░░░░░░] 0% (0/3 phases)
+Progress: [░░░░░░░░░░] 10% (0/3 phases, 1 plan complete)
 
 ## Accumulated Context
 
@@ -42,6 +42,12 @@ Key decisions for v3.3:
 - Diagnostic mode and chunk mode are mutually exclusive — different purposes, bounded scope
 - No FishState3D in handoff — 3D re-ID premature; add if re-ID failures observed in practice
 
+Phase 51 Plan 01 decisions:
+- VideoSet retained in io/video.py — observers still import it; Plan 02 handles removal
+- MidlineStage keeps calibration_path param for ForwardLUT loading in orientation resolution
+- VideoFrameSource shared by DetectionStage and MidlineStage (single construction in build_stages)
+- FrameSource is runtime_checkable Protocol — enables isinstance checks without inheritance
+
 ### Pending Todos
 
 17 pending todos from v2.2 — see .planning/todos/pending/ (review for relevance)
@@ -53,5 +59,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Roadmap created — ready to plan Phase 51
+Stopped at: Completed 51-01-PLAN.md — FrameSource protocol, VideoFrameSource, stage migration
 Resume file: None

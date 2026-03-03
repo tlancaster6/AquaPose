@@ -130,7 +130,7 @@ Full details: `.planning/milestones/v3.2-ROADMAP.md`
 
 ### v3.3 Chunk Mode (Phases 51-53) — ACTIVE
 
-- [ ] **Phase 51: Frame Source Refactor** - Extract video I/O from stages into injectable frame source
+- [x] **Phase 51: Frame Source Refactor** - Extract video I/O from stages into injectable frame source (1/2 plans complete)
 - [ ] **Phase 52: Chunk Orchestrator and Handoff** - Implement chunk loop, ChunkHandoff, identity stitching, per-chunk HDF5 flush
 - [ ] **Phase 53: Integration and Validation** - Wire orchestrator into CLI, disable HDF5 observer under chunk mode, validate output equivalence
 
@@ -147,7 +147,7 @@ Full details: `.planning/milestones/v3.2-ROADMAP.md`
   4. `stop_frame` is absent from PipelineConfig; existing tests and configs that relied on it are updated or removed
 **Plans**: 2 plans
 Plans:
-- [ ] 51-01-PLAN.md — Define FrameSource protocol + VideoFrameSource, migrate stages and build_stages
+- [x] 51-01-PLAN.md — Define FrameSource protocol + VideoFrameSource, migrate stages and build_stages
 - [ ] 51-02-PLAN.md — Migrate observers, remove stop_frame, delete VideoSet, update tests
 
 ### Phase 52: Chunk Orchestrator and Handoff
@@ -183,6 +183,6 @@ Plans:
 | 35-39 | v3.0 | 14/14 | Complete | 2026-03-02 |
 | 40-45 | v3.1 | 13/13 | Complete | 2026-03-03 |
 | 46-50 | v3.2 | 11/11 | Complete | 2026-03-03 |
-| 51 | v3.3 | 0/TBD | Not started | - |
+| 51 | v3.3 | 1/2 | In progress | - |
 | 52 | v3.3 | 0/TBD | Not started | - |
 | 53 | v3.3 | 0/TBD | Not started | - |

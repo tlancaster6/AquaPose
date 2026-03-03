@@ -6,12 +6,16 @@ import logging
 import math
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
 import scipy.interpolate
 
 from aquapose.engine.events import Event, PipelineComplete
+
+if TYPE_CHECKING:
+    from aquapose.core.types.frame_source import FrameSource
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +32,9 @@ class Overlay2DObserver:
 
     Args:
         output_dir: Directory for output video files.
-        video_dir: Directory containing source camera MP4 files.
         calibration_path: Path to calibration JSON file for 3D-to-2D reprojection.
+        frame_source: Optional FrameSource providing undistorted camera frames.
+            When None, falls back to synthetic black frames for testing/diagnostics.
         mosaic: If True (default), generate a single mosaic video with all cameras.
         per_camera: If True, generate individual videos per camera.
         show_bbox: If True, draw bounding boxes around detections.
@@ -43,8 +48,8 @@ class Overlay2DObserver:
 
         observer = Overlay2DObserver(
             output_dir="/tmp/output",
-            video_dir="/data/videos",
             calibration_path="/data/calibration.json",
+            frame_source=frame_source,
         )
         pipeline = PosePipeline(stages=stages, config=config, observers=[observer])
         context = pipeline.run()
@@ -53,8 +58,8 @@ class Overlay2DObserver:
     def __init__(
         self,
         output_dir: str | Path,
-        video_dir: str | Path,
         calibration_path: str | Path,
+        frame_source: FrameSource | None = None,
         *,
         mosaic: bool = True,
         per_camera: bool = False,
@@ -66,8 +71,8 @@ class Overlay2DObserver:
         midline_2d_color: tuple[int, int, int] = _DEFAULT_MIDLINE_2D_COLOR,
     ) -> None:
         self._output_dir = Path(output_dir)
-        self._video_dir = Path(video_dir) if video_dir else None
         self._calibration_path = Path(calibration_path)
+        self._frame_source = frame_source
         self._mosaic = mosaic
         self._per_camera = per_camera
         self._show_bbox = show_bbox
@@ -111,13 +116,12 @@ class Overlay2DObserver:
 
         # Load calibration and build per-camera projection models.
         # Use K_new (undistorted intrinsics) to match the reconstruction backend
-        # and VideoSet, which undistorts frames before returning them.
+        # and the frame source, which undistorts frames before returning them.
         from aquapose.calibration.loader import (
             compute_undistortion_maps,
             load_calibration_data,
         )
         from aquapose.calibration.projection import RefractiveProjectionModel
-        from aquapose.io.video import VideoSet
 
         calib_data = load_calibration_data(str(self._calibration_path))
         models: dict[str, RefractiveProjectionModel] = {}
@@ -135,34 +139,8 @@ class Overlay2DObserver:
                     n_water=calib_data.n_water,
                 )
 
-        # Resolve video paths for each camera.
-        camera_map: dict[str, Path] = {}
-        if self._video_dir is not None:
-            from aquapose.io.discovery import discover_camera_videos
-
-            all_videos = discover_camera_videos(self._video_dir)
-            camera_map = {
-                cid: p for cid, p in all_videos.items() if cid in set(camera_ids)
-            }
-
         n_frames = len(midlines_3d)
         self._output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Build frame source: real videos or synthetic black frames.
-        if camera_map:
-            frame_source_ctx = VideoSet(camera_map, undistortion=calib_data)
-        else:
-            from aquapose.visualization.frames import synthetic_frame_iter
-
-            frame_sizes = {
-                cam_id: calib_data.cameras[cam_id].image_size
-                for cam_id in camera_ids
-                if cam_id in calib_data.cameras
-            }
-            if not frame_sizes:
-                logger.warning("No video files or calibration data for overlay")
-                return
-            frame_source_ctx = None  # signal to use synthetic iter below
 
         # Frame dimensions from calibration (undistortion preserves size).
         first_cam_id = next(
@@ -189,22 +167,38 @@ class Overlay2DObserver:
                 str(mosaic_path), fourcc, self._fps, (mosaic_w, mosaic_h)
             )
 
+        # Build frame source: real FrameSource or synthetic black frames.
+        import contextlib
+
+        if self._frame_source is not None:
+            ctx_mgr = self._frame_source
+        else:
+            from aquapose.visualization.frames import synthetic_frame_iter
+
+            frame_sizes = {
+                cam_id: calib_data.cameras[cam_id].image_size
+                for cam_id in camera_ids
+                if cam_id in calib_data.cameras
+            }
+            if not frame_sizes:
+                logger.warning("No frame source or calibration data for overlay")
+                if mosaic_writer is not None:
+                    mosaic_writer.release()
+                return
+            ctx_mgr = contextlib.nullcontext(
+                synthetic_frame_iter(camera_ids, frame_sizes, n_frames)
+            )
+
         if self._per_camera:
-            for cam_id in camera_map or frame_sizes:
+            for cam_id in (
+                self._frame_source.camera_ids
+                if self._frame_source is not None
+                else list(frame_sizes.keys())  # type: ignore[possibly-undefined]
+            ):
                 cam_path = self._output_dir / f"overlay_{cam_id}.mp4"
                 per_cam_writers[cam_id] = cv2.VideoWriter(
                     str(cam_path), fourcc, self._fps, (out_w, out_h)
                 )
-
-        # Choose frame iterator.
-        import contextlib
-
-        if frame_source_ctx is not None:
-            ctx_mgr = frame_source_ctx
-        else:
-            ctx_mgr = contextlib.nullcontext(
-                synthetic_frame_iter(camera_ids, frame_sizes, n_frames)
-            )
 
         try:
             with ctx_mgr as frame_iter:

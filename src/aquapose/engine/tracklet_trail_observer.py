@@ -6,11 +6,15 @@ import logging
 import math
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
 
 from aquapose.engine.events import Event, PipelineComplete
+
+if TYPE_CHECKING:
+    from aquapose.core.types.frame_source import FrameSource
 
 logger = logging.getLogger(__name__)
 
@@ -72,23 +76,21 @@ class TrackletTrailObserver:
     Args:
         output_dir: Root directory for output. Videos are written to
             ``{output_dir}/observers/diagnostics/``.
-        video_dir: Directory containing source camera MP4 files.
-        calibration_path: Path to the calibration JSON (used by VideoSet for
-            undistortion).
+        calibration_path: Path to the calibration JSON (used for frame size
+            lookup in synthetic fallback mode when frame_source is None).
+        frame_source: Optional FrameSource providing undistorted camera frames.
+            When None, falls back to synthetic black frames.
         trail_length: Number of past frames to include in the fading tail.
         fps: Output video frame rate.
         tile_scale: Downsampling factor applied to each camera tile in the
             mosaic (e.g., 0.35 for 35% of original size).
-        stop_frame: If set, stop rendering after this frame index. When
-            ``None`` (default), inherits ``config.detection.stop_frame``
-            from the pipeline context at render time.
 
     Example::
 
         observer = TrackletTrailObserver(
             output_dir="/tmp/output",
-            video_dir="/data/videos",
             calibration_path="/data/calibration.json",
+            frame_source=frame_source,
         )
         pipeline = PosePipeline(stages=stages, config=config, observers=[observer])
         context = pipeline.run()
@@ -97,21 +99,19 @@ class TrackletTrailObserver:
     def __init__(
         self,
         output_dir: str | Path,
-        video_dir: str | Path,
         calibration_path: str | Path,
+        frame_source: FrameSource | None = None,
         *,
         trail_length: int = 30,
         fps: float = 30.0,
         tile_scale: float = 0.35,
-        stop_frame: int | None = None,
     ) -> None:
         self._output_dir = Path(output_dir)
-        self._video_dir = Path(video_dir) if video_dir else None
         self._calibration_path = Path(calibration_path)
+        self._frame_source = frame_source
         self._trail_length = trail_length
         self._fps = fps
         self._tile_scale = tile_scale
-        self._stop_frame = stop_frame
 
     # ------------------------------------------------------------------
     # Observer protocol
@@ -370,8 +370,6 @@ class TrackletTrailObserver:
         tracks_2d: dict,
         frame_lookup: dict[str, dict[int, list[tuple[object, int, int]]]],
         fish_color_map: dict[int, tuple[int, int, int]],
-        camera_map: dict[str, Path],
-        calib_data: object,
         diag_dir: Path,
         *,
         frame_sizes: dict[str, tuple[int, int]] | None = None,
@@ -385,23 +383,23 @@ class TrackletTrailObserver:
             tracks_2d: Per-camera tracklet lists.
             frame_lookup: Pre-built frame lookup structure.
             fish_color_map: fish_id -> BGR color.
-            camera_map: camera_id -> video Path.
-            calib_data: CalibrationData for VideoSet undistortion.
             diag_dir: Output directory for diagnostic videos.
             frame_sizes: camera_id -> (width, height) for synthetic fallback.
-            n_synth_frames: Number of synthetic frames when no videos.
+            n_synth_frames: Number of synthetic frames when no frame source.
             detections: Per-frame per-camera detection lists from context,
                 used to draw OBB/AABB boxes at the trail head.
         """
         import contextlib
 
-        from aquapose.io.video import VideoSet
         from aquapose.visualization.frames import synthetic_frame_iter
 
-        use_synthetic = not camera_map and frame_sizes is not None
+        use_synthetic = self._frame_source is None and frame_sizes is not None
 
         for cam_id in camera_ids:
-            if not use_synthetic and cam_id not in camera_map:
+            if not use_synthetic and (
+                self._frame_source is None
+                or cam_id not in self._frame_source.camera_ids
+            ):
                 continue
             cam_lookup = frame_lookup.get(cam_id, {})
             if not cam_lookup:
@@ -417,17 +415,13 @@ class TrackletTrailObserver:
                     synthetic_frame_iter([cam_id], frame_sizes, n_synth_frames)
                 )
             else:
-                cam_map_single = {cam_id: camera_map[cam_id]}
-                ctx_mgr = VideoSet(cam_map_single, undistortion=calib_data)  # type: ignore[arg-type]
+                # Use the shared frame source — it covers all cameras.
+                # We filter to only the current camera in the loop body.
+                ctx_mgr = self._frame_source  # type: ignore[assignment]
 
             try:
                 with ctx_mgr as frame_iter:
                     for frame_idx, frames in frame_iter:
-                        if (
-                            self._stop_frame is not None
-                            and frame_idx >= self._stop_frame
-                        ):
-                            break
                         frame = frames.get(cam_id)
                         if frame is None:
                             continue
@@ -529,8 +523,6 @@ class TrackletTrailObserver:
         camera_ids: list[str],
         frame_lookup: dict[str, dict[int, list[tuple[object, int, int]]]],
         fish_color_map: dict[int, tuple[int, int, int]],
-        camera_map: dict[str, Path],
-        calib_data: object,
         diag_dir: Path,
         *,
         frame_sizes: dict[str, tuple[int, int]] | None = None,
@@ -547,22 +539,19 @@ class TrackletTrailObserver:
             camera_ids: Ordered list of all camera IDs.
             frame_lookup: Pre-built frame lookup structure.
             fish_color_map: fish_id -> BGR color.
-            camera_map: camera_id -> video Path.
-            calib_data: CalibrationData for VideoSet undistortion.
             diag_dir: Output directory for the mosaic video.
             frame_sizes: camera_id -> (width, height) for synthetic fallback.
-            n_synth_frames: Number of synthetic frames when no videos.
+            n_synth_frames: Number of synthetic frames when no frame source.
             detections: Per-frame per-camera detection lists from context,
                 used to draw OBB/AABB boxes at the trail head (scaled to tile).
         """
         import contextlib
 
-        from aquapose.io.video import VideoSet
         from aquapose.visualization.frames import synthetic_frame_iter
 
-        use_synthetic = not camera_map and frame_sizes is not None
+        use_synthetic = self._frame_source is None and frame_sizes is not None
 
-        if not camera_map and not use_synthetic:
+        if self._frame_source is None and not use_synthetic:
             return
 
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
@@ -576,13 +565,11 @@ class TrackletTrailObserver:
                 synthetic_frame_iter(camera_ids, frame_sizes, n_synth_frames)
             )
         else:
-            ctx_mgr = VideoSet(camera_map, undistortion=calib_data)  # type: ignore[arg-type]
+            ctx_mgr = self._frame_source  # type: ignore[assignment]
 
         try:
             with ctx_mgr as frame_iter:
                 for frame_idx, frames in frame_iter:
-                    if self._stop_frame is not None and frame_idx >= self._stop_frame:
-                        break
                     # Determine tile dimensions from first real frame.
                     if tile_w == 0:
                         for cam_id in camera_ids:
@@ -767,22 +754,10 @@ class TrackletTrailObserver:
         # Build frame lookup.
         frame_lookup = self._build_frame_lookup(tracks_2d, track_to_fish)
 
-        # Load calibration for undistortion.
-        calib_data = load_calibration_data(str(self._calibration_path))
-
-        # Resolve video paths.
-        camera_map: dict[str, Path] = {}
-        if self._video_dir is not None:
-            from aquapose.io.discovery import discover_camera_videos
-
-            all_videos = discover_camera_videos(self._video_dir)
-            camera_map = {
-                cid: p for cid, p in all_videos.items() if cid in set(camera_ids)
-            }
-
         # Resolve frame sizes from calibration for synthetic fallback.
         frame_sizes: dict[str, tuple[int, int]] | None = None
-        if not camera_map:
+        if self._frame_source is None:
+            calib_data = load_calibration_data(str(self._calibration_path))
             frame_sizes = {
                 cam_id: calib_data.cameras[cam_id].image_size
                 for cam_id in camera_ids
@@ -790,21 +765,18 @@ class TrackletTrailObserver:
             }
             if not frame_sizes:
                 logger.warning(
-                    "TrackletTrailObserver: no video files or calibration data in %s",
-                    self._video_dir,
+                    "TrackletTrailObserver: no frame source or calibration data; skipping"
                 )
                 return
 
         # Compute total frame count for synthetic fallback.
         n_synth_frames: int = 0
-        if not camera_map:
+        if self._frame_source is None:
             all_frame_indices = [
                 fi for cam_lookup in frame_lookup.values() for fi in cam_lookup
             ]
             if all_frame_indices:
                 n_synth_frames = max(all_frame_indices) + 1
-            if self._stop_frame is not None:
-                n_synth_frames = min(n_synth_frames, self._stop_frame)
 
         # Create output directory.
         diag_dir = self._output_dir / "observers" / "diagnostics"
@@ -816,8 +788,6 @@ class TrackletTrailObserver:
             tracks_2d,
             frame_lookup,
             fish_color_map,
-            camera_map,
-            calib_data,
             diag_dir,
             frame_sizes=frame_sizes,
             n_synth_frames=n_synth_frames,
@@ -829,8 +799,6 @@ class TrackletTrailObserver:
             camera_ids,
             frame_lookup,
             fish_color_map,
-            camera_map,
-            calib_data,
             diag_dir,
             frame_sizes=frame_sizes,
             n_synth_frames=n_synth_frames,

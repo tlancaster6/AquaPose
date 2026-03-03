@@ -16,7 +16,6 @@ def test_overlay_observer_satisfies_protocol(tmp_path: Path) -> None:
     """Overlay2DObserver satisfies the Observer protocol via isinstance check."""
     observer = Overlay2DObserver(
         output_dir=tmp_path,
-        video_dir=tmp_path,
         calibration_path=tmp_path / "cal.json",
     )
     assert isinstance(observer, Observer)

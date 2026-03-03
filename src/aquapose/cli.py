@@ -9,6 +9,7 @@ from typing import Any
 import click
 import yaml
 
+from aquapose.core.types import VideoFrameSource
 from aquapose.engine import (
     PosePipeline,
     build_observers,
@@ -118,8 +119,18 @@ def run(
     # 4. Resolve effective mode (CLI > YAML > default)
     effective_mode = pipeline_config.mode
 
-    # 5. Build stages
-    stages = build_stages(pipeline_config)
+    # 5. Build frame source (non-synthetic modes only) and stages.
+    # The frame source is created here so it can be shared with observers
+    # (e.g. Overlay2DObserver, TrackletTrailObserver) that need frame access.
+    frame_source = None
+    if effective_mode != "synthetic":
+        frame_source = VideoFrameSource(
+            video_dir=pipeline_config.video_dir,
+            calibration_path=pipeline_config.calibration_path,
+            max_frames=pipeline_config.stop_frame,
+        )
+
+    stages = build_stages(pipeline_config, frame_source=frame_source)
 
     # 5.5. Load initial context from cache if --resume-from provided.
     # Each resumed run gets its own run_id (not inherited from cache).
@@ -142,6 +153,7 @@ def run(
         verbose=verbose,
         total_stages=len(stages),
         extra_observers=extra_observers,
+        frame_source=frame_source,
     )
 
     # 7. Create and run pipeline

@@ -25,7 +25,6 @@ def _make_observer(tmp_path: Path) -> TrackletTrailObserver:
     """Return a TrackletTrailObserver wired to a temp directory."""
     return TrackletTrailObserver(
         output_dir=tmp_path / "output",
-        video_dir=tmp_path / "videos",
         calibration_path=tmp_path / "calibration.json",
     )
 
@@ -230,7 +229,6 @@ def test_build_observers_diagnostic_mode_includes_tracklet_trail(
     """build_observers in diagnostic mode must include a TrackletTrailObserver."""
     config = MagicMock()
     config.output_dir = str(tmp_path / "output")
-    config.video_dir = str(tmp_path / "videos")
     config.calibration_path = str(tmp_path / "calibration.json")
 
     observers = build_observers(

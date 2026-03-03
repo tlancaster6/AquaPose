@@ -268,7 +268,7 @@ class PosePipeline:
 # ---------------------------------------------------------------------------
 
 
-def build_stages(config: PipelineConfig) -> list:
+def build_stages(config: PipelineConfig, frame_source: object = None) -> list:
     """Construct pipeline stages from a :class:`PipelineConfig`.
 
     This factory is the canonical way to wire stages into :class:`PosePipeline`.
@@ -295,6 +295,9 @@ def build_stages(config: PipelineConfig) -> list:
     Args:
         config: Frozen pipeline config providing calibration path, model paths,
             backend selection, and all stage-specific parameters.
+        frame_source: Optional pre-created FrameSource to inject into detection
+            and midline stages. When None (default), a new VideoFrameSource is
+            created internally for non-synthetic modes.
 
     Returns:
         Ordered list of stage instances (mix of Stage protocol and stub types).
@@ -367,11 +370,12 @@ def build_stages(config: PipelineConfig) -> list:
         )
 
     # --- Production (and all other) modes: full 5-stage pipeline
-    frame_source = VideoFrameSource(
-        video_dir=config.video_dir,
-        calibration_path=config.calibration_path,
-        max_frames=config.stop_frame,
-    )
+    if frame_source is None:
+        frame_source = VideoFrameSource(
+            video_dir=config.video_dir,
+            calibration_path=config.calibration_path,
+            max_frames=config.stop_frame,
+        )
 
     detection_stage = DetectionStage(
         frame_source=frame_source,

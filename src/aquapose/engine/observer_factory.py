@@ -9,6 +9,7 @@ engine layer rather than the CLI.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from aquapose.engine.animation_observer import Animation3DObserver
 from aquapose.engine.config import PipelineConfig
@@ -19,6 +20,9 @@ from aquapose.engine.observers import Observer
 from aquapose.engine.overlay_observer import Overlay2DObserver
 from aquapose.engine.timing import TimingObserver
 from aquapose.engine.tracklet_trail_observer import TrackletTrailObserver
+
+if TYPE_CHECKING:
+    from aquapose.core.types.frame_source import FrameSource
 
 __all__ = ["build_observers"]
 
@@ -43,6 +47,7 @@ def build_observers(
     verbose: bool,
     total_stages: int,
     extra_observers: tuple[str, ...] = (),
+    frame_source: FrameSource | None = None,
 ) -> list[Observer]:
     """Assemble the observer list based on execution mode and additive flags.
 
@@ -68,6 +73,10 @@ def build_observers(
         extra_observers: Additional observer names from ``--add-observer``
             flags. Supported names match the keys of the internal
             ``_OBSERVER_MAP``.
+        frame_source: Optional FrameSource providing camera frames for
+            Overlay2DObserver and TrackletTrailObserver. When None (synthetic
+            mode or no video dir), those observers fall back to synthetic
+            black frames.
 
     Returns:
         List of configured Observer instances for the pipeline.
@@ -85,17 +94,16 @@ def build_observers(
             observers.append(
                 Overlay2DObserver(
                     output_dir=config.output_dir,
-                    video_dir="",
                     calibration_path=config.calibration_path,
+                    frame_source=frame_source,
                 )
             )
             observers.append(Animation3DObserver(output_dir=config.output_dir))
             observers.append(
                 TrackletTrailObserver(
                     output_dir=config.output_dir,
-                    video_dir="",
                     calibration_path=config.calibration_path,
-                    stop_frame=config.stop_frame,
+                    frame_source=frame_source,
                 )
             )
 
@@ -105,8 +113,8 @@ def build_observers(
         observers.append(
             Overlay2DObserver(
                 output_dir=config.output_dir,
-                video_dir=config.video_dir,
                 calibration_path=config.calibration_path,
+                frame_source=frame_source,
                 show_bbox=True,
             )
         )
@@ -119,9 +127,8 @@ def build_observers(
         observers.append(
             TrackletTrailObserver(
                 output_dir=config.output_dir,
-                video_dir=config.video_dir,
                 calibration_path=config.calibration_path,
-                stop_frame=config.stop_frame,
+                frame_source=frame_source,
             )
         )
 
@@ -141,8 +148,8 @@ def build_observers(
             observers.append(
                 Overlay2DObserver(
                     output_dir=config.output_dir,
-                    video_dir=config.video_dir,
                     calibration_path=config.calibration_path,
+                    frame_source=frame_source,
                 )
             )
         elif cls is Animation3DObserver:
@@ -161,9 +168,8 @@ def build_observers(
             observers.append(
                 TrackletTrailObserver(
                     output_dir=config.output_dir,
-                    video_dir=config.video_dir,
                     calibration_path=config.calibration_path,
-                    stop_frame=config.stop_frame,
+                    frame_source=frame_source,
                 )
             )
 

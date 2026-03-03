@@ -55,6 +55,7 @@ def _mock_pipeline_context(tmp_path: Path):
         patch("aquapose.cli.load_config", return_value=mock_config),
         patch("aquapose.cli.build_stages", return_value=[MagicMock()]),
         patch("aquapose.cli.PosePipeline", return_value=mock_pipeline_instance),
+        patch("aquapose.cli.VideoFrameSource"),
         mock_pipeline_instance,
     )
 
@@ -90,8 +91,8 @@ def test_resume_from_stale_cache_gives_click_exception(tmp_path: Path) -> None:
     corrupt_file.write_bytes(b"this is not a valid pickle file at all")
 
     # Mock load_config and build_stages so the corrupt-pickle code path is reached
-    p_lc, p_bs, p_pp, _mock_inst = _mock_pipeline_context(tmp_path)
-    with p_lc, p_bs, p_pp:
+    p_lc, p_bs, p_pp, p_vfs, _mock_inst = _mock_pipeline_context(tmp_path)
+    with p_lc, p_bs, p_pp, p_vfs:
         result = runner.invoke(
             cli,
             ["run", "--config", str(config_file), "--resume-from", str(corrupt_file)],

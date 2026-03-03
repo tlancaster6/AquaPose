@@ -47,6 +47,9 @@ def mock_pipeline(tmp_path: Path):
         patch(
             "aquapose.cli.PosePipeline", return_value=mock_pipeline_instance
         ) as mock_pp,
+        patch(
+            "aquapose.cli.VideoFrameSource",
+        ) as mock_vfs,
     ):
         yield {
             "load_config": mock_lc,
@@ -55,6 +58,7 @@ def mock_pipeline(tmp_path: Path):
             "pipeline_instance": mock_pipeline_instance,
             "config": mock_config,
             "stages": mock_stages,
+            "VideoFrameSource": mock_vfs,
         }
 
 

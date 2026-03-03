@@ -181,7 +181,8 @@ Full details: `.planning/milestones/v3.1-ROADMAP.md`
   1. DiagnosticObserver no longer writes `pipeline_diagnostics.npz` automatically — the monolithic NPZ machinery is removed, not deprecated with a shim
   2. `evaluation/harness.py` is deleted — reconstruction evaluation functionality is fully consolidated into `evaluation/stages/reconstruction.py`
   3. All existing tests pass with the legacy evaluation code removed
-**Plans**: TBD
+**Plans**: 1 plan
+- [ ] 50-01-PLAN.md — Delete legacy NPZ machinery, harness.py, midline_fixture.py; prune orphaned code; clean up tests
 
 ## Progress
 

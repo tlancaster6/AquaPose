@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: Evaluation Ecosystem
 status: unknown
-last_updated: "2026-03-03T19:19:59.655Z"
+last_updated: "2026-03-03T19:26:17.080Z"
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-03)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.2 Evaluation Ecosystem — Phase 48 in progress
+**Current focus:** v3.2 Evaluation Ecosystem — Phase 48 complete, advancing to Phase 49
 
 ## Current Position
 
-Phase: 48 of 50 (EvalRunner and aquapose eval CLI) — In Progress
-Plan: 1 of 2 complete — 48-01 done, advancing to 48-02
-Status: Phase 48 Plan 01 complete — EvalRunner orchestration class built with 10 unit tests
-Last activity: 2026-03-03 — Completed 48-01 (EvalRunner, EvalRunnerResult, TDD with synthetic cache fixtures)
+Phase: 48 of 50 (EvalRunner and aquapose eval CLI) — Complete
+Plan: 2 of 2 complete — 48-01 and 48-02 both done
+Status: Phase 48 complete — EvalRunner, formatters, aquapose eval CLI all implemented
+Last activity: 2026-03-03 — Completed 48-02 (ASCII/JSON formatters, CLI eval command, deleted measure_baseline.py)
 
-Progress: [███████░░░] 44% (7/8+ plans; phase 47 complete, phase 48 in progress)
+Progress: [████████░░] 50% (8/8 plans for phases 46-48; advancing to phase 49)
 
 ## Performance Metrics
 
@@ -49,6 +49,7 @@ Progress: [███████░░░] 44% (7/8+ plans; phase 47 complete, p
 | Phase 47 P02 | 5 | 2 tasks | 4 files |
 | Phase 47 P03 | 6 | 2 tasks | 4 files |
 | Phase 48 P01 | 7 | 1 tasks | 3 files |
+| Phase 48 P02 | 3 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -86,6 +87,9 @@ v3.2 design decisions:
 - [Phase 48-01]: EvalRunner._read_n_animals() uses inline import of load_config to avoid top-level engine coupling
 - [Phase 48-01]: MidlineSet construction for evaluate_association uses tracklet_groups + annotated_detections centroid proximity matching (same as DiagnosticObserver)
 - [Phase 48-01]: evaluate_midline receives first-camera Midline2D per fish per frame from MidlineSet (single-camera representative)
+- [Phase 48]: eval_cmd function name avoids shadowing Python built-in eval; registered as @cli.command('eval')
+- [Phase 48]: format_eval_json delegates to result.to_dict() + json.dumps — no duplication of to_dict() logic
+- [Phase 48]: eval_results.json always written to run_dir on every eval invocation regardless of --report flag
 
 ### Pending Todos
 
@@ -98,6 +102,6 @@ v3.2 design decisions:
 
 ## Session Continuity
 
-Last session: 2026-03-03T19:18:00Z
-Stopped at: Completed 48-01-PLAN.md — EvalRunner with EvalRunnerResult, 10 unit tests, TDD pattern
+Last session: 2026-03-03T19:24:37Z
+Stopped at: Completed 48-02-PLAN.md — ASCII/JSON formatters and aquapose eval CLI
 Resume file: None

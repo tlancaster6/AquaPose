@@ -37,7 +37,7 @@ Requirements for the evaluation ecosystem milestone. Each maps to roadmap phases
 
 - [ ] **CLEAN-01**: `scripts/tune_association.py` retired after `aquapose tune --stage association` achieves feature parity
 - [ ] **CLEAN-02**: `scripts/tune_threshold.py` retired after `aquapose tune --stage reconstruction` achieves feature parity
-- [ ] **CLEAN-03**: `scripts/measure_baseline.py` retired after `aquapose eval` achieves feature parity
+- [x] **CLEAN-03**: `scripts/measure_baseline.py` retired after `aquapose eval` achieves feature parity
 - [ ] **CLEAN-04**: Monolithic `pipeline_diagnostics.npz` machinery removed or fully integrated into per-stage cache system
 - [ ] **CLEAN-05**: `evaluation/harness.py` removed — functionality consolidated into reconstruction stage evaluator
 
@@ -99,7 +99,7 @@ Requirements for the evaluation ecosystem milestone. Each maps to roadmap phases
 | TUNE-06 | Phase 47 | Complete |
 | CLEAN-01 | Phase 49 | Pending |
 | CLEAN-02 | Phase 49 | Pending |
-| CLEAN-03 | Phase 48 | Pending |
+| CLEAN-03 | Phase 48 | Complete |
 | CLEAN-04 | Phase 50 | Pending |
 | CLEAN-05 | Phase 50 | Pending |
 

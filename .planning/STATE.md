@@ -64,6 +64,10 @@ v3.1 strategic decisions:
 - [Phase 43]: Backward-compat aliases kept in triangulation.py for zero-change backward compatibility with existing private-function imports
 - [Phase 43]: DltBackend uses single-strategy DLT (triangulate → reject → re-triangulate) with no camera-count branching, no orientation alignment, no epipolar refinement
 
+### Roadmap Evolution
+
+- Phase 43.1 inserted after Phase 43: Association Tuning (URGENT)
+
 ### Pending Todos
 
 17 pending todos from v2.2 — see .planning/todos/pending/ (review for relevance)

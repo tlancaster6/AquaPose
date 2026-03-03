@@ -9,6 +9,7 @@
 - ✅ **v3.0 Ultralytics Unification** — Phases 35-39 (shipped 2026-03-02)
 - ✅ **v3.1 Reconstruction** — Phases 40-45 (shipped 2026-03-03)
 - ✅ **v3.2 Evaluation Ecosystem** — Phases 46-50 (shipped 2026-03-03)
+- 🔄 **v3.3 Chunk Mode** — Phases 51-53 (active)
 
 ## Phases
 
@@ -127,6 +128,47 @@ Full details: `.planning/milestones/v3.2-ROADMAP.md`
 
 </details>
 
+### v3.3 Chunk Mode (Phases 51-53) — ACTIVE
+
+- [ ] **Phase 51: Frame Source Refactor** - Extract video I/O from stages into injectable frame source
+- [ ] **Phase 52: Chunk Orchestrator and Handoff** - Implement chunk loop, ChunkHandoff, identity stitching, per-chunk HDF5 flush
+- [ ] **Phase 53: Integration and Validation** - Wire orchestrator into CLI, disable HDF5 observer under chunk mode, validate output equivalence
+
+## Phase Details
+
+### Phase 51: Frame Source Refactor
+**Goal**: Stages receive frames from an injectable source instead of opening VideoSet directly
+**Depends on**: Nothing (first phase of v3.3)
+**Requirements**: FRAME-01, FRAME-02, FRAME-03
+**Success Criteria** (what must be TRUE):
+  1. DetectionStage and MidlineStage accept a frame source via constructor; neither opens a VideoSet internally
+  2. A frame source yields `(frame_idx, dict[str, ndarray])` — local frame index plus per-camera undistorted frames
+  3. Running the pipeline with the new frame source produces identical outputs to the prior direct-VideoSet path
+  4. `stop_frame` is absent from PipelineConfig; existing tests and configs that relied on it are updated or removed
+**Plans**: TBD
+
+### Phase 52: Chunk Orchestrator and Handoff
+**Goal**: Videos can be processed in fixed-size temporal chunks with state carried across boundaries
+**Depends on**: Phase 51
+**Requirements**: CHUNK-01, CHUNK-02, CHUNK-03, CHUNK-04, CHUNK-05, IDENT-01, IDENT-02, OUT-01
+**Success Criteria** (what must be TRUE):
+  1. ChunkOrchestrator loops over fixed-size chunks, invoking PosePipeline once per chunk with a windowed frame source
+  2. ChunkHandoff (frozen dataclass) carries tracker state and identity map from one chunk to the next; it is written atomically to `handoff.pkl` after each chunk
+  3. Chunk-local fish IDs are mapped to globally consistent IDs via track ID continuity; unmatched tracklet groups receive fresh global IDs
+  4. Per-chunk 3D midlines are flushed to the HDF5 output file with the correct global frame offset after each chunk completes
+  5. Setting `chunk_size: 0` or `chunk_size: null` produces a single-chunk degenerate run with no behavioral change; setting `chunk_size < 100` emits a warning
+**Plans**: TBD
+
+### Phase 53: Integration and Validation
+**Goal**: Chunk mode is the production path in `aquapose run` and produces correct output verified against non-chunked baseline
+**Depends on**: Phase 52
+**Requirements**: OUT-02, INTEG-01, INTEG-02, INTEG-03
+**Success Criteria** (what must be TRUE):
+  1. `aquapose run` delegates to ChunkOrchestrator; the HDF5 observer is disabled automatically when chunk mode is active
+  2. Specifying both `chunk_size > 0` and diagnostic mode in the config raises a validation error before any processing begins
+  3. Running the same video with chunked mode (chunk_size=1000) and non-chunked mode (chunk_size=null) produces numerically equivalent HDF5 output
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -138,3 +180,6 @@ Full details: `.planning/milestones/v3.2-ROADMAP.md`
 | 35-39 | v3.0 | 14/14 | Complete | 2026-03-02 |
 | 40-45 | v3.1 | 13/13 | Complete | 2026-03-03 |
 | 46-50 | v3.2 | 11/11 | Complete | 2026-03-03 |
+| 51 | v3.3 | 0/TBD | Not started | - |
+| 52 | v3.3 | 0/TBD | Not started | - |
+| 53 | v3.3 | 0/TBD | Not started | - |

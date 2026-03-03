@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: Evaluation Ecosystem
 status: unknown
-last_updated: "2026-03-03T20:08:58.706Z"
+last_updated: "2026-03-03T22:04:00Z"
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 4
-  total_plans: 10
-  completed_plans: 10
+  total_plans: 11
+  completed_plans: 11
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-03)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.2 Evaluation Ecosystem — Phase 49 complete (all 2 plans done)
+**Current focus:** v3.2 Evaluation Ecosystem — Phase 50 in progress (plan 01 of 01 done)
 
 ## Current Position
 
-Phase: 49 of 50 (TuningOrchestrator and aquapose tune CLI) — Complete
-Plan: 2 of 2 complete — 49-02 (aquapose tune CLI) done
-Status: Phase 49 complete — TuningOrchestrator + aquapose tune CLI, legacy scripts deleted
-Last activity: 2026-03-03 — Completed 49-02 (aquapose tune CLI wired, tune_association.py and tune_threshold.py deleted)
+Phase: 50 of 50 (cleanup-and-replacement) — Plan 01 complete
+Plan: 1 of 1 complete — 50-01 (legacy evaluation cleanup) done
+Status: Phase 50 plan 01 complete — harness.py, midline_fixture.py, NPZ export machinery deleted; DiagnosticObserver cleanup done
+Last activity: 2026-03-03 — Completed 50-01 (deleted legacy evaluation code, midline fixture NPZ, DiagnosticObserver NPZ methods)
 
-Progress: [██████████] 100% (10/10 plans for phases 46-49)
+Progress: [██████████] 100% (11/11 plans for phases 46-50)
 
 ## Performance Metrics
 
@@ -52,6 +52,7 @@ Progress: [██████████] 100% (10/10 plans for phases 46-49)
 | Phase 48 P02 | 3 | 2 tasks | 5 files |
 | Phase 49 P01 | 29 | 1 tasks | 3 files |
 | Phase 49 P02 | 5 | 2 tasks | 3 files |
+| Phase 50 P01 | 9 | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -96,6 +97,8 @@ v3.2 design decisions:
 - [Phase 49]: n_points grid key maps to n_sample_points in ReconstructionConfig via _patch_reconstruction_config()
 - [Phase 49]: TuningOrchestrator exports added to evaluation/__init__.py per code-style public API requirements
 - [Phase 49]: tune_cmd registered as @cli.command('tune') matching eval_cmd naming convention; inline imports consistent with eval_cmd pattern
+- [Phase 50 P01]: harness.py, midline_fixture.py, and all NPZ export machinery fully deleted (not shimmed); DiagnosticObserver._on_pipeline_complete is now a no-op
+- [Phase 50 P01]: DiagnosticObserver.__init__ calibration_path parameter removed — no longer needed without NPZ export
 
 ### Pending Todos
 
@@ -103,10 +106,10 @@ v3.2 design decisions:
 
 ### Blockers/Concerns
 
-None currently. Phase 49 complete.
+None currently. Phase 50 plan 01 complete.
 
 ## Session Continuity
 
-Last session: 2026-03-03T20:04:00Z
-Stopped at: Completed 49-02-PLAN.md — aquapose tune CLI wired, legacy scripts deleted
+Last session: 2026-03-03T22:04:00Z
+Stopped at: Completed 50-01-PLAN.md — legacy evaluation/harness.py, io/midline_fixture.py, NPZ export methods deleted
 Resume file: None

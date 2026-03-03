@@ -121,7 +121,7 @@ Full details: `.planning/milestones/v3.1-ROADMAP.md`
 - [x] **Phase 47: Evaluation Primitives** — ContextLoader, five stage evaluators, and DEFAULT_GRIDS (completed 2026-03-03)
 - [x] **Phase 48: EvalRunner and `aquapose eval` CLI** — Multi-stage evaluation report with human-readable and JSON output (completed 2026-03-03)
 - [x] **Phase 49: TuningOrchestrator and `aquapose tune` CLI** — Grid sweeps, cascade tuning, and retirement of standalone scripts (completed 2026-03-03)
-- [ ] **Phase 50: Cleanup and Replacement** — Remove monolithic NPZ machinery and retire harness.py
+- [x] **Phase 50: Cleanup and Replacement** — Remove monolithic NPZ machinery and retire harness.py (completed 2026-03-03)
 
 ## Phase Details
 
@@ -198,4 +198,4 @@ Full details: `.planning/milestones/v3.1-ROADMAP.md`
 | 47. Evaluation Primitives | 3/3 | Complete    | 2026-03-03 | - |
 | 48. EvalRunner and eval CLI | 2/2 | Complete    | 2026-03-03 | - |
 | 49. TuningOrchestrator and tune CLI | 2/2 | Complete    | 2026-03-03 | - |
-| 50. Cleanup and Replacement | v3.2 | 0/? | Not started | - |
+| 50. Cleanup and Replacement | 1/1 | Complete   | 2026-03-03 | - |

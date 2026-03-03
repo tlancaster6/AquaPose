@@ -186,7 +186,7 @@ class TestRealData:
         video_dir: Path,
         yolo_weights: Path,
         unet_weights: Path,
-        stop_frame: int = 100,
+        max_frames: int = 100,
     ) -> PipelineConfig:
         """Construct a PipelineConfig for real-data diagnostic mode.
 
@@ -196,7 +196,8 @@ class TestRealData:
             video_dir: Directory containing the 4-camera test MP4 files.
             yolo_weights: Path to YOLO fish detection model weights.
             unet_weights: Path to U-Net segmentation model weights.
-            stop_frame: Maximum frame index to process (default 100 ~= 3s).
+            max_frames: Maximum number of frames to process (default 100 ~= 3s).
+                Set via max_frames on the VideoFrameSource (not config.stop_frame).
 
         Returns:
             Frozen PipelineConfig for diagnostic mode with real data.
@@ -209,7 +210,6 @@ class TestRealData:
                 "video_dir": str(video_dir),
                 "output_dir": str(output_dir),
                 "device": "cpu",
-                "stop_frame": stop_frame,
                 "detection": {
                     "detector_kind": "yolo",
                     "weights_path": str(yolo_weights),
@@ -247,7 +247,7 @@ class TestRealData:
             video_dir=test_video_dir,
             yolo_weights=yolo_weights,
             unet_weights=unet_weights,
-            stop_frame=100,
+            max_frames=100,
         )
         stages = build_stages(config)
         pipeline = PosePipeline(stages=stages, config=config)
@@ -295,7 +295,7 @@ class TestRealData:
             video_dir=test_video_dir,
             yolo_weights=yolo_weights,
             unet_weights=unet_weights,
-            stop_frame=100,
+            max_frames=100,
         )
         stages = build_stages(config)
         pipeline = PosePipeline(stages=stages, config=config)

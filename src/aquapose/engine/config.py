@@ -41,9 +41,10 @@ class DetectionConfig:
         extra: Catch-all dict for detector-specific kwargs not covered above.
 
     Note:
-        ``device`` and ``stop_frame`` have been promoted to top-level
-        :class:`PipelineConfig` fields. Passing them in ``detection:`` YAML
-        raises a :exc:`ValueError` with a "did you mean?" hint.
+        ``device`` has been promoted to a top-level :class:`PipelineConfig`
+        field. ``stop_frame`` has been removed — use ``max_frames`` on the
+        frame source instead. Passing either in ``detection:`` YAML raises a
+        :exc:`ValueError` with a "did you mean?" hint.
     """
 
     detector_kind: str = "yolo"
@@ -316,9 +317,6 @@ class PipelineConfig:
             used throughout the reconstruction pipeline. Default is 15. Propagates
             to ``reconstruction.n_sample_points`` when that field is not explicitly
             overridden.
-        stop_frame: If set, stop processing after this frame index. Moved from
-            ``detection.stop_frame`` to the top level so a single parameter
-            controls early termination across all input stages.
         project_dir: Optional project root directory for resolving relative paths.
             Empty string means no resolution — paths are used as-is.
         detection: Detection stage config (Stage 1).
@@ -341,7 +339,6 @@ class PipelineConfig:
     n_animals: int = 0
     device: str = dataclasses.field(default_factory=_default_device)
     n_sample_points: int = 15
-    stop_frame: int | None = None
     project_dir: str = ""
     detection: DetectionConfig = dataclasses.field(default_factory=DetectionConfig)
     midline: MidlineConfig = dataclasses.field(default_factory=MidlineConfig)
@@ -462,7 +459,7 @@ def _build_stage_dict_from_dotted(
 _RENAME_HINTS: dict[str, str] = {
     "expect_fish_count": "n_animals (top-level)",
     "device": "device (top-level)",
-    "stop_frame": "stop_frame (top-level)",
+    "stop_frame": "max_frames on frame source (set via CLI --set or orchestrator)",
     "model_path": "weights_path",
     "n_points": "n_sample_points (top-level)",
 }

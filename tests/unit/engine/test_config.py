@@ -317,14 +317,14 @@ def test_midline_n_points_raises_with_hint(tmp_path: Path) -> None:
         load_config(yaml_path=cfg_file)
 
 
-def test_stop_frame_at_top_level(tmp_path: Path) -> None:
-    """stop_frame at top level is read correctly."""
+def test_stop_frame_in_yaml_raises_with_hint(tmp_path: Path) -> None:
+    """stop_frame in YAML raises ValueError with a migration hint about max_frames."""
     yaml_content = {"n_animals": 3, "stop_frame": 100}
     cfg_file = tmp_path / "config.yaml"
     cfg_file.write_text(yaml.dump(yaml_content))
 
-    config = load_config(yaml_path=cfg_file)
-    assert config.stop_frame == 100
+    with pytest.raises(ValueError, match="max_frames"):
+        load_config(yaml_path=cfg_file)
 
 
 def test_n_animals_required_raises_when_missing(tmp_path: Path) -> None:

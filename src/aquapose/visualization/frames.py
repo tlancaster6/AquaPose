@@ -17,9 +17,9 @@ def synthetic_frame_iter(
     """Yield ``(frame_idx, {cam_id: black_frame})`` for *n_frames* frames.
 
     Provides the same iteration interface as
-    :class:`~aquapose.io.video.VideoSet` but with black (zero-filled) BGR
-    frames, enabling visualization observers to render overlays without
-    real video files.
+    :class:`~aquapose.core.types.frame_source.FrameSource` but with black
+    (zero-filled) BGR frames, enabling visualization observers to render
+    overlays without real video files.
 
     Args:
         camera_ids: Ordered list of camera identifiers to include.

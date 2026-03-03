@@ -81,22 +81,22 @@ class FrameSource(Protocol):
 class VideoFrameSource:
     """Multi-camera video reader with video discovery, calibration, and undistortion.
 
-    Concrete implementation of :class:`FrameSource` that discovers video files,
-    loads calibration data, computes undistortion maps, and yields synchronized
-    undistorted frames. Absorbs all responsibilities previously split between
-    :class:`~aquapose.io.video.VideoSet` and the stage constructors.
+        Concrete implementation of :class:`FrameSource` that discovers video files,
+        loads calibration data, computes undistortion maps, and yields synchronized
+        undistorted frames. Absorbs all responsibilities previously split between
+    the stage constructors.
 
-    Args:
-        video_dir: Directory containing per-camera video files (``*.avi`` or
-            ``*.mp4``). Camera ID is derived from ``stem.split("-")[0]``.
-        calibration_path: Path to the AquaCal calibration JSON file.
-        max_frames: If set, iteration stops after this many frames and
-            ``__len__`` returns at most this value.
+        Args:
+            video_dir: Directory containing per-camera video files (``*.avi`` or
+                ``*.mp4``). Camera ID is derived from ``stem.split("-")[0]``.
+            calibration_path: Path to the AquaCal calibration JSON file.
+            max_frames: If set, iteration stops after this many frames and
+                ``__len__`` returns at most this value.
 
-    Raises:
-        FileNotFoundError: If *video_dir* does not exist.
-        ValueError: If no ``.avi``/``.mp4`` files are found in *video_dir*, or
-            no cameras have both video and calibration data.
+        Raises:
+            FileNotFoundError: If *video_dir* does not exist.
+            ValueError: If no ``.avi``/``.mp4`` files are found in *video_dir*, or
+                no cameras have both video and calibration data.
     """
 
     def __init__(

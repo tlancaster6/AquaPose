@@ -20,9 +20,13 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from aquapose.core.context import CarryForward, PipelineContext, Stage
 from aquapose.engine.config import PipelineConfig, serialize_config
+
+if TYPE_CHECKING:
+    from aquapose.core.types.frame_source import VideoFrameSource
 from aquapose.engine.events import (
     Event,
     PipelineComplete,
@@ -268,7 +272,9 @@ class PosePipeline:
 # ---------------------------------------------------------------------------
 
 
-def build_stages(config: PipelineConfig, frame_source: object = None) -> list:
+def build_stages(
+    config: PipelineConfig, frame_source: VideoFrameSource | None = None
+) -> list:
     """Construct pipeline stages from a :class:`PipelineConfig`.
 
     This factory is the canonical way to wire stages into :class:`PosePipeline`.
@@ -374,7 +380,6 @@ def build_stages(config: PipelineConfig, frame_source: object = None) -> list:
         frame_source = VideoFrameSource(
             video_dir=config.video_dir,
             calibration_path=config.calibration_path,
-            max_frames=config.stop_frame,
         )
 
     detection_stage = DetectionStage(

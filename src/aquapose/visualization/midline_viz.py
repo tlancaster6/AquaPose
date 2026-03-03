@@ -107,7 +107,7 @@ def vis_detection_grid(
 
     Args:
         detections_per_frame: Per-frame detection dicts from Stage 1.
-        video_set: Opened VideoSet providing undistorted frames.
+        video_set: Opened FrameSource providing undistorted frames.
         output_path: Output PNG path.
     """
     n_frames = len(detections_per_frame)
@@ -227,7 +227,7 @@ def vis_claiming_overlay(
     Args:
         snapshots_per_frame: Per-frame lists of TrackSnapshot objects.
         detections_per_frame: Per-frame detection dicts from Stage 1.
-        video_set: Opened VideoSet providing undistorted frames.
+        video_set: Opened FrameSource providing undistorted frames.
         models: Per-camera refractive projection models.
         output_path: Output MP4 path.
         cameras: Optional list of 4 camera IDs. If None, picks top 4 by
@@ -387,7 +387,7 @@ def vis_midline_extraction_montage(
         tracks_per_frame: Per-frame confirmed track lists from Stage 3.
         masks_per_frame: Per-frame mask dicts from Stage 2.
         detections_per_frame: Per-frame detection dicts from Stage 1.
-        video_set: Opened VideoSet providing undistorted frames.
+        video_set: Opened FrameSource providing undistorted frames.
         output_path: Output PNG path.
     """
     from aquapose.core.midline.midline import (
@@ -433,7 +433,7 @@ def vis_midline_extraction_montage(
     for ax_idx, (fi, cam, _di, mask, crop_region) in enumerate(samples):
         ax = axes_flat[ax_idx]
 
-        # Read the frame (undistorted via VideoSet) and extract the crop
+        # Read the frame (undistorted via FrameSource) and extract the crop
         try:
             frame = video_set.read_frame(fi)[cam]  # type: ignore[union-attr]
         except (IndexError, RuntimeError, KeyError):

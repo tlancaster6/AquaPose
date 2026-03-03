@@ -553,6 +553,7 @@ def generate_obb_dataset(
     edge_factor: float,
     val_split: float,
     seed: int,
+    n_keypoints: int = N_KEYPOINTS,
 ) -> tuple[int, int]:
     """Generate a YOLO-OBB dataset from COCO keypoint annotations.
 
@@ -622,7 +623,7 @@ def generate_obb_dataset(
         label_lines: list[str] = []
 
         for ann in annotations:
-            coords, visible = parse_keypoints(ann)
+            coords, visible = parse_keypoints(ann, n_keypoints)
             if visible.sum() == 0:
                 continue
 
@@ -1112,6 +1113,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=2.0,
         help="Multiplier on lateral_pad for edge extrapolation threshold (default: 2.0).",
     )
+    parser.add_argument(
+        "--n-keypoints",
+        type=int,
+        default=N_KEYPOINTS,
+        help=f"Number of keypoints in the annotation scheme (default: {N_KEYPOINTS}).",
+    )
     return parser
 
 
@@ -1149,8 +1156,10 @@ def main() -> None:
     print(f"  Total images      : {total_images}")
     print(f"  Total annotations : {total_annotations}")
 
+    n_kp = args.n_keypoints
+
     try:
-        median_arc = compute_median_arc_length(all_annotations)
+        median_arc = compute_median_arc_length(all_annotations, n_kp)
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -1172,6 +1181,7 @@ def main() -> None:
             edge_factor=args.edge_threshold_factor,
             val_split=args.val_split,
             seed=args.seed,
+            n_keypoints=n_kp,
         )
         print(f"OBB dataset  : train={obb_train}, val={obb_val} images")
 

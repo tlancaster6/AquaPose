@@ -127,7 +127,6 @@ def run(
         frame_source = VideoFrameSource(
             video_dir=pipeline_config.video_dir,
             calibration_path=pipeline_config.calibration_path,
-            max_frames=pipeline_config.stop_frame,
         )
 
     stages = build_stages(pipeline_config, frame_source=frame_source)

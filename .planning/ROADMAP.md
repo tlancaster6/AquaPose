@@ -131,7 +131,7 @@ Full details: `.planning/milestones/v3.2-ROADMAP.md`
 ### v3.3 Chunk Mode (Phases 51-53) — ACTIVE
 
 - [x] **Phase 51: Frame Source Refactor** - Extract video I/O from stages into injectable frame source (1/2 plans complete)
-- [ ] **Phase 52: Chunk Orchestrator and Handoff** - Implement chunk loop, ChunkHandoff, identity stitching, per-chunk HDF5 flush
+- [ ] **Phase 52: Chunk Orchestrator and Handoff** - Implement chunk loop, ChunkHandoff, identity stitching, per-chunk HDF5 flush (0/3 plans)
 - [ ] **Phase 53: Integration and Validation** - Wire orchestrator into CLI, disable HDF5 observer under chunk mode, validate output equivalence
 
 ## Phase Details
@@ -160,7 +160,10 @@ Plans:
   3. Chunk-local fish IDs are mapped to globally consistent IDs via track ID continuity; unmatched tracklet groups receive fresh global IDs
   4. Per-chunk 3D midlines are flushed to the HDF5 output file with the correct global frame offset after each chunk completes
   5. Setting `chunk_size: 0` or `chunk_size: null` produces a single-chunk degenerate run with no behavioral change; setting `chunk_size < 100` emits a warning
-**Plans**: TBD
+**Plans**: 3 plans:
+- [ ] 52-01-PLAN.md — ChunkHandoff dataclass, ChunkFrameSource, chunk_size config, write_handoff
+- [ ] 52-02-PLAN.md — ChunkOrchestrator core loop, identity stitching, HDF5 flush, progress
+- [ ] 52-03-PLAN.md — Delete CarryForward, migrate all references, fix tests
 
 ### Phase 53: Integration and Validation
 **Goal**: Chunk mode is the production path in `aquapose run` and produces correct output verified against non-chunked baseline
@@ -184,5 +187,5 @@ Plans:
 | 40-45 | v3.1 | 13/13 | Complete | 2026-03-03 |
 | 46-50 | v3.2 | 11/11 | Complete | 2026-03-03 |
 | 51 | v3.3 | 1/2 | In progress | - |
-| 52 | v3.3 | 0/TBD | Not started | - |
+| 52 | v3.3 | 0/3 | Not started | - |
 | 53 | v3.3 | 0/TBD | Not started | - |

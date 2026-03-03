@@ -417,7 +417,8 @@ class TrackletTrailObserver:
             else:
                 # Use the shared frame source — it covers all cameras.
                 # We filter to only the current camera in the loop body.
-                ctx_mgr = self._frame_source  # type: ignore[assignment]
+                assert self._frame_source is not None
+                ctx_mgr = self._frame_source
 
             try:
                 with ctx_mgr as frame_iter:
@@ -565,7 +566,8 @@ class TrackletTrailObserver:
                 synthetic_frame_iter(camera_ids, frame_sizes, n_synth_frames)
             )
         else:
-            ctx_mgr = self._frame_source  # type: ignore[assignment]
+            assert self._frame_source is not None
+            ctx_mgr = self._frame_source
 
         try:
             with ctx_mgr as frame_iter:

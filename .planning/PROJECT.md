@@ -76,7 +76,15 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ### Active
 
-(No active requirements — next milestone not yet defined)
+<!-- Current milestone: v3.2 Evaluation Ecosystem -->
+
+- [ ] Unified evaluation and parameter tuning system with `aquapose eval` and `aquapose tune` CLI subcommands
+- [ ] Per-stage proxy metrics for all 5 pipeline stages (detection, tracking, association, midline, reconstruction)
+- [ ] Single-stage parameter sweeps with stage-specific primary metrics
+- [ ] Cascade tuning (association → reconstruction) with proper caching and E2E validation
+- [ ] Partial pipeline execution via pre-populated PipelineContext
+- [ ] Per-stage diagnostic files replacing monolithic NPZ
+- [ ] Retirement of standalone tuning scripts
 
 ### Out of Scope
 
@@ -172,4 +180,17 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Import boundary via AST checker + pre-commit | Automated enforcement prevents architectural regression | ✓ Good — 0 violations at milestone completion |
 
 ---
-*Last updated: 2026-03-03 after v3.1 Reconstruction milestone shipped*
+## Current Milestone: v3.2 Evaluation Ecosystem
+
+**Goal:** Unified evaluation and parameter tuning system that measures stage-specific quality at every pipeline stage, supports single-stage sweeps and cascade tuning, and leverages the diagnostic observer as the caching layer.
+
+**Target features:**
+- Per-stage proxy metrics for all 5 pipeline stages
+- `aquapose eval` CLI for evaluating diagnostic runs
+- `aquapose tune` CLI for parameter sweeps and cascade tuning
+- Partial pipeline execution via pre-populated PipelineContext
+- Per-stage diagnostic files replacing monolithic NPZ
+- Orchestrator pattern over PosePipeline for sweep logic
+
+---
+*Last updated: 2026-03-03 after v3.2 Evaluation Ecosystem milestone started*

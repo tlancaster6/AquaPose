@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.1
-milestone_name: Reconstruction
-status: milestone_complete
+milestone: v3.2
+milestone_name: Evaluation Ecosystem
+status: defining_requirements
 last_updated: "2026-03-03"
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 13
-  completed_plans: 13
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
@@ -18,16 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-03)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.1 Reconstruction shipped — planning next milestone
+**Current focus:** v3.2 Evaluation Ecosystem — defining requirements
 
 ## Current Position
 
-Phase: 45 of 45 (Dead Code Cleanup)
-Plan: 2 of 2 in current phase (all complete)
-Status: Milestone v3.1 shipped and archived
-Last activity: 2026-03-03 - Milestone v3.1 archived
-
-Progress: [██████████] 100%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-03 — Milestone v3.2 started
 
 ## Accumulated Context
 
@@ -60,5 +58,5 @@ Carried forward from v3.1:
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Milestone v3.1 archived
+Stopped at: Milestone v3.2 started — defining requirements
 Resume file: None

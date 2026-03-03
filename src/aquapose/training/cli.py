@@ -44,6 +44,9 @@ def train_group() -> None:
     type=click.Path(exists=True),
     help="Pretrained weights for transfer learning.",
 )
+@click.option(
+    "--patience", default=100, type=int, help="Early-stopping patience in epochs."
+)
 def yolo_obb(
     data_dir: str,
     output_dir: str,
@@ -54,6 +57,7 @@ def yolo_obb(
     imgsz: int,
     model: str,
     weights: str | None,
+    patience: int,
 ) -> None:
     """Train YOLO-OBB oriented bounding-box detection model."""
     from .yolo_obb import train_yolo_obb
@@ -68,6 +72,7 @@ def yolo_obb(
         imgsz=imgsz,
         model=model,
         weights=Path(weights) if weights is not None else None,
+        patience=patience,
     )
     click.echo(f"Training complete. Best model: {best_path}")
 
@@ -104,6 +109,9 @@ def yolo_obb(
     type=click.Path(exists=True),
     help="Pretrained weights for transfer learning.",
 )
+@click.option(
+    "--patience", default=100, type=int, help="Early-stopping patience in epochs."
+)
 def seg(
     data_dir: str,
     output_dir: str,
@@ -114,6 +122,7 @@ def seg(
     imgsz: int,
     model: str,
     weights: str | None,
+    patience: int,
 ) -> None:
     """Train YOLO-seg instance segmentation model."""
     from .yolo_seg import train_yolo_seg
@@ -128,6 +137,7 @@ def seg(
         imgsz=imgsz,
         model=model,
         weights=Path(weights) if weights is not None else None,
+        patience=patience,
     )
     click.echo(f"Training complete. Best model: {best_path}")
 
@@ -164,6 +174,9 @@ def seg(
     type=click.Path(exists=True),
     help="Pretrained weights for transfer learning.",
 )
+@click.option(
+    "--patience", default=100, type=int, help="Early-stopping patience in epochs."
+)
 def pose(
     data_dir: str,
     output_dir: str,
@@ -174,6 +187,7 @@ def pose(
     imgsz: int,
     model: str,
     weights: str | None,
+    patience: int,
 ) -> None:
     """Train YOLO-pose keypoint estimation model."""
     from .yolo_pose import train_yolo_pose
@@ -188,5 +202,6 @@ def pose(
         imgsz=imgsz,
         model=model,
         weights=Path(weights) if weights is not None else None,
+        patience=patience,
     )
     click.echo(f"Training complete. Best model: {best_path}")

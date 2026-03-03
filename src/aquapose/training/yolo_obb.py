@@ -19,6 +19,7 @@ def train_yolo_obb(
     imgsz: int = 640,
     model: str = "yolo26n-obb",
     weights: Path | None = None,
+    patience: int = 100,
 ) -> Path:
     """Train a YOLO-OBB model on a standard Ultralytics txt+yaml dataset.
 
@@ -43,6 +44,7 @@ def train_yolo_obb(
         weights: Path to pretrained weights for transfer learning. When
             provided, the model is initialised from these weights instead of
             downloading.
+        patience: Early-stopping patience in epochs.
 
     Returns:
         Path to the best model weights file (``output_dir/best_model.pt``).
@@ -76,6 +78,7 @@ def train_yolo_obb(
         project=str(output_dir / "_ultralytics"),
         name="train",
         imgsz=imgsz,
+        patience=patience,
     )
 
     # Copy weights to output_dir

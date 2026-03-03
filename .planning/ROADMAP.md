@@ -155,7 +155,9 @@ Full details: `.planning/milestones/v3.1-ROADMAP.md`
   1. `aquapose eval <run-dir>` prints a multi-stage quality report to stdout covering all five pipeline stages present in the run directory
   2. `aquapose eval <run-dir> --report json` produces machine-readable JSON output with the same metric content
   3. `scripts/measure_baseline.py` is deleted from the repository — its functionality is fully covered by `aquapose eval`
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 48-01-PLAN.md — EvalRunner class, EvalRunnerResult dataclass, cache discovery, unit tests
+- [ ] 48-02-PLAN.md — Multi-stage report formatters, CLI eval command, delete measure_baseline.py
 
 ### Phase 49: TuningOrchestrator and `aquapose tune` CLI
 **Goal**: Users can sweep association and reconstruction parameters from the CLI with proper upstream caching, top-N validation, and a config diff block showing recommended changes — and the two standalone tuning scripts are retired

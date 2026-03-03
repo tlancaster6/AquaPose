@@ -257,8 +257,9 @@ def test_build_stages_stop_after(
     )
     from aquapose.core.association import AssociationStage
     from aquapose.core.tracking import TrackingStage
+    from aquapose.core.types.frame_source import VideoFrameSource
 
-    # Stub __init__ on all stage classes to avoid file I/O
+    # Stub __init__ on all stage classes (and VideoFrameSource) to avoid file I/O
     for cls in (
         DetectionStage,
         MidlineStage,
@@ -266,6 +267,7 @@ def test_build_stages_stop_after(
         SyntheticDataStage,
         AssociationStage,
         TrackingStage,
+        VideoFrameSource,
     ):
         monkeypatch.setattr(cls, "__init__", lambda self, *a, **kw: None)
 
@@ -293,6 +295,7 @@ def test_build_stages_stop_after_invalid(monkeypatch: pytest.MonkeyPatch) -> Non
     )
     from aquapose.core.association import AssociationStage
     from aquapose.core.tracking import TrackingStage
+    from aquapose.core.types.frame_source import VideoFrameSource
 
     for cls in (
         DetectionStage,
@@ -301,6 +304,7 @@ def test_build_stages_stop_after_invalid(monkeypatch: pytest.MonkeyPatch) -> Non
         SyntheticDataStage,
         AssociationStage,
         TrackingStage,
+        VideoFrameSource,
     ):
         monkeypatch.setattr(cls, "__init__", lambda self, *a, **kw: None)
 

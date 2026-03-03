@@ -569,6 +569,10 @@ def test_build_stages_returns_stages(tmp_path: Path) -> None:
 
     with (
         patch(
+            "aquapose.core.types.frame_source.VideoFrameSource.__init__",
+            return_value=None,
+        ),
+        patch(
             "aquapose.core.detection.stage.DetectionStage.__init__", return_value=None
         ),
         patch("aquapose.core.midline.stage.MidlineStage.__init__", return_value=None),
@@ -617,6 +621,10 @@ def test_pose_pipeline_instantiable_with_build_stages(tmp_path: Path) -> None:
     )
 
     with (
+        patch(
+            "aquapose.core.types.frame_source.VideoFrameSource.__init__",
+            return_value=None,
+        ),
         patch(
             "aquapose.core.detection.stage.DetectionStage.__init__", return_value=None
         ),

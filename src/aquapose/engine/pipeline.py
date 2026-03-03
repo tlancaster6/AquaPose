@@ -312,6 +312,7 @@ def build_stages(config: PipelineConfig) -> list:
     )
     from aquapose.core.association import AssociationStage
     from aquapose.core.tracking import TrackingStage
+    from aquapose.core.types import VideoFrameSource
 
     STAGE_NAMES: dict[str, type] = {
         "detection": DetectionStage,
@@ -366,17 +367,21 @@ def build_stages(config: PipelineConfig) -> list:
         )
 
     # --- Production (and all other) modes: full 5-stage pipeline
-    detection_stage = DetectionStage(
+    frame_source = VideoFrameSource(
         video_dir=config.video_dir,
         calibration_path=config.calibration_path,
+        max_frames=config.stop_frame,
+    )
+
+    detection_stage = DetectionStage(
+        frame_source=frame_source,
         detector_kind=config.detection.detector_kind,
-        stop_frame=config.stop_frame,
         weights_path=config.detection.weights_path,
         device=config.device,
     )
 
     midline_stage = MidlineStage(
-        video_dir=config.video_dir,
+        frame_source=frame_source,
         calibration_path=config.calibration_path,
         weights_path=config.midline.weights_path,
         confidence_threshold=config.midline.confidence_threshold,

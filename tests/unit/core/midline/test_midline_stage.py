@@ -13,7 +13,7 @@ from __future__ import annotations
 import importlib
 import inspect
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -206,38 +206,22 @@ def _build_stage(
     Returns:
         Constructed and wired MidlineStage.
     """
+    from aquapose.core.types.frame_source import FrameSource
+
     if synthetic_annotated is None:
         synthetic_annotated = [{"cam1": [], "cam2": []}]
-
-    video_dir = tmp_path / "videos"
-    video_dir.mkdir(exist_ok=True)
-    (video_dir / "cam1-test.mp4").write_bytes(b"fake")
-    (video_dir / "cam2-test.mp4").write_bytes(b"fake")
 
     calib_path = tmp_path / "calibration.json"
     calib_path.write_text("{}")
 
-    mock_cam1 = MagicMock()
-    mock_cam2 = MagicMock()
-    mock_calib = MagicMock()
-    mock_calib.cameras = {"cam1": mock_cam1, "cam2": mock_cam2}
-    mock_undist = MagicMock()
+    mock_frame_source = MagicMock(spec=FrameSource)
+    mock_frame_source.camera_ids = ["cam1", "cam2"]
 
-    with (
-        patch(
-            "aquapose.calibration.loader.load_calibration_data",
-            return_value=mock_calib,
-        ),
-        patch(
-            "aquapose.calibration.loader.compute_undistortion_maps",
-            return_value=mock_undist,
-        ),
-    ):
-        stage = MidlineStage(
-            video_dir=video_dir,
-            calibration_path=calib_path,
-            device="cpu",
-        )
+    stage = MidlineStage(
+        frame_source=mock_frame_source,
+        calibration_path=calib_path,
+        device="cpu",
+    )
 
     # Replace run() with a deterministic stub that returns synthetic data
     n_frames = len(synthetic_annotated)

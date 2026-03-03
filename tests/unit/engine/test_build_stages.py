@@ -6,6 +6,9 @@ Synthetic order: SyntheticDataStage -> TrackingStage -> AssociationStage -> Reco
 
 TrackingStage is imported from aquapose.core.tracking.
 AssociationStage is inline in engine/pipeline.py.
+
+v3.3: build_stages creates a VideoFrameSource and injects it into DetectionStage and
+MidlineStage constructors. Tests patch VideoFrameSource to avoid real I/O.
 """
 
 from __future__ import annotations
@@ -16,6 +19,9 @@ import pytest
 
 from aquapose.core.association import AssociationStage
 from aquapose.engine.config import PipelineConfig, SyntheticConfig
+
+# Shared patch target for VideoFrameSource (created in build_stages for non-synthetic modes)
+_VFS_PATCH = "aquapose.core.types.frame_source.VideoFrameSource.__init__"
 
 
 class TestBuildStagesProductionMode:
@@ -29,6 +35,7 @@ class TestBuildStagesProductionMode:
             video_dir="/fake/videos",
         )
         with (
+            patch(_VFS_PATCH, return_value=None),
             patch("aquapose.core.DetectionStage") as mock_det,
             patch("aquapose.core.MidlineStage") as mock_mid,
             patch("aquapose.core.ReconstructionStage") as mock_rec,
@@ -52,6 +59,7 @@ class TestBuildStagesProductionMode:
             video_dir="/fake/videos",
         )
         with (
+            patch(_VFS_PATCH, return_value=None),
             patch("aquapose.core.DetectionStage") as mock_det,
             patch("aquapose.core.MidlineStage") as mock_mid,
             patch("aquapose.core.ReconstructionStage") as mock_rec,
@@ -78,6 +86,7 @@ class TestBuildStagesProductionMode:
             video_dir="/fake/videos",
         )
         with (
+            patch(_VFS_PATCH, return_value=None),
             patch("aquapose.core.DetectionStage") as mock_det,
             patch("aquapose.core.MidlineStage"),
             patch("aquapose.core.ReconstructionStage"),
@@ -96,6 +105,7 @@ class TestBuildStagesProductionMode:
             video_dir="/fake/videos",
         )
         with (
+            patch(_VFS_PATCH, return_value=None),
             patch("aquapose.core.DetectionStage"),
             patch("aquapose.core.MidlineStage"),
             patch("aquapose.core.ReconstructionStage") as mock_rec,
@@ -237,6 +247,7 @@ class TestTrackingStageDirectly:
             video_dir="/fake/videos",
         )
         with (
+            patch(_VFS_PATCH, return_value=None),
             patch("aquapose.core.DetectionStage"),
             patch("aquapose.core.MidlineStage"),
             patch("aquapose.core.ReconstructionStage"),
@@ -259,6 +270,7 @@ class TestTrackingStageDirectly:
             video_dir="/fake/videos",
         )
         with (
+            patch(_VFS_PATCH, return_value=None),
             patch("aquapose.core.DetectionStage"),
             patch("aquapose.core.MidlineStage"),
             patch("aquapose.core.ReconstructionStage"),
@@ -281,6 +293,7 @@ class TestTrackingStageDirectly:
             video_dir="/fake/videos",
         )
         with (
+            patch(_VFS_PATCH, return_value=None),
             patch("aquapose.core.DetectionStage"),
             patch("aquapose.core.MidlineStage"),
             patch("aquapose.core.ReconstructionStage"),

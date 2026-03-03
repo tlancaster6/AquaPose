@@ -217,34 +217,16 @@ def test_import_boundary_no_engine_imports() -> None:
 
 def test_missing_weights_raises_at_construction(tmp_path: Path) -> None:
     """DetectionStage raises FileNotFoundError when model weights don't exist."""
-    video_dir = tmp_path / "videos"
-    video_dir.mkdir()
-    (video_dir / "cam1-video.mp4").write_bytes(b"fake")
-
-    calib_path = tmp_path / "calibration.json"
-    calib_path.write_text("{}")
+    from aquapose.core.types.frame_source import FrameSource
 
     nonexistent_weights = tmp_path / "nonexistent.pt"
 
-    mock_cam = MagicMock()
-    mock_calib = MagicMock()
-    mock_calib.cameras = {"cam1": mock_cam}
+    mock_frame_source = MagicMock(spec=FrameSource)
+    mock_frame_source.camera_ids = ["cam1"]
 
-    # Patch calibration loading so construction proceeds to backend creation
-    with (
-        patch(
-            "aquapose.calibration.loader.load_calibration_data",
-            return_value=mock_calib,
-        ),
-        patch(
-            "aquapose.calibration.loader.compute_undistortion_maps",
-            return_value=MagicMock(),
-        ),
-        pytest.raises(FileNotFoundError, match=r"nonexistent\.pt"),
-    ):
+    with pytest.raises(FileNotFoundError, match=r"nonexistent\.pt"):
         DetectionStage(
-            video_dir=video_dir,
-            calibration_path=calib_path,
+            frame_source=mock_frame_source,
             detector_kind="yolo",
             weights_path=str(nonexistent_weights),
         )
@@ -272,37 +254,19 @@ def _build_stage(
     Returns:
         Constructed and wired DetectionStage.
     """
+    from aquapose.core.types.frame_source import FrameSource
+
     if synthetic_detections is None:
         synthetic_detections = [{"cam1": [], "cam2": []}]
-
-    video_dir = tmp_path / "videos"
-    video_dir.mkdir(exist_ok=True)
-    (video_dir / "cam1-test.mp4").write_bytes(b"fake")
-    (video_dir / "cam2-test.mp4").write_bytes(b"fake")
-
-    calib_path = tmp_path / "calibration.json"
-    calib_path.write_text("{}")
 
     fake_weights = tmp_path / "model.pt"
     fake_weights.write_bytes(b"fake")
 
-    mock_cam1 = MagicMock()
-    mock_cam2 = MagicMock()
-    mock_calib = MagicMock()
-    mock_calib.cameras = {"cam1": mock_cam1, "cam2": mock_cam2}
-    mock_undist = MagicMock()
+    # Build a stub FrameSource that yields synthetic frames
+    mock_frame_source = MagicMock(spec=FrameSource)
+    mock_frame_source.camera_ids = sorted(["cam1", "cam2"])
 
-    # Patch the loader functions used inside DetectionStage.__init__.
-    # They are imported locally inside __init__, so patch the source module.
     with (
-        patch(
-            "aquapose.calibration.loader.load_calibration_data",
-            return_value=mock_calib,
-        ),
-        patch(
-            "aquapose.calibration.loader.compute_undistortion_maps",
-            return_value=mock_undist,
-        ),
         patch(
             "aquapose.core.detection.backends.yolo.YOLOBackend.__init__",
             return_value=None,
@@ -313,8 +277,7 @@ def _build_stage(
         ),
     ):
         stage = DetectionStage(
-            video_dir=video_dir,
-            calibration_path=calib_path,
+            frame_source=mock_frame_source,
             detector_kind="yolo",
             weights_path=str(fake_weights),
         )
@@ -322,16 +285,11 @@ def _build_stage(
     # Replace run() with a deterministic stub that returns synthetic data
     camera_ids = sorted(["cam1", "cam2"])
     n_frames = len(synthetic_detections)
-    stop_frame = stage._stop_frame
 
     def _stub_run(ctx: PipelineContext) -> PipelineContext:
-        frames: list[dict[str, list[Detection]]] = []
-        for i in range(n_frames):
-            if stop_frame is not None and i >= stop_frame:
-                break
-            frames.append(synthetic_detections[i])
+        frames: list[dict[str, list[Detection]]] = list(synthetic_detections)
         ctx.detections = frames
-        ctx.frame_count = len(frames)
+        ctx.frame_count = n_frames
         ctx.camera_ids = camera_ids
         return ctx
 

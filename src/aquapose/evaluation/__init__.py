@@ -6,7 +6,7 @@ MidlineFixture and computing Tier 1 and Tier 2 reconstruction metrics
 without running the full pipeline.
 """
 
-from aquapose.evaluation.harness import EvalResults, run_evaluation
+from aquapose.evaluation.harness import EvalResults, generate_fixture, run_evaluation
 from aquapose.evaluation.metrics import Tier1Result, Tier2Result, select_frames
 from aquapose.evaluation.output import flag_outliers, format_baseline_report
 
@@ -16,6 +16,7 @@ __all__ = [
     "Tier2Result",
     "flag_outliers",
     "format_baseline_report",
+    "generate_fixture",
     "run_evaluation",
     "select_frames",
 ]

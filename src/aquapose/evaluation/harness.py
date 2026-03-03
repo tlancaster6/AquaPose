@@ -82,6 +82,8 @@ def run_evaluation(
     output_dir: Path | None = None,
     backend: str = "triangulation",
     outlier_threshold: float | None = None,
+    skip_tier2: bool = False,
+    association_overrides: dict[str, object] | None = None,
 ) -> EvalResults:
     """Run offline evaluation on a self-contained MidlineFixture.
 
@@ -99,6 +101,14 @@ def run_evaluation(
         outlier_threshold: Maximum reprojection error (pixels) for DLT backend
             outlier rejection. When None, uses the DltBackend default. Only
             applies when ``backend="dlt"``.
+        skip_tier2: When True, skip Tier 2 leave-one-out computation and
+            return a Tier2Result with empty per_fish_dropout and None
+            overall_max_displacement. Useful for fast grid-search sweeps
+            where only Tier 1 metrics are needed.
+        association_overrides: Dict of AssociationConfig field overrides used
+            to generate the fixture being evaluated. Stored for traceability
+            only -- does not affect evaluation behaviour (the fixture already
+            contains post-association data).
 
     Returns:
         EvalResults containing metric data, summary table, and JSON path.
@@ -160,52 +170,58 @@ def run_evaluation(
         baseline_by_frame[fi] = result
 
     # 7. Tier 2: leave-one-out per selected frame, per fish, per observing camera
-    # Accumulate: fish_id -> dropout_cam_id -> list[float | None]
-    tier2_data: dict[int, dict[str, list[float | None]]] = defaultdict(
-        lambda: defaultdict(list)
-    )
+    if not skip_tier2:
+        # Accumulate: fish_id -> dropout_cam_id -> list[float | None]
+        tier2_data: dict[int, dict[str, list[float | None]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
 
-    for fi in selected_frame_indices:
-        midline_set = fixture.frames[frame_to_pos[fi]]
-        baseline = baseline_by_frame[fi]
+        for fi in selected_frame_indices:
+            midline_set = fixture.frames[frame_to_pos[fi]]
+            baseline = baseline_by_frame[fi]
 
-        for fish_id, cam_map in midline_set.items():
-            if fish_id not in baseline:
-                continue  # Fish not reconstructable with all cameras
+            for fish_id, cam_map in midline_set.items():
+                if fish_id not in baseline:
+                    continue  # Fish not reconstructable with all cameras
 
-            baseline_ctrl: np.ndarray = baseline[fish_id].control_points
+                baseline_ctrl: np.ndarray = baseline[fish_id].control_points
 
-            for dropout_cam in cam_map:
-                # Build reduced midline set excluding dropout_cam for ALL fish
-                reduced: MidlineSet = {
-                    fid: remaining
-                    for fid, cams in midline_set.items()
-                    if (
-                        remaining := {c: m for c, m in cams.items() if c != dropout_cam}
-                    )
-                }
-                if not reduced:
-                    tier2_data[fish_id][dropout_cam].append(None)
-                    continue
-                dropout_result = recon_backend.reconstruct_frame(fi, reduced)
+                for dropout_cam in cam_map:
+                    # Build reduced midline set excluding dropout_cam for ALL fish
+                    reduced: MidlineSet = {
+                        fid: remaining
+                        for fid, cams in midline_set.items()
+                        if (
+                            remaining := {
+                                c: m for c, m in cams.items() if c != dropout_cam
+                            }
+                        )
+                    }
+                    if not reduced:
+                        tier2_data[fish_id][dropout_cam].append(None)
+                        continue
+                    dropout_result = recon_backend.reconstruct_frame(fi, reduced)
 
-                if fish_id not in dropout_result:
-                    tier2_data[fish_id][dropout_cam].append(None)
-                else:
-                    dropout_ctrl = dropout_result[fish_id].control_points
-                    diffs = np.linalg.norm(
-                        dropout_ctrl - baseline_ctrl, axis=1
-                    )  # shape (7,)
-                    max_displacement = float(np.max(diffs))
-                    tier2_data[fish_id][dropout_cam].append(max_displacement)
+                    if fish_id not in dropout_result:
+                        tier2_data[fish_id][dropout_cam].append(None)
+                    else:
+                        dropout_ctrl = dropout_result[fish_id].control_points
+                        diffs = np.linalg.norm(
+                            dropout_ctrl - baseline_ctrl, axis=1
+                        )  # shape (7,)
+                        max_displacement = float(np.max(diffs))
+                        tier2_data[fish_id][dropout_cam].append(max_displacement)
 
     # 8. Compute metrics
     tier1 = compute_tier1(frame_results, fish_available=fish_available)
-    # Convert defaultdict to plain dict for compute_tier2
-    tier2_plain: dict[int, dict[str, list[float | None]]] = {
-        fid: dict(cam_dict) for fid, cam_dict in tier2_data.items()
-    }
-    tier2 = compute_tier2(tier2_plain)
+    if not skip_tier2:
+        # Convert defaultdict to plain dict for compute_tier2
+        tier2_plain: dict[int, dict[str, list[float | None]]] = {
+            fid: dict(cam_dict) for fid, cam_dict in tier2_data.items()
+        }
+        tier2 = compute_tier2(tier2_plain)
+    else:
+        tier2 = Tier2Result(per_fish_dropout={}, overall_max_displacement=None)
 
     # 9. Format summary
     fixture_name = fixture_path.name
@@ -233,3 +249,57 @@ def run_evaluation(
         frames_evaluated=frames_evaluated,
         frames_available=frames_available,
     )
+
+
+def generate_fixture(
+    yaml_config_path: Path | str,
+    association_overrides: dict[str, object] | None = None,
+    output_path: Path | str | None = None,
+) -> Path:
+    """Run the full pipeline with a given AssociationConfig and export a fixture.
+
+    This runs the FULL pipeline (detection + tracking + association + midline +
+    reconstruction) — requires GPU, video files, and calibration data.  Each
+    call produces a complete MidlineFixture with the given association config.
+    Use for parameter sweeps where each config needs a fresh fixture.
+
+    Args:
+        yaml_config_path: Path to the pipeline YAML config file.
+        association_overrides: Dict of AssociationConfig field names to
+            override values. Applied via ``dataclasses.replace`` on the
+            loaded config's ``association`` field.
+        output_path: Path for the output fixture NPZ file. If None, a
+            temporary directory is used and the fixture is written to
+            ``midline_fixtures.npz`` inside it.
+
+    Returns:
+        Path to the generated fixture NPZ file.
+    """
+    import dataclasses
+    import tempfile
+
+    from aquapose.engine.config import load_config
+    from aquapose.engine.diagnostic_observer import DiagnosticObserver
+    from aquapose.engine.pipeline import PosePipeline, build_stages
+
+    config = load_config(yaml_config_path)
+
+    if association_overrides:
+        patched_assoc = dataclasses.replace(config.association, **association_overrides)
+        config = dataclasses.replace(config, association=patched_assoc)
+
+    if output_path is None:
+        output_path = Path(tempfile.mkdtemp()) / "midline_fixtures.npz"
+    else:
+        output_path = Path(output_path)
+
+    observer = DiagnosticObserver(
+        output_dir=output_path.parent,
+        calibration_path=config.calibration_path,
+    )
+
+    stages = build_stages(config)
+    pipeline = PosePipeline(stages=stages, config=config, observers=[observer])
+    pipeline.run()
+
+    return output_path

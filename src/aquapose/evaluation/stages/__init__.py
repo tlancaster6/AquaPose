@@ -1,6 +1,34 @@
-"""Stage evaluators for the AquaPose evaluation framework.
+"""Stage-level pure-function evaluators for all five pipeline stages."""
 
-Each submodule provides a pure-function evaluator and frozen metric dataclass
-for one pipeline stage. Import evaluators from the stage-specific submodule or
-from this package once all evaluators are registered.
-"""
+from aquapose.evaluation.stages.association import (
+    DEFAULT_GRID as ASSOCIATION_DEFAULT_GRID,
+)
+from aquapose.evaluation.stages.association import (
+    AssociationMetrics,
+    evaluate_association,
+)
+from aquapose.evaluation.stages.detection import DetectionMetrics, evaluate_detection
+from aquapose.evaluation.stages.midline import MidlineMetrics, evaluate_midline
+from aquapose.evaluation.stages.reconstruction import (
+    DEFAULT_GRID as RECONSTRUCTION_DEFAULT_GRID,
+)
+from aquapose.evaluation.stages.reconstruction import (
+    ReconstructionMetrics,
+    evaluate_reconstruction,
+)
+from aquapose.evaluation.stages.tracking import TrackingMetrics, evaluate_tracking
+
+__all__ = [
+    "ASSOCIATION_DEFAULT_GRID",
+    "RECONSTRUCTION_DEFAULT_GRID",
+    "AssociationMetrics",
+    "DetectionMetrics",
+    "MidlineMetrics",
+    "ReconstructionMetrics",
+    "TrackingMetrics",
+    "evaluate_association",
+    "evaluate_detection",
+    "evaluate_midline",
+    "evaluate_reconstruction",
+    "evaluate_tracking",
+]

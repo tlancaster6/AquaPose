@@ -4,6 +4,10 @@ Generates a fresh fixture per config via generate_fixture(), evaluates each
 via run_evaluation(skip_tier2=True), and prints a console-only comparison
 report. Top-N candidates get full Tier 1 + Tier 2 evaluation.
 
+Stage 1 runs a joint 2D grid over ray_distance_threshold x score_min (these
+parameters interact through the soft scoring kernel). The winning pair is
+locked into carry_forward before sequential stages proceed.
+
 Usage:
     python scripts/tune_association.py <yaml_config> <fixture_path>
         [--n-frames N] [--top-n K] [--backend BACKEND]
@@ -24,30 +28,29 @@ from aquapose.evaluation.metrics import select_frames
 from aquapose.io.midline_fixture import load_midline_fixture
 
 # ---------------------------------------------------------------------------
-# Sweep ranges (from analysis doc Section 6)
+# Sweep ranges (widened for overnight run)
 # ---------------------------------------------------------------------------
 
 SWEEP_RANGES: dict[str, list[float]] = {
-    "ray_distance_threshold": [0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.10],
-    "score_min": [0.15, 0.20, 0.25, 0.30, 0.35],
-    "eviction_reproj_threshold": [0.02, 0.03, 0.04, 0.05, 0.08],
+    "ray_distance_threshold": [0.02, 0.03, 0.04, 0.06, 0.08, 0.10, 0.15],
+    "score_min": [0.03, 0.05, 0.08, 0.10, 0.15, 0.20, 0.25, 0.30],
+    "eviction_reproj_threshold": [0.01, 0.02, 0.03, 0.04, 0.05, 0.08, 0.10],
 }
 
 SECONDARY_RANGES: dict[str, list[float]] = {
-    "early_k": [10, 15, 20],
-    "leiden_resolution": [0.8, 1.0, 1.2],
+    "leiden_resolution": [0.5, 0.8, 1.0, 1.2, 1.5, 2.0],
+    "early_k": [5, 10, 15, 20, 25, 30],
 }
 
-# Ordered sweep stages (priority order with carry-forward)
-PRIMARY_STAGES: list[str] = [
-    "ray_distance_threshold",
-    "score_min",
-    "eviction_reproj_threshold",
-]
+# Stage 1: joint 2D grid (ray_distance_threshold x score_min interact via soft kernel)
+JOINT_PARAMS: tuple[str, str] = ("ray_distance_threshold", "score_min")
+
+# Stage 2+: sequential primary sweep (carry-forward from joint grid winner)
+SEQUENTIAL_PRIMARY: list[str] = ["eviction_reproj_threshold"]
 
 SECONDARY_STAGES: list[str] = [
-    "early_k",
     "leiden_resolution",
+    "early_k",
 ]
 
 
@@ -380,6 +383,177 @@ def _run_sweep_stage(
     return best_val, rows
 
 
+def _run_joint_grid_sweep(
+    param_a: str,
+    values_a: list[float],
+    param_b: str,
+    values_b: list[float],
+    yaml_config: Path,
+    n_frames: int,
+    backend: str,
+    outlier_threshold: float,
+) -> tuple[
+    dict[str, float],
+    list[tuple[dict[str, float], EvalResults, tuple[float, float], dict[str, object]]],
+]:
+    """Run a joint 2D grid sweep over two parameters.
+
+    Iterates all combinations of values_a x values_b (param_a outer loop,
+    param_b inner loop). Useful when two parameters interact — the joint grid
+    captures the true optimum that sequential sweeps with carry-forward miss.
+
+    Args:
+        param_a: First parameter name (rows in the 2D matrix).
+        values_a: List of values for param_a.
+        param_b: Second parameter name (columns in the 2D matrix).
+        values_b: List of values for param_b.
+        yaml_config: Path to the pipeline YAML config.
+        n_frames: Number of frames for evaluation.
+        backend: Reconstruction backend name.
+        outlier_threshold: DLT outlier threshold.
+
+    Returns:
+        Tuple of (best_overrides_dict, all_results_list) where:
+        - best_overrides_dict maps param_a and param_b to their best values.
+        - all_results_list contains (overrides, results, score, assoc_metrics)
+          for every combination, sorted by score (best first).
+    """
+    total = len(values_a) * len(values_b)
+    print(f"\n{'=' * 70}")
+    print(
+        f"Stage 1: Joint grid sweep {param_a} x {param_b} "
+        f"({len(values_a)}x{len(values_b)} = {total} combos)"
+    )
+    print("=" * 70)
+
+    all_results: list[
+        tuple[dict[str, float], EvalResults, tuple[float, float], dict[str, object]]
+    ] = []
+    combo_num = 0
+
+    for val_a in values_a:
+        for val_b in values_b:
+            combo_num += 1
+            overrides: dict[str, float] = {param_a: val_a, param_b: val_b}
+
+            print(
+                f"  [{combo_num}/{total}] {param_a}={val_a}, {param_b}={val_b} ...",
+                end=" ",
+                flush=True,
+            )
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                output_path = Path(tmpdir) / "midline_fixtures.npz"
+                fixture_path = generate_fixture(
+                    yaml_config,
+                    association_overrides=overrides,
+                    output_path=output_path,
+                )
+
+                eval_output = Path(tmpdir) / "eval"
+                eval_output.mkdir()
+                results = run_evaluation(
+                    fixture_path,
+                    n_frames=n_frames,
+                    skip_tier2=True,
+                    backend=backend,
+                    outlier_threshold=outlier_threshold,
+                    output_dir=eval_output,
+                    association_overrides=overrides,
+                )
+
+                assoc_metrics = _compute_association_metrics(fixture_path, n_frames)
+
+            score = _compute_score(results)
+            all_results.append((overrides, results, score, assoc_metrics))
+
+            fish_r = results.tier1.fish_reconstructed
+            fish_a = results.tier1.fish_available
+            yield_pct = 100.0 * fish_r / max(fish_a, 1)
+            print(
+                f"yield={fish_r}/{fish_a} ({yield_pct:.0f}%), "
+                f"mean={results.tier1.overall_mean_px:.2f} px, "
+                f"singleton={100.0 * assoc_metrics['singleton_rate']:.1f}%"
+            )
+
+    # Sort by score (lower is better)
+    all_results.sort(key=lambda x: x[2])
+
+    best_overrides = all_results[0][0]
+    best_results = all_results[0][1]
+    best_yield = best_results.tier1.fish_reconstructed
+    best_avail = best_results.tier1.fish_available
+    best_pct = 100.0 * best_yield / max(best_avail, 1)
+    print(
+        f"\n  >> Best: {param_a}={best_overrides[param_a]}, "
+        f"{param_b}={best_overrides[param_b]} "
+        f"(yield={best_pct:.0f}%)"
+    )
+
+    return best_overrides, all_results
+
+
+def _print_joint_grid_matrix(
+    param_a: str,
+    values_a: list[float],
+    param_b: str,
+    values_b: list[float],
+    results: list[
+        tuple[dict[str, float], EvalResults, tuple[float, float], dict[str, object]]
+    ],
+) -> None:
+    """Print a 2D yield matrix for the joint grid sweep.
+
+    Rows correspond to param_a values, columns to param_b values. Each cell
+    shows the yield percentage. The best cell is marked with an asterisk.
+
+    Args:
+        param_a: First parameter name (rows).
+        values_a: List of values for param_a.
+        param_b: Second parameter name (columns).
+        values_b: List of values for param_b.
+        results: All (overrides, eval_results, score, assoc_metrics) tuples
+            from _run_joint_grid_sweep, sorted best-first.
+    """
+    # Build lookup: (val_a, val_b) -> yield_pct
+    yield_map: dict[tuple[float, float], float] = {}
+    for overrides, eval_results, _score, _assoc in results:
+        val_a = overrides[param_a]
+        val_b = overrides[param_b]
+        fish_r = eval_results.tier1.fish_reconstructed
+        fish_a = eval_results.tier1.fish_available
+        yield_map[(val_a, val_b)] = 100.0 * fish_r / max(fish_a, 1)
+
+    # Identify the best cell
+    best_overrides = results[0][0]
+    best_key = (best_overrides[param_a], best_overrides[param_b])
+
+    # Column width: enough for "100%*" plus padding
+    col_w = 7
+
+    print(f"\n2D Grid: {param_a} (rows) x {param_b} (cols) — Yield %")
+
+    # Header row: param_b values
+    row_label_w = 8
+    header_parts = [f"{'':>{row_label_w}}"]
+    for vb in values_b:
+        header_parts.append(f"{vb:>{col_w}.3g}")
+    print("  " + " ".join(header_parts))
+
+    # Data rows
+    for va in values_a:
+        row_parts = [f"{va:>{row_label_w}.3g}"]
+        for vb in values_b:
+            pct = yield_map.get((va, vb), float("nan"))
+            cell_str = f"{pct:.0f}%"
+            if (va, vb) == best_key:
+                cell_str += "*"
+            row_parts.append(f"{cell_str:>{col_w}}")
+        print("  " + " ".join(row_parts))
+
+    print()
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -483,59 +657,72 @@ def main() -> None:
     _print_camera_distribution(baseline_assoc)
 
     # ------------------------------------------------------------------
-    # Sweep stages (priority order with carry-forward)
+    # Stage 1: Joint 2D grid sweep (ray_distance_threshold x score_min)
     # ------------------------------------------------------------------
     carry_forward: dict[str, float] = {}
+
+    # all_stage_rows stores (param_or_label, best_val_or_None, rows_or_joint_results)
+    # For joint grid: param_or_label is "joint", best_val_or_None is None,
+    #   rows_or_joint_results is the joint all_results list with dict overrides.
+    # For sequential stages: param_or_label is param_name, best_val_or_None is best_val,
+    #   rows_or_joint_results is list of (float, EvalResults, score, assoc).
     all_stage_rows: list[
         tuple[
             str,
-            float,
-            list[tuple[float, EvalResults, tuple[float, float], dict[str, object]]],
+            float | None,
+            list[
+                tuple[
+                    float | dict[str, float],
+                    EvalResults,
+                    tuple[float, float],
+                    dict[str, object],
+                ]
+            ],
         ]
     ] = []
-    stage_num = 0
+    stage_num = 1
 
-    # Primary stages
-    for param_name in PRIMARY_STAGES:
-        stage_num += 1
-        values = SWEEP_RANGES[param_name]
-        best_val, rows = _run_sweep_stage(
-            stage_num,
-            param_name,
-            values,
-            yaml_config,
-            carry_forward,
-            args.n_frames,
-            args.backend,
-            args.outlier_threshold,
-        )
-        carry_forward[param_name] = best_val
-        all_stage_rows.append((param_name, best_val, rows))
+    param_a, param_b = JOINT_PARAMS
+    values_a = SWEEP_RANGES[param_a]
+    values_b = SWEEP_RANGES[param_b]
 
-        # Check target after each stage
-        best_row = rows[0]
-        best_fish = best_row[1].tier1.fish_reconstructed
-        if best_fish >= args.target_fish * args.n_frames:
-            print(
-                f"\n  ** Target reached! {best_fish} fish >= "
-                f"{args.target_fish * args.n_frames} target "
-                f"(skipping secondary parameters) **"
-            )
-            break
+    best_pair, joint_results = _run_joint_grid_sweep(
+        param_a,
+        values_a,
+        param_b,
+        values_b,
+        yaml_config,
+        args.n_frames,
+        args.backend,
+        args.outlier_threshold,
+    )
+    _print_joint_grid_matrix(param_a, values_a, param_b, values_b, joint_results)
 
-    # Secondary stages (only if target not reached)
-    best_overall_fish = all_stage_rows[-1][2][0][1].tier1.fish_reconstructed
-    if best_overall_fish < args.target_fish * args.n_frames:
+    # Lock the winning pair into carry_forward
+    carry_forward[param_a] = best_pair[param_a]
+    carry_forward[param_b] = best_pair[param_b]
+
+    # Store joint results for top-N collection (convert overrides dict to float sentinel)
+    all_stage_rows.append(("joint", None, joint_results))  # type: ignore[arg-type]
+
+    # Check target after joint grid
+    best_joint_fish = joint_results[0][1].tier1.fish_reconstructed
+    target_reached = best_joint_fish >= args.target_fish * args.n_frames
+
+    if target_reached:
         print(
-            f"\n  Target not reached ({best_overall_fish} < "
-            f"{args.target_fish * args.n_frames}). "
-            f"Sweeping secondary parameters..."
+            f"\n  ** Target reached! {best_joint_fish} fish >= "
+            f"{args.target_fish * args.n_frames} target "
+            f"(skipping sequential primary and secondary parameters) **"
         )
-        for param_name in SECONDARY_STAGES:
+
+    # ------------------------------------------------------------------
+    # Stage 2+: Sequential primary sweep (eviction_reproj_threshold)
+    # ------------------------------------------------------------------
+    if not target_reached:
+        for param_name in SEQUENTIAL_PRIMARY:
             stage_num += 1
-            values_raw = SECONDARY_RANGES[param_name]
-            # Convert to float for consistency
-            values = [float(v) for v in values_raw]
+            values = SWEEP_RANGES[param_name]
             best_val, rows = _run_sweep_stage(
                 stage_num,
                 param_name,
@@ -547,7 +734,53 @@ def main() -> None:
                 args.outlier_threshold,
             )
             carry_forward[param_name] = best_val
-            all_stage_rows.append((param_name, best_val, rows))
+            all_stage_rows.append((param_name, best_val, rows))  # type: ignore[arg-type]
+
+            # Check target after each stage
+            best_row = rows[0]
+            best_fish = best_row[1].tier1.fish_reconstructed
+            if best_fish >= args.target_fish * args.n_frames:
+                target_reached = True
+                print(
+                    f"\n  ** Target reached! {best_fish} fish >= "
+                    f"{args.target_fish * args.n_frames} target "
+                    f"(skipping secondary parameters) **"
+                )
+                break
+
+    # ------------------------------------------------------------------
+    # Secondary stages (only if target not reached)
+    # ------------------------------------------------------------------
+    if not target_reached:
+        # Determine best fish count from last non-joint stage, or from joint
+        if len(all_stage_rows) > 1:
+            last_rows = all_stage_rows[-1][2]
+            best_overall_fish = last_rows[0][1].tier1.fish_reconstructed  # type: ignore[index]
+        else:
+            best_overall_fish = best_joint_fish
+
+        print(
+            f"\n  Target not reached ({best_overall_fish} < "
+            f"{args.target_fish * args.n_frames}). "
+            f"Sweeping secondary parameters..."
+        )
+        for param_name in SECONDARY_STAGES:
+            stage_num += 1
+            values_raw = SECONDARY_RANGES[param_name]
+            # Convert to float for consistency
+            values_float = [float(v) for v in values_raw]
+            best_val, rows = _run_sweep_stage(
+                stage_num,
+                param_name,
+                values_float,
+                yaml_config,
+                carry_forward,
+                args.n_frames,
+                args.backend,
+                args.outlier_threshold,
+            )
+            carry_forward[param_name] = best_val
+            all_stage_rows.append((param_name, best_val, rows))  # type: ignore[arg-type]
 
     # ------------------------------------------------------------------
     # Top-N full evaluation (Tier 1 + Tier 2)
@@ -556,26 +789,45 @@ def main() -> None:
     print(f"Full Evaluation: Top {args.top_n} candidates (with Tier 2)")
     print("=" * 70)
 
-    # Collect all configs and their scores across all stages
+    # Collect all configs and their scores across all stages.
+    # Joint grid results have dict overrides; sequential results have float values.
     all_configs: list[tuple[dict[str, float], tuple[float, float]]] = []
 
-    # The winning config uses all carry-forward values
-    all_configs.append((dict(carry_forward), all_stage_rows[-1][2][0][2]))
+    # Add joint grid results (top combos as candidates)
+    for overrides_dict, _results, score, _assoc in joint_results:
+        # Merge with any sequential carry-forward values locked after joint grid
+        config = dict(overrides_dict)
+        for k, v in carry_forward.items():
+            if k not in config:
+                config[k] = v
+        all_configs.append((config, score))
 
-    # Also consider configs from intermediate stages (each with their
-    # carry-forward state at that point)
-    intermediate_carry: dict[str, float] = {}
-    for param_name, best_val, rows in all_stage_rows:
-        # Add the non-best values from this stage with current carry
-        for val, _results, score, _assoc in rows[1:]:
+    # Add sequential stage results
+    intermediate_carry: dict[str, float] = dict(carry_forward)
+    for stage_label, best_val, rows in all_stage_rows:
+        if stage_label == "joint":
+            continue
+        # rows here are list[tuple[float, EvalResults, score, assoc]]
+        for val, _results, score, _assoc in rows:  # type: ignore[misc]
             config_at_point = dict(intermediate_carry)
-            config_at_point[param_name] = val
+            config_at_point[stage_label] = float(val)  # type: ignore[arg-type]
             all_configs.append((config_at_point, score))
-        intermediate_carry[param_name] = best_val
+        if best_val is not None:
+            intermediate_carry[stage_label] = best_val
 
-    # Sort by score and take top-N
+    # Sort by score and take top-N unique configs
     all_configs.sort(key=lambda x: x[1])
-    top_configs = all_configs[: args.top_n]
+
+    # Deduplicate (frozenset of items as key)
+    seen: set[frozenset[tuple[str, float]]] = set()
+    top_configs: list[tuple[dict[str, float], tuple[float, float]]] = []
+    for config, score in all_configs:
+        key = frozenset(config.items())
+        if key not in seen:
+            seen.add(key)
+            top_configs.append((config, score))
+        if len(top_configs) >= args.top_n:
+            break
 
     top_results: list[tuple[dict[str, float], EvalResults, dict[str, object]]] = []
 
@@ -647,11 +899,11 @@ def main() -> None:
 
     # Per-stage summary
     print("Per-stage best values:")
-    for param_name, best_val, _rows in all_stage_rows:
-        if isinstance(best_val, float) and best_val == int(best_val):
-            print(f"  {param_name}: {int(best_val)}")
+    for param, value in sorted(carry_forward.items()):
+        if isinstance(value, float) and value == int(value):
+            print(f"  {param}: {int(value)}")
         else:
-            print(f"  {param_name}: {best_val}")
+            print(f"  {param}: {value}")
 
     print()
 

@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: Evaluation Ecosystem
-status: roadmap_created
-last_updated: "2026-03-03"
+status: unknown
+last_updated: "2026-03-03T18:24:02.197Z"
 progress:
-  total_phases: 5
+  total_phases: 2
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 3
+  completed_plans: 1
 ---
 
 # Project State
@@ -23,24 +23,24 @@ See: .planning/PROJECT.md (updated 2026-03-03)
 ## Current Position
 
 Phase: 46 of 50 (Engine Primitives)
-Plan: — of — in current phase
-Status: Ready to plan
-Last activity: 2026-03-03 — Roadmap created for v3.2 Evaluation Ecosystem (5 phases, 22 requirements)
+Plan: 2 of 3 in current phase (Plan 01 complete)
+Status: In Progress
+Last activity: 2026-03-03 — Completed 46-01 (StaleCacheError, load_stage_cache, context_fingerprint, carry_forward)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 5% (1/3 plans in phase 46)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0 (this milestone)
-- Average duration: — min
-- Total execution time: — hours
+- Total plans completed: 1 (this milestone)
+- Average duration: 4 min
+- Total execution time: 0.07 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 46 | 1 complete | 4 min | 4 min |
 
 *Updated after each plan completion*
 
@@ -60,6 +60,8 @@ v3.2 design decisions:
 - Stage evaluators have zero engine imports — pipeline config passes as explicit function parameters
 - No automatic config file mutation — tuning output is a config diff block for manual application
 - Legacy evaluation code (harness.py, tune_association.py, tune_threshold.py, measure_baseline.py, pipeline_diagnostics.npz) fully removed, not shimmed
+- [Phase 46]: StaleCacheError and cache utilities defined in core/context.py (not separate errors.py); context_fingerprint() made public for DiagnosticObserver use
+- [Phase 46]: Envelope format for stage caches: dict with run_id, timestamp, stage_name, version_fingerprint, context keys
 
 ### Pending Todos
 
@@ -72,6 +74,6 @@ v3.2 design decisions:
 
 ## Session Continuity
 
-Last session: 2026-03-03
-Stopped at: Roadmap created — v3.2 Evaluation Ecosystem, Phases 46-50
+Last session: 2026-03-03T18:22:47Z
+Stopped at: Completed 46-01-PLAN.md — StaleCacheError, load_stage_cache, context_fingerprint, carry_forward on PipelineContext
 Resume file: None

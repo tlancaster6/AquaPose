@@ -11,8 +11,8 @@ Requirements for the evaluation ecosystem milestone. Each maps to roadmap phases
 
 - [ ] **INFRA-01**: DiagnosticObserver writes per-stage pickle cache files on each StageComplete event
 - [ ] **INFRA-02**: PosePipeline.run() accepts optional pre-populated PipelineContext via initial_context parameter
-- [ ] **INFRA-03**: ContextLoader deserializes per-stage pickle caches into a fresh PipelineContext for sweep isolation
-- [ ] **INFRA-04**: StaleCacheError raised with clear message when pickle deserialization fails due to class evolution
+- [x] **INFRA-03**: ContextLoader deserializes per-stage pickle caches into a fresh PipelineContext for sweep isolation
+- [x] **INFRA-04**: StaleCacheError raised with clear message when pickle deserialization fails due to class evolution
 
 ### Evaluation
 
@@ -82,8 +82,8 @@ Requirements for the evaluation ecosystem milestone. Each maps to roadmap phases
 |-------------|-------|--------|
 | INFRA-01 | Phase 46 | Pending |
 | INFRA-02 | Phase 46 | Pending |
-| INFRA-03 | Phase 46 | Pending |
-| INFRA-04 | Phase 46 | Pending |
+| INFRA-03 | Phase 46 | Complete |
+| INFRA-04 | Phase 46 | Complete |
 | EVAL-01 | Phase 47 | Pending |
 | EVAL-02 | Phase 47 | Pending |
 | EVAL-03 | Phase 47 | Pending |

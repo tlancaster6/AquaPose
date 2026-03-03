@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: Evaluation Ecosystem
 status: unknown
-last_updated: "2026-03-03T20:00:12.355Z"
+last_updated: "2026-03-03T20:04:41.616Z"
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-03)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.2 Evaluation Ecosystem — Phase 49 in progress (49-01 complete)
+**Current focus:** v3.2 Evaluation Ecosystem — Phase 49 complete (all 2 plans done)
 
 ## Current Position
 
-Phase: 49 of 50 (TuningOrchestrator and aquapose tune CLI) — In Progress
-Plan: 1 of 2 complete — 49-01 (TuningOrchestrator) done
-Status: Phase 49 plan 1 complete — TuningOrchestrator with grid sweep, two-tier validation, output formatters
-Last activity: 2026-03-03 — Completed 49-01 (TuningOrchestrator, sweep_association, sweep_reconstruction, formatting)
+Phase: 49 of 50 (TuningOrchestrator and aquapose tune CLI) — Complete
+Plan: 2 of 2 complete — 49-02 (aquapose tune CLI) done
+Status: Phase 49 complete — TuningOrchestrator + aquapose tune CLI, legacy scripts deleted
+Last activity: 2026-03-03 — Completed 49-02 (aquapose tune CLI wired, tune_association.py and tune_threshold.py deleted)
 
-Progress: [█████████░] 90% (9/10 plans for phases 46-49)
+Progress: [██████████] 100% (10/10 plans for phases 46-49)
 
 ## Performance Metrics
 
@@ -51,6 +51,7 @@ Progress: [█████████░] 90% (9/10 plans for phases 46-49)
 | Phase 48 P01 | 7 | 1 tasks | 3 files |
 | Phase 48 P02 | 3 | 2 tasks | 5 files |
 | Phase 49 P01 | 29 | 1 tasks | 3 files |
+| Phase 49 P02 | 5 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,7 @@ v3.2 design decisions:
 - [Phase 49]: early_k grid values (float) cast to int before dataclasses.replace() on AssociationConfig in TuningOrchestrator
 - [Phase 49]: n_points grid key maps to n_sample_points in ReconstructionConfig via _patch_reconstruction_config()
 - [Phase 49]: TuningOrchestrator exports added to evaluation/__init__.py per code-style public API requirements
+- [Phase 49]: tune_cmd registered as @cli.command('tune') matching eval_cmd naming convention; inline imports consistent with eval_cmd pattern
 
 ### Pending Todos
 
@@ -101,10 +103,10 @@ v3.2 design decisions:
 
 ### Blockers/Concerns
 
-None currently. Phase 49-01 (TuningOrchestrator) complete; stop_after confirmed present in PipelineConfig.
+None currently. Phase 49 complete.
 
 ## Session Continuity
 
-Last session: 2026-03-03T19:59:04Z
-Stopped at: Completed 49-01-PLAN.md — TuningOrchestrator with grid sweep engine
+Last session: 2026-03-03T20:04:00Z
+Stopped at: Completed 49-02-PLAN.md — aquapose tune CLI wired, legacy scripts deleted
 Resume file: None

@@ -79,6 +79,6 @@ v3.1 strategic decisions:
 
 ## Session Continuity
 
-Last session: 2026-03-02
-Stopped at: Completed 44-validation-and-tuning/44-01-PLAN.md — awaiting 44-02 (user runs tune_threshold.py)
+Last session: 2026-03-03
+Stopped at: Completed quick task 15 — soft scoring kernel replacing binary inlier counting in association scoring
 Resume file: None

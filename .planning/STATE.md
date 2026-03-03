@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.3
 milestone_name: Chunk Mode
 status: unknown
-last_updated: "2026-03-03T23:18:53.118Z"
+last_updated: "2026-03-03T23:25:48Z"
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 5
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-03-03)
 
 ## Current Position
 
-Phase: 51 of 53 (Frame Source Refactor)
-Plan: 2 of 2 complete
-Status: Complete
-Last activity: 2026-03-03 — Completed 51-02 observer migration, VideoSet deletion, stop_frame removal
+Phase: 52 of 53 (Chunk Orchestrator and Handoff)
+Plan: 1 of 3 complete
+Status: In Progress
+Last activity: 2026-03-03 — Completed 52-01: ChunkHandoff, ChunkFrameSource, write_handoff, chunk_size foundation
 
-Progress: [███░░░░░░░] 33% (0/3 phases, 2 plans complete)
+Progress: [████░░░░░░] 40% (1/3 phases, 3 plans complete)
 
 ## Accumulated Context
 
@@ -71,8 +71,13 @@ None.
 - next_global_id tracked separately from prev_handoff so it survives failed chunk resets
 - _build_stages_for_chunk() helper in orchestrator avoids modifying build_stages() to accept an injection parameter
 
+Phase 52 Plan 01 decisions:
+- ChunkHandoff placed in engine/orchestrator.py per plan 52-01 instructions (plan note: watch for circular import if core/tracking/stage.py needs it)
+- chunk_size=0 treated as None by callers via `config.chunk_size or None` convention, not coerced in load_config()
+- ChunkFrameSource no-op context manager confirmed: orchestrator owns VideoFrameSource lifecycle
+
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 51-02 — observer migration, VideoSet deletion, stop_frame removal. Phase 51 complete. Next: Phase 52 Chunk Orchestrator.
+Stopped at: Completed 52-01 — ChunkHandoff, ChunkFrameSource, write_handoff, PipelineConfig.chunk_size. Next: Phase 52 Plan 02 (ChunkOrchestrator).
 Resume file: None

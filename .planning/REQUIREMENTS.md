@@ -16,10 +16,10 @@ Requirements for chunk processing milestone. Each maps to roadmap phases.
 ### Chunk Orchestration
 
 - [ ] **CHUNK-01**: ChunkOrchestrator processes video in fixed-size temporal chunks, each running full 5-stage pipeline independently
-- [ ] **CHUNK-02**: `chunk_size` config field in pipeline config with null/0 fallback to full-video mode (no behavioral change)
-- [ ] **CHUNK-03**: Warning emitted when `chunk_size < 100` frames (insufficient temporal evidence for reliable association scoring)
-- [ ] **CHUNK-04**: ChunkHandoff frozen dataclass replaces CarryForward — carries tracker state + identity map across chunk boundaries
-- [ ] **CHUNK-05**: Atomic handoff serialization (temp file + rename) to `handoff.pkl` after each chunk completes
+- [x] **CHUNK-02**: `chunk_size` config field in pipeline config with null/0 fallback to full-video mode (no behavioral change)
+- [x] **CHUNK-03**: Warning emitted when `chunk_size < 100` frames (insufficient temporal evidence for reliable association scoring)
+- [x] **CHUNK-04**: ChunkHandoff frozen dataclass replaces CarryForward — carries tracker state + identity map across chunk boundaries
+- [x] **CHUNK-05**: Atomic handoff serialization (temp file + rename) to `handoff.pkl` after each chunk completes
 
 ### Identity
 
@@ -76,10 +76,10 @@ Requirements for chunk processing milestone. Each maps to roadmap phases.
 | FRAME-02 | Phase 51 | Complete (51-01) |
 | FRAME-03 | Phase 51 | Complete |
 | CHUNK-01 | Phase 52 | Pending |
-| CHUNK-02 | Phase 52 | Pending |
-| CHUNK-03 | Phase 52 | Pending |
-| CHUNK-04 | Phase 52 | Pending |
-| CHUNK-05 | Phase 52 | Pending |
+| CHUNK-02 | Phase 52 | Complete |
+| CHUNK-03 | Phase 52 | Complete |
+| CHUNK-04 | Phase 52 | Complete |
+| CHUNK-05 | Phase 52 | Complete |
 | IDENT-01 | Phase 52 | Pending |
 | IDENT-02 | Phase 52 | Pending |
 | OUT-01 | Phase 52 | Pending |

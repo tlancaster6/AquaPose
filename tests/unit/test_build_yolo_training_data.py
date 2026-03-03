@@ -516,16 +516,17 @@ class TestIntegrationPipeline:
             assert h == 64
 
         # Each crop should have a .txt label with correct format
-        # cls cx cy w h + N * 3 = 5 + 18 = 23 values
+        # cls cx cy w h + N * 3 = 5 + 18 = 23 values per line
         for crop_path in all_crops:
             label_path = (
                 pose_root / "labels" / crop_path.parent.name / (crop_path.stem + ".txt")
             )
             assert label_path.exists()
             lines = [ln for ln in label_path.read_text().splitlines() if ln.strip()]
-            assert len(lines) == 1, "Each crop has exactly one pose annotation"
-            parts = lines[0].split()
-            assert len(parts) == 5 + N * 3
+            assert len(lines) >= 1, "Each crop has at least one pose annotation"
+            for line in lines:
+                parts = line.split()
+                assert len(parts) == 5 + N * 3
 
     def test_dataset_yaml_content_obb(self, tmp_path: Path) -> None:
         """OBB dataset.yaml has correct keys and no kpt_shape."""

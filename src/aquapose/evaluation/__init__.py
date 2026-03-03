@@ -1,4 +1,4 @@
-"""Offline evaluation harness for reconstruction quality metrics.
+"""Offline evaluation and tuning for multi-stage pipeline quality metrics.
 
 Provides select_frames, flag_outliers, format_baseline_report, format_eval_report,
 format_eval_json, EvalRunner, EvalRunnerResult, and related types for loading

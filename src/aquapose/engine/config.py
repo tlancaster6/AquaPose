@@ -248,7 +248,7 @@ class ReconstructionConfig:
             outlier rejection.
         outlier_threshold: Maximum reprojection error (pixels) for DLT
             backend outlier rejection during triangulation. Empirically
-            tuned via eval harness.
+            tuned via ``aquapose tune``.
         min_cameras: Minimum cameras observing a fish in a frame to attempt
             triangulation. Frames with fewer cameras are dropped. Default 3
             (well-supported by rig geometry — 2-camera triangulation is

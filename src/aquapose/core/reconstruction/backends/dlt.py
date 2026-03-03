@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_OUTLIER_THRESHOLD: float = 10.0
 """Default maximum reprojection residual (pixels) for inlier classification.
 
-Tuned empirically via tune_threshold.py on YH dataset (2026-03-03).
+Tuned empirically via ``aquapose tune --stage reconstruction`` on YH dataset (2026-03-03).
 Balances yield (74/403 = 18%) against mean error (2.91 px).
 """
 
@@ -131,7 +131,7 @@ class DltBackend:
         """Create a DltBackend from pre-built projection models.
 
         Bypasses calibration file loading — useful when models are already
-        constructed (e.g. from a fixture's CalibBundle in the evaluation harness).
+        constructed (e.g. from a pre-built projection model dict).
 
         Args:
             models: Dict mapping camera_id to RefractiveProjectionModel.

@@ -8,6 +8,10 @@ import pickle
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from aquapose.engine.config import PipelineConfig
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +180,7 @@ class ChunkOrchestrator:
             chunk. Default False (quiet chunk mode for long runs).
     """
 
-    def __init__(self, config: object, verbose: bool = False) -> None:
+    def __init__(self, config: PipelineConfig, verbose: bool = False) -> None:
         self._config = config
         self._verbose = verbose
 
@@ -190,13 +194,13 @@ class ChunkOrchestrator:
         from aquapose.io.midline_writer import Midline3DWriter
 
         config = self._config
-        output_dir = Path(config.output_dir)  # type: ignore[attr-defined]
+        output_dir = Path(config.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        chunk_size = config.chunk_size or None  # type: ignore[attr-defined]
+        chunk_size = config.chunk_size or None
 
         video_source = VideoFrameSource(
-            video_dir=config.video_dir,  # type: ignore[attr-defined]
-            calibration_path=config.calibration_path,  # type: ignore[attr-defined]
+            video_dir=config.video_dir,
+            calibration_path=config.calibration_path,
         )
 
         hdf5_path = output_dir / "midlines.h5"
@@ -208,8 +212,8 @@ class ChunkOrchestrator:
             video_source,
             Midline3DWriter(
                 output_path=hdf5_path,
-                max_fish=config.n_animals,  # type: ignore[attr-defined]
-                n_sample_points=config.n_sample_points,  # type: ignore[attr-defined]
+                max_fish=config.n_animals,
+                n_sample_points=config.n_sample_points,
             ) as writer,
         ):
             total_frames = len(video_source)
@@ -243,8 +247,8 @@ class ChunkOrchestrator:
                     from aquapose.engine.observer_factory import build_observers
 
                     observers = build_observers(
-                        config=config,  # type: ignore[arg-type]
-                        mode=config.mode,  # type: ignore[attr-defined]
+                        config=config,
+                        mode=config.mode,
                         verbose=self._verbose,
                         total_stages=len(stages),
                     )
@@ -276,7 +280,7 @@ class ChunkOrchestrator:
                     pipeline = PosePipeline(
                         stages=stages,
                         config=config,
-                        observers=observers,  # type: ignore[arg-type]
+                        observers=observers,
                     )
                     context = pipeline.run(initial_context=initial_context)
                 except Exception as exc:
@@ -313,18 +317,18 @@ class ChunkOrchestrator:
                 midlines_3d = getattr(context, "midlines_3d", None) or []
                 for local_idx, frame_midlines in enumerate(midlines_3d):
                     global_frame_idx = chunk_start + local_idx
-                    remapped = {
-                        identity_map.get(lid, lid): ml
-                        for lid, ml in frame_midlines.items()
-                    }
-                    writer.write_frame(global_frame_idx, remapped)
+                    remapped: dict[int, object] = {}
+                    for lid, ml in frame_midlines.items():  # type: ignore[union-attr]
+                        global_id = identity_map.get(int(lid), int(lid))
+                        remapped[global_id] = ml
+                    writer.write_frame(global_frame_idx, remapped)  # type: ignore[arg-type]
 
                 carry_out = getattr(context, "carry_forward", None)
                 tracks_2d_state = carry_out.tracks_2d_state if carry_out else {}
 
                 new_track_id_to_global: dict[tuple[str, int], int] = {}
                 for group in tracklet_groups:
-                    gid = identity_map.get(group.fish_id, group.fish_id)
+                    gid: int = identity_map.get(group.fish_id, group.fish_id)  # type: ignore[assignment]
                     for tracklet in group.tracklets:
                         new_track_id_to_global[
                             (tracklet.camera_id, tracklet.track_id)

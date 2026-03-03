@@ -2,18 +2,22 @@
 
 Provides format_summary_table for human-readable output, write_regression_json
 for machine-diffable regression data, flag_outliers for statistical outlier
-detection, and format_baseline_report for outlier-annotated baseline reports.
+detection, format_baseline_report for outlier-annotated baseline reports, and
+format_eval_report / format_eval_json for multi-stage EvalRunner results.
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from aquapose.evaluation.metrics import Tier1Result, Tier2Result
+
+if TYPE_CHECKING:
+    from aquapose.evaluation.runner import EvalRunnerResult
 
 
 class _NumpySafeEncoder(json.JSONEncoder):
@@ -345,3 +349,182 @@ def write_regression_json(
         json.dump(result, f, cls=_NumpySafeEncoder, indent=2)
 
     return output_path
+
+
+def format_eval_report(result: EvalRunnerResult) -> str:
+    """Format an EvalRunnerResult as a multi-stage human-readable ASCII report.
+
+    Produces a header block with run metadata followed by a summary section
+    listing each present stage's primary metric, and then per-stage detail
+    sections with full metric tables.
+
+    Args:
+        result: Aggregated evaluation result from EvalRunner.run().
+
+    Returns:
+        Multi-line ASCII string suitable for printing to stdout.
+    """
+    lines: list[str] = []
+    _SEP = "=" * 50
+    _DASH = "-" * 50
+    _W_METRIC = 30
+    _W_VALUE = 12
+
+    # ------------------------------------------------------------------
+    # Header block
+    # ------------------------------------------------------------------
+    lines.append("Evaluation Report")
+    lines.append(_SEP)
+    lines.append(
+        f"Run: {result.run_id}  |  Frames: {result.frames_evaluated}/{result.frames_available}"
+    )
+    stages_sorted = sorted(result.stages_present)
+    if stages_sorted:
+        lines.append(f"Stages: {', '.join(stages_sorted)}")
+    lines.append("")
+
+    # ------------------------------------------------------------------
+    # Summary: one line per present stage with primary metric
+    # ------------------------------------------------------------------
+    has_summary = False
+    if result.detection is not None:
+        d = result.detection
+        lines.append(
+            f"  Detection:       {d.total_detections} detections,"
+            f" mean conf {d.mean_confidence:.3f}"
+        )
+        has_summary = True
+    if result.tracking is not None:
+        t = result.tracking
+        lines.append(
+            f"  Tracking:        {t.track_count} tracks,"
+            f" {t.detection_coverage:.1%} coverage"
+        )
+        has_summary = True
+    if result.association is not None:
+        a = result.association
+        lines.append(
+            f"  Association:     yield {a.fish_yield_ratio:.1%},"
+            f" singleton {a.singleton_rate:.1%}"
+        )
+        has_summary = True
+    if result.midline is not None:
+        m = result.midline
+        lines.append(
+            f"  Midline:         {m.total_midlines} midlines,"
+            f" mean conf {m.mean_confidence:.3f}"
+        )
+        has_summary = True
+    if result.reconstruction is not None:
+        r = result.reconstruction
+        lines.append(
+            f"  Reconstruction:  mean reproj {r.mean_reprojection_error:.2f} px"
+        )
+        has_summary = True
+
+    if has_summary:
+        lines.append("")
+
+    # ------------------------------------------------------------------
+    # Per-stage detail sections
+    # ------------------------------------------------------------------
+    def _row(metric: str, value: object) -> str:
+        val_str = f"{value:.4f}" if isinstance(value, float) else str(value)
+        return f"  {metric:<{_W_METRIC}} {val_str:>{_W_VALUE}}"
+
+    def _header(name: str) -> list[str]:
+        return [
+            name,
+            _DASH,
+            f"  {'Metric':<{_W_METRIC}} {'Value':>{_W_VALUE}}",
+        ]
+
+    if result.detection is not None:
+        lines.extend(_header("Detection"))
+        d = result.detection
+        lines.append(_row("total_detections", d.total_detections))
+        lines.append(_row("mean_confidence", d.mean_confidence))
+        lines.append(_row("std_confidence", d.std_confidence))
+        lines.append(_row("mean_jitter", d.mean_jitter))
+        lines.append("  per_camera_counts:")
+        for cam_id, count in sorted(d.per_camera_counts.items()):
+            lines.append(f"    {cam_id:<{_W_METRIC - 2}} {count:>{_W_VALUE}}")
+        lines.append("")
+
+    if result.tracking is not None:
+        lines.extend(_header("Tracking"))
+        t = result.tracking
+        lines.append(_row("track_count", t.track_count))
+        lines.append(_row("length_median", t.length_median))
+        lines.append(_row("length_mean", t.length_mean))
+        lines.append(_row("length_min", t.length_min))
+        lines.append(_row("length_max", t.length_max))
+        lines.append(_row("coast_frequency", t.coast_frequency))
+        lines.append(_row("detection_coverage", t.detection_coverage))
+        lines.append("")
+
+    if result.association is not None:
+        lines.extend(_header("Association"))
+        a = result.association
+        lines.append(_row("fish_yield_ratio", a.fish_yield_ratio))
+        lines.append(_row("singleton_rate", a.singleton_rate))
+        lines.append(_row("total_fish_observations", a.total_fish_observations))
+        lines.append(_row("frames_evaluated", a.frames_evaluated))
+        lines.append("  camera_distribution:")
+        for n_cams, count in sorted(a.camera_distribution.items()):
+            lines.append(f"    {n_cams} camera(s):{count:>{_W_VALUE}}")
+        lines.append("")
+
+    if result.midline is not None:
+        lines.extend(_header("Midline"))
+        m = result.midline
+        lines.append(_row("total_midlines", m.total_midlines))
+        lines.append(_row("mean_confidence", m.mean_confidence))
+        lines.append(_row("std_confidence", m.std_confidence))
+        lines.append(_row("completeness", m.completeness))
+        lines.append(_row("temporal_smoothness", m.temporal_smoothness))
+        lines.append("")
+
+    if result.reconstruction is not None:
+        lines.extend(_header("Reconstruction"))
+        r = result.reconstruction
+        lines.append("")
+        lines.append("  Tier 1: Reprojection Error")
+        lines.append("  " + "-" * 30)
+        lines.append(_row("mean_reprojection_error", r.mean_reprojection_error))
+        lines.append(_row("max_reprojection_error", r.max_reprojection_error))
+        lines.append(_row("fish_reconstructed", r.fish_reconstructed))
+        lines.append(_row("fish_available", r.fish_available))
+        lines.append(_row("inlier_ratio", r.inlier_ratio))
+        lines.append(_row("low_confidence_flag_rate", r.low_confidence_flag_rate))
+        lines.append("  per_camera_error:")
+        for cam_id, stats in sorted(r.per_camera_error.items()):
+            lines.append(
+                f"    {cam_id:<{_W_METRIC - 2}}"
+                f" mean={stats['mean_px']:.2f} max={stats['max_px']:.2f}"
+            )
+        if r.tier2_stability is not None:
+            lines.append("")
+            lines.append("  Tier 2: Leave-One-Out Stability")
+            lines.append("  " + "-" * 30)
+            lines.append(_row("tier2_stability (m)", r.tier2_stability))
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def format_eval_json(result: EvalRunnerResult) -> str:
+    """Format an EvalRunnerResult as a JSON string.
+
+    Uses _NumpySafeEncoder to handle numpy scalar types that may be present
+    in metric values. The JSON schema matches result.to_dict().
+
+    Args:
+        result: Aggregated evaluation result from EvalRunner.run().
+
+    Returns:
+        JSON string with run_id, stages_present, frames_evaluated,
+        frames_available, and a "stages" dict mapping stage names to
+        their metric dicts. Absent stages are omitted from "stages".
+    """
+    return json.dumps(result.to_dict(), cls=_NumpySafeEncoder, indent=2)

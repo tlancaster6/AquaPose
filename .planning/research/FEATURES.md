@@ -1,99 +1,30 @@
 # Feature Research
 
-**Domain:** 3D fish pose estimation — replacing custom U-Net segmentation and keypoint regression with Ultralytics-native YOLOv8-seg and YOLOv8-pose (v3.0 Ultralytics Unification)
-**Researched:** 2026-03-01
-**Confidence:** HIGH (Ultralytics documentation verified; fish-domain specifics from primary literature)
+**Domain:** Evaluation and parameter tuning system for multi-stage computer vision pipeline (AquaPose v3.2)
+**Researched:** 2026-03-03
+**Confidence:** HIGH — project has a detailed resolved-design seed document; existing code is readable; domain patterns for CV pipeline evaluation/tuning are well-understood.
 
 ---
 
-## Milestone Scope
+## Context: What Already Exists (Do Not Re-Implement)
 
-This is a subsequent-milestone research document for **v3.0 Ultralytics Unification**. The following are already shipped and NOT re-researched here:
+The following infrastructure is ALREADY BUILT and must be built upon, not replaced:
 
-- YOLO v8n standard bbox detection (`YOLODetector`)
-- YOLO-OBB detection (`YOLOOBBDetector`) — v2.2
-- U-Net segmentation + skeletonize midline — **being replaced**
-- Custom keypoint regression head (`UNetKeypointHead`) — **being replaced**
-- `Midline2D` dataclass with optional confidences
-- Confidence-weighted DLT triangulation
-- `aquapose train` CLI group with unet/yolo-obb/keypoint subcommands
-- Multi-view triangulation + B-spline reconstruction
-- 5-stage pipeline: Detection → 2D Tracking → Association → Midline → Reconstruction
-
-**What this milestone adds:** YOLOv8-seg as instance segmentation backend, YOLOv8-pose as keypoint-based midline backend, training data preparation for both tasks, pipeline integration as swappable backends.
-
----
-
-## Context: Who Are the "Users"?
-
-AquaPose users for this milestone are the researchers themselves. "Table stakes" means: missing this makes the Ultralytics backend unusable or produces outputs that break the existing pipeline. "Differentiators" are features that make YOLOv8-seg/pose qualitatively better than the custom U-Net models they replace.
-
----
-
-## Background: How YOLOv8-seg and YOLOv8-pose Work
-
-### YOLOv8-seg
-
-YOLOv8-seg extends the YOLO detection head with a segmentation branch. Each detected object receives:
-- A bounding box (same as standard YOLO detect)
-- A per-instance binary mask at the input image resolution
-
-The mask is generated via a prototype-based approach (not pixel-level decoder like U-Net): 32 prototype masks are predicted globally, then per-instance coefficients linearly combine them and crop to the bounding box. The result is a full-image-size mask tensor but only the bbox region has meaningful data.
-
-**Inference outputs (Python API):**
-```python
-results = model("image.jpg")
-for result in results:
-    result.masks.xy      # list of (K,2) polygon arrays, one per instance
-    result.masks.xyn     # same, normalized [0,1]
-    result.masks.data    # (N_instances, H, W) bool tensor, full image size
-    result.boxes         # bounding boxes, same as detect
-```
-
-**Model sizes (YOLOv8-seg, pretrained COCO):**
-- yolov8n-seg: 3.4M params — nano, fastest
-- yolov8s-seg: 11.8M params — small
-- yolov8m-seg: 27.3M params — medium
-- yolov8l-seg: 46.0M params — large
-- yolov8x-seg: 71.8M params — xlarge, most accurate
-
-**Training data format (YOLO segmentation):**
-One `.txt` file per image. Each row is one instance:
-```
-<class_idx> <x1> <y1> <x2> <y2> ... <xN> <yN>
-```
-Where `x1 y1 ... xN yN` are normalized `[0,1]` polygon vertices tracing the object contour. Minimum 3 vertices. Polygon is stored as a closed contour (no need to repeat first point).
-
-### YOLOv8-pose
-
-YOLOv8-pose extends the YOLO detection head with a keypoint regression branch. Each detected object receives:
-- A bounding box
-- N keypoints, each with (x, y) or (x, y, visibility)
-
-The number and meaning of keypoints is entirely user-defined via `kpt_shape` in the dataset YAML. The default pretrained model uses 17 COCO human body keypoints, but custom counts are fully supported (fish midline points, anatomical landmarks, etc.).
-
-**Inference outputs (Python API):**
-```python
-results = model("image.jpg")
-for result in results:
-    result.keypoints.xy    # (N_instances, N_kpts, 2) — pixel coords
-    result.keypoints.xyn   # (N_instances, N_kpts, 2) — normalized coords
-    result.keypoints.data  # (N_instances, N_kpts, 3) — x, y, confidence
-    result.boxes           # bounding boxes
-```
-
-**Training data format (YOLO pose):**
-One `.txt` file per image. Each row is one instance:
-```
-<class_idx> <cx> <cy> <w> <h> <px1> <py1> [<vis1>] <px2> <py2> [<vis2>] ... <pxN> <pyN> [<visN>]
-```
-Where `cx cy w h` is the normalized bounding box center/size, and `px py` are normalized keypoint coordinates. Visibility is optional: `0` = not labeled/occluded, `1` = labeled but possibly occluded, `2` = labeled and visible.
-
-**Dataset YAML requires `kpt_shape`:**
-```yaml
-kpt_shape: [6, 3]   # 6 keypoints, each with x/y/visibility
-```
-For the fish domain, 6 anatomical keypoints along the spine (head → tail) is the established choice from v2.2 planning.
+| Existing Component | Location | What It Does |
+|-------------------|----------|--------------|
+| `run_evaluation()` | `evaluation/harness.py` | Loads NPZ fixture, runs reconstruction, computes Tier1/Tier2 metrics |
+| `generate_fixture()` | `evaluation/harness.py` | Runs full pipeline with overrides, emits NPZ fixture |
+| `Tier1Result`, `Tier2Result` | `evaluation/metrics.py` | Reprojection error + leave-one-out displacement dataclasses |
+| `compute_tier1()`, `compute_tier2()` | `evaluation/metrics.py` | Reconstruction metric computation functions |
+| `select_frames()` | `evaluation/metrics.py` | Deterministic frame sampling via linspace |
+| `format_summary_table()` | `evaluation/output.py` | ASCII summary table |
+| `write_regression_json()` | `evaluation/output.py` | JSON regression output |
+| `DiagnosticObserver`, `StageSnapshot` | `engine/diagnostic_observer.py` | Per-stage context capture (monolithic NPZ currently) |
+| `PosePipeline.run()` | `engine/pipeline.py` | Single-pass pipeline executor |
+| `tune_association.py` | `scripts/` | Standalone association sweep (retire after milestone) |
+| `tune_threshold.py` | `scripts/` | Standalone reconstruction sweep (retire after milestone) |
+| `measure_baseline.py` | `scripts/` | Standalone baseline measurement (retire after milestone) |
+| `MidlineFixture`, `CalibBundle` | `io/midline_fixture.py` | NPZ v2.0 serialization |
 
 ---
 
@@ -101,130 +32,146 @@ For the fish domain, 6 anatomical keypoints along the spine (head → tail) is t
 
 ### Table Stakes (Users Expect These)
 
-Features that anyone using the Ultralytics backends will assume exist. Missing these makes the milestone feel incomplete or broken.
+Features a researcher expects from any evaluation/tuning CLI. Missing these makes the system feel broken or incomplete.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| YOLOv8-seg inference on full frames returns per-fish instance masks | Core output of instance segmentation; masks replace U-Net output | LOW | `result.masks.data[i]` is (H,W) bool tensor; must filter to fish class; one mask per detected fish instance |
-| YOLOv8-seg mask extraction in crop coordinates | MidlineStage receives crops from DetectionStage; seg model must return masks aligned to crop, not full frame | MEDIUM | Two approaches: (a) run seg on crop directly — mask is already crop-aligned; (b) run seg on full frame, then slice `masks.data[i]` to bbox region; approach (a) is simpler but changes inference granularity |
-| YOLOv8-pose inference returns keypoints per fish | Core output of pose model; keypoints replace custom regression head output | LOW | `result.keypoints.data` is (N_instances, N_kpts, 3); each row is (x, y, confidence) in full-frame pixel coords |
-| `kpt_shape: [6, 3]` configuration in dataset YAML | Custom keypoint count must be declared; model head dimension is set at training time | LOW | Cannot retrain with different kpt_shape without rebuilding model; choose keypoint count once and commit |
-| YOLOv8-seg training data: polygon contours from SAM2 masks | Training pipeline must convert existing SAM2 binary masks to YOLO polygon format | MEDIUM | `ultralytics.data.converter.convert_segment_masks_to_yolo_seg()` exists for directory-level conversion; alternative: `cv2.findContours()` → normalize → write txt file per instance; existing SAM2 pseudo-labels are the raw material |
-| YOLOv8-pose training data: keypoints derived from skeletonizer or medial axis | Pose model needs (x, y, visibility) keypoints; cannot reuse seg labels directly; must generate programmatically from masks | HIGH | Pipeline: SAM2 mask → skeletonize → BFS pruning → arc-length sample 6 points → normalize → write YOLO pose txt; this is the primary new annotation tooling; visibility can be set to 2 (visible) for all programmatically extracted points |
-| Both models integrate as swappable backends in MidlineStage | Existing pipeline calls `midline_backend.extract(crop, detection)` → `Midline2D`; Ultralytics backends must satisfy the same interface | MEDIUM | Add `YOLOSegMidlineBackend` and `YOLOPoseMidlineBackend` classes implementing existing backend protocol; `make_midline_backend()` factory gains `"yolo_seg"` and `"yolo_pose"` branches |
-| Mask → midline conversion for YOLOv8-seg backend | Seg model gives a mask; downstream still needs ordered midline points for triangulation; must run medial axis / skeletonization on the mask | MEDIUM | Same existing skeletonize → BFS → arc-length pipeline applied to the Ultralytics-provided mask; this is the same logic as the current U-Net path, reused unchanged |
-| Keypoints → `Midline2D` conversion for YOLOv8-pose backend | Pose model gives (N_kpts, 3) array; must map to `Midline2D(points, confidences)` | LOW | Reshape `result.keypoints.data[0][:, :2]` → points, `result.keypoints.data[0][:, 2]` → confidences; straightforward |
-| Training data format validation / dry-run check | Users must be able to verify label format is correct before committing to a full training run | LOW | Ultralytics provides `model.train(data="dataset.yaml")` which validates format on startup; add a `--dry-run` flag or lean on the built-in validation error messages |
-| Custom class index = 0 (single-class fish dataset) | Both seg and pose datasets have exactly one class: fish; class index 0 throughout all label files | LOW | Dataset YAML: `nc: 1`, `names: ['fish']`; all label files start with `0 ...` |
+| `aquapose eval <run-dir>` CLI subcommand | Any evaluation system needs a CLI entrypoint; long-argument scripts are not acceptable for regular use | LOW | Thin Click wrapper; existing CLI already uses Click; extends `aquapose` command group |
+| Multi-stage metric report covering all 5 stages | Current system evaluates reconstruction only; researchers need to see where in the pipeline quality degrades | MEDIUM | Five metric evaluator functions needed; detection/tracking/association/midline/reconstruction each get dedicated functions |
+| Stage filter flag (`--stage <name>`) for eval | Running all stages is slow during focused debugging; targeted eval is essential | LOW | Simple filtering layer over full metric computation; no structural change needed |
+| Human-readable stdout report (tabular) | Researchers want numbers immediately without parsing files | LOW | Extend existing `format_summary_table()` pattern to multi-stage output |
+| JSON output flag (`--report json`) | Machine-readable output for scripting, comparison, and CI | LOW | Extend existing `write_regression_json()` to multi-stage structure |
+| `aquapose tune --stage <name>` CLI subcommand | Direct replacement for standalone tune scripts; all params, ranges, and logic in one command | MEDIUM | Core sweep loop, param grid loading, stage-specific metric selection, top-N validation |
+| Per-stage diagnostic files (replacing monolithic NPZ) | Monolithic NPZ cannot represent partial pipeline runs (when `stop_after` is used); per-stage files enable selective loading during sweep | MEDIUM | DiagnosticObserver refactor: emit per-stage files on `StageComplete`; context loader reads stages selectively |
+| Stage-isolated parameter sweep (re-run only target stage per combo) | Sweeping the full pipeline per combo is O(N_combos * full_pipeline_time); upstream caching is the critical efficiency gain | HIGH | Requires context loader (pickle) + PosePipeline accepting pre-populated context; this is the architectural centerpiece of the milestone |
+| Two-tier frame counts (fast sweep + thorough validation) | Full validation on every combo wastes GPU time; sweep fast with fewer frames, validate winners with more | LOW | `--n-frames` and `--n-frames-validate` CLI flags; already designed in seed doc; configurable defaults |
+| Top-N validation (full pipeline for sweep winners) | Stage-specific metrics do not prove E2E quality; winners must be validated end-to-end | MEDIUM | Configurable N (default 3); validation uses more frames than sweep phase; runs full pipeline for each winner |
+| Before/after comparison in tuning output | Researcher needs to know whether tuning actually improved things relative to baseline | LOW | Compare baseline (D0) metrics to winner metrics; shown in final report alongside metric deltas |
+| Config diff in tuning output | Researcher needs to know what params changed in order to update their `config.yaml` | LOW | Emit recommended override block alongside metrics table; do NOT auto-mutate the user's config |
+| Retire standalone tuning scripts | `tune_association.py`, `tune_threshold.py`, `measure_baseline.py` must be fully subsumed so there is one canonical way to tune | LOW | Delete scripts after confirming CLI covers all functionality; migrate domain knowledge (param grids, scoring logic) into evaluation module |
 
 ### Differentiators (Competitive Advantage)
 
-Features that make the Ultralytics backends qualitatively better than the custom models they replace.
+Features that go beyond baseline expectations and provide meaningful research value for this domain.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Pretrained COCO backbone weights for seg and pose models | ImageNet/COCO pretrained weights transfer well to fish domain even with limited labeled data; custom U-Net trained from SAM2 pseudo-labels only; Ultralytics models start from a much stronger feature extractor | LOW | Use `yolov8n-seg.pt` or `yolov8n-pose.pt` as starting weights; pass `pretrained=True` (default); dramatically reduces labeled data needed to reach good generalization |
-| Instance-aware masks from YOLOv8-seg (vs U-Net binary mask per crop) | U-Net operates on pre-cropped patches and produces one mask per call; YOLOv8-seg produces N instance masks in one forward pass on the full frame, separating overlapping fish | HIGH | When fish partially overlap, U-Net gets confused by the combined crop; YOLOv8-seg's instance-aware output can distinguish individual fish; critical for the 9-fish cichlid school scenario |
-| Direct keypoint output from YOLOv8-pose (vs skeletonize + BFS from mask) | Skeletonization on a noisy mask produces disconnected or multi-branch skeletons requiring BFS pruning; YOLOv8-pose directly regresses ordered keypoint positions with confidence, bypassing the fragile skeletonization step | MEDIUM | Quality ceiling: YOLOv8-pose accuracy is bounded by pseudo-label quality; if pseudo-labels are generated from skeletonizer, that noise is baked in; however, training forces consistency and smoothing across the dataset |
-| Per-keypoint confidence from YOLOv8-pose (native output) | `result.keypoints.data[:, :, 2]` gives per-point confidence natively; flows into existing confidence-weighted DLT triangulation without custom head architecture | LOW | Already integrated: `Midline2D.confidences` field and weighted DLT exist from v2.2; YOLOv8-pose provides the confidence naturally, avoiding the need for a custom sigmoid output head |
-| Unified Ultralytics training API for all model types | `model.train(data="fish.yaml", epochs=100, ...)` works identically for detect, seg, and pose; no custom training loop code required | LOW | Eliminates custom `train_unet()` function, custom loss, custom checkpointing; Ultralytics handles mixed precision, cosine LR, augmentation, validation loop; simplifies `aquapose train` subcommands dramatically |
-| Native augmentation in Ultralytics training (Mosaic, MixUp, Albumentations) | Ultralytics applies aggressive augmentation by default; custom U-Net training used basic augmentation only | LOW | Mosaic augmentation combines 4 images; for fish domain, this can be disabled or reduced (`mosaic=0.0`) if it creates unrealistic multi-fish images; default augmentation otherwise suitable |
-| Export to ONNX / TensorRT for deployment | Ultralytics supports `model.export(format="onnx")` and `format="engine"` for TensorRT; custom U-Net required separate export tooling | LOW | Out of scope for this milestone but architecture supports it; note for future |
-| Single-model multi-fish inference (YOLOv8-seg and -pose run on full frame) | Instead of running U-Net once per detection crop (N=9 times per frame per camera), seg and pose models run once per full frame and return all instances | MEDIUM | Changes inference granularity from crop-level to frame-level; reduces total inference calls from O(N_fish) to O(1) per frame per camera; must update MidlineStage to consume frame-level results and match instances to tracked fish |
+| `aquapose tune --cascade` (association then reconstruction in sequence) | Sequential tuning with locked-in winners is the correct approach for dependent stages; naive independent tuning of each stage gives suboptimal results because association quality directly controls reconstruction input quality | HIGH | Cascade orchestrator: run association sweep → validate winner D1 → use D1 as upstream cache → run reconstruction sweep → validate winner D2 → emit final delta report; complex but architecturally correct |
+| Per-stage proxy metrics without ground truth | Most CV evaluation frameworks require annotations; self-consistency metrics (yield, fragmentation rates, reprojection error) work on any production run without labels | HIGH | Each stage gets its own evaluator module with distinct metric logic: detection yield, track length distribution, association fish yield ratio, midline completeness/smoothness, reconstruction reprojection error |
+| Pickle-based upstream caching during sweeps | Avoids GPU re-execution of stages upstream of the target; turns O(N_combos * full_pipeline_time) into O(upstream_time + N_combos * target_stage_time) — typically 10-50x speedup for reconstruction sweeps | MEDIUM | Per-stage pickle in tuning work directory; discarded when tuning session ends; session-scoped to avoid stale cache bugs |
+| Default sweep grids colocated with metric evaluator functions | Keeps sweep ranges as an evaluation concern, not a pipeline config concern; easy to find, easy to modify without touching pipeline code | LOW | `DEFAULT_GRIDS` dict in each stage's evaluator module; grids cover a reasonable neighborhood around current defaults |
+| CLI parameter range override (`--param name --range min:max:step`) | Researcher can probe a specific parameter without editing code | LOW | Parses range string into value list; overrides DEFAULT_GRIDS entry for that param; enables targeted investigation after initial sweep |
+| `stop_after` support for partial pipeline execution | Enables "run only stages 1-3 and cache the result" without paying for expensive midline/reconstruction; critical for rapid association iteration | MEDIUM | PosePipeline accepts optional `stop_after: str` parameter naming the last stage to execute; DiagnosticObserver emits what's available; context loader reads only the stages present |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| Run YOLOv8-seg on pre-cropped patches (same as U-Net) | Seems like the simplest drop-in swap — just replace U-Net with YOLO-seg on the same crop | YOLO-seg is designed for full-frame inference; running on crops means re-running the full model N times per frame, losing the instance-separation advantage; crops at the edge of the frame also lose context the model needs for good boundary detection | Run YOLOv8-seg on the full frame once, extract the mask for each fish by matching bounding boxes to tracked fish identities |
-| Manual keypoint annotation for pose training | Highest quality labels; standard in pose estimation literature | 9 fish × 30fps × hours of footage = millions of frames; manual keypoint annotation is infeasible at this scale | Programmatic pseudo-label generation: SAM2 mask → medial axis → arc-length sample 6 keypoints → YOLO pose txt; imperfect but scalable |
-| Using COCO pretrained pose model weights directly without fine-tuning | Pretrained model might "just work" on fish | COCO pose model has `kpt_shape: [17, 3]` for human body; fish requires `kpt_shape: [6, 3]`; kpt_shape is baked into the model head at training time — cannot use COCO pose weights with a different keypoint count | Fine-tune from COCO detect backbone weights (not pose weights); or use `yolov8n.pt` (detect) as base and train the pose head from scratch with the correct kpt_shape |
-| Joint seg+pose model in a single forward pass | Architecturally attractive; some community implementations exist (DmitryCS/yolov8_segment_pose on GitHub) | Not officially supported in Ultralytics; requires custom model surgery; maintenance burden; Ultralytics does not expose combined seg+pose heads in the standard API | Run seg and pose as separate models; if inference speed is a concern, run pose only (keypoints give enough for midline) and skip seg |
-| Replacing skeletonize midline with pose-only and removing the seg path entirely | Simplifies codebase; pose is the "better" approach | Seg masks are still needed for other consumers (width profile extraction, visualization overlays, SAM2 bootstrapping); removing seg removes capabilities that are useful even after pose model is deployed | Keep both backends; select via `midline_backend: yolo_seg` or `midline_backend: yolo_pose` in config; default to yolo_pose, but preserve yolo_seg path |
-| Retraining on all 13 cameras simultaneously as one dataset | More data = better model; seems obvious | Camera geometry varies significantly; top-center camera (e3v8250) is wide-angle overhead producing very different fish appearances and was already identified as a quality problem and skipped in v1.0; mixing it in degrades per-camera model quality | Per-camera datasets or pooled from only the 12 ring cameras; skip e3v8250 as established |
-| YOLO11 instead of YOLOv8 for seg/pose | YOLO11 is 2024 current and achieves ~2-3% higher mAP with fewer parameters | The milestone is "Ultralytics Unification" — the key is consistent, working integration, not maximum mAP; YOLOv8 has more community documentation for fish/animal pose; YOLO11 API is identical (same `model.train()` call) so upgrading later is trivial | Use YOLOv8n-seg and YOLOv8n-pose for this milestone to minimize variables; document YOLO11 as a trivial future upgrade |
+| Bayesian or Gaussian process optimization | Promises smarter parameter search than grid search | Obscures what the search is doing; requires additional dependencies (scikit-optimize, Optuna); parameter spaces here are small (2-5 params with defined ranges) and grid search is fully interpretable; Bayesian methods add value only at 10+ params | Grid search with overridable ranges; 2D joint grids for pairs of correlated params if needed |
+| Automatic config file mutation on tuning completion | Saves a manual YAML editing step | Mutating user config files without explicit consent destroys reproducibility and is surprising behavior; researcher must review config diff before applying | Print recommended config diff block to stdout; let researcher apply it manually to their config.yaml |
+| Real-time / streaming evaluation during pipeline execution | Evaluate quality as each stage completes in a live run | Evaluation currently requires the full stage output to be available; partial evaluation adds synchronization complexity and changes the pipeline's execution model | Evaluate in a separate offline step after the diagnostic run completes; the run directory is the evaluation input |
+| Pydantic for sweep config validation | Type-safe validation of sweep parameter dicts | Project decision (PROJECT.md) is frozen dataclasses; Pydantic is explicitly out of scope | Frozen dataclasses + Click type annotations on CLI flags; DEFAULT_GRIDS dicts with documented types |
+| Cross-session cache persistence | Reuse upstream caches from previous tuning sessions | Pipeline code may change between sessions, making cached pickles invalid; stale pickles produce silent correctness bugs; seed doc explicitly chose session-scoped caches | Fresh baseline run per tuning session; tuning work directory is discarded when session ends |
+| Composite weighted scoring for parameter ranking | Combine multiple metrics into one comparable score | Weights are arbitrary and obscure which metric drove the ranking decision; single primary metric with tiebreaker is more auditable and explainable | Primary metric (fish yield or mean reprojection error) with a single tiebreaker; report all metrics in the output table for human review |
+| Automatic cascade state propagation (implicit config mutation mid-cascade) | After association sweep, automatically apply winner params before reconstruction sweep begins | Implicit config changes mid-cascade break auditability; researcher should know what changed and why at each step | Cascade orchestrator manages config propagation internally during the session only; the final report shows the accumulated config diff from D0 to D2 |
+| Sweep capability for tracking and midline stages at launch | Complete the full tuning surface for all 5 stages | Seed doc explicitly decided these are evaluate-only at launch: OC-SORT tracking defaults are well-understood; midline params are precision/recall filters that reconstruction's own outlier rejection already handles; adding tuning before confirming it's a bottleneck is speculative over-engineering | Implement evaluate-only for tracking and midline; add sweep support in a future milestone only if evaluation data reveals them as bottlenecks |
+| Ground-truth-based metrics | More rigorous than proxy metrics | No ground truth is available at pipeline runtime; training data has annotations but those are consumed during model training, not pipeline evaluation | Self-consistency proxy metrics (yield, reprojection error, cross-view consistency) are always available and sufficient for parameter optimization |
+| Retroactive evaluation of pre-v3.2 run directories | Evaluate older runs without re-running the pipeline | Pre-v3.2 run directories use the monolithic NPZ format; the new per-stage file format is not backward-compatible; building a translation layer adds complexity for limited benefit | Not required at launch; the seed doc explicitly defers retroactive compatibility; researcher re-runs the pipeline in diagnostic mode to get a v3.2-compatible run directory |
 
 ---
 
 ## Feature Dependencies
 
 ```
-YOLOv8-seg Backend
-    └──requires──> SAM2 masks → YOLO polygon label conversion tooling
-    └──requires──> Frame-level inference path in MidlineStage (not crop-level)
-    └──requires──> Instance matching: seg output detections → tracked fish IDs
-    └──outputs──>  binary mask per fish instance
-                       └──feeds──> existing skeletonize → BFS → Midline2D path (REUSED)
-                       └──feeds──> width profile extraction (REUSED)
+[Per-stage diagnostic files]
+    └──requires──> [DiagnosticObserver refactor: emit per-stage files on StageComplete]
 
-YOLOv8-pose Backend
-    └──requires──> Keypoint pseudo-label generation tooling:
-                       SAM2 mask → medial axis → arc-length sample 6 pts → YOLO pose txt
-    └──requires──> kpt_shape: [6, 3] in dataset YAML (committed choice, cannot change later)
-    └──requires──> Frame-level inference path in MidlineStage
-    └──requires──> Instance matching: pose output detections → tracked fish IDs
-    └──outputs──>  (N_kpts, 3) array: x, y, confidence per fish
-                       └──feeds──> Midline2D(points=kpts[:,:2], confidences=kpts[:,2])
-                       └──feeds──> existing confidence-weighted DLT (REUSED)
+[Context loader (pickle deserialization into PipelineContext)]
+    └──requires──> [Per-stage diagnostic files]  (knows which stages are available)
 
-Frame-Level Instance Matching
-    └──requires──> AssociationStage has already resolved fish identity across cameras
-    └──requires──> DetectionStage bounding boxes available for IoU matching
-    └──independent of──> which midline backend is selected
+[PosePipeline: accept pre-populated PipelineContext + optional stop_after]
+    └──minimal change──> existing single-pass architecture preserved
 
-Keypoint Pseudo-Label Generation
-    └──requires──> SAM2 pseudo-labels (already exist from v1.0)
-    └──reuses──>   existing skeletonize + BFS + arc-length sampling code from MidlineStage
-    └──outputs──>  YOLO pose .txt files for training
+[Stage-isolated parameter sweep]
+    └──requires──> [Per-stage diagnostic files]
+    └──requires──> [Context loader]
+    └──requires──> [PosePipeline: accept pre-populated context]
 
-Seg Polygon Label Generation
-    └──requires──> SAM2 binary masks (already exist from v1.0)
-    └──uses──>     cv2.findContours() or ultralytics.data.converter.convert_segment_masks_to_yolo_seg()
-    └──outputs──>  YOLO seg .txt files for training
+[Per-stage metric evaluator functions (5 stages)]
+    └──builds on──> [Tier1Result, Tier2Result] (existing reconstruction metrics reused)
+    └──new work──>  detection, tracking, association, midline metric functions
 
-Training (seg and pose)
-    └──requires──> dataset YAML with correct kpt_shape (pose) or nc/names (seg)
-    └──requires──> label files in YOLO format
-    └──uses──>     ultralytics model.train() — standard API, no custom training loop
-    └──outputs──>  best.pt weights
+[aquapose eval <run-dir>]
+    └──requires──> [Per-stage metric evaluator functions]
+    └──requires──> [Per-stage diagnostic files]  (data source for evaluation)
+    └──extends──>  [format_summary_table(), write_regression_json()] (existing output utilities)
+
+[aquapose tune --stage association]
+    └──requires──> [Stage-isolated parameter sweep]
+    └──requires──> [Per-stage metric evaluator functions: association]
+    └──requires──> [Two-tier frame counts]
+    └──requires──> [Top-N validation]
+    └──subsumes──> [scripts/tune_association.py]
+
+[aquapose tune --stage reconstruction]
+    └──requires──> [Stage-isolated parameter sweep]
+    └──requires──> [Per-stage metric evaluator functions: reconstruction]
+    └──requires──> [Two-tier frame counts]
+    └──requires──> [Top-N validation]
+    └──subsumes──> [scripts/tune_threshold.py]
+
+[aquapose tune --cascade]
+    └──requires──> [aquapose tune --stage association]
+    └──requires──> [aquapose tune --stage reconstruction]
+    └──requires──> [Cascade orchestrator that sequences the two and threads D1 into reconstruction sweep]
+
+[Retire standalone scripts]
+    └──requires──> [aquapose tune --stage association]  (full supersession of tune_association.py)
+    └──requires──> [aquapose tune --stage reconstruction]  (full supersession of tune_threshold.py)
+    └──requires──> [aquapose eval]  (full supersession of measure_baseline.py)
 ```
 
 ### Dependency Notes
 
-- **Instance matching is the hardest new integration point:** When running seg/pose on a full frame, the returned instances are ordered by detection confidence, not by fish identity. Must match `result.boxes` to tracked fish bounding boxes (IoU or centroid distance) to assign the right mask/keypoints to the right `Midline2D`. This is a new step not present in the U-Net crop-based pipeline.
-- **Pose pseudo-label quality determines pose model quality ceiling:** If the skeletonizer produces noisy or incomplete medial axes on SAM2 masks, those errors are baked into the pose training labels. The pose model cannot be better than its labels. Consider filtering: only use frames where the skeletonizer produces clean single-branch medial axes.
-- **kpt_shape must be decided before any training begins:** 6 keypoints along the midline is the established choice. This is irreversible without retraining.
-- **Seg and pose backends do not compete — both are useful:** Seg masks provide body silhouette (width profile, visualization); pose keypoints provide ordered midline (triangulation input). The long-term architecture may run both and use pose for midline, seg for width. Keep both.
-- **Existing skeletonize path is REUSED in seg backend:** YOLOv8-seg replaces U-Net inference only; the mask→midline conversion (skeletonize + BFS + arc-length) is unchanged. This limits the improvement: seg helps when the mask quality is better, but noisy masks still produce noisy midlines.
+- **Per-stage diagnostic files is the critical prerequisite.** Everything else depends on having per-stage serialized outputs in the run directory. DiagnosticObserver currently writes a monolithic NPZ at `PipelineComplete`; it must emit per-stage pickle/structured files at each `StageComplete` event.
+
+- **PosePipeline change is minimal by design.** The orchestrator manages context population externally. PosePipeline only needs to accept an optional pre-populated context (skipping internal context creation) and an optional `stop_after` stage name. The single-pass execution model is preserved; the orchestrator is the new outer loop.
+
+- **cascade requires both stage sweeps to be complete and independently testable** before the cascade orchestrator can be wired. The cascade orchestrator is thin: call association sweep, take winner, use winner's run directory as the upstream cache for reconstruction sweep, collect final delta report.
+
+- **Retire standalone scripts is the last step.** Scripts should be retained until the CLI has been exercised against the same test cases and produces equivalent results. The migration transfers domain knowledge (param grids, scoring formulas) from scripts into the evaluation module's `DEFAULT_GRIDS` dicts and metric functions.
 
 ---
 
-## MVP Definition (for v3.0 Ultralytics Unification)
+## MVP Definition
 
-### Launch With
+### Launch With (v3.2 — all of these are success criteria)
 
-- [ ] `convert_sam_masks_to_yolo_seg()` — batch converts existing SAM2 binary masks to YOLO polygon label files
-- [ ] `generate_pose_labels_from_masks()` — batch generates YOLO pose labels from SAM2 masks via existing skeletonize + arc-length pipeline; outputs (6, 3) with visibility=2
-- [ ] Dataset YAML files for fish-seg and fish-pose with correct `nc`, `names`, `kpt_shape`
-- [ ] `aquapose train seg` and `aquapose train pose` CLI subcommands using `model.train()`
-- [ ] `YOLOSegMidlineBackend` — runs yolov8n-seg on full frame, matches instances to tracked boxes, extracts mask, runs existing skeletonize path → `Midline2D`
-- [ ] `YOLOPoseMidlineBackend` — runs yolov8n-pose on full frame, matches instances to tracked boxes, maps keypoints → `Midline2D(points, confidences)`
-- [ ] `make_midline_backend()` factory updated: `"yolo_seg"` and `"yolo_pose"` branches, each configurable with a `model_path`
-- [ ] Instance matching utility: `match_detections_to_tracks(result_boxes, tracked_bboxes)` → index mapping using IoU; shared between seg and pose backends
-- [ ] Integration test: run pose backend on a synthetic frame, verify `Midline2D` output has correct shape and flows through triangulation unchanged
+- [ ] Per-stage diagnostic files replacing monolithic NPZ (DiagnosticObserver refactor)
+- [ ] Context loader: pickle serialization/deserialization of PipelineContext stage outputs
+- [ ] PosePipeline: accept optional pre-populated PipelineContext + optional `stop_after`
+- [ ] Per-stage metric evaluator functions for all 5 stages (detection, tracking, association, midline, reconstruction)
+- [ ] `aquapose eval <run-dir>` CLI with multi-stage report (stdout human-readable + optional `--report json`)
+- [ ] `aquapose tune --stage association` with grid sweep, two-tier frame counts, top-N validation
+- [ ] `aquapose tune --stage reconstruction` with grid sweep, two-tier frame counts, top-N validation
+- [ ] `aquapose tune --cascade` for association-then-reconstruction in sequence with E2E validation between stages
+- [ ] Before/after metric comparison + config diff block in all `tune` output
+- [ ] Retire `scripts/tune_association.py`, `scripts/tune_threshold.py`, `scripts/measure_baseline.py`
 
-### Add After Validation
+### Add After Validation (v3.x)
 
-- [ ] Width profile extraction from YOLOv8-seg masks — seg masks are higher quality than U-Net masks; improves B-spline width profile; defer until seg model is trained and quality is assessed
-- [ ] Filter pose pseudo-labels by skeleton quality (single-branch, minimum arc length) — improves pose model training data; defer until label generation pipeline is working
-- [ ] `aquapose train pose --transfer-from-detect` — initialize pose backbone from YOLO detect weights; improves convergence; add once basic training pipeline works
+- [ ] `--stage <name>` filter for `aquapose eval` — add once multi-stage eval is working and the filtering need is confirmed
+- [ ] `--param name --range min:max:step` CLI override for custom sweep ranges — add when researchers want to narrow in on specific params after initial grid
+- [ ] `aquapose tune --stage tracking` — add only if evaluation data reveals tracking fragmentation as a bottleneck
+- [ ] `aquapose tune --stage midline` — add only if evaluation data reveals midline completion rate as a bottleneck
+- [ ] 2D joint grid sweeps (two correlated params simultaneously) — add when 1D sweeps prove insufficient
 
-### Future Consideration (v3.1+)
+### Future Consideration (v4+)
 
-- [ ] Upgrade to YOLO11-seg and YOLO11-pose — trivial API-compatible swap; defer until v3.0 is validated
-- [ ] Run seg+pose simultaneously for combined width+midline output in a single inference pass — requires instance matching once, not twice
-- [ ] Pose label refinement via human annotation on a small subset — addresses quality ceiling of pseudo-labels
-- [ ] Confidence calibration on pose keypoints (temperature scaling) — useful if confidence values are systematically over- or under-confident
+- [ ] Cross-session cache reuse with version tagging to detect stale caches
+- [ ] Per-stage metric trending across multiple runs (longitudinal quality tracking as data grows)
+- [ ] Sweep results export to CSV/parquet for external analysis or plotting
+- [ ] Parallel sweep execution across multiple GPU processes
 
 ---
 
@@ -232,209 +179,59 @@ Training (seg and pose)
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| Seg polygon label generation from SAM2 masks | HIGH | LOW | P1 |
-| Pose keypoint label generation from SAM2 masks | HIGH | MEDIUM | P1 |
-| Dataset YAMLs (seg and pose) | HIGH | LOW | P1 |
-| `aquapose train seg` subcommand | HIGH | LOW | P1 |
-| `aquapose train pose` subcommand | HIGH | LOW | P1 |
-| `YOLOPoseMidlineBackend` (keypoints → Midline2D) | HIGH | MEDIUM | P1 |
-| Instance matching utility (result_boxes → track IDs) | HIGH | MEDIUM | P1 |
-| `YOLOSegMidlineBackend` (mask → skeletonize → Midline2D) | MEDIUM | MEDIUM | P1 |
-| `make_midline_backend()` factory update | MEDIUM | LOW | P1 |
-| Integration test: pose backend through triangulation | HIGH | LOW | P1 |
-| Width profile from seg masks | MEDIUM | MEDIUM | P2 |
-| Pose label quality filtering | MEDIUM | LOW | P2 |
-| YOLO11 upgrade | LOW | LOW | P3 |
-| Joint seg+pose inference | LOW | HIGH | P3 |
+| DiagnosticObserver refactor: per-stage files | HIGH | MEDIUM | P1 |
+| Context loader (pickle round-trip) | HIGH | MEDIUM | P1 |
+| PosePipeline: accept pre-populated context + stop_after | HIGH | LOW | P1 |
+| Per-stage metric evaluators (5 stages) | HIGH | HIGH | P1 |
+| `aquapose eval` CLI, multi-stage report | HIGH | LOW | P1 |
+| `aquapose tune --stage association` | HIGH | MEDIUM | P1 |
+| `aquapose tune --stage reconstruction` | HIGH | MEDIUM | P1 |
+| Two-tier frame counts | HIGH | LOW | P1 |
+| Top-N validation (full pipeline for winners) | HIGH | LOW | P1 |
+| Before/after comparison + config diff output | HIGH | LOW | P1 |
+| `aquapose tune --cascade` | HIGH | MEDIUM | P1 |
+| Retire standalone scripts | MEDIUM | LOW | P1 |
+| `--stage` filter for eval | MEDIUM | LOW | P2 |
+| `--param name --range` CLI override | MEDIUM | LOW | P2 |
+| `aquapose tune --stage tracking` | LOW | MEDIUM | P3 |
+| `aquapose tune --stage midline` | LOW | MEDIUM | P3 |
 
 **Priority key:**
-- P1: Must ship in v3.0
-- P2: Add when core is validated
-- P3: Future milestone
+- P1: Must ship for v3.2 success criteria
+- P2: Should add within milestone if time permits
+- P3: Future milestone, add only after evaluation reveals bottleneck
 
 ---
 
-## Technical Implementation Notes
+## Existing Infrastructure Refactor Map
 
-### Seg Label Generation from Binary Masks
+Features in this milestone refactor existing components. The changes required are listed here to inform phase planning.
 
-```python
-import cv2
-import numpy as np
-
-def mask_to_yolo_polygon(binary_mask: np.ndarray, class_idx: int = 0) -> str:
-    """Convert a (H, W) binary mask to a YOLO segmentation label row."""
-    contours, _ = cv2.findContours(
-        binary_mask.astype(np.uint8),
-        cv2.RETR_EXTERNAL,
-        cv2.CHAIN_APPROX_SIMPLE
-    )
-    if not contours:
-        return ""
-    # Take largest contour (outermost fish boundary)
-    contour = max(contours, key=cv2.contourArea).squeeze()
-    if contour.ndim < 2:
-        return ""
-    h, w = binary_mask.shape
-    normalized = contour.astype(float) / np.array([w, h])
-    flat = normalized.flatten()  # x1, y1, x2, y2, ...
-    coords_str = " ".join(f"{v:.6f}" for v in flat)
-    return f"{class_idx} {coords_str}"
-```
-
-Alternatively, use Ultralytics built-in utility (handles directory-level conversion):
-```python
-from ultralytics.data.converter import convert_segment_masks_to_yolo_seg
-convert_segment_masks_to_yolo_seg(
-    masks_dir="path/to/binary_masks/",
-    output_dir="path/to/labels/",
-    classes=1  # single fish class
-)
-```
-
-### Pose Label Generation from Masks
-
-```python
-def mask_to_pose_label(
-    binary_mask: np.ndarray,
-    n_keypoints: int = 6,
-    class_idx: int = 0
-) -> str:
-    """
-    Convert a (H, W) binary mask to a YOLO pose label row.
-    Uses existing medial axis extraction to derive ordered spine keypoints.
-    """
-    from aquapose.reconstruction.midline import extract_medial_axis  # existing code
-    from aquapose.reconstruction.midline import arc_length_sample     # existing code
-
-    h, w = binary_mask.shape
-    # Existing skeletonize + BFS pipeline
-    medial_pts = extract_medial_axis(binary_mask)    # (M, 2) ordered points
-    if medial_pts is None or len(medial_pts) < n_keypoints:
-        return ""
-    # Arc-length resample to exactly n_keypoints
-    kpts = arc_length_sample(medial_pts, n_keypoints)  # (N, 2) pixel coords
-
-    # Bounding box from mask (required for YOLO pose format)
-    ys, xs = np.where(binary_mask)
-    cx = (xs.min() + xs.max()) / 2 / w
-    cy = (ys.min() + ys.max()) / 2 / h
-    bw = (xs.max() - xs.min()) / w
-    bh = (ys.max() - ys.min()) / h
-
-    # Normalize keypoints, set visibility=2 (labeled and visible)
-    kpts_norm = kpts / np.array([w, h])
-    kpts_str = " ".join(f"{x:.6f} {y:.6f} 2" for x, y in kpts_norm)
-    return f"{class_idx} {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f} {kpts_str}"
-```
-
-### Instance Matching: Seg/Pose Results to Tracked Fish
-
-When YOLOv8-seg or -pose runs on the full frame, it returns detections in confidence order (not fish identity order). Must match to `tracked_bboxes` from the 2D tracking stage:
-
-```python
-def match_detections_to_tracks(
-    result_boxes: np.ndarray,   # (N_det, 4) x1y1x2y2 from result.boxes.xyxy
-    tracked_boxes: np.ndarray,  # (N_tracks, 4) x1y1x2y2 from tracking stage
-    iou_threshold: float = 0.3,
-) -> dict[int, int]:
-    """Returns {track_idx: detection_idx} mapping."""
-    # Compute pairwise IoU, assign greedily by max IoU
-    ...
-```
-
-This utility is shared between `YOLOSegMidlineBackend` and `YOLOPoseMidlineBackend`.
-
-### Dataset YAML Example (pose)
-
-```yaml
-path: /path/to/fish_pose_dataset
-train: images/train
-val: images/val
-
-nc: 1
-names: ['fish']
-
-kpt_shape: [6, 3]   # 6 keypoints, each (x, y, visibility)
-```
-
-### Training (standard Ultralytics API, no custom loop)
-
-```python
-from ultralytics import YOLO
-
-# Segmentation
-model = YOLO("yolov8n-seg.pt")
-model.train(
-    data="fish_seg.yaml",
-    epochs=100,
-    imgsz=640,
-    device="cuda",
-    project="runs/seg",
-    name="fish_v1",
-)
-
-# Pose
-model = YOLO("yolov8n-pose.pt")  # NOTE: kpt_shape mismatch — use yolov8n.pt instead
-# When kpt_shape differs from pretrained, start from detect weights:
-model = YOLO("yolov8n.pt")
-model.train(
-    data="fish_pose.yaml",  # kpt_shape: [6, 3] declared here
-    task="pose",
-    epochs=100,
-    imgsz=640,
-    device="cuda",
-    project="runs/pose",
-    name="fish_v1",
-)
-```
-
-**Important:** `yolov8n-pose.pt` has its pose head configured for 17 COCO keypoints. Training with `kpt_shape: [6, 3]` (6 keypoints) requires either (a) using a detection backbone as base (`yolov8n.pt`) or (b) accepting that the pretrained pose head weights will be discarded anyway since the head dimensions don't match. Use option (a): start from `yolov8n.pt` with `task="pose"`.
-
-### YOLOv8-pose vs YOLOv8-seg for Midline Extraction: Decision
-
-| Criterion | YOLOv8-seg backend | YOLOv8-pose backend |
-|-----------|-------------------|---------------------|
-| Label generation | Automatic from SAM2 contours | Requires skeletonizer pseudo-labels (noisier) |
-| Midline quality | Depends on skeletonize quality (same as current U-Net path) | Directly regresses ordered keypoints; smoother |
-| Per-point confidence | Derived from mask quality (no native confidence) | Native per-keypoint confidence; feeds weighted DLT |
-| Training data scale | Large (all SAM2 masks usable) | Medium (must filter to clean skeletonizer outputs) |
-| Complexity to integrate | Medium (instance matching + existing skeletonize reused) | Medium (instance matching + keypoint → Midline2D) |
-| **Recommended primary** | Secondary (useful for width profile) | **Primary** (better midline; native confidence) |
-
-**Recommendation:** YOLOv8-pose is the primary midline backend. YOLOv8-seg is the secondary backend (width profile extraction + fallback mask). Both should be implemented.
-
----
-
-## Competitor Feature Analysis
-
-| Feature | DeepLabCut + Anipose | SLEAP + 3D | AquaPose v2.2 | AquaPose v3.0 Target |
-|---------|---------------------|-----------|---------------|----------------------|
-| Segmentation | None (no masks) | None (no masks) | U-Net (IoU 0.623) | YOLOv8-seg (instance-aware) |
-| Midline extraction | Fixed anatomical keypoints (heatmap) | Fixed anatomical keypoints (heatmap) | Skeletonize + BFS | YOLOv8-pose keypoints (direct regression) |
-| Per-point confidence | Yes (heatmap peak) | Yes | No (v2.1), Yes (v2.2 custom head) | Yes (native YOLOv8-pose output) |
-| Training data prep | Label Studio / DLC GUI | SLEAP GUI labeler | Manual scripts | `aquapose train seg/pose` with pseudo-labels |
-| Multi-fish instance separation | Manual ID assignment | Manual ID assignment | U-Net per crop (no separation) | YOLOv8-seg instance-aware masks |
-| Refractive optics | No | No | Yes | Unchanged |
-| Training framework | TensorFlow (DeepLabCut) | TF/PyTorch | Custom PyTorch | Ultralytics (unified) |
+| Existing Component | Change Required | Scope |
+|-------------------|----------------|-------|
+| `evaluation/harness.py` | Reconstruction-specific logic migrates to reconstruction stage evaluator; harness becomes a thin orchestrator or is retired | MEDIUM refactor |
+| `evaluation/metrics.py` | Tier1/Tier2 types become reconstruction-stage metric types; add 4 new result types (one per remaining stage) | MEDIUM expansion |
+| `evaluation/output.py` | Generalize format functions to accept multi-stage metric dicts; extend JSON schema | MEDIUM expansion |
+| `engine/diagnostic_observer.py` | Add per-stage file emit on `StageComplete`; monolithic NPZ may be retained for backward compat or retired | MEDIUM refactor |
+| `engine/pipeline.py` | Accept optional initial `PipelineContext`; accept optional `stop_after: str` | LOW change |
+| `engine/config.py` | No change — sweep ranges live in evaluation module, not config | None |
+| `scripts/tune_association.py` | Migrate param grids and metric scoring into `evaluation/`; delete script | Migrate + delete |
+| `scripts/tune_threshold.py` | Migrate param grids and metric scoring into `evaluation/`; delete script | Migrate + delete |
+| `scripts/measure_baseline.py` | Migrate baseline measurement logic into `aquapose eval`; delete script | Migrate + delete |
 
 ---
 
 ## Sources
 
-- [Ultralytics YOLOv8 Instance Segmentation Task Docs](https://docs.ultralytics.com/tasks/segment/) — output format, model sizes, training (HIGH confidence — official docs)
-- [Ultralytics YOLOv8 Pose Estimation Task Docs](https://docs.ultralytics.com/tasks/pose/) — output format, kpt_shape, keypoint API (HIGH confidence — official docs)
-- [Ultralytics Pose Estimation Datasets Overview](https://docs.ultralytics.com/datasets/pose/) — kpt_shape YAML field, annotation format with visibility (HIGH confidence — official docs)
-- [Ultralytics Simple Utilities: convert_segment_masks_to_yolo_seg](https://docs.ultralytics.com/usage/simple-utilities/) — binary mask → YOLO seg format conversion (HIGH confidence — official docs)
-- [Ultralytics YOLOv8 vs YOLO11 Comparison](https://docs.ultralytics.com/compare/yolov8-vs-yolo11/) — YOLO11 is 22% faster, ~2% higher mAP, API-identical to YOLOv8 (HIGH confidence — official docs)
-- [Animal Pose Estimation: Fine-tuning YOLOv8 Pose Models — LearnOpenCV](https://learnopencv.com/animal-pose-estimation/) — custom kpt_shape for non-human subjects, animal pose training workflow (MEDIUM confidence — verified tutorial)
-- [Train Custom YOLOv8 Pose — Roboflow Blog](https://blog.roboflow.com/train-a-custom-yolov8-pose-estimation-model/) — custom keypoint annotation and training workflow (MEDIUM confidence)
-- [Improved YOLOv8-Pose for Albacore Tuna — MDPI Marine Science 2024](https://www.mdpi.com/2077-1312/12/5/784) — fish-domain validation; head/jaw/tail keypoints extracted via YOLOv8-pose (MEDIUM confidence — peer-reviewed, paywalled, fetched summary only)
-- [SAM segmentation masks to YOLO format — Ultralytics Discussion #6421](https://github.com/orgs/ultralytics/discussions/6421) — community pattern for SAM mask → YOLO seg conversion (MEDIUM confidence)
-- [YOLOv8 combined seg+pose community implementation](https://github.com/DmitryCS/yolov8_segment_pose) — joint seg+pose model exists but is not officially supported; cited as anti-feature rationale (LOW confidence — community project)
-- Existing codebase: `src/aquapose/reconstruction/midline.py`, `segmentation/training.py`, `core/pipeline_context.py`, `.planning/PROJECT.md` — authoritative for existing interfaces (HIGH confidence)
+- `.planning/PROJECT.md` — v3.1 state, v3.2 milestone definition, existing decisions (HIGH confidence — primary source)
+- `.planning/inbox/evaluation_and_tuning_system.md` — resolved design decisions, CLI design, caching strategy, cascade flow, stage-specific metric definitions (HIGH confidence — primary source)
+- `src/aquapose/evaluation/harness.py` — existing reconstruction eval implementation (HIGH confidence — direct code inspection)
+- `src/aquapose/evaluation/metrics.py` — Tier1/Tier2 metric result types and computation (HIGH confidence — direct code inspection)
+- `src/aquapose/engine/diagnostic_observer.py` — StageSnapshot structure, monolithic NPZ pattern (HIGH confidence — direct code inspection)
+- `src/aquapose/engine/pipeline.py` — PosePipeline architecture and single-pass execution model (HIGH confidence — direct code inspection)
+- CV pipeline evaluation patterns (stage-isolated sweeps, proxy metrics, cascade tuning) — established patterns in ML system design; analogous to sklearn Pipeline partial-fit patterns and MLflow sweep orchestration (MEDIUM confidence — domain knowledge, not externally verified for this codebase)
 
 ---
 
-*Feature research for: AquaPose v3.0 Ultralytics Unification — YOLOv8-seg and YOLOv8-pose as production backends*
-*Researched: 2026-03-01*
+*Feature research for: AquaPose v3.2 Evaluation Ecosystem — unified `aquapose eval` and `aquapose tune` CLI*
+*Researched: 2026-03-03*

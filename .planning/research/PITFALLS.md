@@ -793,3 +793,375 @@ Training infrastructure phase, before writing any training module code.
 ---
 *Pitfalls research for: v3.0 Ultralytics Unification (replacing U-Net segmentation and keypoint regression with YOLOv8-seg and YOLOv8-pose); v2.2 Backends; v1.0–v2.1 foundation*
 *Researched: 2026-02-28 (v2.2) / 2026-03-01 (v3.0 additions)*
+
+---
+
+## v3.2 Evaluation Ecosystem Pitfalls
+
+These pitfalls are specific to adding a unified evaluation and parameter tuning system (`aquapose eval`, `aquapose tune`) to the existing AquaPose pipeline. The primary risk sources are: pickle fragility when caching complex pipeline objects, proxy metrics that mislead rather than guide optimization, import boundary violations when adding a new orchestration layer, cache invalidation bugs in the sweep workflow, combinatorial explosion in grid search, frame selection bias, and NPZ migration hazards when splitting the monolithic diagnostic file.
+
+---
+
+### Pitfall C1: Pickle Cache Invalidation After Any Code Change
+
+**What goes wrong:**
+The tuning orchestrator caches upstream stage outputs (Detection, Tracking, Association, Midline) as pickle files so that downstream stage sweeps don't re-run the full pipeline per parameter combo. If the pickle cache is loaded after any change to the pickled classes — including renaming a field, adding a field with no default, changing a dataclass from mutable to frozen, or even importing from a different path — Python raises `AttributeError`, `TypeError`, or silent data corruption. The sweep machinery fails at load time with an obscure error rather than a clear "cache is stale" message.
+
+**Why it happens:**
+Pickle serializes the full Python object graph including class references and attribute names at the time of writing. The seed document explicitly acknowledges pickle's "no round-trip fidelity concerns since the pipeline code won't change mid-tuning session" — but this assumption fails the moment a developer iterates on core types during the same milestone. `Detection`, `Tracklet2D`, `TrackletGroup`, and `Midline2D` are actively developed dataclasses; any field addition or rename invalidates all cached pickles silently or noisily depending on the change.
+
+**How to avoid:**
+- Write a `cache_version` string into every pickle file (hash of the class definitions or a manually bumped version constant). On load, compare versions and raise a `StaleCacheError` with a clear message: "Tuning cache is stale — re-run baseline pipeline to refresh."
+- The cache loader must catch `(AttributeError, TypeError, ModuleNotFoundError)` on unpickle and convert them to `StaleCacheError` with actionable guidance, not raw tracebacks.
+- Store caches under a run-timestamped directory (not a fixed path), so re-running the baseline naturally creates a new cache without overwriting the old one.
+- Document clearly in `aquapose tune` help text: pickle caches are valid only for the session that created them and are discarded after tuning completes.
+
+**Warning signs:**
+- `AttributeError: 'Detection' object has no attribute 'X'` during sweep load (field added post-cache).
+- `TypeError: __init__() missing required argument` during sweep load (field added without default).
+- Sweep produces metrics inconsistent with what a fresh run produces (silent data corruption).
+
+**Phase to address:**
+Cache infrastructure phase — before any sweep logic is built. The `StaleCacheError` path must be tested explicitly with a unit test that writes a cache, modifies a dataclass field, and asserts the loader raises the right error.
+
+---
+
+### Pitfall C2: Import Boundary Violation When Adding Orchestrator Layer
+
+**What goes wrong:**
+The new `EvalRunner` and `TuningOrchestrator` classes live above `PosePipeline` in the call stack. Developers naturally reach into `core/` types (Detection, Tracklet2D, TrackletGroup, Midline2D, MidlineSet) from the orchestrator to interpret cached stage outputs. If the orchestrator lives in a new `aquapose.evaluation` package that is technically not `engine/`, it is easy to miss that importing `core/` types from `evaluation/` is fine, but importing `engine/` types (PipelineConfig, PosePipeline, observers) from `core/` would be a boundary violation. The more subtle risk is the reverse: placing orchestration logic that instantiates `PosePipeline` inside `core/` modules, which would cause core/ to import engine/.
+
+The AST-based import boundary checker currently enforces `core/ -> nothing from engine/ or cli/`. The evaluation package must be treated as a Layer 2 or Layer 3 module (above core/, alongside or above engine/), never as core/.
+
+**Why it happens:**
+The evaluation harness (`evaluation/harness.py`) already imports both `core/` and `engine/` modules — it is effectively a Layer 3 orchestrator. When expanding it to a full `EvalRunner`/`TuningOrchestrator`, the temptation is to colocate metric functions and orchestration logic in the same `evaluation/` package without thinking about where that package sits in the layer hierarchy. Metric functions (pure computation on numpy arrays) belong in Layer 1 (alongside core/), while orchestration (instantiating PosePipeline, loading config) belongs in Layer 3.
+
+**How to avoid:**
+- Treat `evaluation/metrics.py` (pure metric computation, no pipeline imports) as Layer 1 — it may NOT import `engine/`.
+- Treat `evaluation/harness.py`, `EvalRunner`, `TuningOrchestrator` as Layer 3 — they may import both `core/` and `engine/`.
+- Update the import boundary checker rule set to cover the evaluation package explicitly: `evaluation/metrics.py` and similar pure-computation files must not import `engine/`.
+- Run the boundary checker in CI on every commit, not just pre-push.
+
+**Warning signs:**
+- `import_boundary_checker.py` reports violations in `evaluation/metrics.py` or `evaluation/output.py` involving `engine/` imports.
+- Circular import error at runtime: `engine/pipeline.py` -> `evaluation/` -> `engine/config.py`.
+
+**Phase to address:**
+Evaluation package setup phase — before metric functions are written. Define the package's layer position in a module docstring and add a boundary checker rule before any imports are written.
+
+---
+
+### Pitfall C3: Proxy Metrics That Don't Correlate With Real Quality
+
+**What goes wrong:**
+Every stage-specific metric in this system is a proxy — there is no ground truth. Optimizing a proxy metric can improve the metric while degrading actual reconstruction quality. Specific failure modes:
+
+- **Association fish yield**: Increasing `ray_distance_threshold` allows looser cross-camera matching, increasing apparent yield while incorrectly merging distinct fish into one cluster. The yield metric rises, reconstruction becomes wrong.
+- **Midline smoothness**: A midline that is temporally smooth can be consistently wrong (e.g., always extracting the background instead of the fish). Smoothness measures consistency, not accuracy.
+- **Detection yield stability**: Stable detection counts (low frame-to-frame variance) can be achieved by a model that always detects the same background patches, not fish.
+- **Reconstruction reprojection error**: Can be minimized by rejecting most camera views as outliers (high inlier threshold), leaving only views that agree — but this reduces the effective triangulation baseline and increases 3D uncertainty.
+
+**Why it happens:**
+Proxy metrics are necessary in the absence of annotations, but they measure a single facet of quality. Developers run a sweep, see the metric improve, declare success, and move on without checking whether the downstream reconstruction improved commensurately. The modular architecture makes it easy to not check cross-stage effects.
+
+**How to avoid:**
+- Every stage sweep must include E2E validation (full pipeline + reconstruction metrics) for the top-N winners, not just stage-specific metrics. This is already in the design; it must be enforced in the code — the validation step must not be optional for production use.
+- For association sweeps: after selecting a winner by fish yield, manually inspect cluster assignments for a sample of frames. A 2-camera "cluster" where both cameras are at adjacent angles is a sign of over-grouping.
+- For reconstruction sweeps: track inlier count alongside reprojection error. If inlier count drops as error drops, the optimizer is excluding valid views, not actually improving.
+- Document metric limitations in the eval report output. Each metric should be annotated with its known failure mode.
+
+**Warning signs:**
+- Stage metric improves, E2E reprojection error does not improve or worsens.
+- Winning parameter expands a threshold (distance, angle) to an extreme value near the edge of the search grid.
+- Inlier ratio drops while reprojection error drops.
+
+**Phase to address:**
+Metric design phase and sweep validation phase. The E2E validation step must be mandatory (not a flag) in the `tune` CLI, and the final report must always include both stage-specific and E2E metrics side by side.
+
+---
+
+### Pitfall C4: Frame Selection Bias in Sweep Evaluation
+
+**What goes wrong:**
+The sweep evaluates each parameter combination on a fixed subset of frames selected from the available fixture data. If the selection is biased (e.g., always selecting the first N frames, or selecting frames that happen to have unusually high fish visibility), the winning parameters are tuned to that subset and may generalize poorly. The project already encountered this: early sweeps with `n_frames=15` sampled too few frames to detect that 2 of 9 fish were being systematically missed (documented in MEMORY.md).
+
+A subtler form occurs in cascade tuning: if the frame selection for the association sweep and the reconstruction sweep sample different frames (because the fixture changes between D0 and D1), the comparison between stages is confounded.
+
+**Why it happens:**
+`select_frames` currently samples uniformly from available frame indices. With 15 frames from a 1500-frame run, each sample represents 1% of the data — a single unusual batch of frames can dominate the metrics. The fix (bumping to n_frames=100) is documented but not yet enforced as a minimum.
+
+**How to avoid:**
+- Enforce a minimum `n_frames` for production sweeps (suggest 50 frames, recommend 100). Add a CLI warning if `--n-frames < 50`.
+- Use stratified sampling if temporal structure matters (e.g., sample 10 frames from each decile of the recording).
+- In cascade tuning, use the same frame indices across all stages within a cascade run. Pass the selected indices explicitly rather than re-sampling at each stage.
+- Document frame count impact in the final report: include the number of frames evaluated and flag when it is below the recommended minimum.
+
+**Warning signs:**
+- Sweep winner differs substantially from the baseline even though the parameter change seems small.
+- Running the same sweep twice with different random seeds produces different winners.
+- Fish count in the sweep results varies more than expected across parameter values (frame sampling noise dominating parameter effect).
+
+**Phase to address:**
+Frame selection design phase. The `select_frames` function should be upgraded to accept a `seed` parameter for reproducibility and a `min_frames` validation. This should happen before any sweep is built on top of it.
+
+---
+
+### Pitfall C5: Combinatorial Grid Search Explosion
+
+**What goes wrong:**
+Grid search over N parameters with K values each requires K^N pipeline runs (or K^N stage runs for stage-specific sweeps). Association has 5 tunable parameters; reconstruction has 4. A 5-parameter grid with 7 values each = 16,807 runs. Even a 2D joint grid (7x8 = 56 runs) at 3+ minutes per full pipeline run = 3+ hours. The existing `tune_association.py` already uses a 2D joint grid for the two most interactive parameters and sequential search for the rest — this is the right approach, but it must be carried forward and not regressed.
+
+The failure mode is adding a 3rd parameter to the joint grid (making it a 3D grid) or widening the value ranges without thinking about runtime consequences. Developers optimizing for "thoroughness" add more values, the sweep takes 8+ hours, and nobody runs it.
+
+**Why it happens:**
+Grid search is intuitive and easy to implement. The combinatorial cost is easy to underestimate when each individual run takes seconds to conceive but minutes to execute. The project currently runs on real data with a GPU; each full pipeline run is 3-5 minutes minimum.
+
+**How to avoid:**
+- Hard limit: joint grids cap at 2 parameters. Sequential (coordinate descent) search for remaining parameters.
+- Default sweep ranges must be small (3-7 values per parameter). Wider ranges require explicit `--range` CLI override.
+- Print estimated runtime before starting: `Estimated runtime: N combos x ~3 min/run = X hours. Proceed? [y/N]`.
+- The two-tier frame count design (fewer frames during sweep, more during validation) is essential — enforce that sweep-phase `n_frames` defaults to something fast (e.g., 30 frames).
+- For reconstruction sweeps specifically: reconstruction is fast (milliseconds per frame on GPU); the bottleneck is fixture generation. Since reconstruction sweeps re-use cached upstream data and only re-run Stage 5, they can use many more values safely.
+
+**Warning signs:**
+- A sweep has 3+ parameters in a joint grid.
+- Default value ranges have 10+ values.
+- Runtime estimate exceeds 4 hours on default settings.
+
+**Phase to address:**
+Sweep engine design phase. The sweep engine must compute and display runtime estimates before running. Default grids must be reviewed for runtime cost, not just parameter coverage.
+
+---
+
+### Pitfall C6: Pre-Populating PipelineContext With Wrong Types
+
+**What goes wrong:**
+The "resume from stage N" pattern requires pre-populating a `PipelineContext` with cached outputs from stages 1..N-1. `PipelineContext` fields are typed as generic stdlib types (`list`, `dict`) at the dataclass level, but downstream stages expect specific element types:
+- `context.detections`: `list[dict[str, list[Detection]]]`
+- `context.tracks_2d`: `dict[str, list[Tracklet2D]]`
+- `context.tracklet_groups`: `list[TrackletGroup]`
+- `context.annotated_detections`: `list[dict[str, list[AnnotatedDetection]]]`
+
+If the context loader deserializes from pickle and the types match, everything works. But if a developer constructs a context manually for testing (e.g., putting a `list[dict]` instead of `list[dict[str, list[Detection]]]`), the stage that consumes that field will silently get wrong data. Type errors surface at attribute access inside the stage (e.g., `detection.bbox`) rather than at context assignment, making the source of the error hard to trace.
+
+**Why it happens:**
+`PipelineContext` uses `list | None` and `dict | None` annotations (not generic parameterized types) to avoid importing core types into `context.py` (which lives in core/ and must not import specific stage types). This means the type checker cannot catch mismatched element types at the context assignment site.
+
+**How to avoid:**
+- The context loader (the function that reconstructs a PipelineContext from pickle) must be the only code path that populates context fields from cache. Never construct a pre-populated context manually in production code.
+- For the test suite: create a `build_test_context(stage: str)` fixture factory that returns correctly-typed synthetic data. This factory is the single source of truth for test context construction.
+- Add runtime validation in the context loader: after unpickling, check that `isinstance(context.detections[0], dict)` and that the dict values are lists with the expected element type. Raise `ContextTypeError` with field name and actual type if violated.
+
+**Warning signs:**
+- `AttributeError: 'dict' object has no attribute 'bbox'` inside a stage run (dict where Detection expected).
+- Stage completes without error but produces empty or wrong outputs (silent type mismatch).
+- Test that passes on correct fixture fails with confusing errors when context is hand-constructed.
+
+**Phase to address:**
+Context loader design phase. The loader's type validation must be tested with both correct and incorrect inputs before any sweep logic uses it.
+
+---
+
+### Pitfall C7: Monolithic NPZ Migration Breaks Existing Consumers
+
+**What goes wrong:**
+The existing diagnostic observer exports a single `pipeline_diagnostics.npz` file. The v3.2 design replaces this with per-stage files. Any code that reads `pipeline_diagnostics.npz` — including the existing `aquapose eval` harness, Jupyter notebooks for exploration, and the fixture loader — will break silently or noisily when the file disappears.
+
+The migration has two hazards:
+1. **Hard break**: Old run directories contain `pipeline_diagnostics.npz`; new code looks for per-stage files and finds nothing.
+2. **Silent partial read**: New code reads per-stage files; some stages are missing because the pipeline was stopped early (`stop_after`). Code that assumes all 5 stage files exist will fail or silently use stale data.
+
+**Why it happens:**
+Replacing a monolithic format with a structured one is a breaking change to the serialized output format. The existing codebase treats `pipeline_diagnostics.npz` as a stable artifact. The seed document acknowledges this but does not specify a migration strategy.
+
+**How to avoid:**
+- Implement a compatibility shim: if `pipeline_diagnostics.npz` exists in the run directory but per-stage files do not, the context loader reads from the monolithic file. Log a deprecation warning.
+- The per-stage file names must be well-defined constants (not constructed from strings inline). Define them in a single location: `evaluation/fixtures.py` or similar.
+- The context loader must handle missing stage files gracefully — `stop_after` runs legitimately lack downstream stage files.
+- Add an `aquapose migrate-run <run-dir>` subcommand that converts old monolithic NPZ to per-stage files, so existing run directories can be upgraded without re-running the pipeline.
+
+**Warning signs:**
+- `FileNotFoundError` for per-stage files in old run directories after upgrade.
+- `KeyError` when reading NPZ keys that have been renamed or restructured.
+- Silent empty metrics because per-stage file for an early-stopped run is missing and code defaults to empty arrays.
+
+**Phase to address:**
+Diagnostic file restructuring phase. The shim and the per-stage filename constants must be in place before any consumer code is migrated. Migrate consumers one at a time, testing each before moving to the next.
+
+---
+
+### Pitfall C8: Over-Tuning on the Sweep Dataset (Overfitting to a Recording)
+
+**What goes wrong:**
+All tuning is performed on a single recording (the YH project data). Parameters tuned on this recording — lighting conditions, fish behavior, tank geometry, water turbidity, specific camera positions — may not transfer to other recordings. This is the evaluation equivalent of overfitting. It is particularly acute for association parameters (which depend on ray geometry and camera arrangement) and reconstruction parameters (which depend on image quality and fish contrast).
+
+The current codebase has already experienced this: association defaults were kept (not tuned) because sweeps showed only ~1% yield improvement — a correct decision that could easily be rationalized away as "the sweep didn't converge" if the metric were noisier.
+
+**Why it happens:**
+The tuning system is designed for a single-recording, single-rig workflow. There is no cross-recording validation set. Developers trust the sweep results because they are quantitative.
+
+**How to avoid:**
+- Treat tuned parameter changes as hypotheses, not conclusions. For any parameter that deviates significantly from the default, manually inspect reconstructions on 10-20 frames to confirm the improvement is real.
+- Document the recording used for tuning in the config diff output ("tuned on YH/run_20260303..."). When parameters are used on a new recording, re-run the sweep on that recording's data.
+- Keep default grid ranges narrow (centered around the current default). Wide ranges suggest the developer is searching, not validating.
+- The final report must state explicitly: "These parameters were tuned on [recording name]. Re-tune for different rigs or recordings."
+
+**Warning signs:**
+- Winning parameters are at the extreme edge of the search grid (suggests the real optimum is outside the searched range, or the metric is noisy).
+- Winning parameters differ substantially from the manufacturer/domain defaults with no intuitive explanation.
+- Manual inspection shows reconstruction looks no better (or worse) despite metric improvement.
+
+**Phase to address:**
+Reporting design phase. The output report must include the recording identifier and a caveat about generalization. This is a documentation and UX concern, not a code correctness concern.
+
+---
+
+### Pitfall C9: TrackingStage's Non-Standard run() Signature Breaks Resume-From-Stage Logic
+
+**What goes wrong:**
+`TrackingStage` uses a different `run()` signature from all other stages:
+```python
+# Standard Stage protocol:
+def run(self, context: PipelineContext) -> PipelineContext: ...
+
+# TrackingStage:
+def run(self, context: PipelineContext, carry: CarryForward | None) -> tuple[PipelineContext, CarryForward]: ...
+```
+`PosePipeline.run()` has a special `isinstance(stage, TrackingStage)` branch to handle this. The "resume from stage N" pattern loads cached context and runs a truncated stage list starting from stage N. If the resume point is after tracking (stages 4 or 5), the carry forward state from the cached run must also be loaded and passed — it is not stored in PipelineContext, it is a separate `CarryForward` object.
+
+If a context loader loads only `PipelineContext` from the cache and ignores `CarryForward`, then a resume that happens to include TrackingStage (e.g., for a stage 2 sweep) will instantiate a fresh TrackingStage with no prior state — silently producing incorrect tracklets that don't match the cached upstream association data.
+
+**Why it happens:**
+`CarryForward` is an architectural exception to the "everything lives in PipelineContext" rule. It exists to persist OC-SORT state across batches, but tuning operates on fixed-length frame windows (not batches), so `CarryForward` is less relevant in the tuning context. Developers may assume `CarryForward` can be ignored for single-batch sweeps and discover this is wrong only when results are wrong.
+
+**How to avoid:**
+- The cache format for a full baseline run must include both `PipelineContext` and `CarryForward`. The context loader must restore both.
+- When the resume point is after TrackingStage (i.e., stages 3/4/5 sweeps), the `CarryForward` from the cached run must be passed to the truncated pipeline's `TrackingStage` if tracking is included in the truncated stage list.
+- Add an integration test: cache a full run, resume from stage 3 with the cached stage 1+2 outputs, verify that association outputs match the original full run.
+
+**Warning signs:**
+- Sweep yields different results than the cached baseline despite using identical parameters.
+- Association metrics show high singleton rates even for the baseline parameter combo when running from cache.
+
+**Phase to address:**
+Context loader design phase. The loader must explicitly handle CarryForward alongside PipelineContext. This must be verified with an integration test before any sweep relies on cached tracking output.
+
+---
+
+### Pitfall C10: Evaluating Only "evaluate only" Stages Produces False Confidence
+
+**What goes wrong:**
+The design marks Detection, Tracking, and Midline as "evaluate only" (no sweep capability). Evaluation metrics for these stages (detection yield, track length, midline completeness) give a numeric score but no lever to act on. A developer who runs `aquapose eval` and sees "detection yield: 0.72" knows something is wrong but cannot improve it without retraining or changing the camera setup. The eval report may create false confidence that the system is being managed when the actionable decisions (retrain, recalibrate) are outside the scope of this system.
+
+Additionally, "evaluate only" stages must still have their metrics tested — if the metric computation has a bug, the number is wrong but nothing fails. A metric that always returns a plausible value regardless of actual stage quality is worse than no metric.
+
+**Why it happens:**
+It is easy to write a metric function that returns a reasonable-looking number. Without ground truth, there is no oracle to check against. Unit tests for proxy metrics typically only check that the function runs without error and returns a number in the expected range, not that the number reflects reality.
+
+**How to avoid:**
+- For each "evaluate only" metric, write a test with a synthetic context where the correct answer is known: e.g., inject a context where 8 of 13 cameras detect a fish and verify detection yield = 8/13.
+- Distinguish clearly in the eval report between "actionable metrics" (association, reconstruction — can be improved by tuning) and "diagnostic metrics" (detection, tracking, midline — inform decisions outside this system).
+- Include in the report: "Detection yield is below 0.85. Possible causes: lighting change, detector needs retraining. Run `aquapose train yolo-obb` to retrain."
+- Do not surface "evaluate only" metrics with the same prominence as tunable metrics in the report.
+
+**Warning signs:**
+- Metric computation passes unit tests with no edge cases tested.
+- Metric reports a value that does not change across different configurations (metric is always returning a constant).
+- Eval report is read and filed away without triggering any action (metrics are not actionable).
+
+**Phase to address:**
+Metric implementation phase. Every metric function must have a unit test with a synthetic context where the expected value is analytically known. This is a testability requirement, not just a quality bar.
+
+---
+
+## v3.2 Technical Debt Patterns
+
+| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
+|----------|-------------------|----------------|-----------------|
+| Skip StaleCacheError, let AttributeError surface naturally | No error handling code to write | Confusing errors; developers re-run sweeps from scratch unnecessarily | Never — cost is low, benefit is high |
+| Use fixed frame indices (first N frames) instead of stratified sampling | Simple implementation | Systematic bias; parameters tuned to recording opening may not generalize | Only for quick exploratory runs with `--n-frames < 10`, explicitly flagged |
+| Report only stage-specific metric in sweep, skip E2E validation | Faster sweeps | Parameters that win stage metric but hurt reconstruction go undetected | Never for production tune runs; acceptable for exploratory debugging |
+| Hardcode sweep ranges inline in CLI commands | Avoids designing a DEFAULT_GRIDS structure | Ranges scattered across files; changing them requires touching CLI code | Never — DEFAULT_GRIDS in evaluator modules is the right design |
+| Keep monolithic NPZ and add per-stage reading | No migration needed | Monolithic file is loaded entirely even when only one stage is needed; migration never happens | Acceptable temporarily during transition if a shim is implemented |
+| Use `eval()` or string formatting to construct parameter override dicts | Quick for prototyping | Security risk in CLI context; brittle for parameter names with dots | Never — use dataclasses.replace() directly |
+
+---
+
+## v3.2 Integration Gotchas
+
+| Integration | Common Mistake | Correct Approach |
+|-------------|----------------|------------------|
+| PosePipeline with initial context | Passing a context pre-populated with data from a different pipeline version (different camera set, different frame range) | Context loader must validate camera_ids and frame_count against the new config before resuming |
+| DiagnosticObserver + per-stage files | DiagnosticObserver writes a snapshot after each StageComplete event — if a stage fails, later stages are not captured but the partial NPZ is still written | Context loader must check for a `pipeline_complete` sentinel key in per-stage files; partial files must be treated as invalid |
+| Frozen dataclass config + sweep overrides | Using `dataclasses.replace()` on a frozen config creates a new frozen object; passing the modified config to `build_stages()` works, but the run_id and output_dir will still be the same as the original config, causing all sweep runs to write to the same output directory | Each sweep combo must get a unique run_id (e.g., `run_id + "_sweep_" + param_hash`) and output_dir |
+| Click CLI + numeric parameter ranges | `--range min:max:step` parsed as a string then split; edge cases include negative values, scientific notation, and integer-vs-float distinction | Parse with explicit `np.arange(min, max+step, step)` after splitting; validate result is non-empty |
+| Evaluation harness + stop_after runs | `aquapose eval <run-dir>` on a run that used `stop_after=association` will have no midline or reconstruction data; eval code that unconditionally reads all stage files will fail | Check which per-stage files exist before evaluating; report metrics only for available stages |
+
+---
+
+## v3.2 Performance Traps
+
+| Trap | Symptoms | Prevention | When It Breaks |
+|------|----------|------------|----------------|
+| Full pipeline run per association combo | Sweep takes hours; GPU is utilized for all 5 stages when only stage 3 parameters change | Cache stages 1+2 outputs; run only stage 3 per combo | Immediately at >20 combos with 3-minute pipeline runtime |
+| Tier 2 leave-one-out during sweep (not just validation) | Sweep takes 13x longer (13 camera dropout iterations per frame per combo) | Always skip_tier2=True during sweep phase; only run Tier 2 for top-N validation | At >10 combos |
+| Unpickling large context objects for every sweep combo | Memory spikes; GC pressure; slow sweeps | Unpickle once at sweep start, keep in memory as the "cache object", copy or slice as needed | At >50 sweep combos with large frame counts |
+| Loading all per-stage files when eval targets one stage | I/O overhead for unused files | Lazy loading — open per-stage file only when the corresponding stage metric is requested | At runs with large per-stage files (association fixture can be hundreds of MB) |
+
+---
+
+## v3.2 "Looks Done But Isn't" Checklist
+
+- [ ] **Pickle cache**: verify StaleCacheError is raised (not AttributeError) when a dataclass field changes between cache write and load.
+- [ ] **Sweep E2E validation**: verify the validation step runs for top-N winners even when the stage-specific metric has already converged — it must not be short-circuited.
+- [ ] **Import boundaries**: run `tools/import_boundary_checker.py` on the new `evaluation/` package after adding orchestrator imports; verify no IB-001 violations.
+- [ ] **Frame selection seed**: verify that two runs of `aquapose tune` with the same arguments produce the same frame selection (reproducibility).
+- [ ] **Per-stage file migration shim**: verify that `aquapose eval` on an old run directory (monolithic NPZ, no per-stage files) produces a deprecation warning and correct metrics, not a FileNotFoundError.
+- [ ] **CarryForward in cache**: verify that a cached run's CarryForward is restored correctly and that resuming from stage 3 produces the same tracklet_groups as the original full run.
+- [ ] **Metric unit tests**: verify each of the 5 stage metric functions has at least one test with a synthetic context where the expected value is analytically known (not just "returns a number in range").
+- [ ] **Config diff in report**: verify the final report includes the parameter diff between baseline config and winning config in copy-pasteable YAML format.
+
+---
+
+## v3.2 Recovery Strategies
+
+| Pitfall | Recovery Cost | Recovery Steps |
+|---------|---------------|----------------|
+| Stale pickle cache | LOW | Delete the tuning work directory; re-run baseline pipeline to regenerate cache |
+| Import boundary violation | MEDIUM | Move the violating import to a wrapper in the correct layer; re-run boundary checker |
+| Proxy metric misleads tuning | MEDIUM | Manually inspect reconstructions for the "winning" parameters; revert config if inspection fails |
+| Frame selection bias | LOW | Re-run sweep with larger n_frames (100+) and different seed; compare winners |
+| Grid explosion (sweep takes 8+ hours) | MEDIUM | Kill sweep; reduce grid dimensions (remove 1 parameter from joint grid); restart |
+| Monolithic NPZ migration breaks consumers | MEDIUM | Implement compatibility shim reading old format; do not merge migration until shim is tested |
+| CarryForward not cached | HIGH | All swept association results are invalid (wrong tracklets); must re-run baseline and all sweep combos |
+
+---
+
+## v3.2 Pitfall-to-Phase Mapping
+
+| Pitfall | Prevention Phase | Verification |
+|---------|------------------|--------------|
+| C1: Pickle cache invalidation | Cache infrastructure design | Unit test: write cache, modify dataclass field, assert StaleCacheError on load |
+| C2: Import boundary violation | Evaluation package setup | `tools/import_boundary_checker.py` reports 0 violations on evaluation/ package |
+| C3: Proxy metric misleads | Metric design + sweep validation | Final report shows both stage-specific and E2E metrics; E2E step is not skippable |
+| C4: Frame selection bias | Frame selection design | `select_frames` accepts seed; min_frames validation; same indices used across cascade stages |
+| C5: Combinatorial explosion | Sweep engine design | Runtime estimate printed before sweep starts; default grids have ≤7 values per parameter |
+| C6: PipelineContext type mismatch | Context loader design | Loader runtime-validates element types; `build_test_context` fixture used in all tests |
+| C7: Monolithic NPZ migration | Diagnostic file restructuring | Compatibility shim tested on old run directory before any consumer is migrated |
+| C8: Over-tuning on one recording | Reporting design | Report states recording identifier; parameter diff is human-reviewable before applying |
+| C9: CarryForward ignored | Context loader design | Integration test: cached resume produces same tracklet_groups as full run |
+| C10: Evaluate-only metric bugs | Metric implementation | Every metric has synthetic test with analytically known expected value |
+
+---
+
+### v3.2 Sources
+
+- Direct codebase inspection: `src/aquapose/engine/pipeline.py`, `src/aquapose/core/context.py`, `src/aquapose/engine/diagnostic_observer.py`, `src/aquapose/evaluation/harness.py`, `scripts/tune_association.py`, `tools/import_boundary_checker.py`
+- Python pickle documentation (module docs, warning on class evolution): https://docs.python.org/3/library/pickle.html
+- Scikit-learn parameter tuning anti-patterns (proxy metric overfitting): https://scikit-learn.org/stable/common_pitfalls.html
+- MEMORY.md: n_frames=15 sampling artifact hid 2/9 fish — documented real-world frame selection bias
+- PROJECT.md: association sweep showed ~1% yield improvement — correct decision to not over-tune
+
+---
+*Pitfalls research for: v3.2 Evaluation Ecosystem (unified eval/tune CLI, per-stage proxy metrics, cascade tuning, partial pipeline execution)*
+*Researched: 2026-03-03*

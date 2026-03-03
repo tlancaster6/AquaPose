@@ -1,232 +1,195 @@
 # Project Research Summary
 
-**Project:** AquaPose v3.0 — Ultralytics Unification
-**Domain:** Multi-view 3D fish pose estimation — replacing custom segmentation and keypoint models with Ultralytics-native YOLO backends
-**Researched:** 2026-03-01
+**Project:** AquaPose v3.2 — Evaluation and Tuning Ecosystem
+**Domain:** Evaluation/parameter-tuning CLI for a 5-stage multi-view 3D fish pose estimation pipeline
+**Researched:** 2026-03-03
 **Confidence:** HIGH
 
 ## Executive Summary
 
-AquaPose v3.0 replaces two custom-trained models — a U-Net segmentor with IoU 0.623 and a custom keypoint regression head that underperformed even with augmentation — with Ultralytics-native YOLO11n-seg and YOLO11n-pose. The case for unification is compelling: `ultralytics>=8.1` is already in the dependency stack from v2.2, the training API is identical across detect/seg/pose tasks, no new pyproject.toml dependencies are required, and pretrained COCO backbone weights dramatically reduce the labeled data requirement for fine-tuning on fish. The primary deliverable is not a new capability — it is replacing fragile custom model infrastructure with a battle-tested unified training loop while improving model quality.
+AquaPose v3.2 adds a unified evaluation and parameter-tuning system to a pipeline that is working at the reconstruction level. The current state: reconstruction-only evaluation is spread across three standalone scripts (`tune_association.py`, `tune_threshold.py`, `measure_baseline.py`) with no unified CLI, no evaluation of the four non-reconstruction stages, and a DiagnosticObserver that writes a single monolithic NPZ file after the full pipeline completes. The research is grounded in a detailed resolved-design seed document plus direct codebase inspection of every component being modified — confidence is high across all four research areas.
 
-The recommended approach is a five-phase build order driven by data availability and inference pipeline dependencies. Data preparation tooling (SAM2 masks to YOLO polygon and pose label formats) must come first so model training can run as a long background process while pipeline integration proceeds in parallel. The architectural change is narrowly scoped: only `core/midline/backends/` and `segmentation/` are touched, with `Midline2D` and `AnnotatedDetection` contracts unchanged, meaning Stages 1, 2, 3, and 5 of the pipeline are entirely unaffected.
+The recommended approach is to build a four-phase orchestration layer above the existing PosePipeline without restructuring the pipeline itself. Two surgical changes to the engine layer enable everything else: extend `DiagnosticObserver` to write per-stage pickle caches on `StageComplete` events (replacing the monolithic NPZ as the evaluation data source), and add an `initial_context` parameter to `PosePipeline.run()` (a five-line change that allows the orchestrator to pre-populate upstream stage outputs). On top of these primitives, a new `evaluation/` module tree provides pure-function stage evaluators, a `ContextLoader`, an `EvalRunner`, and a `TuningOrchestrator`. The result is `aquapose eval <run-dir>` for multi-stage reporting and `aquapose tune --stage <name>` / `aquapose tune --cascade` for parameter optimization with a 10-50x speedup via upstream caching.
 
-The primary risks are data quality issues, not architecture. SAM2 masks produce multi-region polygons that must be cleaned before YOLO seg training. YOLO pose label coordinates must be in full-frame-normalized space, not crop space — a silent but catastrophic error if missed. The small dataset (~150 annotated frames) requires conservative training hyperparameters and a proper temporal train/val split to avoid memorization. All three of these risks have clear, implementable prevention strategies documented in PITFALLS.md.
-
----
+The primary architectural risk is correctness around shared context across sweep combos: if the same PipelineContext object is reused across parameter combinations, combo N's output silently contaminates combo N+1's input. The mitigation is to reconstruct from pickle caches for each combo (fast for numpy-backed types) rather than deep-copying (prohibitively slow for 13-camera frame buffers) or sharing (silently wrong). The secondary risk is scope creep — the seed document explicitly defers tracking/midline sweeps, Bayesian optimization, and cross-session cache reuse; those decisions should not be revisited until evaluation data identifies them as bottlenecks.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The stack requires no new dependencies. `ultralytics>=8.1` (current: 8.4.19) covers YOLO11 seg, YOLO11 pose, YOLO-OBB, and standard YOLO detection under a unified training API. YOLO11 (released September 2024) is the current recommended generation — it outperforms YOLOv8 at equal model size and uses identical annotation formats and training API calls.
+The v3.2 milestone introduces no new runtime dependencies. All components build on libraries already present: Python `dataclasses` (frozen), `pickle` (stdlib), `click` (existing CLI), and the existing `evaluation/` module infrastructure. The Ultralytics-based pipeline stack (YOLO11n-seg/pose for midline, YOLO-OBB for detection, OC-SORT for tracking, scipy/scikit-image for triangulation) is fully established from v3.0/v3.1 and is not modified in this milestone.
 
-**Core technologies:**
-- `ultralytics>=8.1`: All three model types (detect, seg, pose) — one library, one training API, no additional dependencies
-- `YOLO11n-seg.pt` (2.7M params): Instance segmentation replacing custom U-Net; pretrained COCO backbone; start nano and scale up only if val IoU < 0.80
-- `YOLO11n-pose.pt` (2.9M params): Keypoint midline backend replacing custom regression head; use `kpt_shape: [6, 3]` with visibility flags; start from detect backbone (`yolo11n.pt`) since kpt_shape differs from COCO pretrained pose head
-- `opencv-python>=4.8`: Mask-to-polygon contour extraction for annotation preparation (`cv2.findContours`, connected component filtering)
-- `scikit-image>=0.22`: Skeletonization pipeline reused unchanged in the YOLO-seg backend path; also generates keypoint pseudo-labels from masks via arc-length sampling
-- `scipy>=1.13`: Spline fitting and LM refinement in the reconstruction stage — completely unchanged
-
-**What does NOT change:** PyTorch version constraints (no longer pinned to 2.4.1), SAM2 pseudo-label pipeline (generates source masks converted to YOLO format), all reconstruction and tracking libraries, all other `pyproject.toml` entries.
-
-See `STACK.md` for full annotation format specifications, training configuration parameters, and model variant selection guidance.
+**Core technologies relevant to v3.2:**
+- `pickle` (stdlib): Per-stage cache serialization — chosen because it round-trips Python domain objects (Detection, Tracklet2D, TrackletGroup) without a custom serializer; safe because caches are session-scoped within the same process
+- `click` (already in stack): CLI subcommand groups for `aquapose eval` and `aquapose tune`; extends the existing `aquapose` Click group
+- Frozen `dataclasses` (stdlib): Metric result types (DetectionMetrics, TrackingMetrics, AssociationMetrics, MidlineMetrics, ReconstructionMetrics) — project decision, Pydantic explicitly out of scope per PROJECT.md
+- `copy.copy()` (stdlib): Shallow-copy of pre-populated PipelineContext for sweep combo isolation — safe because upstream stage outputs are immutable by convention (each stage writes a new field reference, never mutates upstream fields)
 
 ### Expected Features
 
-The milestone delivers swappable Ultralytics backends in MidlineStage (Stage 4) with a data preparation pipeline that converts existing SAM2 pseudo-labels to YOLO-native formats.
+**Must have (table stakes — v3.2 success criteria):**
+- `DiagnosticObserver` refactor: emit per-stage pickle files on each `StageComplete` — the prerequisite for everything else; replaces the monolithic NPZ as the evaluation data source
+- `ContextLoader`: deserialize per-stage pickle caches into a pre-populated `PipelineContext` for sweep combo isolation
+- `PosePipeline.run(initial_context=None)`: accept optional pre-populated context; enables stage-isolated re-execution without re-running upstream GPU stages
+- Per-stage metric evaluator functions for all 5 stages as pure functions with typed frozen dataclass results
+- `aquapose eval <run-dir>` CLI: multi-stage report with human-readable stdout and optional `--report json`
+- `aquapose tune --stage association`: grid sweep with two-tier frame counts, top-N validation, before/after comparison, config diff block
+- `aquapose tune --stage reconstruction`: same structure as association sweep
+- `aquapose tune --cascade`: sequences association sweep then reconstruction sweep, threads the association winner's run directory as the upstream cache for reconstruction, emits combined E2E delta report
+- Retire `scripts/tune_association.py`, `scripts/tune_threshold.py`, `scripts/measure_baseline.py` after CLI achieves feature parity
 
-**Must have (table stakes):**
-- `YOLOSegMidlineBackend` — YOLO seg inference on crop, binary mask output, feeds existing unchanged skeletonization path to `Midline2D`
-- `YOLOPoseMidlineBackend` — YOLO pose inference on crop, keypoints mapped to `Midline2D(points, confidences)` with native per-keypoint confidence
-- `convert_sam_masks_to_yolo_seg()` — batch conversion of SAM2 binary masks to YOLO polygon label files
-- `generate_pose_labels_from_masks()` — SAM2 mask → skeletonize → arc-length sample 6 points → YOLO pose label with visibility=2
-- `aquapose train yolo-seg` and `aquapose train yolo-pose` CLI subcommands using Ultralytics `model.train()` API
-- Dataset YAML files for both tasks with correct `nc`, `names`, and `kpt_shape: [6, 3]` for pose
-- `make_midline_backend()` factory updated with `"yolo_seg"` and `"yolo_pose"` branches
-- Instance matching utility: `match_detections_to_tracks()` using IoU between YOLO result boxes and tracked bounding boxes
+**Should have (add within milestone if time permits):**
+- `--stage <name>` filter on `aquapose eval` for focused single-stage debugging
+- `--param name --range min:max:step` CLI override for custom sweep ranges
 
-**Should have (differentiators):**
-- Instance-aware masks from YOLO-seg: separates overlapping fish that confused the U-Net crop approach
-- Native per-keypoint confidence from YOLO-pose: flows into existing confidence-weighted DLT triangulation without custom sigmoid head architecture
-- Pretrained COCO backbone weights: dramatically reduces labeled data requirement for fish fine-tuning
-- Single unified Ultralytics training API: eliminates custom training loop maintenance
-
-**Defer to v3.1+:**
-- YOLO11 upgrade from YOLOv8 (trivial API-compatible swap; validate v3.0 first; STACK.md recommends YOLO11 directly)
-- Joint seg+pose combined inference pass (not officially supported by Ultralytics)
-- Width profile extraction from YOLO-seg masks (useful but not blocking)
-- Pose label quality filtering by skeletonizer branch count (improves training data; add after label pipeline works)
-- Human annotation refinement of a keypoint subset
-
-**Anti-features to avoid:**
-- Running YOLO-seg on pre-cropped patches per-fish (defeats instance separation; run on crop but handle letterbox correctly)
-- Using COCO pretrained pose weights directly with custom kpt_shape (head architecture mismatch — use detect backbone as base)
-- Combining seg+pose into a single joint model (not supported by Ultralytics standard API)
-- Including camera e3v8250 (wide-angle overhead) in training data (established skip from v1.0)
+**Defer to v3.x / future:**
+- `aquapose tune --stage tracking` — add only if evaluation reveals tracking fragmentation as a bottleneck
+- `aquapose tune --stage midline` — add only if evaluation reveals midline completion rate as a bottleneck
+- Cross-session cache reuse with version tagging to detect stale caches
+- Parallel sweep execution across multiple GPU processes
+- Sweep results export to CSV/parquet
 
 ### Architecture Approach
 
-The 5-stage pipeline structure, PipelineContext accumulator, and all inter-stage data contracts (`Midline2D`, `AnnotatedDetection`, `Detection`) are completely unchanged. All changes are confined to `core/midline/backends/` (two new backend classes replacing two deleted ones), `segmentation/` (new `YOLOSegInferencer` class), `training/` (new prep and training wrapper modules), and three new fields in `MidlineConfig`. Stages 1, 2, 3, and 5 are unaffected.
+The new system adds an orchestration layer above the existing engine without restructuring PosePipeline or its stages. A new `evaluation/` module tree contains all new code: `runner.py` (EvalRunner), `tuning.py` (TuningOrchestrator), `context_loader.py` (ContextLoader), and a `stages/` subpackage with one pure-function evaluator per stage. Existing `evaluation/metrics.py`, `evaluation/output.py`, and `evaluation/harness.py` are extended or refactored as thin facades, not replaced. The import boundary rules enforced by the project's AST pre-commit checker are respected throughout: `core/` and `engine/` do not import from `evaluation/`; stage evaluators in `evaluation/stages/` have zero engine imports.
 
 **Major components:**
-
-1. `segmentation/yolo_seg.py` → `YOLOSegInferencer` — wraps Ultralytics YOLO-seg API; lives in `segmentation/` layer (same as `YOLODetector`) to respect AST-enforced import boundaries; loads model once at `__init__`; handles letterbox correction via `result.masks.xy` polygon output rather than raw `masks.data` (which is in padded inference space, not crop dimensions)
-
-2. `core/midline/backends/yolo_seg.py` → `YOLOSegBackend` — invokes `YOLOSegInferencer.segment_batch()`, then feeds mask to unchanged skeletonization pipeline (`_skeleton_and_widths`, `_longest_path_bfs`, `_resample_arc_length`, `_crop_to_frame`); replaces `SegmentThenExtractBackend`
-
-3. `core/midline/backends/yolo_pose.py` → `YOLOPoseBackend` — runs YOLO pose model on affine crop, extracts `(6, 3)` keypoint tensor (pixel coords in crop space), applies back-projection via existing `invert_affine_points()`, then feeds existing CubicSpline path; replaces `DirectPoseBackend`
-
-4. `training/prep_seg.py` and `training/prep_pose.py` — annotation conversion scripts; SAM2 binary masks → YOLO polygon labels (seg), SAM2 masks → skeletonize → 6-keypoint YOLO pose labels (pose)
-
-5. `training/yolo_seg.py` and `training/yolo_pose.py` — thin wrappers calling `ultralytics.YOLO(...).train()`; follow exact pattern of existing `training/yolo_obb.py`
-
-**Deletion targets (only after integration tests pass):** `_UNet`, `UNetSegmentor`, `BinaryMaskDataset`, `train_unet()`, `_PoseModel`, `_KeypointHead`, `train_pose()`, `SegmentThenExtractBackend`, `DirectPoseBackend` — and legacy `MidlineConfig` fields `weights_path`, `keypoint_weights_path`, `n_keypoints`, `keypoint_t_values`, `keypoint_confidence_floor`, `min_observed_keypoints`.
-
-**Critical architectural constraint:** The AST-based import boundary checker (enforced via pre-commit hook) prohibits `core/` from importing `engine/`. Backend classes must receive config values as primitives from `MidlineStage.__init__`, never importing `MidlineConfig` directly.
+1. `EvalRunner` (`evaluation/runner.py`) — read-only; loads per-stage pickle files from a run directory, invokes stage evaluators, formats multi-stage report; no pipeline execution
+2. `TuningOrchestrator` (`evaluation/tuning.py`) — manages sweep loop, session-scoped cache directory, top-N validation, cascade sequencing; calls PosePipeline as a black box N times with independent observer and context per combo
+3. `ContextLoader` (`evaluation/context_loader.py`) — isolated pickle deserializer; the only module touching pickle round-trips; loads upstream stages into a fresh PipelineContext for each sweep combo
+4. Stage evaluators (`evaluation/stages/*.py`) — five pure functions mapping StageSnapshot to typed metric dataclasses; `DEFAULT_GRIDS` for tunable stages (association, reconstruction) colocated in same module as their evaluator
+5. `DiagnosticObserver` (modified) — writes `diagnostics/<stage>_cache.pkl` on each `StageComplete`; retains existing in-memory `self.stages` dict and `midline_fixtures.npz` write on `PipelineComplete`
+6. `PosePipeline.run()` (minimally modified) — gains `initial_context: PipelineContext | None = None`; one conditional replaces the bare `PipelineContext()` constructor call
 
 ### Critical Pitfalls
 
-The pitfall file covers three tiers: v3.0-specific (B-series), v2.2-era integration (A-series), and v1.0/v2.0/v2.1 foundation pitfalls. The top pitfalls for this milestone are:
+The PITFALLS.md covers v3.0 Ultralytics Unification pitfalls (training data annotation format, model integration) and v2.2 OBB/keypoint integration pitfalls — both resolved concerns for the v3.1-complete codebase. The following are the critical pitfalls for the v3.2 Evaluation Ecosystem milestone, derived from architecture and feature research:
 
-1. **SAM2 multi-region masks produce invalid YOLO seg annotations (B1)** — SAM2 frequently generates disconnected mask regions for a single fish (especially low-contrast females). Naive `cv2.findContours` produces multiple polygons, which Ultralytics treats as multiple fish instances. Prevention: apply morphological closing before contour extraction; if still multi-region, keep only largest contour and log discarded area fraction; run Ultralytics dataset checker before any training begins.
+1. **Shared mutable context across sweep combos** — reusing the same PipelineContext object across sweep combos causes combo N's output to contaminate combo N+1's input silently; no exception is raised, metrics are just wrong. Prevention: `ContextLoader.load()` always constructs a fresh PipelineContext by deserializing from per-stage pickle files for each combo; never pass the same context reference to consecutive pipeline runs.
 
-2. **YOLO pose keypoints must be normalized to FULL IMAGE, not crop space (B2)** — The existing codebase is crop-centric; writing keypoints relative to the crop image causes the model to learn that all fish have keypoints in the top-left corner. Prevention: always back-project crop-space coordinates to frame space before normalization (`frame_x = crop_x1 + kp_x_in_crop`); add sanity check that all normalized coordinates are in [0, 1]; run training for 2–3 epochs and visualize predictions.
+2. **Deep-copying PipelineContext for each sweep combo** — PipelineContext fields contain large numpy arrays (per-frame detections across 13 cameras, potentially thousands of frames); deep copy per combo makes sweeps prohibitively slow. Prevention: shallow copy is safe because stage outputs are immutable by convention. Use `copy.copy()`, never `copy.deepcopy()`.
 
-3. **YOLO-seg masks.data is in letterboxed space for non-square crops (B4)** — `result.masks.data` shape is `(N, 640, 640)` when inference runs on any crop at default `imgsz=640`; naive resize to crop dimensions produces the wrong mask placement. Prevention: use `result.masks.xy` (polygon coordinates already scaled to original image space) then rasterize with `cv2.fillPoly` to get binary mask in crop dimensions.
+3. **Stage evaluators importing from `engine/`** — importing PipelineConfig or stage builder functions inside a stage evaluator creates circular import risk and forces engine instantiation to test a pure metric calculation. Prevention: all pipeline configuration needed by an evaluator (e.g., `n_animals` for association yield ratio) is passed as an explicit function parameter; evaluators have zero engine imports. The import boundary checker may need a new rule (SR-003) to enforce this automatically.
 
-4. **Small dataset overfitting with Ultralytics default hyperparameters (B6)** — Default Ultralytics settings are tuned for COCO-scale datasets. With ~150 annotated frames, mosaic creates memorized image pairs; closing mosaic in the last 10 epochs removes the primary augmentation at convergence. Prevention: `close_mosaic=0`, `lr0=0.001`, `freeze=10` for first epochs, temporal train/val split (not random), start from pretrained COCO backbone.
+4. **Monolithic pickle replacing the monolithic NPZ** — writing the entire PipelineContext as one pickle file after pipeline completion repeats the current NPZ problem: loading one stage's output requires loading all data. Prevention: per-stage pickle files, one per `StageComplete` event; a reconstruction sweep only needs to load association and midline caches, not re-read detection data across 13 cameras.
 
-5. **Breaking the existing working YOLO detection model (B7)** — Adding new training runs may overwrite existing detection weights via `project/name` collision, or an `ultralytics` version upgrade may break the detection inference API. Prevention: use distinct `project/name` for seg and pose training runs; pin Ultralytics version before adding new training code; run detection pipeline smoke test after any new Ultralytics code is added.
-
----
+5. **Implicit cascade config mutation** — applying association winner params directly to the user's `config.yaml` mid-cascade would mutate a file the user expects to control and break auditability. Prevention: the cascade orchestrator manages config propagation internally during the session only; final output is a printed config diff block the researcher applies manually.
 
 ## Implications for Roadmap
 
-Based on combined research, a five-phase build order is recommended, driven by data availability constraints and dependency ordering. The overarching principle: start training data preparation and kick off model training as early as possible (training takes hours to days) while pipeline integration proceeds in parallel.
+Based on combined research, the ARCHITECTURE.md's suggested five-phase build order is well-justified by dependency analysis and should be used as the phase structure directly. Each phase produces working, testable code before the next phase begins.
 
-### Phase 1: Annotation Conversion Tooling
+### Phase 1: Engine Primitives — Per-Stage Pickle Caching and Pre-Populated Context
 
-**Rationale:** Training cannot begin without data in YOLO format. These scripts have zero dependency on pipeline code — they operate only on SAM2 masks and reconstruction utilities already in the codebase. Completing this phase and immediately kicking off model training maximizes the overlap between background training time and pipeline integration work.
+**Rationale:** Every other component depends on either (a) per-stage pickle files existing in the run directory or (b) PosePipeline accepting a pre-populated context. These are internal capabilities with no user-facing surface — they can be built, tested, and verified before any CLI work begins. Building them first eliminates the risk of discovering a compatibility issue after the orchestrator is already written.
 
-**Delivers:** `training/prep_seg.py` (masks → YOLO polygon labels), `training/prep_pose.py` (masks → skeletonize → YOLO pose labels), dataset YAML files for both tasks, `aquapose prep-seg` and `aquapose prep-pose` CLI subcommands, visual spot-check of 20+ converted labels.
+**Delivers:** Modified `DiagnosticObserver` writing `diagnostics/<stage>_cache.pkl` after each stage completes; modified `PosePipeline.run(initial_context=None)` (five-line change); unit tests for both; `aquapose run --mode diagnostic` produces per-stage cache files alongside existing outputs.
 
-**Addresses features:** Seg polygon label generation (P1), Pose keypoint label generation (P1), Dataset YAMLs (P1)
+**Addresses:** Per-stage diagnostic files (table stakes prerequisite); PosePipeline pre-populated context support (table stakes prerequisite)
 
-**Avoids pitfalls:** B1 (SAM2 multi-region polygon cleaning), B2 (full-frame normalization for pose labels), B3 (kpt_shape in YAML), B8 (polygon point count validation)
+**Avoids:** Pitfall 4 (monolithic pickle design); pitfall 1 (shared mutable context — foundation for correct isolation)
 
-**Research flag:** LOW — patterns are well-documented; implementation risk is data quality, not API uncertainty.
+### Phase 2: Evaluation Primitives — ContextLoader and Stage Evaluators
 
-### Phase 2: Training Wrappers and Model Training
+**Rationale:** Stage evaluators and ContextLoader have no CLI or TuningOrchestrator dependencies. They can be built and unit-tested with synthetic StageSnapshot data in complete isolation. Building them before the CLI ensures metric logic is solid before wiring to user-facing output. ContextLoader integration testing uses the pickle files produced in Phase 1.
 
-**Rationale:** Thin wrappers over `ultralytics.YOLO(...).train()` following the established `training/yolo_obb.py` precedent. Can be built and training kicked off while Phase 3 (inference backends) proceeds. Background training runs for hours; all subsequent phases can proceed without waiting.
+**Delivers:** `evaluation/context_loader.py`; `evaluation/stages/detection.py`, `tracking.py`, `midline.py` (evaluate-only, no DEFAULT_GRIDS); `evaluation/stages/association.py` and `reconstruction.py` with DEFAULT_GRIDS (migrating sweep ranges from standalone scripts); all five metric dataclasses added to `evaluation/metrics.py`; unit tests with synthetic StageSnapshot data; ContextLoader integration test.
 
-**Delivers:** `training/yolo_seg.py` (`train_yolo_seg()`), `training/yolo_pose.py` (`train_yolo_pose()`), `aquapose train yolo-seg` and `aquapose train yolo-pose` CLI subcommands, first `best.pt` weights for seg and pose.
+**Addresses:** Per-stage metric evaluators for all 5 stages; DEFAULT_GRIDS colocated with evaluators; migration of param grids from standalone scripts
 
-**Uses:** `ultralytics.YOLO.train()` unified API, `training/yolo_obb.py` as the direct pattern template
+**Avoids:** Pitfall 3 (stage evaluators importing from engine/); pitfall 2 (deep-copying context — ContextLoader design uses shallow copy)
 
-**Avoids pitfalls:** B6 (small dataset hyperparameters: `close_mosaic=0`, `lr0=0.001`, `freeze=10`), B7 (distinct project/name for each model type; detection smoke test after adding any training code)
+### Phase 3: EvalRunner and `aquapose eval` CLI
 
-**Research flag:** LOW — direct precedent in codebase (`yolo_obb.py`); well-documented Ultralytics API.
+**Rationale:** EvalRunner assembles Phase 2 components into the first user-observable output and validates the complete read-path (pickle files → evaluators → formatted report) before the write-path (TuningOrchestrator) is built. Retiring `measure_baseline.py` at this phase confirms migration approach before the heavier tuning work begins.
 
-### Phase 3: Inference Backends
+**Delivers:** `evaluation/runner.py` (EvalRunner); extended `evaluation/output.py` with multi-stage report formatter and sweep table formatter; `aquapose eval <run-dir>` CLI subcommand with `--report json` flag; integration test (pipeline in diagnostic mode → `aquapose eval` → verify report structure); retire `scripts/measure_baseline.py`.
 
-**Rationale:** Backends can be developed and unit-tested against pre-trained COCO weights (`yolo11n-seg.pt`, `yolo11n-pose.pt`) before fish-specific model training completes. Does not block on Phases 1 or 2 completion. The most architecturally sensitive phase because it touches import boundaries.
+**Addresses:** `aquapose eval` CLI (table stakes); human-readable stdout report; JSON output; retire `measure_baseline.py`
 
-**Delivers:** `segmentation/yolo_seg.py` (`YOLOSegInferencer`), `core/midline/backends/yolo_seg.py` (`YOLOSegBackend`), `core/midline/backends/yolo_pose.py` (`YOLOPoseBackend`), `match_detections_to_tracks()` utility (shared between both backends), updated `get_backend()` registry, unit tests for both backends with mock models.
+**Avoids:** Scope creep into tuning before eval is independently verified
 
-**Implements:** `YOLOSegInferencer` in `segmentation/` layer, both backends in `core/midline/backends/`, factory registry pattern, lazy import pattern for Ultralytics (inside `__init__`), eager model loading at init.
+### Phase 4: TuningOrchestrator and `aquapose tune` CLI
 
-**Avoids pitfalls:** B4 (letterbox mask space — use `masks.xy` not `masks.data`), B5 (YOLO pose keypoints are in crop space — apply `invert_affine_points()` before `Midline2D` construction), AP0 / CLAUDE.md (CUDA tensor → always `.cpu().numpy()` immediately after Ultralytics result access)
+**Rationale:** TuningOrchestrator is the most complex component and depends on all prior phases. Building it last means it can be tested against real pipeline outputs from the start. The cascade feature requires both single-stage sweeps to be independently working and testable before the cascade orchestrator is wired.
 
-**Research flag:** MEDIUM — the letterbox mask issue (B4) is a non-obvious Ultralytics behavior that must be explicitly tested; instance matching threshold tuning is empirical; import boundary constraints are project-specific and require care. Recommend verifying `result.masks.xy` behavior against current Ultralytics version before finalizing backend implementation.
+**Delivers:** `evaluation/tuning.py` (TuningOrchestrator with `sweep_stage` and `cascade` methods); `aquapose tune --stage association` and `--stage reconstruction` CLI subcommands; `aquapose tune --cascade`; before/after metric comparison and config diff block in all tune output; two-tier frame counts (`--n-frames`, `--n-frames-validate`); top-N validation (full pipeline for sweep winners); retire `scripts/tune_association.py` and `scripts/tune_threshold.py`.
 
-### Phase 4: Config Wiring and Integration Test
+**Addresses:** `aquapose tune` CLI (table stakes); stage-isolated parameter sweep (critical efficiency feature delivering 10-50x speedup); two-tier frame counts; top-N validation; cascade tuning; retire standalone tuning scripts
 
-**Rationale:** Backends exist; now wire them into the config system and validate end-to-end. Integration test must pass before any deletion begins. Config changes follow the existing `weights_path` pattern exactly.
+**Avoids:** Pitfall 1 (shared mutable context — ContextLoader.load() called fresh for each combo); pitfall 5 (implicit cascade mutation — config diff block only, no file mutation)
 
-**Delivers:** Three new fields in `MidlineConfig` (`yolo_seg_model_path`, `yolo_pose_model_path`, `yolo_imgsz`), updated `build_stages()` in `engine/pipeline.py`, updated `load_config()` path resolution, integration test running the full pipeline with `backend: "yolo_seg"` using COCO weights on a synthetic frame.
+### Phase 5: Cleanup and Deprecation
 
-**Avoids pitfalls:** AP0 (import boundary — `MidlineStage` passes primitives to backends, never passes `MidlineConfig` object itself)
+**Rationale:** Housekeeping that should not block feature work but should not be skipped. The monolithic NPZ deprecation is gated on all prior phases passing, ensuring no backward compat regression from premature removal. Refactoring `harness.py` as a facade locks in the clean architecture for future milestones.
 
-**Research flag:** LOW — config wiring follows exact existing pattern for `weights_path` field; integration test pattern established from prior phases.
+**Delivers:** Removed automatic write of `pipeline_diagnostics.npz` from DiagnosticObserver (public `export_pipeline_diagnostics()` method retained for backward compat); `evaluation/harness.py` refactored as thin facade delegating to `evaluation/stages/reconstruction.py`; updated CLAUDE.md CLI command table and architecture section.
 
-### Phase 5: Deletion Pass
-
-**Rationale:** Only after Phases 1–4 pass integration tests. Both old and new backends coexist during validation (selected via `backend` field in config); deletion removes the fallback. Deleting before validation leaves the pipeline broken with no fallback if issues arise.
-
-**Delivers:** Deleted custom model code (`_UNet`, `UNetSegmentor`, `BinaryMaskDataset`, `train_unet()`, `_PoseModel`, `_KeypointHead`, `train_pose()`), deleted old backends (`SegmentThenExtractBackend`, `DirectPoseBackend`), removed legacy `MidlineConfig` fields, full test suite passing.
-
-**Research flag:** LOW — deletion is mechanical; the only risk is incomplete test coverage of deleted code, which should be resolved in Phase 3 unit tests.
+**Addresses:** Technical debt cleanup; consistent internal architecture for future evaluation milestones
 
 ### Phase Ordering Rationale
 
-- Data preparation comes first because model training takes hours and must run in the background — delaying it by even one phase adds direct clock time to the milestone.
-- Training wrappers (Phase 2) and inference backends (Phase 3) are independent of each other; they can proceed concurrently if capacity allows.
-- Integration test (Phase 4) gates the deletion pass (Phase 5) — no deletion before end-to-end validation.
-- Old backends remain selectable via config throughout Phases 1–4, which means a failing Phase 3 or 4 does not break production runs.
+- **Phases 1 and 2 are strictly prerequisite** to Phases 3 and 4: CLI subcommands have nothing to read or run until pickle caches exist and evaluator functions exist.
+- **Phase 3 before Phase 4** ensures the read-path (EvalRunner) is independently validated before the write-path (TuningOrchestrator) is built; retiring one script in Phase 3 confirms migration approach before the harder migration.
+- **Phase 5 last** because deprecating the monolithic NPZ before Phase 3 integration tests pass could break those tests; deprecation is safe only after the full new pipeline is verified end-to-end.
+- **Feature dependency chain from FEATURES.md confirms this order:** per-stage diagnostic files → ContextLoader → stage-isolated sweep → `aquapose tune`; `aquapose eval` → retire `measure_baseline.py`.
 
 ### Research Flags
 
-Phases likely needing deeper research during planning:
+Phases with well-documented patterns (skip research-phase, implement directly):
+- **Phase 1:** Surgical changes to two engine components with exact code examples in ARCHITECTURE.md — the specific line to change in `pipeline.py` and the exact DiagnosticObserver handler are already specified.
+- **Phase 2:** Pure function evaluators and ContextLoader are data transformations; association and reconstruction metric definitions are migrated from existing scripts; detection/tracking/midline metric definitions are fully specified in FEATURES.md.
+- **Phase 3:** EvalRunner and Click extension follow established patterns already in the codebase; `format_summary_table()` and `write_regression_json()` extension paths are specified in ARCHITECTURE.md.
+- **Phase 5:** Deprecation and documentation; no novel design decisions.
 
-- **Phase 3 (Inference Backends):** The YOLO-seg letterbox mask correction (B4) and YOLO-pose crop-to-frame back-projection (B5) are implementation-sensitive; the exact API behavior of `result.masks.xy` vs `result.masks.data` should be verified against the current Ultralytics version during implementation.
-- **Phase 3 (Instance Matching):** `match_detections_to_tracks()` is a new utility with no existing precedent in the codebase; IoU threshold (default 0.3) may need adjustment for fish in crowded schools.
-
-Phases with standard patterns (skip research-phase):
-
-- **Phase 1 (Annotation Conversion):** `cv2.findContours` → polygon normalization is well-understood; the SAM2 multi-region handling adds complexity but has a clear implementation.
-- **Phase 2 (Training Wrappers):** Direct precedent in `training/yolo_obb.py`; Ultralytics training API is stable and documented.
-- **Phase 4 (Config Wiring):** Follows exact existing pattern for `weights_path` field.
-- **Phase 5 (Deletion):** Mechanical cleanup after validation.
-
----
+Phases that may benefit from a targeted pre-implementation sketch during planning:
+- **Phase 4 (TuningOrchestrator):** The cascade orchestrator's internal config propagation (threading D1 as the upstream cache for reconstruction sweep) and the two-tier frame count logic have the most moving parts. A brief implementation sketch before coding would reduce risk of context contamination bugs. The seed document specifies the design but the implementation details around `work_dir` management and `copy.copy()` timing warrant explicit pre-planning.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Ultralytics official docs verified; no new dependencies; version constraint already satisfied; YOLO11 API confirmed identical to YOLOv8 |
-| Features | HIGH | Ultralytics official docs verified; codebase read directly for interface contracts; fish-domain keypoint studies cited |
-| Architecture | HIGH | Existing codebase read directly; import boundaries verified against AST hook; all data contracts confirmed unchanged |
-| Pitfalls | HIGH | Codebase inspected for all integration points; Ultralytics GitHub issues cross-referenced for letterbox behavior, kpt_shape handling, and version upgrade risks |
+| Stack | HIGH | Zero new dependencies; all technologies are already in the codebase and working; no version constraints introduced |
+| Features | HIGH | Grounded in a detailed resolved-design seed document plus direct inspection of every component being modified; feature boundaries explicitly specified including anti-features and deferral rationale |
+| Architecture | HIGH | Based on direct inspection of every component being modified; component contracts, data flow diagrams, and code examples with specific line numbers are all specified in ARCHITECTURE.md |
+| Pitfalls | MEDIUM | PITFALLS.md covers v3.0/v2.2 risks (now historical for v3.1-complete codebase); v3.2-specific pitfalls derived from architecture analysis; the five identified risks are structurally sound but not cross-validated against documented precedents in analogous systems |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Instance matching threshold calibration:** The `match_detections_to_tracks()` IoU threshold (default 0.3) is a reasonable starting point but is unvalidated for the 9-fish cichlid school scenario where fish bounding boxes may overlap. Tune empirically after Phase 3 integration test.
+- **v3.2-specific pitfall completeness:** The five pitfalls identified for this milestone are derived from architecture analysis. They are well-reasoned but would benefit from a review of analogous sweep orchestration patterns (sklearn Pipeline, MLflow sweep runs) to confirm no edge cases were missed. Low urgency — mitigations are already specified.
 
-- **Pose pseudo-label quality ceiling:** YOLO-pose model accuracy is bounded by the quality of skeletonizer-derived pseudo-labels. The skeletonizer on noisy SAM2 masks has known failure modes (multi-branch skeletons, disconnected arcs). A post-Phase-2 quality audit (filter labels by skeleton branch count) is recommended before committing to a final training run.
+- **Association DEFAULT_GRIDS calibration:** Sweep ranges in `evaluation/stages/association.py` are migrated from `scripts/tune_association.py`. These ranges should be verified against the YH project's known-good parameter neighborhood before the first tuning run, to confirm the grid covers the optimal region. Validation step, not a design gap.
 
-- **`yolo_imgsz` tuning for crop inference:** Default `imgsz=640` may be unnecessarily large for ~256x128 fish crops; `imgsz=256` or `imgsz=320` likely sufficient and halves inference time. Tune empirically after backends are integrated.
-
-- **Female fish mask quality:** Low-contrast females were already a known challenge for U-Net. YOLO-seg with pretrained COCO backbone may handle this better, but is unvalidated. If YOLO-seg fails on females, increase `hsv_v=0.6` in training augmentation config (no albumentations — Ultralytics built-in augmentation covers this).
-
----
+- **`stop_after` field confirmation:** ARCHITECTURE.md states `stop_after` is already present in `PipelineConfig`; this should be confirmed at the start of Phase 4 planning to determine whether TuningOrchestrator can use it directly for upstream-only pipeline runs or whether additional logic is needed.
 
 ## Sources
 
 ### Primary (HIGH confidence)
 
-- Ultralytics official documentation — seg task, pose task, dataset formats, training config, model variant comparison: https://docs.ultralytics.com/
-- Ultralytics GitHub releases — version 8.4.19 (2026-02-28): https://github.com/ultralytics/ultralytics/releases
-- Ultralytics GitHub issues — letterbox mask behavior (#4796), kpt_shape requirements (#1970), SAM2 mask conversion (#15380), OBB angle conventions (#13003, #16235)
-- Existing codebase (read directly): `core/midline/stage.py`, `core/midline/backends/`, `segmentation/model.py`, `training/`, `engine/config.py`, `core/detection/backends/`
+- `.planning/inbox/evaluation_and_tuning_system.md` — resolved design seed document; CLI design, caching strategy, cascade flow, stage-specific metric definitions, anti-feature rationale (HIGH — primary design authority)
+- `.planning/PROJECT.md` — v3.1 completion state, v3.2 milestone definition, existing decisions table
+- `src/aquapose/evaluation/harness.py` — existing reconstruction eval implementation; migration target
+- `src/aquapose/evaluation/metrics.py` — existing Tier1Result, Tier2Result, select_frames
+- `src/aquapose/evaluation/output.py` — existing ASCII and JSON report formatters
+- `src/aquapose/engine/pipeline.py` — current PosePipeline.run() implementation; specific change point identified
+- `src/aquapose/engine/diagnostic_observer.py` — current snapshot capture and monolithic NPZ export; modification target
+- `src/aquapose/core/context.py` — PipelineContext and CarryForward contracts
+- `src/aquapose/cli.py` — existing Click group structure; extension point
+- `src/aquapose/engine/config.py` — PipelineConfig and stop_after field
+- `tools/import_boundary_checker.py` — import boundary rules IB-001 through SR-002
+- `scripts/tune_association.py` — sweep ranges and scoring logic to migrate
 
 ### Secondary (MEDIUM confidence)
 
-- LearnOpenCV — animal pose estimation with YOLOv8: custom kpt_shape for non-human subjects, training workflow
-- Roboflow Blog — custom YOLOv8 pose training workflow with annotated examples
-- MDPI Marine Science 2024 — fish-domain YOLOv8-pose validation (albacore tuna, head/jaw/tail keypoints)
-- Ultralytics community discussions — SAM2 mask → YOLO seg format conversion patterns
+- Full `src/aquapose/` codebase — pipeline architecture, stage interface contracts, type system
+- CV pipeline evaluation patterns — stage-isolated sweeps, proxy metrics without ground truth, cascade tuning; analogous to sklearn Pipeline partial-fit patterns and MLflow sweep orchestration (domain knowledge, not externally verified for this codebase)
 
-### Tertiary (LOW confidence)
+### Tertiary (historical context only)
 
-- DmitryCS/yolov8_segment_pose (GitHub) — community joint seg+pose implementation; cited as anti-feature rationale only; not a recommended approach
+- `.planning/research/PITFALLS.md` — v3.0 Ultralytics Unification and v2.2 OBB/keypoint integration pitfalls; relevant for training infrastructure context but now historical for the v3.1-complete codebase; structural patterns informed v3.2-specific pitfall analysis
 
 ---
-
-*Research completed: 2026-03-01*
+*Research completed: 2026-03-03*
 *Ready for roadmap: yes*

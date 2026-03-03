@@ -579,3 +579,307 @@ fish_pose_dataset/         # same directory structure, different label format
 
 *Stack research for: 3D fish pose estimation via direct triangulation with refractive ray casting*
 *Researched: 2026-02-19 | Updated: 2026-03-01 (v3.0 Ultralytics Unification additions)*
+
+
+---
+
+## v3.2 Evaluation Ecosystem: Stack Additions
+
+> **v3.2 update (2026-03-03):** Adding unified `aquapose eval` and `aquapose tune` CLI subcommands with per-stage proxy metrics, single-stage sweeps, cascade tuning (association → reconstruction), and partial pipeline execution. This section covers only the NEW stack requirements — everything in the sections above remains unchanged.
+
+### What Already Exists (Do Not Re-Research)
+
+All of the following are already available and validated:
+
+- `click>=8.1` — CLI entrypoint, already used for `aquapose run` and `aquapose train` subcommand groups
+- `json` (stdlib) — already used in `evaluation/output.py` for regression JSON
+- `numpy>=1.24` — already used throughout evaluation/metrics
+- `itertools` (stdlib) — Cartesian product for grid search; already used in codebase
+- `dataclasses` (stdlib) — frozen config hierarchy already established
+- `pathlib` (stdlib) — path handling throughout
+
+**Transitive dependencies already installed in the hatch environment** (confirmed present via `hatch run python -c "import X"`):
+
+- `tqdm 4.67.3` — installed as transitive dependency (likely via ultralytics)
+- `joblib 1.5.3` — installed as transitive dependency (likely via scikit-image/scipy)
+- `sklearn 1.8.0` (scikit-learn) — installed as transitive dependency
+
+None of these need to be added to `pyproject.toml` — they are already available. If any of them need to become explicit dependencies (because the upstream transitive chain changes), add them at that point.
+
+---
+
+### New Capabilities Needed and Recommended Approach
+
+#### 1. Grid Search / Parameter Sweep
+
+**Recommendation: `itertools.product` with a small wrapper — no new library.**
+
+The existing `tune_association.py` already implements grid search without any library. The sweep logic is 10–20 lines of pure Python:
+
+```python
+import itertools
+from typing import Any
+
+def iter_grid(grid: dict[str, list[Any]]):
+    """Yield all parameter combinations from a grid dict."""
+    keys = list(grid.keys())
+    for values in itertools.product(*grid.values()):
+        yield dict(zip(keys, values))
+```
+
+`sklearn.model_selection.ParameterGrid` is equivalent and already available as a transitive dependency, but importing sklearn for a 10-line stdlib replacement adds a conceptual coupling to ML tooling that doesn't belong here. Use `itertools.product` directly.
+
+**Why not Optuna/Ray Tune/W&B Sweeps:** The seed document explicitly rules out Bayesian optimization — grids are small (5–10 values per parameter, 1–2 dimensions at a time), interpretable, and reproducible. Optuna adds 3MB+ of dependencies and async complexity for no benefit at this scale.
+
+#### 2. Intermediate Caching (Sweep Upstream Cache)
+
+**Recommendation: `pickle` (stdlib) for per-stage cache files. No new library.**
+
+The seed document's decision is explicit: pickle for within-session intermediate caches, structured output (JSON) for final results. This is correct for the following reasons:
+
+- The pipeline objects being cached (`Detection`, `Tracklet2D`, `TrackletGroup`, `MidlineSet`, etc.) are custom frozen dataclasses with numpy arrays and torch tensors. They serialize cleanly with pickle.
+- Pickle is exact (no round-trip fidelity loss). The pipeline code won't change mid-session.
+- The cache is explicitly discardable after tuning completes — it is not a persistent artifact.
+- `joblib.dump`/`joblib.load` would be marginally faster for large numpy arrays (memory mapping), but the cache items here are Python object graphs, not raw arrays. `joblib` provides no meaningful advantage over `pickle` for this shape of data.
+- Cache files are written to a temporary work directory per tuning session and discarded after.
+
+**Cache file convention:**
+
+```python
+import pickle
+from pathlib import Path
+
+# Write per-stage cache
+cache_path = work_dir / f"stage_{stage_name}_cache.pkl"
+with cache_path.open("wb") as f:
+    pickle.dump(stage_outputs, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+# Read per-stage cache
+with cache_path.open("rb") as f:
+    stage_outputs = pickle.load(f)
+```
+
+Use `pickle.HIGHEST_PROTOCOL` (currently protocol 5 in Python 3.11) for maximum efficiency.
+
+**Why not joblib.Memory (automatic function-level caching):** `joblib.Memory` caches by function signature + argument hash. The pipeline stage functions don't have stable hashable signatures (they accept `PipelineContext` which contains frame data). Manual explicit pickle cache files are simpler and give full control over what gets cached and when it gets invalidated.
+
+**Why not msgpack/orjson/arrow:** These are for structured/columnar data. The stage outputs are heterogeneous Python objects — not JSON-serializable without custom encoders. Pickle handles them correctly out of the box.
+
+#### 3. Progress Reporting During Sweeps
+
+**Recommendation: `tqdm` — already available as transitive dependency.**
+
+`tqdm` is already installed (4.67.3 via ultralytics). It wraps any iterable and provides a real-time progress bar with ETA — exactly right for the sweep outer loop:
+
+```python
+from tqdm import tqdm
+
+for params in tqdm(list(iter_grid(grid)), desc="Sweeping association"):
+    result = run_stage(params)
+    results.append(result)
+```
+
+`tqdm` requires zero additional dependencies and has negligible overhead. It is the standard choice for CLI progress in scientific Python code.
+
+**Why not `rich.progress`:** `rich` is not currently installed in the hatch environment. Adding it for progress bars when `tqdm` is already available would add a dependency (~3MB) for no incremental benefit. If `rich` is added later for table formatting (see below), the progress bar could be migrated, but tqdm is correct for now.
+
+#### 4. Sweep Results Table Formatting
+
+**Recommendation: plain Python string formatting (stdlib) — extend existing `output.py` pattern.**
+
+The existing `evaluation/output.py` already produces ASCII tables using f-strings. The same approach should be extended for sweep result tables:
+
+```python
+def format_sweep_table(rows: list[dict], metric_name: str) -> str:
+    """Format sweep results as a sorted ASCII comparison table."""
+    ...
+```
+
+This is consistent with the existing codebase pattern and keeps zero new dependencies.
+
+**Why not `rich` tables:** `rich` is not currently installed. The existing output format is working and consistent. Adding `rich` for cosmetic improvement would require adding a new dependency and changing the output character set — both are unnecessary for a research tool where the developer is the primary consumer.
+
+**Why not `tabulate`:** Another library that adds a dependency for something stdlib handles adequately. The existing `format_summary_table` in `output.py` is proof that custom formatting is maintainable here.
+
+#### 5. CLI Subcommand Groups
+
+**Recommendation: `click` groups — the exact pattern already used for `train`.**
+
+The `aquapose train` group in `training/cli.py` is the blueprint. Two new groups follow the same pattern:
+
+```python
+# src/aquapose/evaluation/cli.py
+import click
+
+@click.group("eval")
+def eval_group() -> None:
+    """Evaluate a diagnostic run."""
+
+@eval_group.command()
+@click.argument("run_dir", type=click.Path(exists=True))
+@click.option("--stage", type=click.Choice([...]), default=None)
+@click.option("--report", type=click.Choice(["text", "json"]), default="text")
+def run_eval(...): ...
+```
+
+```python
+# src/aquapose/evaluation/tune_cli.py
+import click
+
+@click.group("tune")
+def tune_group() -> None:
+    """Sweep parameters for a pipeline stage."""
+
+@tune_group.command()
+@click.argument("config", type=click.Path(exists=True))
+@click.option("--stage", type=click.Choice([...]), required=True)
+@click.option("--cascade", is_flag=True, default=False)
+@click.option("--n-frames", type=int, default=30)
+@click.option("--n-frames-validate", type=int, default=100)
+@click.option("--param", "param_overrides", multiple=True, type=str)
+@click.option("--range", "range_overrides", multiple=True, type=str)
+@click.option("--top-n", type=int, default=3)
+def run_tune(...): ...
+```
+
+Register both groups in `cli.py`:
+
+```python
+from aquapose.evaluation.cli import eval_group
+from aquapose.evaluation.tune_cli import tune_group
+
+cli.add_command(eval_group)
+cli.add_command(tune_group)
+```
+
+**`--param`/`--range` parsing for custom sweep ranges:** Use `multiple=True` string options. The orchestrator parses `--param outlier_threshold --range 5:50:5` as a pair, extracting `(name, start, stop, step)` from the range string with a small helper:
+
+```python
+def parse_range(range_str: str) -> list[float]:
+    """Parse 'min:max:step' into a list of float values."""
+    start, stop, step = (float(x) for x in range_str.split(":"))
+    values = []
+    v = start
+    while v <= stop + 1e-9:
+        values.append(round(v, 10))
+        v += step
+    return values
+```
+
+No `click.ParamType` subclass needed — string parsing in the command body is simpler and more testable.
+
+#### 6. Final Output Format (Structured Summary)
+
+**Recommendation: JSON via stdlib `json` — extend the existing `write_regression_json` pattern.**
+
+The existing `write_regression_json` in `output.py` already establishes the pattern for machine-readable output. The sweep summary output should follow the same format — a JSON file written alongside the run directory:
+
+```json
+{
+  "stage": "association",
+  "timestamp": "2026-03-03T14:22:00",
+  "n_frames_sweep": 30,
+  "n_frames_validate": 100,
+  "baseline": {"fish_yield": 0.42, "singleton_rate": 0.58},
+  "sweep_results": [
+    {"params": {...}, "primary_metric": 0.67, "tiebreaker": 0.31}
+  ],
+  "winner": {"params": {...}, "primary_metric": 0.71, "tiebreaker": 0.28},
+  "validation": {"fish_yield": 0.70, "mean_reprojection_px": 3.21},
+  "config_diff": {"association.ray_distance_threshold": [0.03, 0.04]}
+}
+```
+
+No new libraries needed. `json.dump` with `indent=2` is already used in the codebase.
+
+---
+
+### pyproject.toml Changes for v3.2
+
+**No new runtime dependencies required.**
+
+All libraries needed for the evaluation/tuning system are either:
+1. Already explicit dependencies (`click>=8.1`, `numpy>=1.24`, `scipy>=1.11`)
+2. Already available as transitive dependencies (`tqdm`, `joblib`, `sklearn`)
+3. Python stdlib (`itertools`, `pickle`, `json`, `pathlib`, `dataclasses`)
+
+The only code additions are new modules under `src/aquapose/evaluation/`:
+
+```
+src/aquapose/evaluation/
+├── __init__.py              (existing — add new public symbols)
+├── harness.py               (existing — refactor for multi-stage support)
+├── metrics.py               (existing — extend with per-stage metric functions)
+├── output.py                (existing — extend with sweep table formatters)
+├── orchestrator.py          (NEW — EvalRunner + TuningOrchestrator)
+├── stage_metrics/           (NEW — per-stage metric modules)
+│   ├── __init__.py
+│   ├── detection.py
+│   ├── tracking.py
+│   ├── association.py
+│   ├── midline.py
+│   └── reconstruction.py
+├── cli.py                   (NEW — aquapose eval subcommand group)
+└── tune_cli.py              (NEW — aquapose tune subcommand group)
+```
+
+---
+
+### What NOT to Add for v3.2
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| `optuna` | Bayesian optimization overkill for 5–10-point 1D/2D grids; adds async machinery and a large dependency | `itertools.product` + custom grid dict |
+| `ray[tune]` or W&B sweeps | Distributed sweep infrastructure for ML research at scale; massively over-engineered for a single-machine research tool with <50 combos per sweep | `tqdm` + sequential loop |
+| `joblib.Memory` | Function-level automatic caching by hash — doesn't match the explicit stage-output cache model where invalidation is by design (new tuning session = fresh cache) | Explicit `pickle.dump`/`pickle.load` per stage |
+| `rich` | Not currently installed; ASCII tables in `output.py` are sufficient and consistent with existing style | Extend `format_summary_table` pattern in `output.py` |
+| `tabulate` | Yet another string-formatting library adding a dependency for something `output.py` already does with f-strings | f-string formatting in `output.py` |
+| `typer` | Click alternative; would require rewriting existing CLI | `click` (already used throughout) |
+| `pydantic` | Already explicitly ruled out for config — using frozen dataclasses | Frozen `dataclasses` |
+| Hydra / `omegaconf` | Config override frameworks; the existing `load_config + dataclasses.replace` pattern is sufficient for sweep parameter injection | `dataclasses.replace` in orchestrator |
+| `mlflow` / `wandb` | Experiment tracking dashboards — overkill for a single-researcher tool; output is JSON + stdout | JSON summary files + console output |
+
+---
+
+### Integration Points with Existing Architecture
+
+| New Component | Integrates With | Integration Notes |
+|---------------|----------------|-------------------|
+| `EvalRunner` | `DiagnosticObserver`, per-stage diagnostic files | Reads per-stage files written by observer; does not call `PosePipeline` directly |
+| `TuningOrchestrator` | `PosePipeline`, `PipelineContext`, `DiagnosticObserver` | Creates `PipelineContext` with pre-loaded upstream cache, calls `PosePipeline.run(initial_context=...)` |
+| `stage_metrics/association.py` | `TrackletGroup` (from `core/types/`), `PipelineContext` | Reads `context.tracklet_groups` to compute fish yield and singleton rate |
+| `stage_metrics/reconstruction.py` | Existing `compute_tier1`, `compute_tier2` in `metrics.py` | Wraps existing functions; reconstruction metrics already implemented |
+| `eval_group`, `tune_group` | `cli.py` main group | Added via `cli.add_command(eval_group)` and `cli.add_command(tune_group)` |
+| Per-stage pickle caches | `PipelineContext` field types | Cache files store the typed fields from `PipelineContext` directly; deserialize back into the same types |
+| `DEFAULT_GRIDS` per stage | `stage_metrics/<stage>.py` | Lives in the metric module for that stage; orchestrator imports it as the default sweep range |
+
+---
+
+### Version Compatibility for v3.2
+
+| Component | Version | Notes |
+|-----------|---------|-------|
+| `click` | >=8.1 (current: ~8.1.8) | `@click.group` with `add_command` already validated in codebase |
+| `tqdm` | 4.67.3 (transitive) | No API changes needed; `tqdm(iterable, desc=...)` is stable |
+| `pickle` | stdlib (protocol 5, Python 3.11) | `HIGHEST_PROTOCOL=5` for Python 3.11; deterministic for round-trip of frozen dataclasses |
+| `itertools.product` | stdlib | No version concerns |
+| `json` | stdlib | `_NumpySafeEncoder` pattern in `output.py` already handles numpy scalar types |
+
+---
+
+### Sources for v3.2 Stack Research
+
+- Python stdlib `itertools.product` docs: https://docs.python.org/3/library/itertools.html
+- Python stdlib `pickle` protocol reference: https://docs.python.org/3/library/pickle.html#data-stream-format
+- `tqdm` PyPI (4.67.3 confirmed via `hatch run python -c "import tqdm; print(tqdm.__version__)"`): https://pypi.org/project/tqdm/
+- `joblib` Memory class docs (1.5.3 transitive dep, considered and rejected for this use): https://joblib.readthedocs.io/en/stable/memory.html
+- `click` Commands and Groups documentation (8.3.x current): https://click.palletsprojects.com/en/stable/commands/
+- `sklearn.model_selection.ParameterGrid` (1.8.0 transitive dep, considered and rejected for stdlib itertools): https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.ParameterGrid.html
+- Existing `src/aquapose/cli.py` — `train_group` pattern for new subcommand groups
+- Existing `src/aquapose/evaluation/output.py` — `format_summary_table` pattern for new table formatters
+- Confirmed via `hatch run python -c "import X; print(X.__version__)"`: tqdm=4.67.3, joblib=1.5.3, sklearn=1.8.0
+
+---
+
+*Stack research for v3.2 Evaluation Ecosystem additions*
+*Researched: 2026-03-03*

@@ -29,7 +29,6 @@ class MockAssociationConfig:
     t_min: int = 3
     t_saturate: int = 100
     early_k: int = 3
-    ghost_pixel_threshold: float = 50.0
     min_shared_voxels: int = 1
 
 
@@ -72,52 +71,6 @@ class MockDivergentForwardLUT:
             origins = torch.tensor([[0.0, 10.0, 0.0]]).expand(n, 3)
             dirs = torch.tensor([[0.0, 0.0, 1.0]]).expand(n, 3)
         return origins, dirs
-
-
-class MockInverseLUT:
-    """Mock InverseLUT that returns controlled visibility.
-
-    The midpoint of converging test rays is at (0.5, 0.0, 0.5). We set up
-    the grid index so that ghost_point_lookup can find this voxel and return
-    visibility data for the configured cameras.
-    """
-
-    def __init__(
-        self,
-        camera_ids: list[str],
-        visibility: dict[str, tuple[float, float]] | None = None,
-    ) -> None:
-        self.camera_ids = camera_ids
-        self._visibility = visibility or {}
-        n_cameras = len(camera_ids)
-        self.voxel_resolution = 0.02
-        self.grid_bounds = {
-            "x_min": -1.0,
-            "x_max": 1.0,
-            "y_min": -1.0,
-            "y_max": 1.0,
-            "z_min": 0.0,
-            "z_max": 1.0,
-        }
-
-        # We need a voxel that ghost_point_lookup can find for the midpoint
-        # (0.5, 0.0, 0.5). Grid coords: ix=round((0.5-(-1))/0.02)=75,
-        # iy=round((0-(-1))/0.02)=50, iz=round((0.5-0)/0.02)=25
-        # Create a single voxel at index 0 that maps to these grid coords.
-        n_voxels = 1
-        self.voxel_centers = np.array([[0.5, 0.0, 0.5]], dtype=np.float32)
-        self.visibility_mask = np.ones((n_voxels, n_cameras), dtype=bool)
-        self._grid_to_voxel_idx: dict[tuple[int, int, int], int] = {
-            (75, 50, 25): 0,
-        }
-        # Create projected_pixels for ghost lookups
-        self.projected_pixels = np.full(
-            (n_voxels, n_cameras, 2), np.nan, dtype=np.float32
-        )
-        for cam_idx, cam_id in enumerate(camera_ids):
-            if cam_id in self._visibility:
-                u, v = self._visibility[cam_id]
-                self.projected_pixels[0, cam_idx, :] = [u, v]
 
 
 class MockInverseLUTNonAdjacent:
@@ -249,22 +202,12 @@ class TestScoreTrackletPair:
         )
         forward_luts = {"cam_a": lut_a, "cam_b": lut_b}
 
-        # Mock inverse LUT — all cameras see the midpoint, with detections nearby
-        inv_lut = MockInverseLUT(
-            ["cam_a", "cam_b"],
-            {"cam_a": (100.0, 100.0), "cam_b": (100.0, 100.0)},
-        )
-
-        detections: list[dict[str, list[tuple[float, float]]]] = [
-            {"cam_a": [(100.0, 100.0)], "cam_b": [(100.0, 100.0)]} for _ in range(20)
-        ]
-
         config = MockAssociationConfig()
-        score = score_tracklet_pair(ta, tb, forward_luts, inv_lut, detections, config)
+        score = score_tracklet_pair(ta, tb, forward_luts, config)
 
-        # Rays intersect at distance 0 < threshold, all frames inlier
-        # f=1.0, ghost=0 (only scoring cameras visible), w=20/100=0.2
-        assert score > 0.0, f"Expected positive score, got {score}"
+        # Rays intersect at distance ~0, so each frame contributes 1.0 - (0/threshold) = 1.0
+        # score_sum = 20.0, f = 20/20 = 1.0, w = 20/100 = 0.2, score = 1.0 * 0.2 = 0.2
+        assert score == pytest.approx(0.2)
 
     def test_no_overlap(self) -> None:
         """Two tracklets with no shared frames -> score 0."""
@@ -279,10 +222,9 @@ class TestScoreTrackletPair:
         )
         forward_luts = {"cam_a": lut_a, "cam_b": lut_b}
 
-        inv_lut = MockInverseLUT(["cam_a", "cam_b"])
         config = MockAssociationConfig()
 
-        score = score_tracklet_pair(ta, tb, forward_luts, inv_lut, [], config)
+        score = score_tracklet_pair(ta, tb, forward_luts, config)
         assert score == 0.0
 
     def test_below_t_min(self) -> None:
@@ -298,10 +240,9 @@ class TestScoreTrackletPair:
         )
         forward_luts = {"cam_a": lut_a, "cam_b": lut_b}
 
-        inv_lut = MockInverseLUT(["cam_a", "cam_b"])
         config = MockAssociationConfig(t_min=3)
 
-        score = score_tracklet_pair(ta, tb, forward_luts, inv_lut, [], config)
+        score = score_tracklet_pair(ta, tb, forward_luts, config)
         assert score == 0.0
 
     def test_early_termination(self) -> None:
@@ -315,11 +256,70 @@ class TestScoreTrackletPair:
         lut_b = MockDivergentForwardLUT("cam_b")
         forward_luts = {"cam_a": lut_a, "cam_b": lut_b}
 
-        inv_lut = MockInverseLUT(["cam_a", "cam_b"])
         config = MockAssociationConfig(early_k=3, t_min=3)
 
-        score = score_tracklet_pair(ta, tb, forward_luts, inv_lut, [], config)
+        score = score_tracklet_pair(ta, tb, forward_luts, config)
         assert score == 0.0
+
+    def test_soft_scoring_distance_sensitivity(self) -> None:
+        """Closer rays produce higher scores than farther rays (soft kernel validation).
+
+        Creates two pairs of tracklets:
+        - Pair A: rays intersect at distance ~0 (perfect match)
+        - Pair B: rays are near-threshold apart (dist close to threshold)
+
+        Validates that score_close > score_far, confirming the soft kernel
+        differentiates distance magnitudes unlike binary inlier counting.
+        """
+        frames = tuple(range(10))
+
+        # Pair A: converging rays that intersect at ~0 distance
+        ta_close = _make_tracklet("cam_a", 1, frames)
+        tb_close = _make_tracklet("cam_b", 1, frames)
+        lut_a_close = MockForwardLUT(
+            "cam_a", np.array([0.0, 0.0, 0.0]), np.array([1.0, 0.0, 1.0])
+        )
+        lut_b_close = MockForwardLUT(
+            "cam_b", np.array([1.0, 0.0, 0.0]), np.array([-1.0, 0.0, 1.0])
+        )
+        forward_luts_close = {"cam_a": lut_a_close, "cam_b": lut_b_close}
+
+        # Pair B: rays that are skew with a closest distance close to but under threshold
+        # Threshold is 0.03. We create rays with closest distance ~0.02 (under threshold
+        # but much farther than near-zero).
+        # Ray A along z-axis at (0,0,0), Ray B parallel along z-axis offset by 0.02 in x.
+        # But parallel rays always diverge so we use slight convergence: give them
+        # a tiny cross-component. Instead, use the skew configuration with known distance.
+        # Ray A: origin (0,0,0), direction (0,0,1) (along z)
+        # Ray B: origin (0.02,0,0), direction (0,0,1) (parallel, offset by 0.02 in x)
+        # These are parallel and their closest distance is 0.02 (under threshold=0.03).
+        ta_far = _make_tracklet("cam_a", 2, frames)
+        tb_far = _make_tracklet("cam_b", 2, frames)
+        lut_a_far = MockForwardLUT(
+            "cam_a", np.array([0.0, 0.0, 0.0]), np.array([0.0, 0.0, 1.0])
+        )
+        lut_b_far = MockForwardLUT(
+            "cam_b", np.array([0.02, 0.0, 0.0]), np.array([0.0, 0.0, 1.0])
+        )
+        forward_luts_far = {"cam_a": lut_a_far, "cam_b": lut_b_far}
+
+        config = MockAssociationConfig(ray_distance_threshold=0.03, t_min=3, early_k=3)
+
+        score_close = score_tracklet_pair(
+            ta_close, tb_close, forward_luts_close, config
+        )
+        score_far = score_tracklet_pair(ta_far, tb_far, forward_luts_far, config)
+
+        assert score_close > 0.0, (
+            f"Close rays should produce positive score, got {score_close}"
+        )
+        assert score_far > 0.0, (
+            f"Far (but inlier) rays should produce positive score, got {score_far}"
+        )
+        assert score_close > score_far, (
+            f"Close rays (score={score_close:.4f}) should outscore far rays "
+            f"(score={score_far:.4f}) with soft kernel"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -352,13 +352,9 @@ class TestScoreAllPairs:
 
         inv_lut = MockInverseLUTNonAdjacent()
 
-        detections: list[dict[str, list[tuple[float, float]]]] = [
-            {"cam_a": [(100.0, 100.0)], "cam_b": [(100.0, 100.0)]} for _ in range(20)
-        ]
-
         config = MockAssociationConfig(score_min=0.0)
 
-        scored = score_all_pairs(tracks_2d, forward_luts, inv_lut, detections, config)
+        scored = score_all_pairs(tracks_2d, forward_luts, inv_lut, config)
 
         # Only cam_a-cam_b should appear
         for key_a, key_b in scored:
@@ -380,78 +376,12 @@ class TestScoreAllPairs:
         lut_b = MockDivergentForwardLUT("cam_b")
         forward_luts = {"cam_a": lut_a, "cam_b": lut_b}
 
-        inv_lut = MockInverseLUT(["cam_a", "cam_b"])
+        inv_lut = MockInverseLUTNonAdjacent()
 
         config = MockAssociationConfig(score_min=0.3, t_min=3, early_k=3)
 
-        scored = score_all_pairs(tracks_2d, forward_luts, inv_lut, [], config)
+        scored = score_all_pairs(tracks_2d, forward_luts, inv_lut, config)
 
         assert len(scored) == 0, (
             "Divergent rays should produce 0 score, filtered by score_min"
-        )
-
-
-class TestGhostPenalty:
-    """Tests for ghost penalty suppression of scores."""
-
-    def test_ghost_penalty_suppresses_score(self) -> None:
-        """Score should be lower when ghost cameras see no supporting detections."""
-        frames = tuple(range(20))
-        ta = _make_tracklet("cam_a", 1, frames)
-        tb = _make_tracklet("cam_b", 1, frames)
-
-        # Converging rays
-        lut_a = MockForwardLUT(
-            "cam_a", np.array([0.0, 0.0, 0.0]), np.array([1.0, 0.0, 1.0])
-        )
-        lut_b = MockForwardLUT(
-            "cam_b", np.array([1.0, 0.0, 0.0]), np.array([-1.0, 0.0, 1.0])
-        )
-        forward_luts = {"cam_a": lut_a, "cam_b": lut_b}
-
-        # Ghost cameras see the midpoint but no detections exist there
-        inv_lut_with_ghost = MockInverseLUT(
-            ["cam_a", "cam_b", "cam_c", "cam_d"],
-            {
-                "cam_a": (100.0, 100.0),
-                "cam_b": (100.0, 100.0),
-                "cam_c": (200.0, 200.0),
-                "cam_d": (300.0, 300.0),
-            },
-        )
-
-        config = MockAssociationConfig(t_min=3)
-
-        # With detections supporting ghost cameras -> lower penalty
-        detections_with: list[dict[str, list[tuple[float, float]]]] = [
-            {
-                "cam_a": [(100.0, 100.0)],
-                "cam_b": [(100.0, 100.0)],
-                "cam_c": [(200.0, 200.0)],
-                "cam_d": [(300.0, 300.0)],
-            }
-            for _ in range(20)
-        ]
-
-        score_with = score_tracklet_pair(
-            ta, tb, forward_luts, inv_lut_with_ghost, detections_with, config
-        )
-
-        # Without detections at ghost cameras -> higher penalty
-        detections_without: list[dict[str, list[tuple[float, float]]]] = [
-            {
-                "cam_a": [(100.0, 100.0)],
-                "cam_b": [(100.0, 100.0)],
-                # No detections for cam_c, cam_d
-            }
-            for _ in range(20)
-        ]
-
-        score_without = score_tracklet_pair(
-            ta, tb, forward_luts, inv_lut_with_ghost, detections_without, config
-        )
-
-        assert score_with > score_without, (
-            f"Score with supporting detections ({score_with}) should be higher "
-            f"than without ({score_without})"
         )

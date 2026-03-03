@@ -89,16 +89,12 @@ class AssociationStage:
                 inverse_lut = generate_inverse_lut(calibration, self._config.lut)
                 save_inverse_luts(inverse_lut, calibration_path, self._config.lut)
 
-        # Extract detection centroids for ghost penalty
-        det_centroids = _extract_centroids(detections)
-
         # Step 1: Score all pairs
         frame_count = len(detections) if detections else None
         scores = score_all_pairs(
             tracks_2d,
             forward_luts,
             inverse_lut,
-            det_centroids,
             self._config.association,
             frame_count=frame_count,
         )
@@ -118,38 +114,3 @@ class AssociationStage:
 
         context.tracklet_groups = groups
         return context
-
-
-def _extract_centroids(
-    detections: list | None,
-) -> list[dict[str, list[tuple[float, float]]]]:
-    """Convert Detection objects to simple (u, v) centroid tuples.
-
-    Args:
-        detections: Per-frame per-camera detection lists from Stage 1.
-            Each entry is ``dict[str, list[Detection]]``.
-
-    Returns:
-        Per-frame per-camera centroid lists suitable for ghost penalty scoring.
-    """
-    if detections is None:
-        return []
-
-    result: list[dict[str, list[tuple[float, float]]]] = []
-    for frame_dets in detections:
-        frame_centroids: dict[str, list[tuple[float, float]]] = {}
-        for cam_id, det_list in frame_dets.items():
-            centroids: list[tuple[float, float]] = []
-            for det in det_list:
-                # Detection objects have .centroid or .bbox — extract centroid
-                if hasattr(det, "centroid"):
-                    c = det.centroid
-                    centroids.append((float(c[0]), float(c[1])))
-                elif hasattr(det, "bbox"):
-                    # Derive centroid from bbox (x, y, w, h)
-                    bx, by, bw, bh = det.bbox
-                    centroids.append((float(bx + bw / 2), float(by + bh / 2)))
-            frame_centroids[cam_id] = centroids
-        result.append(frame_centroids)
-
-    return result

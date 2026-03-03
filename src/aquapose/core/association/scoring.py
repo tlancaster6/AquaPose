@@ -1,8 +1,8 @@
 """Pairwise cross-camera tracklet affinity scoring using ray-ray geometry.
 
 Implements SPECSEED Steps 0-1: camera overlap graph filtering and pairwise
-scoring with ray-ray closest-point distance, ghost-point penalties, early
-termination, and aggregation.
+scoring with ray-ray closest-point distance, early termination, and
+aggregation.
 """
 
 from __future__ import annotations
@@ -47,7 +47,6 @@ class AssociationConfigLike(Protocol):
         t_min: Minimum shared frames to attempt scoring.
         t_saturate: Overlap reliability saturation frame count.
         early_k: Frames checked for early termination.
-        ghost_pixel_threshold: Max pixel distance for ghost "supporting" check.
         min_shared_voxels: Camera pair adjacency voxel threshold.
     """
 
@@ -56,7 +55,6 @@ class AssociationConfigLike(Protocol):
     t_min: int
     t_saturate: int
     early_k: int
-    ghost_pixel_threshold: float
     min_shared_voxels: int
 
 
@@ -129,32 +127,26 @@ def score_tracklet_pair(
     tracklet_a: Tracklet2D,
     tracklet_b: Tracklet2D,
     forward_luts: dict[str, ForwardLUT],
-    inverse_lut: InverseLUT,
-    detections: list[dict[str, list[tuple[float, float]]]],
     config: AssociationConfigLike,
     *,
     frame_count: int | None = None,
 ) -> float:
-    """Score a single cross-camera tracklet pair.
+    """Score a single cross-camera tracklet pair using a soft linear kernel.
 
-    Implements SPECSEED Step 1: ray-ray distance aggregation with ghost-point
-    penalties, early termination, and overlap reliability weighting.
+    Implements SPECSEED Step 1: ray-ray distance aggregation with a soft
+    linear kernel ``1 - dist / threshold``, early termination, and overlap
+    reliability weighting.
 
     Args:
         tracklet_a: First tracklet (from camera A).
         tracklet_b: Second tracklet (from camera B).
         forward_luts: Per-camera ForwardLUT dict.
-        inverse_lut: InverseLUT for ghost-point lookups.
-        detections: Per-frame per-camera detection centroids. Indexed by
-            frame_idx; each entry maps camera_id to list of (u, v) centroids.
         config: Scoring configuration.
 
     Returns:
         Affinity score in [0, 1]. Zero if insufficient overlap or early
         termination triggered.
     """
-    from aquapose.calibration.luts import ghost_point_lookup
-
     cam_a = tracklet_a.camera_id
     cam_b = tracklet_b.camera_id
 
@@ -171,9 +163,7 @@ def score_tracklet_pair(
     lut_a = forward_luts[cam_a]
     lut_b = forward_luts[cam_b]
 
-    inlier_count = 0
-    ghost_ratios: list[float] = []
-    scoring_cameras = {cam_a, cam_b}
+    score_sum = 0.0
 
     for frame_idx_in_shared, frame in enumerate(shared_frames):
         idx_a = frames_a[frame]
@@ -195,51 +185,17 @@ def score_tracklet_pair(
         o_b = origins_b[0].cpu().numpy()
         d_b = dirs_b[0].cpu().numpy()
 
-        dist, midpoint = ray_ray_closest_point(o_a, d_a, o_b, d_b)
+        dist, _ = ray_ray_closest_point(o_a, d_a, o_b, d_b)
 
         if dist < config.ray_distance_threshold:
-            inlier_count += 1
-
-            # Ghost penalty for this inlier frame
-            mid_tensor = torch.tensor(midpoint.reshape(1, 3), dtype=torch.float32)
-            visibility = ghost_point_lookup(inverse_lut, mid_tensor)
-            visible_cams = visibility[0]  # list[(cam_id, u, v)]
-
-            # Exclude the two scoring cameras
-            other_cams = [
-                (cid, u, v) for cid, u, v in visible_cams if cid not in scoring_cameras
-            ]
-            n_visible_other = len(other_cams)
-
-            if n_visible_other > 0:
-                n_negative = 0
-                for cid, exp_u, exp_v in other_cams:
-                    # Check if any detection in this camera for this frame
-                    # is within ghost_pixel_threshold
-                    supporting = False
-                    if frame < len(detections) and cid in detections[frame]:
-                        for det_u, det_v in detections[frame][cid]:
-                            pixel_dist = (
-                                (det_u - exp_u) ** 2 + (det_v - exp_v) ** 2
-                            ) ** 0.5
-                            if pixel_dist < config.ghost_pixel_threshold:
-                                supporting = True
-                                break
-                    if not supporting:
-                        n_negative += 1
-                ghost_ratios.append(n_negative / n_visible_other)
-            else:
-                ghost_ratios.append(0.0)
+            score_sum += 1.0 - (dist / config.ray_distance_threshold)
 
         # Early termination check
-        if frame_idx_in_shared == config.early_k - 1 and inlier_count == 0:
+        if frame_idx_in_shared == config.early_k - 1 and score_sum == 0.0:
             return 0.0
 
-    # Inlier fraction
-    f = inlier_count / t_shared
-
-    # Mean ghost ratio
-    mean_ghost = float(np.mean(ghost_ratios)) if ghost_ratios else 0.0
+    # Soft inlier fraction
+    f = score_sum / t_shared
 
     # Overlap reliability — cap t_saturate at actual run length for short runs
     effective_saturate = (
@@ -248,7 +204,7 @@ def score_tracklet_pair(
     w = min(t_shared, effective_saturate) / effective_saturate
 
     # Combined score
-    score = f * (1.0 - mean_ghost) * w
+    score = f * w
     return score
 
 
@@ -264,7 +220,6 @@ def score_all_pairs(
     tracks_2d: dict[str, list[Tracklet2D]],
     forward_luts: dict[str, ForwardLUT],
     inverse_lut: InverseLUT,
-    detections: list[dict[str, list[tuple[float, float]]]],
     config: AssociationConfigLike,
     *,
     frame_count: int | None = None,
@@ -278,8 +233,7 @@ def score_all_pairs(
     Args:
         tracks_2d: Per-camera tracklet lists (from PipelineContext).
         forward_luts: Per-camera ForwardLUT dict.
-        inverse_lut: InverseLUT for ghost-point lookups and overlap graph.
-        detections: Per-frame per-camera detection centroids.
+        inverse_lut: InverseLUT for overlap graph computation.
         config: Scoring configuration.
 
     Returns:
@@ -307,8 +261,6 @@ def score_all_pairs(
                     ta,
                     tb,
                     forward_luts,
-                    inverse_lut,
-                    detections,
                     config,
                     frame_count=frame_count,
                 )

@@ -148,8 +148,6 @@ class AssociationConfig:
         early_k: Number of initial frames for early termination check. Default 10.
         expected_fish_count: Number of fish in the tank (fixed). Default 9.
             Auto-populated from top-level ``n_animals`` when not explicitly set.
-        ghost_pixel_threshold: Max pixel distance for a detection to count as
-            "supporting" in ghost penalty. Default 50.0.
         min_shared_voxels: Minimum shared voxels for camera pair adjacency.
             Default 100.
         leiden_resolution: Resolution parameter for Leiden clustering. Default 1.0.
@@ -168,7 +166,6 @@ class AssociationConfig:
     t_saturate: int = 100
     early_k: int = 10
     expected_fish_count: int = 9
-    ghost_pixel_threshold: float = 50.0
     min_shared_voxels: int = 100
     leiden_resolution: float = 1.0
     max_merge_gap: int = 30

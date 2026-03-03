@@ -30,7 +30,6 @@ from aquapose.io.midline_fixture import load_midline_fixture
 SWEEP_RANGES: dict[str, list[float]] = {
     "ray_distance_threshold": [0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.10],
     "score_min": [0.15, 0.20, 0.25, 0.30, 0.35],
-    "ghost_pixel_threshold": [50.0, 10000.0],  # current vs ablated
     "eviction_reproj_threshold": [0.02, 0.03, 0.04, 0.05, 0.08],
 }
 
@@ -43,7 +42,6 @@ SECONDARY_RANGES: dict[str, list[float]] = {
 PRIMARY_STAGES: list[str] = [
     "ray_distance_threshold",
     "score_min",
-    "ghost_pixel_threshold",
     "eviction_reproj_threshold",
 ]
 

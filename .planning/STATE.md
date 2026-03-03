@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-03-03)
 ## Current Position
 
 Phase: 51 of 53 (Frame Source Refactor)
-Plan: 1 of 2 complete
-Status: In progress
-Last activity: 2026-03-03 — Completed 51-01 FrameSource protocol + stage migration
+Plan: 2 of 2 complete
+Status: Complete
+Last activity: 2026-03-03 — Completed 51-02 observer migration, VideoSet deletion, stop_frame removal
 
-Progress: [░░░░░░░░░░] 10% (0/3 phases, 1 plan complete)
+Progress: [███░░░░░░░] 33% (0/3 phases, 2 plans complete)
 
 ## Accumulated Context
 
@@ -47,6 +47,12 @@ Phase 51 Plan 01 decisions:
 - MidlineStage keeps calibration_path param for ForwardLUT loading in orientation resolution
 - VideoFrameSource shared by DetectionStage and MidlineStage (single construction in build_stages)
 - FrameSource is runtime_checkable Protocol — enables isinstance checks without inheritance
+
+Phase 51 Plan 02 decisions:
+- VideoFrameSource created once in cli.py run command and passed to both build_stages and build_observers — avoids double construction
+- VideoFrameSource imported at module level in cli.py so tests can patch aquapose.cli.VideoFrameSource
+- Observers accept frame_source=None and fall back to synthetic black frames — preserves synthetic mode compatibility
+- stop_frame in YAML now raises ValueError with _RENAME_HINTS pointing to max_frames on frame source
 
 ### Pending Todos
 
@@ -68,5 +74,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Planned Phase 52 — created 52-01, 52-02, 52-03 PLAN.md files
+Stopped at: Completed 51-02 — observer migration, VideoSet deletion, stop_frame removal. Phase 51 complete. Next: Phase 52 Chunk Orchestrator.
 Resume file: None

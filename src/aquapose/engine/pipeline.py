@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from aquapose.core.context import CarryForward, PipelineContext, Stage
+from aquapose.core.context import PipelineContext, Stage
 from aquapose.engine.config import PipelineConfig, serialize_config
 
 if TYPE_CHECKING:
@@ -193,7 +193,7 @@ class PosePipeline:
         # TrackingStage uses a different run() signature:
         # (context, carry) -> (context, carry).
         # We maintain carry state across all batches on the pipeline instance.
-        carry: CarryForward | None = None
+        carry: object | None = None
         if initial_context is not None:
             carry = initial_context.carry_forward
 

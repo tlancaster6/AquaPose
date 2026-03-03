@@ -2,9 +2,10 @@
 
 Defines the structural typing contract that all pipeline stages must satisfy,
 and the typed accumulator that flows data between stages. Also defines
-CarryForward for persisting per-camera 2D track state across pipeline batches.
-Provides StaleCacheError, load_stage_cache, and context_fingerprint for
-working with stage-output pickle caches written by DiagnosticObserver.
+ChunkHandoff for persisting cross-chunk state (tracker state and identity map)
+across chunk boundaries. Provides StaleCacheError, load_stage_cache, and
+context_fingerprint for working with stage-output pickle caches written by
+DiagnosticObserver.
 
 These types live in core/ because they are pure data containers with no engine
 logic. Placing them here eliminates all TYPE_CHECKING backdoors where core/
@@ -122,25 +123,29 @@ class Stage(Protocol):
 
 
 @dataclass(frozen=True)
-class CarryForward:
-    """Cross-batch state carried between pipeline invocations.
+class ChunkHandoff:
+    """Cross-chunk state carried between chunk invocations.
 
-    Persists per-camera 2D track state (positions, velocities, lifecycle per
-    local tracklet) across batches. Each camera's tracker is independent —
-    no cross-camera state in carry. Cross-camera association operates on
-    complete tracklets within the batch, not incrementally.
-
-    The dataclass is frozen so carry state is replaced wholesale each batch,
-    not mutated in place.
+    Frozen so it is replaced wholesale each chunk, never mutated.
 
     Attributes:
-        tracks_2d_state: Per-camera opaque tracker state. Keys are camera IDs,
-            values are backend-specific state objects (e.g., OC-SORT internal
-            state dicts). Placeholder ``dict`` — Phase 24 defines the concrete
-            OC-SORT state type as ``dict[str, Any]``.
+        tracks_2d_state: Per-camera opaque OC-SORT tracker state blobs.
+            Keys are camera IDs; values are dicts from OcSortTracker.get_state().
+            Used to restore tracker continuity at the start of the next chunk.
+        identity_map: Maps chunk-local fish IDs to globally consistent fish IDs.
+            Keys are chunk-local fish IDs (from TrackletGroup.fish_id in the
+            just-completed chunk); values are global fish IDs.
+            Built by the identity stitcher after each chunk.
+        track_id_to_global: Maps (camera_id, track_id) tuples to global fish IDs.
+            Used for track-continuity-based identity stitching across chunk boundaries.
+        next_global_id: Next globally unique fish ID to assign to an unmatched
+            fish. Monotonically increasing across chunks to prevent ID reuse.
     """
 
-    tracks_2d_state: dict = field(default_factory=dict)
+    tracks_2d_state: dict  # camera_id -> OcSortTracker.get_state() blob
+    identity_map: dict  # local_fish_id -> global_fish_id
+    track_id_to_global: dict  # (camera_id, track_id) -> global_fish_id
+    next_global_id: int
 
 
 @dataclass
@@ -184,9 +189,10 @@ class PipelineContext:
             Each entry maps fish_id to a Spline3D (or Midline3D) object.
             Type: ``list[dict[int, Spline3D]]``
         stage_timing: Wall-clock seconds per stage, keyed by stage class name.
-        carry_forward: Cross-batch state persisted between pipeline invocations.
-            Holds per-camera 2D tracker state so tracking is continuous across
-            batch boundaries. None when no prior batch has been processed.
+        carry_forward: Cross-chunk state persisted between chunk invocations.
+            Holds tracker state and identity map so tracking and identity are
+            continuous across chunk boundaries. None when no prior chunk has
+            been processed. Runtime type: ChunkHandoff | None.
 
     """
 
@@ -198,7 +204,7 @@ class PipelineContext:
     annotated_detections: list | None = None
     midlines_3d: list | None = None
     stage_timing: dict = field(default_factory=dict)
-    carry_forward: CarryForward | None = None
+    carry_forward: ChunkHandoff | None = None
 
     def get(self, field_name: str) -> object:
         """Return the value of a field, raising ValueError if it is None.

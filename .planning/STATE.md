@@ -84,9 +84,10 @@ v3.1 strategic decisions:
 |---|-------------|------|--------|-----------|
 | 15 | Replace binary inlier counting with soft linear scoring kernel and remove ghost penalty | 2026-03-03 | df0e470 | [15-replace-binary-inlier-counting-with-soft](./quick/15-replace-binary-inlier-counting-with-soft/) |
 | 16 | Restructure tune_association.py with joint 2D grid sweep for ray_distance_threshold x score_min | 2026-03-03 | 4905671 | [16-restructure-tune-association-py-with-joi](./quick/16-restructure-tune-association-py-with-joi/) |
+| 17 | Unify n_sample_points config: remove N_SAMPLE_POINTS constant, remove MidlineConfig.n_points, add ReconstructionConfig.n_sample_points, default to 15 | 2026-03-03 | 07a8314 | [17-unify-n-sample-points-config](./quick/17-unify-n-sample-points-config/) |
 
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Phase 45 complete — v3.1 Reconstruction milestone shipped
+Stopped at: Quick task 17 complete — n_sample_points config unified
 Resume file: None

@@ -29,11 +29,10 @@ _FISH_IDS = [0, 1]
 def _make_detection(cam_id: str, frame_index: int) -> Detection:
     """Build a minimal synthetic Detection."""
     return Detection(
-        bbox=(10.0, 20.0, 50.0, 80.0),
+        bbox=(10, 20, 50, 80),
+        mask=None,
+        area=4000,
         confidence=0.9,
-        area=4000.0,
-        camera_id=cam_id,
-        frame_index=frame_index,
     )
 
 
@@ -72,17 +71,19 @@ def _make_midline3d(fish_id: int, frame_index: int) -> Midline3D:
 
 def _make_tracklet2d(fish_id: int, cam_id: str, frames: tuple[int, ...]) -> Any:
     """Build a synthetic Tracklet2D-like object."""
-    # Use a simple namespace to avoid importing the real Tracklet2D.
-    # The real Tracklet2D has: track_id, camera_id, frames, centroids, frame_status.
     from aquapose.core.tracking.types import Tracklet2D
 
     centroids = tuple((float(i * 10), float(i * 10)) for i in range(len(frames)))
+    bboxes = tuple(
+        (float(i * 10), float(i * 10), 50.0, 80.0) for i in range(len(frames))
+    )
     frame_status = tuple("detected" for _ in frames)
     return Tracklet2D(
-        track_id=fish_id,
         camera_id=cam_id,
+        track_id=fish_id,
         frames=frames,
         centroids=centroids,
+        bboxes=bboxes,
         frame_status=frame_status,
     )
 
@@ -116,11 +117,10 @@ def _make_annotated_detections(n_frames: int, cam_ids: list[str]) -> list:
             ann_list = []
             for fish_id in _FISH_IDS:
                 det = Detection(
-                    bbox=(10.0 + fish_id * 5, 20.0, 50.0, 80.0),
+                    bbox=(10 + fish_id * 5, 20, 50, 80),
+                    mask=None,
+                    area=4000,
                     confidence=0.9,
-                    area=4000.0,
-                    camera_id=cam_id,
-                    frame_index=frame_idx,
                 )
                 midline = _make_midline2d(fish_id, cam_id, frame_idx)
                 ann = AnnotatedDetection(

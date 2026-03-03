@@ -9,6 +9,7 @@ without running the full pipeline.
 from aquapose.evaluation.harness import EvalResults, generate_fixture, run_evaluation
 from aquapose.evaluation.metrics import Tier1Result, Tier2Result, select_frames
 from aquapose.evaluation.output import flag_outliers, format_baseline_report
+from aquapose.evaluation.runner import EvalRunner, EvalRunnerResult
 from aquapose.evaluation.stages import (
     ASSOCIATION_DEFAULT_GRID,
     RECONSTRUCTION_DEFAULT_GRID,
@@ -30,6 +31,8 @@ __all__ = [
     "AssociationMetrics",
     "DetectionMetrics",
     "EvalResults",
+    "EvalRunner",
+    "EvalRunnerResult",
     "MidlineMetrics",
     "ReconstructionMetrics",
     "Tier1Result",

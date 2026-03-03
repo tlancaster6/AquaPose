@@ -118,7 +118,7 @@ Full details: `.planning/milestones/v3.1-ROADMAP.md`
 **Milestone Goal:** Unified evaluation and parameter tuning system that replaces standalone scripts with `aquapose eval` and `aquapose tune` CLI subcommands, measures stage-specific quality at every pipeline stage, supports single-stage sweeps with proper caching, and removes all legacy evaluation machinery.
 
 - [x] **Phase 46: Engine Primitives** — Per-stage pickle caching and pre-populated context support (completed 2026-03-03)
-- [ ] **Phase 47: Evaluation Primitives** — ContextLoader, five stage evaluators, and DEFAULT_GRIDS
+- [x] **Phase 47: Evaluation Primitives** — ContextLoader, five stage evaluators, and DEFAULT_GRIDS (completed 2026-03-03)
 - [ ] **Phase 48: EvalRunner and `aquapose eval` CLI** — Multi-stage evaluation report with human-readable and JSON output
 - [ ] **Phase 49: TuningOrchestrator and `aquapose tune` CLI** — Grid sweeps, cascade tuning, and retirement of standalone scripts
 - [ ] **Phase 50: Cleanup and Replacement** — Remove monolithic NPZ machinery and retire harness.py
@@ -192,7 +192,7 @@ Full details: `.planning/milestones/v3.1-ROADMAP.md`
 | 35-39 | v3.0 | 14/14 | Complete | 2026-03-02 |
 | 40-45 | v3.1 | 13/13 | Complete | 2026-03-03 |
 | 46. Engine Primitives | 3/3 | Complete    | 2026-03-03 | - |
-| 47. Evaluation Primitives | 2/3 | In Progress|  | - |
+| 47. Evaluation Primitives | 3/3 | Complete   | 2026-03-03 | - |
 | 48. EvalRunner and eval CLI | v3.2 | 0/? | Not started | - |
 | 49. TuningOrchestrator and tune CLI | v3.2 | 0/? | Not started | - |
 | 50. Cleanup and Replacement | v3.2 | 0/? | Not started | - |

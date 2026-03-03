@@ -22,7 +22,6 @@ import numpy as np
 
 from aquapose.core.context import PipelineContext
 from aquapose.core.reconstruction.backends import get_backend
-from aquapose.core.reconstruction.triangulation import DEFAULT_INLIER_THRESHOLD
 from aquapose.core.types.midline import Midline2D
 from aquapose.core.types.reconstruction import Midline3D
 
@@ -51,16 +50,12 @@ class ReconstructionStage:
 
     Args:
         calibration_path: Path to the AquaCal calibration JSON file.
-        backend: Backend kind -- ``"triangulation"`` (default) or
-            ``"curve_optimizer"``.
-        inlier_threshold: Maximum reprojection error (pixels) for RANSAC inliers.
-        snap_threshold: Maximum pixel distance from epipolar curve for
-            correspondence refinement.
-        max_depth: Maximum allowed fish depth below the water surface (metres).
-            None disables the upper depth bound.
+        backend: Backend kind -- ``"dlt"`` (default). Only DLT is supported.
         min_cameras: Minimum cameras to attempt triangulation per fish per frame.
         max_interp_gap: Maximum consecutive dropped frames to interpolate.
         n_control_points: Fixed B-spline control point count per fish per frame.
+        **backend_kwargs: Additional keyword arguments forwarded to the backend
+            constructor (e.g. ``outlier_threshold``).
 
     Raises:
         FileNotFoundError: If *calibration_path* does not exist.
@@ -71,13 +66,11 @@ class ReconstructionStage:
     def __init__(
         self,
         calibration_path: str | Path,
-        backend: str = "triangulation",
-        inlier_threshold: float = DEFAULT_INLIER_THRESHOLD,
-        snap_threshold: float = 20.0,
-        max_depth: float | None = None,
+        backend: str = "dlt",
         min_cameras: int = _DEFAULT_MIN_CAMERAS,
         max_interp_gap: int = _DEFAULT_MAX_INTERP_GAP,
         n_control_points: int = _DEFAULT_N_CONTROL_POINTS,
+        **backend_kwargs: object,
     ) -> None:
         self._calibration_path = Path(calibration_path)
         self._min_cameras = min_cameras
@@ -87,12 +80,8 @@ class ReconstructionStage:
         # Build kwargs for the backend constructor
         combined_kwargs: dict[str, object] = {
             "calibration_path": calibration_path,
+            **backend_kwargs,
         }
-        if backend == "triangulation":
-            combined_kwargs["inlier_threshold"] = inlier_threshold
-            combined_kwargs["snap_threshold"] = snap_threshold
-            combined_kwargs["max_depth"] = max_depth
-            combined_kwargs["n_control_points"] = n_control_points
         self._backend = get_backend(backend, **combined_kwargs)
 
     def run(self, context: PipelineContext) -> PipelineContext:

@@ -15,7 +15,7 @@ import scipy.interpolate
 import torch
 
 from aquapose.calibration.projection import RefractiveProjectionModel
-from aquapose.core.reconstruction.triangulation import (
+from aquapose.core.reconstruction.utils import (
     N_SAMPLE_POINTS,
     SPLINE_K,
     SPLINE_KNOTS,

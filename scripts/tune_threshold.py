@@ -275,12 +275,12 @@ def main() -> None:
     top_n = min(args.top_n, len(grid_results))
     top_candidates = grid_results[:top_n]
 
-    print("Running baseline (triangulation) for comparison ...")
+    print("Running baseline (dlt) for comparison ...")
     with tempfile.TemporaryDirectory() as tmpdir:
         baseline_results = run_evaluation(
             fixture_path,
             n_frames=args.n_frames,
-            backend="triangulation",
+            backend="dlt",
             output_dir=Path(tmpdir),
         )
 

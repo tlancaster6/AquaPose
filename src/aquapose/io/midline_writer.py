@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, cast
 import h5py
 import numpy as np
 
-from aquapose.core.reconstruction.triangulation import (
+from aquapose.core.reconstruction.utils import (
     N_SAMPLE_POINTS,
     SPLINE_K,
     SPLINE_KNOTS,

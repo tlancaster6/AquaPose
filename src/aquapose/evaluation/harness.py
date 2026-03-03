@@ -16,7 +16,6 @@ import torch
 
 from aquapose.calibration.projection import RefractiveProjectionModel
 from aquapose.core.reconstruction.backends.dlt import DltBackend
-from aquapose.core.reconstruction.backends.triangulation import TriangulationBackend
 from aquapose.core.types.reconstruction import MidlineSet
 from aquapose.evaluation.metrics import (
     Tier1Result,
@@ -78,9 +77,9 @@ def _build_models_from_calib(
 
 def run_evaluation(
     fixture_path: Path | str,
-    n_frames: int = 15,
+    n_frames: int = 100,
     output_dir: Path | None = None,
-    backend: str = "triangulation",
+    backend: str = "dlt",
     outlier_threshold: float | None = None,
     skip_tier2: bool = False,
     association_overrides: dict[str, object] | None = None,
@@ -96,8 +95,7 @@ def run_evaluation(
         n_frames: Number of frames to evaluate (default 15).
         output_dir: Directory for writing eval_results.json.  If None, uses
             the fixture's parent directory.
-        backend: Reconstruction backend to use. Supported values:
-            ``"triangulation"`` (default) and ``"dlt"``.
+        backend: Reconstruction backend to use. Only ``"dlt"`` is supported.
         outlier_threshold: Maximum reprojection error (pixels) for DLT backend
             outlier rejection. When None, uses the DltBackend default. Only
             applies when ``backend="dlt"``.
@@ -133,20 +131,17 @@ def run_evaluation(
     # 3. Build projection models and reconstruction backend
     models = _build_models_from_calib(fixture.calib_bundle)
 
-    if backend == "triangulation":
-        recon_backend = TriangulationBackend.from_models(models)
-    elif backend == "dlt":
-        if outlier_threshold is not None:
-            recon_backend = DltBackend.from_models(
-                models, outlier_threshold=outlier_threshold
-            )
-        else:
-            recon_backend = DltBackend.from_models(models)
-    else:
+    if backend != "dlt":
         raise ValueError(
-            f"Unknown evaluation backend: {backend!r}. "
-            f"Supported backends: ['triangulation', 'dlt']"
+            f"Unknown evaluation backend: {backend!r}. Supported backends: ['dlt']"
         )
+
+    if outlier_threshold is not None:
+        recon_backend = DltBackend.from_models(
+            models, outlier_threshold=outlier_threshold
+        )
+    else:
+        recon_backend = DltBackend.from_models(models)
 
     # 4. Select frames
     selected_frame_indices = select_frames(fixture.frame_indices, n_frames)
@@ -221,7 +216,7 @@ def run_evaluation(
         }
         tier2 = compute_tier2(tier2_plain)
     else:
-        tier2 = Tier2Result(per_fish_dropout={}, overall_max_displacement=None)
+        tier2 = Tier2Result(per_fish_dropout={})
 
     # 9. Format summary
     fixture_name = fixture_path.name

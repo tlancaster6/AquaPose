@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from aquapose.evaluation import run_evaluation
@@ -40,6 +40,13 @@ def main() -> None:
         default=15,
         help="Number of frames to evaluate (default: 15).",
     )
+    parser.add_argument(
+        "--backend",
+        type=str,
+        default="dlt",
+        choices=["dlt"],
+        help="Reconstruction backend to use (default: dlt).",
+    )
     args = parser.parse_args()
 
     fixture_path: Path = args.fixture_path.resolve()
@@ -52,7 +59,7 @@ def main() -> None:
     # Run the evaluation harness
     # ------------------------------------------------------------------
     print(f"Running evaluation on {fixture_path.name} ({args.n_frames} frames) ...")
-    results = run_evaluation(fixture_path, n_frames=args.n_frames)
+    results = run_evaluation(fixture_path, n_frames=args.n_frames, backend=args.backend)
 
     # ------------------------------------------------------------------
     # Generate and print the outlier-flagged report
@@ -80,11 +87,9 @@ def main() -> None:
         baseline_data = json.load(f)
 
     baseline_data["baseline_metadata"] = {
-        "timestamp": datetime.now(datetime.timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "fixture_path": str(fixture_path),
-        "backend_identifier": (
-            "aquapose.core.reconstruction.triangulation.triangulate_midlines"
-        ),
+        "backend_identifier": args.backend,
     }
 
     baseline_json_path = fixture_path.parent / "baseline_results.json"

@@ -245,20 +245,12 @@ class ReconstructionConfig:
     """Config for the Reconstruction stage (Stage 5).
 
     Attributes:
-        backend: Reconstruction backend to use. ``"triangulation"`` (default)
-            uses RANSAC multi-view triangulation + B-spline fitting.
-            ``"curve_optimizer"`` uses correspondence-free 3D B-spline
-            optimization via chamfer distance.
-        inlier_threshold: Maximum reprojection error (pixels) for RANSAC
-            inlier classification during triangulation.
+        backend: Reconstruction backend to use. Only ``"dlt"`` is supported.
+            Uses confidence-weighted DLT triangulation with single-pass
+            outlier rejection.
         outlier_threshold: Maximum reprojection error (pixels) for DLT
             backend outlier rejection during triangulation. Empirically
             tuned via eval harness.
-        snap_threshold: Maximum pixel distance from the epipolar curve to
-            accept a correspondence during epipolar refinement.
-        max_depth: Maximum allowed fish depth below the water surface (metres).
-            When None (default), no upper depth bound is enforced. Set to the
-            physical tank depth to catch above-water outliers.
         min_cameras: Minimum cameras observing a fish in a frame to attempt
             triangulation. Frames with fewer cameras are dropped. Default 3
             (well-supported by rig geometry — 2-camera triangulation is
@@ -267,15 +259,11 @@ class ReconstructionConfig:
             Gaps longer than this are left as missing data. Default 5
             (~167ms at 30fps, within fish trajectory smoothness).
         n_control_points: Fixed B-spline control point count per fish per
-            frame. Must match the triangulation module's SPLINE_N_CTRL.
-            Default 7.
+            frame. Default 7.
     """
 
-    backend: str = "triangulation"
-    inlier_threshold: float = 50.0
-    outlier_threshold: float = 50.0
-    snap_threshold: float = 20.0
-    max_depth: float | None = None
+    backend: str = "dlt"
+    outlier_threshold: float = 10.0
     min_cameras: int = 3
     max_interp_gap: int = 5
     n_control_points: int = 7

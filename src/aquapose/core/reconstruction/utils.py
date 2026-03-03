@@ -16,10 +16,18 @@ logger = logging.getLogger(__name__)
 
 SPLINE_K: int = 3
 MIN_BODY_POINTS: int = 9  # SPLINE_N_CTRL + 2
+N_SAMPLE_POINTS: int = (
+    15  # Default fallback; prefer config.n_sample_points when available
+)
+SPLINE_KNOTS: np.ndarray = np.array(
+    [0.0, 0.0, 0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 1.0], dtype=np.float64
+)
 
 __all__ = [
     "MIN_BODY_POINTS",
+    "N_SAMPLE_POINTS",
     "SPLINE_K",
+    "SPLINE_KNOTS",
     "build_spline_knots",
     "fit_spline",
     "pixel_half_width_to_metres",

@@ -10,12 +10,15 @@ reproducibility.
 from __future__ import annotations
 
 import dataclasses
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Stage-specific config dataclasses
@@ -329,6 +332,9 @@ class PipelineConfig:
         stop_after: If set, truncate the stage list after the named stage.
             Valid values: ``"detection"``, ``"tracking"``, ``"association"``,
             ``"midline"``, or ``None`` (run all stages).
+        chunk_size: Number of frames per processing chunk. None or 0 means
+            process the entire video as a single chunk. Callers should check
+            ``config.chunk_size or None`` to treat 0 as None.
     """
 
     run_id: str = dataclasses.field(default="")
@@ -352,6 +358,7 @@ class PipelineConfig:
     synthetic: SyntheticConfig = dataclasses.field(default_factory=SyntheticConfig)
     lut: LutConfig = dataclasses.field(default_factory=LutConfig)
     stop_after: str | None = None
+    chunk_size: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -648,7 +655,7 @@ def load_config(
     # known renamed fields produce a "did you mean?" hint.
     # top_kwargs is filtered before passing to PipelineConfig since run_id
     # and output_dir have already been popped out above.
-    return PipelineConfig(
+    config = PipelineConfig(
         run_id=resolved_run_id,
         output_dir=resolved_output_dir,
         detection=DetectionConfig(**_filter_fields(DetectionConfig, det_kwargs)),
@@ -664,6 +671,14 @@ def load_config(
         lut=LutConfig(**_filter_fields(LutConfig, lut_kwargs)),
         **_filter_fields(PipelineConfig, top_kwargs),
     )
+
+    if config.chunk_size is not None and 0 < config.chunk_size < 100:
+        logger.warning(
+            "chunk_size=%d is less than 100 — insufficient temporal evidence for reliable association scoring",
+            config.chunk_size,
+        )
+
+    return config
 
 
 # ---------------------------------------------------------------------------

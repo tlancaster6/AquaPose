@@ -169,7 +169,9 @@ Full details: `.planning/milestones/v3.1-ROADMAP.md`
   3. Both sweep commands support `--n-frames` (fast sweep) and `--n-frames-validate` (thorough validation) with top-N candidates re-evaluated at the higher frame count before a winner is declared
   4. Sweep output includes a before/after metric comparison and a config diff block the researcher can apply manually — no automatic config file mutation occurs
   5. `scripts/tune_association.py` and `scripts/tune_threshold.py` are deleted from the repository
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 49-01-PLAN.md — TuningOrchestrator class with sweep logic, two-tier validation, and output formatting
+- [ ] 49-02-PLAN.md — Wire `aquapose tune` CLI command, update exports, delete legacy scripts
 
 ### Phase 50: Cleanup and Replacement
 **Goal**: The old evaluation machinery (monolithic NPZ and standalone harness) is removed, leaving the per-stage pickle cache system as the sole evaluation data source

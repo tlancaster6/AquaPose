@@ -17,24 +17,30 @@ def test_chunk_handoff_pickle_round_trip():
     handoff = ChunkHandoff(
         tracks_2d_state={"cam1": {"next_local_id": 5}},
         identity_map={0: 0, 1: 1},
+        track_id_to_global={("cam1", 0): 0, ("cam1", 1): 1},
         next_global_id=2,
     )
     data = pickle.dumps(handoff)
     restored = pickle.loads(data)
     assert restored.tracks_2d_state == handoff.tracks_2d_state
     assert restored.identity_map == handoff.identity_map
+    assert restored.track_id_to_global == handoff.track_id_to_global
     assert restored.next_global_id == handoff.next_global_id
 
 
 def test_chunk_handoff_frozen():
-    handoff = ChunkHandoff(tracks_2d_state={}, identity_map={}, next_global_id=0)
+    handoff = ChunkHandoff(
+        tracks_2d_state={}, identity_map={}, track_id_to_global={}, next_global_id=0
+    )
     with pytest.raises((Exception,)):
         handoff.next_global_id = 99  # type: ignore
 
 
 def test_write_handoff(tmp_path):
     dest = tmp_path / "handoff.pkl"
-    handoff = ChunkHandoff(tracks_2d_state={}, identity_map={0: 5}, next_global_id=6)
+    handoff = ChunkHandoff(
+        tracks_2d_state={}, identity_map={0: 5}, track_id_to_global={}, next_global_id=6
+    )
     write_handoff(dest, handoff)
     assert dest.exists()
     restored = pickle.loads(dest.read_bytes())

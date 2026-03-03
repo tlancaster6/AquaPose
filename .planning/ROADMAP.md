@@ -190,7 +190,7 @@ Full details: `.planning/milestones/v3.1-ROADMAP.md`
 | 35-39 | v3.0 | 14/14 | Complete | 2026-03-02 |
 | 40-45 | v3.1 | 13/13 | Complete | 2026-03-03 |
 | 46. Engine Primitives | 3/3 | Complete    | 2026-03-03 | - |
-| 47. Evaluation Primitives | v3.2 | 0/? | Not started | - |
+| 47. Evaluation Primitives | 1/3 | In Progress|  | - |
 | 48. EvalRunner and eval CLI | v3.2 | 0/? | Not started | - |
 | 49. TuningOrchestrator and tune CLI | v3.2 | 0/? | Not started | - |
 | 50. Cleanup and Replacement | v3.2 | 0/? | Not started | - |

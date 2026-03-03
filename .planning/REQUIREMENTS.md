@@ -16,8 +16,8 @@ Requirements for the evaluation ecosystem milestone. Each maps to roadmap phases
 
 ### Evaluation
 
-- [ ] **EVAL-01**: Detection stage evaluator computes yield, confidence distribution, yield stability, and per-camera balance metrics
-- [ ] **EVAL-02**: Tracking stage evaluator computes track count, track length distribution, coast frequency, and detection coverage metrics
+- [x] **EVAL-01**: Detection stage evaluator computes yield, confidence distribution, yield stability, and per-camera balance metrics
+- [x] **EVAL-02**: Tracking stage evaluator computes track count, track length distribution, coast frequency, and detection coverage metrics
 - [ ] **EVAL-03**: Association stage evaluator computes fish yield ratio, singleton rate, camera coverage, and cluster quality metrics
 - [ ] **EVAL-04**: Midline stage evaluator computes keypoint confidence, midline completeness, and temporal smoothness metrics
 - [ ] **EVAL-05**: Reconstruction stage evaluator computes mean reprojection error, Tier 2 stability, inlier ratio, and low-confidence flag rate
@@ -84,8 +84,8 @@ Requirements for the evaluation ecosystem milestone. Each maps to roadmap phases
 | INFRA-02 | Phase 46 | Complete |
 | INFRA-03 | Phase 46 | Complete |
 | INFRA-04 | Phase 46 | Complete |
-| EVAL-01 | Phase 47 | Pending |
-| EVAL-02 | Phase 47 | Pending |
+| EVAL-01 | Phase 47 | Complete |
+| EVAL-02 | Phase 47 | Complete |
 | EVAL-03 | Phase 47 | Pending |
 | EVAL-04 | Phase 47 | Pending |
 | EVAL-05 | Phase 47 | Pending |

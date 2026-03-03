@@ -169,7 +169,7 @@ Full details: `.planning/milestones/v3.0-ROADMAP.md`
   2. A helper function can generate fixtures from different AssociationConfig values
   3. A tuning script sweeps association parameters in priority order and identifies the best config
   4. The winning config produces 9 reconstructed fish per frame (or the best achievable yield is documented)
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 43.1-01-PLAN.md — Extend evaluation harness with skip_tier2, association_overrides, and generate_fixture helper

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
-from aquapose.core.context import load_stage_cache
+from aquapose.core.context import PipelineContext, load_chunk_cache
 from aquapose.core.types.midline import Midline2D
 from aquapose.core.types.reconstruction import MidlineSet
 from aquapose.evaluation.metrics import select_frames
@@ -24,19 +25,217 @@ from aquapose.evaluation.stages import (
     evaluate_tracking,
 )
 
-if TYPE_CHECKING:
-    from aquapose.core.context import PipelineContext
-
-_STAGE_KEYS: tuple[str, ...] = (
-    "detection",
-    "tracking",
-    "association",
-    "midline",
-    "reconstruction",
-)
-
 # Centroid match tolerance in pixels for TrackletGroup -> AnnotatedDetection matching.
 _CENTROID_MATCH_TOLERANCE_PX = 5.0
+
+
+def load_run_context(
+    run_dir: Path,
+) -> tuple[PipelineContext | None, dict]:
+    """Discover, load, and merge all chunk caches from a diagnostic run directory.
+
+    Reads ``diagnostics/manifest.json`` if present to get chunk list and metadata.
+    Falls back to globbing ``diagnostics/chunk_*/cache.pkl`` if no manifest is found.
+    Merges all loaded chunk contexts into a single synthetic PipelineContext with
+    correct frame offsets applied.
+
+    Args:
+        run_dir: Path to the pipeline run directory. Expected to contain a
+            ``diagnostics/`` subdirectory with ``chunk_NNN/cache.pkl`` files.
+
+    Returns:
+        A tuple of (merged_context, metadata) where:
+        - merged_context is a single PipelineContext spanning all chunks, or
+          None if no chunks are found.
+        - metadata is the manifest dict (or an empty dict if no manifest).
+
+    Raises:
+        StaleCacheError: Propagated from load_chunk_cache when a cache file
+            cannot be deserialized.
+    """
+    run_dir = Path(run_dir)
+    diag_dir = run_dir / "diagnostics"
+
+    if not diag_dir.exists():
+        return None, {}
+
+    # Try to read manifest.json first
+    manifest: dict = {}
+    manifest_path = diag_dir / "manifest.json"
+    if manifest_path.exists():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            manifest = {}
+
+    # Discover chunk cache paths
+    chunk_paths: list[
+        tuple[int, int | None, Path]
+    ] = []  # (chunk_idx, start_frame, path)
+
+    if manifest and "chunks" in manifest:
+        for chunk_entry in sorted(manifest["chunks"], key=lambda c: c.get("index", 0)):
+            chunk_idx = chunk_entry.get("index", 0)
+            start_frame = chunk_entry.get("start_frame")
+            chunk_dir = diag_dir / f"chunk_{chunk_idx:03d}"
+            cache_path = chunk_dir / "cache.pkl"
+            if cache_path.exists():
+                chunk_paths.append((chunk_idx, start_frame, cache_path))
+    else:
+        # Fallback: glob for chunk_*/cache.pkl sorted by directory name
+        found = sorted(diag_dir.glob("chunk_*/cache.pkl"), key=lambda p: p.parent.name)
+        for cache_path in found:
+            # Parse chunk index from directory name (chunk_NNN)
+            dir_name = cache_path.parent.name
+            try:
+                chunk_idx = int(dir_name.split("_")[1])
+            except (IndexError, ValueError):
+                chunk_idx = 0
+            chunk_paths.append((chunk_idx, None, cache_path))
+
+    if not chunk_paths:
+        return None, manifest
+
+    # Load each chunk context
+    loaded_chunks: list[tuple[int, int | None, PipelineContext]] = []
+    for chunk_idx, start_frame, cache_path in chunk_paths:
+        ctx = load_chunk_cache(cache_path)
+        loaded_chunks.append((chunk_idx, start_frame, ctx))
+
+    if len(loaded_chunks) == 1:
+        # Single chunk: return as-is (no merge needed)
+        _, _, ctx = loaded_chunks[0]
+        return ctx, manifest
+
+    # Multi-chunk: compute start_frame offsets if not provided by manifest
+    resolved_chunks: list[tuple[int, PipelineContext]] = []
+    current_offset = 0
+    for _chunk_idx, start_frame, ctx in loaded_chunks:
+        if start_frame is None:
+            start_frame = current_offset
+        resolved_chunks.append((start_frame, ctx))
+        current_offset = start_frame + (ctx.frame_count or 0)
+
+    merged = _merge_chunk_contexts(resolved_chunks)
+    return merged, manifest
+
+
+def _merge_chunk_contexts(
+    chunks: list[tuple[int, PipelineContext]],
+) -> PipelineContext:
+    """Merge multiple chunk PipelineContexts into a single synthetic context.
+
+    Frame indices in per-frame lists and tracklet frames are offset by each
+    chunk's start_frame so that they are globally consistent.
+
+    Args:
+        chunks: List of (start_frame, PipelineContext) tuples sorted by
+            start_frame ascending.
+
+    Returns:
+        A single PipelineContext with all chunk data merged. camera_ids is
+        taken from the first chunk.
+    """
+    # Determine camera_ids from the first chunk
+    camera_ids = chunks[0][1].camera_ids if chunks else None
+
+    # Merge per-frame lists: detections, annotated_detections, midlines_3d
+    merged_detections: list | None = None
+    merged_annotated: list | None = None
+    merged_midlines_3d: list | None = None
+
+    for _, ctx in chunks:
+        if ctx.detections is not None:
+            if merged_detections is None:
+                merged_detections = []
+            merged_detections.extend(ctx.detections)
+
+        if ctx.annotated_detections is not None:
+            if merged_annotated is None:
+                merged_annotated = []
+            merged_annotated.extend(ctx.annotated_detections)
+
+        if ctx.midlines_3d is not None:
+            if merged_midlines_3d is None:
+                merged_midlines_3d = []
+            merged_midlines_3d.extend(ctx.midlines_3d)
+
+    # Merge tracks_2d: extend per-camera tracklet lists with frame-offset tracklets
+    merged_tracks_2d: dict | None = None
+    for start_frame, ctx in chunks:
+        if ctx.tracks_2d is None:
+            continue
+        if merged_tracks_2d is None:
+            merged_tracks_2d = {}
+        for cam_id, tracklets in ctx.tracks_2d.items():
+            if cam_id not in merged_tracks_2d:
+                merged_tracks_2d[cam_id] = []
+            for tracklet in tracklets:
+                merged_tracks_2d[cam_id].append(
+                    _offset_tracklet_frames(tracklet, start_frame)
+                )
+
+    # Merge tracklet_groups: concatenate with frame-offset tracklets
+    merged_tracklet_groups: list | None = None
+    for start_frame, ctx in chunks:
+        if ctx.tracklet_groups is None:
+            continue
+        if merged_tracklet_groups is None:
+            merged_tracklet_groups = []
+        for group in ctx.tracklet_groups:
+            merged_tracklet_groups.append(_offset_group_frames(group, start_frame))
+
+    total_frames = sum(ctx.frame_count or 0 for _, ctx in chunks)
+
+    return PipelineContext(
+        frame_count=total_frames,
+        camera_ids=camera_ids,
+        detections=merged_detections,
+        tracks_2d=merged_tracks_2d,
+        tracklet_groups=merged_tracklet_groups,
+        annotated_detections=merged_annotated,
+        midlines_3d=merged_midlines_3d,
+    )
+
+
+def _offset_tracklet_frames(tracklet: object, offset: int) -> object:
+    """Return a copy of a Tracklet2D with frame indices shifted by offset.
+
+    Args:
+        tracklet: A Tracklet2D instance.
+        offset: Frame index offset to add to each frame index.
+
+    Returns:
+        A new Tracklet2D with frames shifted by offset.
+    """
+    import dataclasses
+
+    frames = getattr(tracklet, "frames", None)
+    if frames is None or offset == 0:
+        return tracklet
+    new_frames = tuple(f + offset for f in frames)
+    return dataclasses.replace(tracklet, frames=new_frames)
+
+
+def _offset_group_frames(group: object, offset: int) -> object:
+    """Return a copy of a TrackletGroup with all tracklet frame indices shifted.
+
+    Args:
+        group: A TrackletGroup instance.
+        offset: Frame index offset to add.
+
+    Returns:
+        A new TrackletGroup with all inner tracklet frames shifted by offset.
+    """
+    import dataclasses
+
+    if offset == 0:
+        return group
+    tracklets = getattr(group, "tracklets", None)
+    if not tracklets:
+        return group
+    new_tracklets = tuple(_offset_tracklet_frames(t, offset) for t in tracklets)
+    return dataclasses.replace(group, tracklets=new_tracklets)
 
 
 @dataclass(frozen=True)
@@ -98,10 +297,10 @@ class EvalRunnerResult:
 class EvalRunner:
     """Orchestrates per-stage evaluation from a pipeline diagnostic run directory.
 
-    Discovers per-stage pickle caches in ``<run_dir>/diagnostics/``, loads each
-    via :func:`~aquapose.core.context.load_stage_cache`, and calls the
-    corresponding Phase 47 stage evaluator with the unpacked PipelineContext data.
-    Stages whose cache files are missing are silently skipped.
+    Discovers per-chunk cache files in ``<run_dir>/diagnostics/chunk_NNN/cache.pkl``,
+    loads and merges them via :func:`load_run_context`, and calls the corresponding
+    stage evaluator with the unpacked PipelineContext data. Stages whose data is
+    absent in the merged context are silently skipped.
 
     Example::
 
@@ -115,8 +314,8 @@ class EvalRunner:
 
         Args:
             run_dir: Path to the pipeline run directory. Expected to contain
-                a ``diagnostics/`` subdirectory with ``<stage>_cache.pkl`` files
-                and a ``config.yaml`` file (required when association cache is
+                a ``diagnostics/`` subdirectory with ``chunk_NNN/cache.pkl`` files
+                and a ``config.yaml`` file (required when association data is
                 present).
         """
         self._run_dir = Path(run_dir)
@@ -134,13 +333,13 @@ class EvalRunner:
 
         Raises:
             StaleCacheError: If any cache file is incompatible with the current
-                codebase (propagated from load_stage_cache, not caught here).
-            FileNotFoundError: If the association cache is present but
+                codebase (propagated from load_chunk_cache, not caught here).
+            FileNotFoundError: If the association data is present but
                 config.yaml is missing from the run directory.
         """
-        caches = self._discover_caches()
+        ctx, _manifest = load_run_context(self._run_dir)
 
-        if not caches:
+        if ctx is None:
             return EvalRunnerResult(
                 run_id="",
                 stages_present=frozenset(),
@@ -153,10 +352,21 @@ class EvalRunner:
                 frames_available=0,
             )
 
-        # Determine run_id and frame_count from the first loaded cache.
-        first_ctx = next(iter(caches.values()))
-        run_id = getattr(first_ctx, "run_id", "") or ""
-        frame_count = first_ctx.frame_count or 0
+        run_id = getattr(ctx, "run_id", "") or ""
+        frame_count = ctx.frame_count or 0
+
+        # Determine which stages are present from the merged context
+        stages_present: set[str] = set()
+        if ctx.detections is not None:
+            stages_present.add("detection")
+        if ctx.tracks_2d is not None:
+            stages_present.add("tracking")
+        if ctx.tracklet_groups is not None:
+            stages_present.add("association")
+        if ctx.annotated_detections is not None:
+            stages_present.add("midline")
+        if ctx.midlines_3d is not None:
+            stages_present.add("reconstruction")
 
         # Determine sampled frame indices.
         if n_frames is not None and frame_count > 0:
@@ -173,37 +383,24 @@ class EvalRunner:
         midline_metrics: MidlineMetrics | None = None
         reconstruction_metrics: ReconstructionMetrics | None = None
 
-        if "detection" in caches:
-            ctx = caches["detection"]
+        if "detection" in stages_present:
             frames = ctx.detections or []
             if sampled_indices and len(frames) > 0:
                 frames = [frames[i] for i in sampled_indices if i < len(frames)]
             detection_metrics = evaluate_detection(frames)
 
-        if "tracking" in caches:
-            ctx = caches["tracking"]
-            # Flatten all tracklets from all cameras into a single list.
+        if "tracking" in stages_present:
             tracks_2d = ctx.tracks_2d or {}
             all_tracklets = [t for tracklets in tracks_2d.values() for t in tracklets]
             tracking_metrics = evaluate_tracking(all_tracklets)
 
-        if "association" in caches:
+        if "association" in stages_present:
             n_animals = self._read_n_animals()
-            # Build MidlineSets from midline cache if available, else association cache.
-            midline_sets_ctx = (
-                caches.get("midline")
-                or caches.get("reconstruction")
-                or caches["association"]
-            )
-            midline_sets = self._build_midline_sets(midline_sets_ctx, sampled_indices)
+            midline_sets = self._build_midline_sets(ctx, sampled_indices)
             association_metrics = evaluate_association(midline_sets, n_animals)
 
-        if "midline" in caches:
-            ctx = caches["midline"]
-            midline_sets_ctx = (
-                caches.get("midline") or caches.get("reconstruction") or ctx
-            )
-            midline_sets = self._build_midline_sets(midline_sets_ctx, sampled_indices)
+        if "midline" in stages_present:
+            midline_sets = self._build_midline_sets(ctx, sampled_indices)
             # evaluate_midline takes list[dict[int, Midline2D]] — collapse per frame
             per_frame_midlines = [
                 {
@@ -215,17 +412,15 @@ class EvalRunner:
             ]
             midline_metrics = evaluate_midline(per_frame_midlines)
 
-        if "reconstruction" in caches:
-            ctx = caches["reconstruction"]
+        if "reconstruction" in stages_present:
             midlines_3d = ctx.midlines_3d or []
             frame_results = [
                 (i, midlines_3d[i])
                 for i in sampled_indices
                 if i < len(midlines_3d) and midlines_3d[i]
             ]
-            # fish_available: n_animals * frames_evaluated (or count from context)
             n_animals_recon = 0
-            if "association" in caches:
+            if "association" in stages_present:
                 try:
                     n_animals_recon = self._read_n_animals()
                 except FileNotFoundError:
@@ -237,7 +432,7 @@ class EvalRunner:
 
         return EvalRunnerResult(
             run_id=run_id,
-            stages_present=frozenset(caches.keys()),
+            stages_present=frozenset(stages_present),
             detection=detection_metrics,
             tracking=tracking_metrics,
             association=association_metrics,
@@ -246,27 +441,6 @@ class EvalRunner:
             frames_evaluated=frames_evaluated,
             frames_available=frame_count,
         )
-
-    def _discover_caches(self) -> dict[str, PipelineContext]:
-        """Probe for each known stage cache file and load existing ones.
-
-        Returns:
-            Dict mapping stage_key to PipelineContext for each cache present.
-            Missing cache files are silently skipped.
-
-        Raises:
-            StaleCacheError: Propagated from load_stage_cache when a cache
-                file cannot be deserialized due to class evolution.
-        """
-        result: dict[str, PipelineContext] = {}
-        diag_dir = self._run_dir / "diagnostics"
-
-        for key in _STAGE_KEYS:
-            cache_path = diag_dir / f"{key}_cache.pkl"
-            if cache_path.exists():
-                result[key] = load_stage_cache(cache_path)
-
-        return result
 
     def _read_n_animals(self) -> int:
         """Read n_animals from config.yaml in the run directory.
@@ -300,8 +474,7 @@ class EvalRunner:
         AnnotatedDetection midlines using a centroid proximity threshold.
 
         Args:
-            ctx: PipelineContext from the midline (or reconstruction) stage cache.
-                Must have both ``tracklet_groups`` and ``annotated_detections``.
+            ctx: PipelineContext with tracklet_groups and annotated_detections.
             sampled_indices: Frame indices to include. Empty list means all frames.
 
         Returns:
@@ -397,4 +570,4 @@ def _match_annotated_by_centroid(
     return best
 
 
-__all__ = ["EvalRunner", "EvalRunnerResult"]
+__all__ = ["EvalRunner", "EvalRunnerResult", "load_run_context"]

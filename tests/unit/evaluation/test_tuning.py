@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import pickle
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -362,3 +365,193 @@ class TestTwoTierFrameCounts:
         assert len(validate) == 100
         # Validate should be a superset-like (same deterministic distribution)
         assert len(fast) < len(validate)
+
+
+# ---------------------------------------------------------------------------
+# TuningOrchestrator chunk cache loading tests
+# ---------------------------------------------------------------------------
+
+_N_FRAMES = 4
+_CAM_IDS = ["cam0", "cam1"]
+_N_ANIMALS = 2
+_FISH_IDS = [0, 1]
+
+
+def _make_tuning_context(n_frames: int = _N_FRAMES) -> Any:
+    """Build a minimal PipelineContext with all fields needed for tuning."""
+    from aquapose.core.association.types import TrackletGroup
+    from aquapose.core.context import PipelineContext
+    from aquapose.core.tracking.types import Tracklet2D
+    from aquapose.core.types.detection import Detection
+
+    detection_frames = [
+        {
+            cam_id: [
+                Detection(bbox=(10, 20, 50, 80), mask=None, area=4000, confidence=0.9)
+            ]
+            for cam_id in _CAM_IDS
+        }
+        for _ in range(n_frames)
+    ]
+    all_frames = tuple(range(n_frames))
+    tracks_2d = {
+        cam_id: [
+            Tracklet2D(
+                camera_id=cam_id,
+                track_id=fid,
+                frames=all_frames,
+                centroids=tuple(
+                    (float(i * 10), float(i * 10)) for i in range(n_frames)
+                ),
+                bboxes=tuple(
+                    (float(i * 10), float(i * 10), 50.0, 80.0) for i in range(n_frames)
+                ),
+                frame_status=tuple("detected" for _ in range(n_frames)),
+            )
+            for fid in _FISH_IDS
+        ]
+        for cam_id in _CAM_IDS
+    }
+    tracklet_groups = [
+        TrackletGroup(
+            fish_id=fid,
+            tracklets=tuple(
+                Tracklet2D(
+                    camera_id=cam_id,
+                    track_id=fid,
+                    frames=all_frames,
+                    centroids=tuple(
+                        (float(i * 10), float(i * 10)) for i in range(n_frames)
+                    ),
+                    bboxes=tuple(
+                        (float(i * 10), float(i * 10), 50.0, 80.0)
+                        for i in range(n_frames)
+                    ),
+                    frame_status=tuple("detected" for _ in range(n_frames)),
+                )
+                for cam_id in _CAM_IDS
+            ),
+            confidence=0.95,
+            consensus_centroids=None,
+        )
+        for fid in _FISH_IDS
+    ]
+
+    return PipelineContext(
+        frame_count=n_frames,
+        camera_ids=_CAM_IDS,
+        detections=detection_frames,
+        tracks_2d=tracks_2d,
+        tracklet_groups=tracklet_groups,
+        annotated_detections=None,
+        midlines_3d=None,
+    )
+
+
+def _write_chunk_cache(chunk_dir: Path, ctx: Any, run_id: str = "run_test_001") -> None:
+    """Write a chunk cache.pkl in the new per-chunk layout."""
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+    envelope = {
+        "run_id": run_id,
+        "timestamp": "2026-03-03T00:00:00Z",
+        "version_fingerprint": "abc123",
+        "context": ctx,
+    }
+    (chunk_dir / "cache.pkl").write_bytes(
+        pickle.dumps(envelope, protocol=pickle.HIGHEST_PROTOCOL)
+    )
+
+
+def _write_config_yaml(path: Path, n_animals: int = _N_ANIMALS) -> None:
+    """Write a minimal config.yaml."""
+    path.write_text(f"n_animals: {n_animals}\n")
+
+
+def _make_tuning_run_dir(
+    tmp_path: Path,
+    n_chunks: int = 1,
+) -> Path:
+    """Create a run directory with chunk cache layout for tuning tests."""
+    run_dir = tmp_path / "run_001"
+    diag_dir = run_dir / "diagnostics"
+    diag_dir.mkdir(parents=True)
+    _write_config_yaml(run_dir / "config.yaml")
+
+    chunks = []
+    for chunk_idx in range(n_chunks):
+        ctx = _make_tuning_context()
+        chunk_dir = diag_dir / f"chunk_{chunk_idx:03d}"
+        _write_chunk_cache(chunk_dir, ctx)
+        chunks.append(
+            {
+                "index": chunk_idx,
+                "start_frame": chunk_idx * _N_FRAMES,
+                "end_frame": (chunk_idx + 1) * _N_FRAMES,
+                "stages_cached": ["TrackingStage", "AssociationStage"],
+            }
+        )
+
+    manifest = {
+        "run_id": "run_test_001",
+        "total_frames": n_chunks * _N_FRAMES,
+        "chunk_size": _N_FRAMES,
+        "version_fingerprint": "abc123",
+        "chunks": chunks,
+    }
+    (diag_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+
+    return run_dir
+
+
+class TestTuningOrchestratorChunkLoading:
+    """Tests for TuningOrchestrator loading from chunk cache layout."""
+
+    def test_initializes_from_chunk_cache_layout(self, tmp_path: Path) -> None:
+        """TuningOrchestrator loads from chunk_000/cache.pkl instead of stage pkl files."""
+        from aquapose.evaluation.tuning import TuningOrchestrator
+
+        run_dir = _make_tuning_run_dir(tmp_path, n_chunks=1)
+
+        # Should not raise
+        orchestrator = TuningOrchestrator(run_dir / "config.yaml")
+
+        # Tracking and association stages should be present
+        assert "tracking" in orchestrator._caches
+        assert "association" in orchestrator._caches
+
+    def test_multi_chunk_context_merged(self, tmp_path: Path) -> None:
+        """TuningOrchestrator merges multi-chunk contexts correctly."""
+        from aquapose.evaluation.tuning import TuningOrchestrator
+
+        n_chunks = 3
+        run_dir = _make_tuning_run_dir(tmp_path, n_chunks=n_chunks)
+        orchestrator = TuningOrchestrator(run_dir / "config.yaml")
+
+        # Tracking cache should have merged frame_count
+        tracking_ctx = orchestrator._caches.get("tracking")
+        assert tracking_ctx is not None
+        assert tracking_ctx.frame_count == n_chunks * _N_FRAMES
+
+    def test_require_cache_raises_file_not_found_when_missing(
+        self, tmp_path: Path
+    ) -> None:
+        """_require_cache raises FileNotFoundError for missing stage data."""
+        from aquapose.evaluation.tuning import TuningOrchestrator
+
+        run_dir = _make_tuning_run_dir(tmp_path, n_chunks=1)
+        orchestrator = TuningOrchestrator(run_dir / "config.yaml")
+
+        with pytest.raises(FileNotFoundError):
+            orchestrator._require_cache("midline")
+
+    def test_no_chunk_caches_means_empty_caches(self, tmp_path: Path) -> None:
+        """TuningOrchestrator with empty diagnostics has empty _caches dict."""
+        from aquapose.evaluation.tuning import TuningOrchestrator
+
+        run_dir = tmp_path / "run_001"
+        run_dir.mkdir()
+        (run_dir / "diagnostics").mkdir()
+        _write_config_yaml(run_dir / "config.yaml")
+
+        orchestrator = TuningOrchestrator(run_dir / "config.yaml")
+        assert orchestrator._caches == {}

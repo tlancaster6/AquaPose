@@ -14,8 +14,9 @@ import numpy as np
 import torch
 import yaml
 
-from aquapose.core.context import PipelineContext, load_stage_cache
+from aquapose.core.context import PipelineContext
 from aquapose.evaluation.metrics import select_frames
+from aquapose.evaluation.runner import load_run_context
 from aquapose.evaluation.stages.association import (
     DEFAULT_GRID as ASSOCIATION_DEFAULT_GRID,
 )
@@ -322,19 +323,22 @@ class TuningOrchestrator:
         # Lazy-loaded projection models for centroid reprojection
         self._projection_models: dict[str, Any] | None = None
 
-        # Discover and load caches
+        # Load and merge all chunk caches into a single context
+        ctx, _manifest = load_run_context(self._run_dir)
+
+        # Build stage-keyed cache dict from merged context fields
         self._caches: dict[str, PipelineContext] = {}
-        diag_dir = self._run_dir / "diagnostics"
-        for stage_key in (
-            "detection",
-            "tracking",
-            "association",
-            "midline",
-            "reconstruction",
-        ):
-            cache_path = diag_dir / f"{stage_key}_cache.pkl"
-            if cache_path.exists():
-                self._caches[stage_key] = load_stage_cache(cache_path)
+        if ctx is not None:
+            if ctx.detections is not None:
+                self._caches["detection"] = ctx
+            if ctx.tracks_2d is not None:
+                self._caches["tracking"] = ctx
+            if ctx.tracklet_groups is not None:
+                self._caches["association"] = ctx
+            if ctx.annotated_detections is not None:
+                self._caches["midline"] = ctx
+            if ctx.midlines_3d is not None:
+                self._caches["reconstruction"] = ctx
 
     def sweep_association(self) -> TuningResult:
         """Sweep association parameters over a joint 2D grid then carry-forward.
@@ -693,9 +697,9 @@ class TuningOrchestrator:
             FileNotFoundError: If the cache is not present.
         """
         if stage_key not in self._caches:
-            cache_path = self._run_dir / "diagnostics" / f"{stage_key}_cache.pkl"
+            diag_dir = self._run_dir / "diagnostics"
             raise FileNotFoundError(
-                f"Required cache '{stage_key}' not found at {cache_path}. "
+                f"Required cache '{stage_key}' not found in '{diag_dir}'. "
                 f"Re-run the pipeline in diagnostic mode to generate it."
             )
         return self._caches[stage_key]

@@ -6,9 +6,9 @@ status: unknown
 last_updated: "2026-03-03T23:45:37.997Z"
 progress:
   total_phases: 2
-  completed_phases: 2
-  total_plans: 5
-  completed_plans: 5
+  completed_phases: 1
+  total_plans: 7
+  completed_plans: 6
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-03-03)
 
 ## Current Position
 
-Phase: 52 of 53 (Chunk Orchestrator and Handoff)
-Plan: 3 of 3 complete
-Status: Complete
-Last activity: 2026-03-03 — Completed 52-03: CarryForward migration to ChunkHandoff, Phase 52 all requirements met
+Phase: 53 of 53 (Integration and Validation)
+Plan: 1 of 2 complete
+Status: In Progress
+Last activity: 2026-03-04 — Completed 53-01: ChunkOrchestrator wired as universal production path; HDF5ExportObserver deleted; CLI config-only handoff
 
-Progress: [████████░░] 80% (1/2 phases, 5 plans complete)
+Progress: [████████░░] 86% (1/2 phases, 6 plans complete)
 
 ## Accumulated Context
 
@@ -88,8 +88,16 @@ Phase 52 Plan 03 decisions:
 - TrackingStage.run() preserves identity_map, track_id_to_global, next_global_id from ChunkHandoff carry
 - ChunkOrchestrator passes prev_handoff directly as carry_forward (no CarryForward wrapper needed)
 
+Phase 53 Plan 01 decisions:
+- CLI delegates entirely to ChunkOrchestrator — no direct PosePipeline construction in cli.py
+- --resume-from CLI flag removed; load_stage_cache remains in core/context.py for programmatic use
+- --max-chunks added to CLI and ChunkOrchestrator constructor for single-chunk dry runs
+- HDF5ExportObserver deleted — orchestrator owns HDF5 output via Midline3DWriter
+- contextlib.ExitStack used so caller-owned frame_source is not closed by orchestrator
+- Mode conflict validation: diagnostic + chunk_size>0 + max_chunks!=1 raises ValueError at construction
+
 ## Session Continuity
 
-Last session: 2026-03-03
-Stopped at: Completed 52-03 — CarryForward migration to ChunkHandoff. Phase 52 all requirements met (CHUNK-01 through CHUNK-05, IDENT-01, IDENT-02, OUT-01).
+Last session: 2026-03-04
+Stopped at: Completed 53-01 — ChunkOrchestrator wired as universal production path. OUT-02, INTEG-01, INTEG-02 met.
 Resume file: None

@@ -29,12 +29,12 @@ Requirements for chunk processing milestone. Each maps to roadmap phases.
 ### Output
 
 - [x] **OUT-01**: Per-chunk HDF5 flush via existing Midline3DWriter with global frame offset applied
-- [ ] **OUT-02**: HDF5Observer disabled when chunk mode is active — orchestrator owns HDF5 output as a run-level concern
+- [x] **OUT-02**: HDF5Observer disabled when chunk mode is active — orchestrator owns HDF5 output as a run-level concern
 
 ### Integration
 
-- [ ] **INTEG-01**: `aquapose run` uses ChunkOrchestrator; with chunk_size=null/0, single-chunk degenerate case matches current behavior exactly
-- [ ] **INTEG-02**: Chunk mode and diagnostic mode are mutually exclusive — validation error if both active
+- [x] **INTEG-01**: `aquapose run` uses ChunkOrchestrator; with chunk_size=null/0, single-chunk degenerate case matches current behavior exactly
+- [x] **INTEG-02**: Chunk mode and diagnostic mode are mutually exclusive — validation error if both active
 - [ ] **INTEG-03**: Chunked output matches non-chunked output for the same video (validation test)
 
 ## Deferred Requirements
@@ -83,9 +83,9 @@ Requirements for chunk processing milestone. Each maps to roadmap phases.
 | IDENT-01 | Phase 52 | Complete |
 | IDENT-02 | Phase 52 | Complete |
 | OUT-01 | Phase 52 | Complete |
-| OUT-02 | Phase 53 | Pending |
-| INTEG-01 | Phase 53 | Pending |
-| INTEG-02 | Phase 53 | Pending |
+| OUT-02 | Phase 53 | Complete |
+| INTEG-01 | Phase 53 | Complete |
+| INTEG-02 | Phase 53 | Complete |
 | INTEG-03 | Phase 53 | Pending |
 
 **Coverage:**

@@ -339,6 +339,113 @@ def tune_cmd(
     click.echo(format_config_diff(stage, result.winner_params, stage_config))
 
 
+@cli.group()
+def viz() -> None:
+    """Generate visualizations from diagnostic run caches."""
+
+
+@viz.command("overlay")
+@click.argument("run_dir", type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.option(
+    "--output-dir",
+    "-o",
+    "output_dir",
+    default=None,
+    type=click.Path(file_okay=False, dir_okay=True),
+    help="Custom output directory (default: {run_dir}/viz/).",
+)
+def viz_overlay(run_dir: str, output_dir: str | None) -> None:
+    """Generate a 2D reprojection overlay mosaic video."""
+    from aquapose.evaluation.viz import generate_overlay
+
+    out_dir = Path(output_dir) if output_dir is not None else None
+    try:
+        result = generate_overlay(Path(run_dir), out_dir)
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Overlay written to: {result}")
+
+
+@viz.command("animation")
+@click.argument("run_dir", type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.option(
+    "--output-dir",
+    "-o",
+    "output_dir",
+    default=None,
+    type=click.Path(file_okay=False, dir_okay=True),
+    help="Custom output directory (default: {run_dir}/viz/).",
+)
+def viz_animation(run_dir: str, output_dir: str | None) -> None:
+    """Generate an interactive 3D midline animation HTML."""
+    from aquapose.evaluation.viz import generate_animation
+
+    out_dir = Path(output_dir) if output_dir is not None else None
+    try:
+        result = generate_animation(Path(run_dir), out_dir)
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Animation written to: {result}")
+
+
+@viz.command("trails")
+@click.argument("run_dir", type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.option(
+    "--output-dir",
+    "-o",
+    "output_dir",
+    default=None,
+    type=click.Path(file_okay=False, dir_okay=True),
+    help="Custom output directory (default: {run_dir}/viz/).",
+)
+def viz_trails(run_dir: str, output_dir: str | None) -> None:
+    """Generate per-camera trail videos and association mosaic."""
+    from aquapose.evaluation.viz import generate_trails
+
+    out_dir = Path(output_dir) if output_dir is not None else None
+    try:
+        result = generate_trails(Path(run_dir), out_dir)
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Trail videos written to: {result}")
+
+
+@viz.command("all")
+@click.argument("run_dir", type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.option(
+    "--output-dir",
+    "-o",
+    "output_dir",
+    default=None,
+    type=click.Path(file_okay=False, dir_okay=True),
+    help="Custom output directory (default: {run_dir}/viz/).",
+)
+def viz_all(run_dir: str, output_dir: str | None) -> None:
+    """Attempt every visualization; skip gracefully on failure."""
+    from aquapose.evaluation.viz import generate_all
+
+    out_dir = Path(output_dir) if output_dir is not None else None
+    results = generate_all(Path(run_dir), out_dir)
+
+    succeeded: list[str] = []
+    skipped: list[tuple[str, str]] = []
+    for name, outcome in results.items():
+        if isinstance(outcome, Exception):
+            skipped.append((name, str(outcome)))
+        else:
+            succeeded.append(f"  {name}: {outcome}")
+
+    if succeeded:
+        click.echo("Succeeded:")
+        for line in succeeded:
+            click.echo(line)
+
+    if skipped:
+        click.echo("Skipped (failures):")
+        for name, reason in skipped:
+            click.echo(f"  {name}: {reason}")
+
+
 cli.add_command(train_group)
 cli.add_command(prep_group)
 

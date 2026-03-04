@@ -166,11 +166,6 @@ class ChunkOrchestrator:
         frame_source: Optional pre-built FrameSource. When provided the caller
             owns the lifecycle (no open/close). When None, ChunkOrchestrator
             constructs and manages a VideoFrameSource internally.
-
-    Raises:
-        ValueError: If diagnostic mode is combined with multi-chunk settings
-            (chunk_size > 0 and max_chunks != 1). Use chunk_size=null for
-            diagnostic runs on short clips, or --max-chunks 1.
     """
 
     def __init__(
@@ -188,20 +183,6 @@ class ChunkOrchestrator:
         self._stop_after = stop_after
         self._extra_observers = extra_observers
         self._frame_source = frame_source
-
-        # Validate mode conflict: diagnostic + multi-chunk is not supported
-        chunk_size = config.chunk_size or None
-        is_multi_chunk = (
-            chunk_size is not None
-            and chunk_size > 0
-            and (max_chunks is None or max_chunks > 1)
-        )
-        if is_multi_chunk and config.mode == "diagnostic":
-            raise ValueError(
-                "Chunk mode and diagnostic mode are mutually exclusive. "
-                "Use chunk_size=null for diagnostic runs on short clips, "
-                "or set --max-chunks 1."
-            )
 
     def run(self) -> None:
         """Execute the full video in chunks and write HDF5 output."""
@@ -291,6 +272,7 @@ class ChunkOrchestrator:
                         total_stages=len(stages),
                         extra_observers=self._extra_observers,
                         frame_source=chunk_source,
+                        chunk_idx=chunk_idx,
                     )
                 except Exception:
                     observers = []
@@ -382,6 +364,56 @@ class ChunkOrchestrator:
 
         if skipped_ranges:
             _write_skipped_metadata(hdf5_path, skipped_ranges)
+
+        # Update manifest.json with the authoritative total_frames after all chunks complete
+        if config.mode == "diagnostic":
+            _update_manifest_total_frames(output_dir, total_frames, chunk_size)
+
+
+def _update_manifest_total_frames(
+    output_dir: Path, total_frames: int, chunk_size: int | None
+) -> None:
+    """Update manifest.json with the authoritative total_frames after all chunks complete.
+
+    Reads the existing manifest (written per-chunk by DiagnosticObserver), updates
+    total_frames and chunk_size with the values known only after the full run, and
+    writes back atomically.
+
+    Args:
+        output_dir: Run output directory (parent of diagnostics/).
+        total_frames: Authoritative total frame count from the video source.
+        chunk_size: Chunk size used for this run (None for single-chunk).
+    """
+    import json
+    import tempfile
+
+    manifest_path = output_dir / "diagnostics" / "manifest.json"
+    if not manifest_path.exists():
+        return
+
+    try:
+        existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("Failed to read manifest.json for total_frames update")
+        return
+
+    existing["total_frames"] = total_frames
+    existing["chunk_size"] = chunk_size
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=manifest_path.parent,
+            delete=False,
+            suffix=".tmp",
+            mode="w",
+            encoding="utf-8",
+        ) as tmp:
+            tmp_path = tmp.name
+            json.dump(existing, tmp, indent=2)
+        os.replace(tmp_path, manifest_path)
+        logger.info("Manifest updated with total_frames=%d", total_frames)
+    except OSError:
+        logger.warning("Failed to update manifest.json total_frames", exc_info=True)
 
 
 def write_handoff(path: Path | str, handoff: ChunkHandoff) -> None:

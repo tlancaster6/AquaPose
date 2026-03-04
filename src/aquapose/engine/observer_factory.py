@@ -46,6 +46,7 @@ def build_observers(
     total_stages: int,
     extra_observers: tuple[str, ...] = (),
     frame_source: FrameSource | None = None,
+    chunk_idx: int = 0,
 ) -> list[Observer]:
     """Assemble the observer list based on execution mode and additive flags.
 
@@ -74,6 +75,9 @@ def build_observers(
             Overlay2DObserver and TrackletTrailObserver. When None (synthetic
             mode or no video dir), those observers fall back to synthetic
             black frames.
+        chunk_idx: Zero-based chunk index forwarded to DiagnosticObserver so
+            it writes caches to the correct ``diagnostics/chunk_NNN/`` subdirectory.
+            Default 0 (single-chunk or non-diagnostic mode).
 
     Returns:
         List of configured Observer instances for the pipeline.
@@ -117,6 +121,7 @@ def build_observers(
         observers.append(
             DiagnosticObserver(
                 output_dir=config.output_dir,
+                chunk_idx=chunk_idx,
             )
         )
         observers.append(
@@ -151,6 +156,7 @@ def build_observers(
             observers.append(
                 DiagnosticObserver(
                     output_dir=config.output_dir,
+                    chunk_idx=chunk_idx,
                 )
             )
         elif cls is ConsoleObserver:

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import types
 
-import pytest
-
 
 def test_stitch_identities_first_chunk() -> None:
     """First chunk: all groups get fresh global IDs."""
@@ -110,12 +108,12 @@ def test_chunk_boundaries_partial() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Mode conflict validation
+# Diagnostic + chunk mode co-existence (mutual exclusion removed in 54-01)
 # ---------------------------------------------------------------------------
 
 
-def test_mode_conflict_raises_for_diagnostic_multi_chunk() -> None:
-    """diagnostic mode + chunk_size > 0 + max_chunks > 1 raises ValueError."""
+def test_diagnostic_mode_allows_multi_chunk() -> None:
+    """diagnostic mode + chunk_size > 0 + max_chunks > 1 no longer raises ValueError."""
     from unittest.mock import MagicMock
 
     from aquapose.engine.orchestrator import ChunkOrchestrator
@@ -123,11 +121,11 @@ def test_mode_conflict_raises_for_diagnostic_multi_chunk() -> None:
     config = MagicMock()
     config.chunk_size = 1000
     config.mode = "diagnostic"
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        ChunkOrchestrator(config=config, max_chunks=None)
+    # Should NOT raise after mutual exclusion removed
+    ChunkOrchestrator(config=config, max_chunks=None)
 
 
-def test_mode_conflict_allows_diagnostic_single_chunk() -> None:
+def test_diagnostic_mode_allows_single_chunk() -> None:
     """diagnostic mode + chunk_size=null (degenerate) is allowed."""
     from unittest.mock import MagicMock
 
@@ -140,7 +138,7 @@ def test_mode_conflict_allows_diagnostic_single_chunk() -> None:
     ChunkOrchestrator(config=config)
 
 
-def test_mode_conflict_allows_diagnostic_max_chunks_1() -> None:
+def test_diagnostic_mode_allows_max_chunks_1() -> None:
     """diagnostic mode + chunk_size > 0 + max_chunks=1 is allowed."""
     from unittest.mock import MagicMock
 

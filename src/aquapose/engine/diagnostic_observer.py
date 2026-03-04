@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import datetime
+import json
 import logging
+import os
 import pickle
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -89,6 +92,13 @@ class DiagnosticObserver:
     PipelineContext (by reference, not deep copy) and stores it keyed by
     stage name. All 5 stages are captured without selective filtering.
 
+    On PipelineComplete, writes a single ``cache.pkl`` under
+    ``diagnostics/chunk_{chunk_idx:03d}/`` containing the full PipelineContext
+    from the last stage. Also writes/appends ``diagnostics/manifest.json``
+    with a summary entry for this chunk.
+
+    The in-memory ``stages`` dict is retained for interactive Jupyter exploration.
+
     Designed for interactive exploration in Jupyter notebooks::
 
         observer = DiagnosticObserver()
@@ -104,10 +114,13 @@ class DiagnosticObserver:
     def __init__(
         self,
         output_dir: str | Path | None = None,
+        chunk_idx: int = 0,
     ) -> None:
         self.stages: dict[str, StageSnapshot] = {}
         self._output_dir = Path(output_dir) if output_dir is not None else None
+        self._chunk_idx = chunk_idx
         self._run_id: str = ""
+        self._last_context: object = None
 
     def on_event(self, event: Event) -> None:
         """Receive a dispatched event and capture stage snapshots.
@@ -120,7 +133,7 @@ class DiagnosticObserver:
             return
 
         if isinstance(event, PipelineComplete):
-            self._on_pipeline_complete()
+            self._on_pipeline_complete(event)
             return
 
         if not isinstance(event, StageComplete):
@@ -144,39 +157,119 @@ class DiagnosticObserver:
         )
 
         self.stages[event.stage_name] = snapshot
+        # Keep a reference to the most recent context for the chunk cache
+        self._last_context = context
 
-        if self._output_dir is not None:
-            self._write_stage_cache(event, context)
+    def _write_chunk_cache(self, context: object) -> None:
+        """Write a single cache.pkl for this chunk using atomic write.
 
-    def _write_stage_cache(self, event: StageComplete, context: object) -> None:
-        """Write a pickle cache file for the completed stage.
-
-        The cache is stored as a metadata envelope dict containing run_id,
-        timestamp, stage_name, version_fingerprint, and the full PipelineContext
-        snapshot at that stage.
+        Creates ``diagnostics/chunk_{chunk_idx:03d}/cache.pkl`` containing an
+        envelope dict with run_id, timestamp, version_fingerprint, and the full
+        PipelineContext.
 
         Args:
-            event: The StageComplete event carrying stage name and index.
-            context: The PipelineContext after this stage has run.
+            context: The final PipelineContext after all stages have run.
         """
-        diagnostics_dir = self._output_dir / "diagnostics"  # type: ignore[operator]
-        diagnostics_dir.mkdir(parents=True, exist_ok=True)
+        if self._output_dir is None:
+            return
 
-        # Normalize stage name for filename: "DetectionStage" -> "detection"
-        stage_key = event.stage_name.removesuffix("Stage").lower()
-        cache_path = diagnostics_dir / f"{stage_key}_cache.pkl"
+        chunk_dir = self._output_dir / "diagnostics" / f"chunk_{self._chunk_idx:03d}"
+        chunk_dir.mkdir(parents=True, exist_ok=True)
+
+        cache_path = chunk_dir / "cache.pkl"
 
         envelope = {
             "run_id": self._run_id,
             "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
-            "stage_name": event.stage_name,
             "version_fingerprint": context_fingerprint(context),  # type: ignore[arg-type]
             "context": context,
         }
 
-        cache_path.write_bytes(pickle.dumps(envelope, protocol=pickle.HIGHEST_PROTOCOL))
-        logger.info("Stage cache written: %s", cache_path)
+        with tempfile.NamedTemporaryFile(
+            dir=chunk_dir, delete=False, suffix=".tmp"
+        ) as tmp:
+            tmp_path = tmp.name
+            pickle.dump(envelope, tmp, protocol=pickle.HIGHEST_PROTOCOL)
+        os.replace(tmp_path, cache_path)
+        logger.info("Chunk cache written: %s", cache_path)
 
-    def _on_pipeline_complete(self) -> None:
-        """No-op hook called when the pipeline completes. Reserved for future extensibility."""
-        pass
+    def _write_manifest(self, context: object) -> None:
+        """Write or append this chunk's entry to diagnostics/manifest.json.
+
+        Reads the existing manifest (if any), adds this chunk's entry, and
+        writes back atomically.
+
+        Args:
+            context: The final PipelineContext for this chunk.
+        """
+        if self._output_dir is None:
+            return
+
+        diagnostics_dir = self._output_dir / "diagnostics"
+        diagnostics_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = diagnostics_dir / "manifest.json"
+
+        # Load existing manifest or create fresh
+        if manifest_path.exists():
+            try:
+                existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                existing = {}
+        else:
+            existing = {}
+
+        frame_count = getattr(context, "frame_count", None)
+        chunk_size_val = getattr(context, "chunk_size", None)
+
+        chunk_entry = {
+            "index": self._chunk_idx,
+            "start_frame": None,
+            "end_frame": frame_count,
+            "stages_cached": list(self.stages.keys()),
+        }
+
+        # Build updated manifest
+        chunks: list[dict] = existing.get("chunks", [])
+        # Replace entry if same index already present (re-run scenario)
+        chunks = [c for c in chunks if c.get("index") != self._chunk_idx]
+        chunks.append(chunk_entry)
+        # Sort by chunk index for readability
+        chunks.sort(key=lambda c: c.get("index", 0))
+
+        manifest: dict = {
+            "run_id": self._run_id or existing.get("run_id", ""),
+            "total_frames": frame_count,
+            "chunk_size": chunk_size_val,
+            "version_fingerprint": context_fingerprint(context),  # type: ignore[arg-type]
+            "chunks": chunks,
+        }
+
+        # Atomic write
+        with tempfile.NamedTemporaryFile(
+            dir=diagnostics_dir,
+            delete=False,
+            suffix=".tmp",
+            mode="w",
+            encoding="utf-8",
+        ) as tmp:
+            tmp_path = tmp.name
+            json.dump(manifest, tmp, indent=2)
+        os.replace(tmp_path, manifest_path)
+        logger.info("Manifest written: %s", manifest_path)
+
+    def _on_pipeline_complete(self, event: PipelineComplete) -> None:
+        """Write chunk cache and update manifest when the pipeline completes.
+
+        Args:
+            event: The PipelineComplete event (may carry context).
+        """
+        if self._output_dir is None:
+            return
+
+        # Use event context if available; otherwise fall back to last StageComplete context
+        context = getattr(event, "context", None) or self._last_context
+        if context is None:
+            return
+
+        self._write_chunk_cache(context)
+        self._write_manifest(context)

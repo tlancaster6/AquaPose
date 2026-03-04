@@ -3,9 +3,9 @@
 Defines the structural typing contract that all pipeline stages must satisfy,
 and the typed accumulator that flows data between stages. Also defines
 ChunkHandoff for persisting cross-chunk state (tracker state and identity map)
-across chunk boundaries. Provides StaleCacheError, load_stage_cache, and
-context_fingerprint for working with stage-output pickle caches written by
-DiagnosticObserver.
+across chunk boundaries. Provides StaleCacheError, load_stage_cache,
+load_chunk_cache, and context_fingerprint for working with stage-output pickle
+caches written by DiagnosticObserver.
 
 These types live in core/ because they are pure data containers with no engine
 logic. Placing them here eliminates all TYPE_CHECKING backdoors where core/
@@ -16,10 +16,13 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import logging
 import pickle
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
+
+logger = logging.getLogger(__name__)
 
 
 class StaleCacheError(Exception):
@@ -89,6 +92,59 @@ def load_stage_cache(path: str | Path) -> PipelineContext:
             f"Cache file '{p}' has inconsistent shape: "
             f"frame_count={ctx.frame_count} but len(detections)={len(ctx.detections)}. "
             f"The cache may be corrupt — re-run the pipeline in diagnostic mode."
+        )
+
+    return ctx
+
+
+def load_chunk_cache(path: str | Path) -> PipelineContext:
+    """Load a chunk cache pickle file and return the embedded PipelineContext.
+
+    Loads from the new per-chunk single-cache layout written by DiagnosticObserver
+    (``diagnostics/chunk_NNN/cache.pkl``). On version fingerprint mismatch, logs a
+    warning but returns the context anyway (no StaleCacheError for fingerprint issues).
+
+    Args:
+        path: Path to a ``cache.pkl`` file written by the new DiagnosticObserver.
+
+    Returns:
+        The deserialized PipelineContext.
+
+    Raises:
+        StaleCacheError: If deserialization fails or the envelope format is invalid.
+        FileNotFoundError: If path does not exist.
+
+    """
+    p = Path(path)
+    raw = p.read_bytes()
+    try:
+        envelope = pickle.loads(raw)
+    except (AttributeError, ModuleNotFoundError, pickle.UnpicklingError) as exc:
+        raise StaleCacheError(
+            f"Cache file '{p}' is incompatible with the current codebase. "
+            f"Re-run the pipeline in diagnostic mode to regenerate it. "
+            f"Original error: {exc}"
+        ) from exc
+
+    if not isinstance(envelope, dict) or "context" not in envelope:
+        raise StaleCacheError(
+            f"Cache file '{p}' does not contain a valid envelope dict with a "
+            f"'context' key. Re-run the pipeline in diagnostic mode to regenerate it."
+        )
+
+    ctx: PipelineContext = envelope["context"]
+
+    # Check version fingerprint and warn on mismatch (do NOT raise)
+    stored_fp = envelope.get("version_fingerprint", "")
+    current_fp = context_fingerprint(ctx)
+    if stored_fp and stored_fp != current_fp:
+        logger.warning(
+            "Cache file '%s' has a stale version fingerprint "
+            "(stored=%s, current=%s). Context may be incompatible with the "
+            "current codebase — proceed with caution.",
+            p,
+            stored_fp,
+            current_fp,
         )
 
     return ctx

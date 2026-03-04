@@ -189,14 +189,14 @@ Plans:
 | 51 | 2/2 | Complete    | 2026-03-03 | - |
 | 52 | 3/3 | Complete    | 2026-03-03 | - |
 | 53 | 1/2 | In Progress |  | - |
-| 54 | 1/4 | In Progress |  | - |
+| 54 | 2/4 | In Progress|  | - |
 
 ### Phase 54: Chunk-Aware Diagnostics and Eval Migration
 
 **Goal:** Adapt diagnostic mode for multi-chunk support with per-chunk cache directories, simplify stage caching to a single cache file per chunk, and migrate all plotting/visualization functionality (overlay2d, animation3d, tracklet trails) out of pipeline observers into the eval suite where they operate on cached data post-run via CLI subcommands.
 **Requirements**: TBD
 **Depends on:** Phase 53
-**Plans:** 4 plans
+**Plans:** 2/4 plans executed
 
 Plans:
 - [x] 54-01-PLAN.md — Restructure diagnostic cache to per-chunk layout with manifest.json (Wave 1) — completed 2026-03-04

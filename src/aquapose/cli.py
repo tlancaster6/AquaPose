@@ -9,7 +9,6 @@ from typing import Any
 import click
 import yaml
 
-from aquapose.core.types import VideoFrameSource
 from aquapose.engine import load_config
 from aquapose.engine.orchestrator import ChunkOrchestrator
 from aquapose.training.cli import train_group
@@ -112,24 +111,16 @@ def run(
     # 3. Load config
     pipeline_config = load_config(yaml_path=config, cli_overrides=cli_overrides)
 
-    # 4. Build frame source for non-synthetic modes.
-    # Passed to ChunkOrchestrator so it can share the frame source across chunks.
-    frame_source = None
-    effective_mode = pipeline_config.mode
-    if effective_mode != "synthetic":
-        frame_source = VideoFrameSource(
-            video_dir=pipeline_config.video_dir,
-            calibration_path=pipeline_config.calibration_path,
-        )
-
-    # 5. Delegate to ChunkOrchestrator (config-only handoff)
+    # 4. Delegate to ChunkOrchestrator (config-only handoff).
+    # Orchestrator constructs and manages VideoFrameSource internally so that
+    # __enter__ is called (discovers videos).  The frame_source parameter is
+    # only used when injecting a pre-opened source (e.g. synthetic mode).
     orchestrator = ChunkOrchestrator(
         config=pipeline_config,
         verbose=verbose,
         max_chunks=max_chunks,
         stop_after=stop_after,
         extra_observers=extra_observers,
-        frame_source=frame_source,
     )
 
     try:

@@ -45,14 +45,12 @@ def mock_pipeline(tmp_path: Path):
         patch(
             "aquapose.cli.ChunkOrchestrator", return_value=mock_orchestrator_instance
         ) as mock_co,
-        patch("aquapose.cli.VideoFrameSource") as mock_vfs,
     ):
         yield {
             "load_config": mock_lc,
             "ChunkOrchestrator": mock_co,
             "orchestrator_instance": mock_orchestrator_instance,
             "config": mock_config,
-            "VideoFrameSource": mock_vfs,
         }
 
 

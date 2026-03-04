@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.3
 milestone_name: Chunk Mode
 status: unknown
-last_updated: "2026-03-04T20:23:36.704Z"
+last_updated: "2026-03-04T20:28:09.521Z"
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 11
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-03-03)
 ## Current Position
 
 Phase: 54 of 54 (Chunk-Aware Diagnostics and Eval Migration)
-Plan: 3 of 4 complete
-Status: In Progress
-Last activity: 2026-03-04 — Completed 54-03: aquapose viz CLI group + evaluation/viz/ package with overlay, animation, trails generators
+Plan: 4 of 4 complete
+Status: Complete
+Last activity: 2026-03-04 — Completed 54-04: Remove visualization observers from engine layer
 
-Progress: [█████████░] 88% (1/2 phases, 9 plans complete)
+Progress: [██████████] 100% (2/2 phases, 11 plans complete)
 
 ## Accumulated Context
 
@@ -54,6 +54,7 @@ Phase 51 Plan 02 decisions:
 - Observers accept frame_source=None and fall back to synthetic black frames — preserves synthetic mode compatibility
 - stop_frame in YAML now raises ValueError with _RENAME_HINTS pointing to max_frames on frame source
 - [Phase 54]: evaluation/viz/ package provides post-run visualization CLI; chunks merged by rebasing tracklet frame indices; generate_all() catches per-viz failures
+- [Phase 54]: Removed frame_source from build_observers; diagnostic mode now emits Console+Timing+DiagnosticObserver only; viz observers deleted from engine
 
 ### Pending Todos
 
@@ -122,5 +123,5 @@ Phase 54 Plan 03 decisions:
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed 54-03 — aquapose viz CLI group + evaluation/viz/ package with overlay, animation, trails generators
+Stopped at: Completed 54-04 — Remove visualization observers from engine layer
 Resume file: None

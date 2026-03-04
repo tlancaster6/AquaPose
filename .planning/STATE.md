@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.3
 milestone_name: Chunk Mode
-status: unknown
-last_updated: "2026-03-03T23:45:37.997Z"
+status: in_progress
+last_updated: "2026-03-04T20:07:01Z"
 progress:
   total_phases: 2
   completed_phases: 1
-  total_plans: 7
-  completed_plans: 6
+  total_plans: 11
+  completed_plans: 7
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-03-03)
 
 ## Current Position
 
-Phase: 53 of 53 (Integration and Validation)
-Plan: 1 of 2 complete
+Phase: 54 of 54 (Chunk-Aware Diagnostics and Eval Migration)
+Plan: 1 of 4 complete
 Status: In Progress
-Last activity: 2026-03-04 — Completed 53-01: ChunkOrchestrator wired as universal production path; HDF5ExportObserver deleted; CLI config-only handoff
+Last activity: 2026-03-04 — Completed 54-01: DiagnosticObserver restructured for per-chunk single-cache layout; mutual exclusion removed
 
-Progress: [████████░░] 86% (1/2 phases, 6 plans complete)
+Progress: [████████░░] 86% (1/2 phases, 7 plans complete)
 
 ## Accumulated Context
 
@@ -39,7 +39,7 @@ Key decisions for v3.3:
 - Per-chunk association (not global) — bounds O(T²) complexity, isolates failures
 - Identity stitching via track ID continuity — lightweight, leverages OC-SORT carry-forward
 - Orchestrator owns HDF5 output — per-chunk observer would fire incorrectly
-- Diagnostic mode and chunk mode are mutually exclusive — different purposes, bounded scope
+- Diagnostic mode and chunk mode mutual exclusion REMOVED (Phase 54-01) — DiagnosticObserver now supports multi-chunk runs via per-chunk cache layout
 - No FishState3D in handoff — 3D re-ID premature; add if re-ID failures observed in practice
 
 Phase 51 Plan 01 decisions:
@@ -100,8 +100,14 @@ Phase 53 Plan 01 decisions:
 - contextlib.ExitStack used so caller-owned frame_source is not closed by orchestrator
 - Mode conflict validation: diagnostic + chunk_size>0 + max_chunks!=1 raises ValueError at construction
 
+Phase 54 Plan 01 decisions:
+- Per-chunk single cache on PipelineComplete: one cache.pkl per chunk containing full final PipelineContext (replaces per-stage files)
+- Manifest append per observer instance: each DiagnosticObserver reads/appends to diagnostics/manifest.json atomically
+- Fingerprint mismatch = warning not error: load_chunk_cache() warns on version mismatch but loads anyway
+- Mutual exclusion removed: diagnostic+chunk ValueError removed; DiagnosticObserver works with multi-chunk runs via chunk_idx parameter
+
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed 53-01 — ChunkOrchestrator wired as universal production path. OUT-02, INTEG-01, INTEG-02 met.
+Stopped at: Completed 54-01 — DiagnosticObserver per-chunk cache layout; mutual exclusion removed; load_chunk_cache added
 Resume file: None

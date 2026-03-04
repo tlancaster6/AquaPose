@@ -188,14 +188,18 @@ Plans:
 | 46-50 | v3.2 | 11/11 | Complete | 2026-03-03 |
 | 51 | 2/2 | Complete    | 2026-03-03 | - |
 | 52 | 3/3 | Complete    | 2026-03-03 | - |
-| 53 | 1/2 | In Progress|  | - |
+| 53 | 1/2 | In Progress |  | - |
+| 54 | 1/4 | In Progress |  | - |
 
 ### Phase 54: Chunk-Aware Diagnostics and Eval Migration
 
-**Goal:** Adapt diagnostic mode for multi-chunk support with per-chunk cache directories, address cache size bloat by making intermediate stage caching selective/configurable, and migrate all plotting/visualization functionality (overlay2d, animation3d, tracklet trails) out of pipeline observers into the eval suite where they operate on cached data post-run.
+**Goal:** Adapt diagnostic mode for multi-chunk support with per-chunk cache directories, simplify stage caching to a single cache file per chunk, and migrate all plotting/visualization functionality (overlay2d, animation3d, tracklet trails) out of pipeline observers into the eval suite where they operate on cached data post-run via CLI subcommands.
 **Requirements**: TBD
 **Depends on:** Phase 53
-**Plans:** 0 plans
+**Plans:** 4 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 54 to break down)
+- [x] 54-01-PLAN.md — Restructure diagnostic cache to per-chunk layout with manifest.json (Wave 1) — completed 2026-03-04
+- [ ] 54-02-PLAN.md — Migrate EvalRunner and TuningOrchestrator to chunk cache layout (Wave 2)
+- [ ] 54-03-PLAN.md — Create evaluation/viz/ modules and aquapose viz CLI (Wave 2)
+- [ ] 54-04-PLAN.md — Delete visualization observers from engine, clean up references (Wave 3)

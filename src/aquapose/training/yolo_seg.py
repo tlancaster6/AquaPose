@@ -20,6 +20,7 @@ def train_yolo_seg(
     model: str = "yolo26n-seg",
     weights: Path | None = None,
     patience: int = 100,
+    mosaic: float = 1.0,
 ) -> Path:
     """Train a YOLO-seg instance segmentation model on a standard Ultralytics txt+yaml dataset.
 
@@ -45,6 +46,8 @@ def train_yolo_seg(
             provided, the model is initialised from these weights instead of
             downloading.
         patience: Early-stopping patience in epochs.
+        mosaic: Mosaic augmentation probability (0.0 to 1.0). Set to 0.0
+            to disable mosaic, which can help when targets are small.
 
     Returns:
         Path to the best model weights file (``output_dir/best_model.pt``).
@@ -79,6 +82,7 @@ def train_yolo_seg(
         name="train",
         imgsz=imgsz,
         patience=patience,
+        mosaic=mosaic,
     )
 
     # Copy weights to output_dir

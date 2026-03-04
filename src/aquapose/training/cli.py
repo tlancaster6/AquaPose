@@ -47,6 +47,12 @@ def train_group() -> None:
 @click.option(
     "--patience", default=100, type=int, help="Early-stopping patience in epochs."
 )
+@click.option(
+    "--mosaic",
+    default=1.0,
+    type=float,
+    help="Mosaic augmentation probability (0.0 to disable).",
+)
 def yolo_obb(
     data_dir: str,
     output_dir: str,
@@ -58,6 +64,7 @@ def yolo_obb(
     model: str,
     weights: str | None,
     patience: int,
+    mosaic: float,
 ) -> None:
     """Train YOLO-OBB oriented bounding-box detection model."""
     from .yolo_obb import train_yolo_obb
@@ -73,6 +80,7 @@ def yolo_obb(
         model=model,
         weights=Path(weights) if weights is not None else None,
         patience=patience,
+        mosaic=mosaic,
     )
     click.echo(f"Training complete. Best model: {best_path}")
 
@@ -112,6 +120,12 @@ def yolo_obb(
 @click.option(
     "--patience", default=100, type=int, help="Early-stopping patience in epochs."
 )
+@click.option(
+    "--mosaic",
+    default=1.0,
+    type=float,
+    help="Mosaic augmentation probability (0.0 to disable).",
+)
 def seg(
     data_dir: str,
     output_dir: str,
@@ -123,6 +137,7 @@ def seg(
     model: str,
     weights: str | None,
     patience: int,
+    mosaic: float,
 ) -> None:
     """Train YOLO-seg instance segmentation model."""
     from .yolo_seg import train_yolo_seg
@@ -138,6 +153,7 @@ def seg(
         model=model,
         weights=Path(weights) if weights is not None else None,
         patience=patience,
+        mosaic=mosaic,
     )
     click.echo(f"Training complete. Best model: {best_path}")
 
@@ -177,6 +193,12 @@ def seg(
 @click.option(
     "--patience", default=100, type=int, help="Early-stopping patience in epochs."
 )
+@click.option(
+    "--mosaic",
+    default=1.0,
+    type=float,
+    help="Mosaic augmentation probability (0.0 to disable).",
+)
 def pose(
     data_dir: str,
     output_dir: str,
@@ -188,6 +210,7 @@ def pose(
     model: str,
     weights: str | None,
     patience: int,
+    mosaic: float,
 ) -> None:
     """Train YOLO-pose keypoint estimation model."""
     from .yolo_pose import train_yolo_pose
@@ -203,5 +226,6 @@ def pose(
         model=model,
         weights=Path(weights) if weights is not None else None,
         patience=patience,
+        mosaic=mosaic,
     )
     click.echo(f"Training complete. Best model: {best_path}")

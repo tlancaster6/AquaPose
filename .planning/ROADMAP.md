@@ -148,7 +148,7 @@ Full details: `.planning/milestones/v3.2-ROADMAP.md`
 **Plans**: 2 plans
 Plans:
 - [x] 51-01-PLAN.md — Define FrameSource protocol + VideoFrameSource, migrate stages and build_stages
-- [ ] 51-02-PLAN.md — Migrate observers, remove stop_frame, delete VideoSet, update tests
+- [x] 51-02-PLAN.md — Migrate observers, remove stop_frame, delete VideoSet, update tests
 
 ### Phase 52: Chunk Orchestrator and Handoff
 **Goal**: Videos can be processed in fixed-size temporal chunks with state carried across boundaries
@@ -161,9 +161,9 @@ Plans:
   4. Per-chunk 3D midlines are flushed to the HDF5 output file with the correct global frame offset after each chunk completes
   5. Setting `chunk_size: 0` or `chunk_size: null` produces a single-chunk degenerate run with no behavioral change; setting `chunk_size < 100` emits a warning
 **Plans**: 3 plans:
-- [ ] 52-01-PLAN.md — ChunkHandoff dataclass, ChunkFrameSource, chunk_size config, write_handoff
-- [ ] 52-02-PLAN.md — ChunkOrchestrator core loop, identity stitching, HDF5 flush, progress
-- [ ] 52-03-PLAN.md — Delete CarryForward, migrate all references, fix tests
+- [x] 52-01-PLAN.md — ChunkHandoff dataclass, ChunkFrameSource, chunk_size config, write_handoff
+- [x] 52-02-PLAN.md — ChunkOrchestrator core loop, identity stitching, HDF5 flush, progress
+- [x] 52-03-PLAN.md — Delete CarryForward, migrate all references, fix tests
 
 ### Phase 53: Integration and Validation
 **Goal**: Chunk mode is the production path in `aquapose run` and produces correct output verified against non-chunked baseline
@@ -189,3 +189,13 @@ Plans:
 | 51 | 2/2 | Complete    | 2026-03-03 | - |
 | 52 | 3/3 | Complete    | 2026-03-03 | - |
 | 53 | 1/2 | In Progress|  | - |
+
+### Phase 54: Chunk-Aware Diagnostics and Eval Migration
+
+**Goal:** Adapt diagnostic mode for multi-chunk support with per-chunk cache directories, address cache size bloat by making intermediate stage caching selective/configurable, and migrate all plotting/visualization functionality (overlay2d, animation3d, tracklet trails) out of pipeline observers into the eval suite where they operate on cached data post-run.
+**Requirements**: TBD
+**Depends on:** Phase 53
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 54 to break down)

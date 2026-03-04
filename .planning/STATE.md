@@ -58,6 +58,10 @@ Phase 51 Plan 02 decisions:
 
 17 pending todos from v2.2 — see .planning/todos/pending/ (review for relevance)
 
+### Roadmap Evolution
+
+- Phase 54 added: Chunk-Aware Diagnostics and Eval Migration
+
 ### Blockers/Concerns
 
 None.

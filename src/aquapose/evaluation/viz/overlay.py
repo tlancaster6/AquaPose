@@ -76,9 +76,13 @@ def _reproject_3d_midline(
         return None
 
     cp = np.asarray(control_points, dtype=np.float64)
+    knots = getattr(spline, "knots", None)
+    degree = getattr(spline, "degree", None)
+    if knots is None or degree is None:
+        return None
     try:
         bspl = scipy.interpolate.BSpline(
-            np.asarray(spline.knots, dtype=np.float64), cp, spline.degree
+            np.asarray(knots, dtype=np.float64), cp, degree
         )
         t_vals = np.linspace(0.0, 1.0, 50)
         pts_3d = bspl(t_vals)  # (50, 3)
@@ -347,10 +351,11 @@ def generate_overlay(
             try:
                 from aquapose.core.types.frame_source import VideoFrameSource
 
+                if not calib_path.exists():
+                    raise FileNotFoundError(f"Calibration file not found: {calib_path}")
                 frame_source = VideoFrameSource(
                     video_dir=video_path,
-                    camera_ids=camera_ids,
-                    calibration_path=calib_path if calib_path.exists() else None,
+                    calibration_path=calib_path,
                 )
             except Exception as exc:
                 logger.warning(

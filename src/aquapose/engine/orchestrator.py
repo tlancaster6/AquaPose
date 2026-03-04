@@ -157,14 +157,55 @@ class ChunkOrchestrator:
         config: Frozen pipeline config. chunk_size controls chunk loop behavior.
         verbose: If True, attach ConsoleObserver for per-stage output within each
             chunk. Default False (quiet chunk mode for long runs).
+        max_chunks: If not None, process at most this many chunks then stop.
+            Useful for quick testing (e.g. max_chunks=1 for single-chunk dry run).
+        stop_after: Stage name at which to stop the pipeline (e.g. "detection").
+            Injected into config via CLI overrides before construction.
+        extra_observers: Additional observer names from ``--add-observer`` flags,
+            forwarded to build_observers() for each chunk.
+        frame_source: Optional pre-built FrameSource. When provided the caller
+            owns the lifecycle (no open/close). When None, ChunkOrchestrator
+            constructs and manages a VideoFrameSource internally.
+
+    Raises:
+        ValueError: If diagnostic mode is combined with multi-chunk settings
+            (chunk_size > 0 and max_chunks != 1). Use chunk_size=null for
+            diagnostic runs on short clips, or --max-chunks 1.
     """
 
-    def __init__(self, config: PipelineConfig, verbose: bool = False) -> None:
+    def __init__(
+        self,
+        config: PipelineConfig,
+        verbose: bool = False,
+        max_chunks: int | None = None,
+        stop_after: str | None = None,
+        extra_observers: tuple[str, ...] = (),
+        frame_source: object = None,
+    ) -> None:
         self._config = config
         self._verbose = verbose
+        self._max_chunks = max_chunks
+        self._stop_after = stop_after
+        self._extra_observers = extra_observers
+        self._frame_source = frame_source
+
+        # Validate mode conflict: diagnostic + multi-chunk is not supported
+        chunk_size = config.chunk_size or None
+        is_multi_chunk = (
+            chunk_size is not None
+            and chunk_size > 0
+            and (max_chunks is None or max_chunks > 1)
+        )
+        if is_multi_chunk and config.mode == "diagnostic":
+            raise ValueError(
+                "Chunk mode and diagnostic mode are mutually exclusive. "
+                "Use chunk_size=null for diagnostic runs on short clips, "
+                "or set --max-chunks 1."
+            )
 
     def run(self) -> None:
         """Execute the full video in chunks and write HDF5 output."""
+        import contextlib
         import time
 
         from aquapose.core.context import PipelineContext
@@ -177,24 +218,31 @@ class ChunkOrchestrator:
         output_dir.mkdir(parents=True, exist_ok=True)
         chunk_size = config.chunk_size or None
 
-        video_source = VideoFrameSource(
-            video_dir=config.video_dir,
-            calibration_path=config.calibration_path,
-        )
-
         hdf5_path = output_dir / "midlines.h5"
         next_global_id = 0
         prev_handoff: ChunkHandoff | None = None
         skipped_ranges: list[tuple[int, int]] = []
 
-        with (
-            video_source,
-            Midline3DWriter(
-                output_path=hdf5_path,
-                max_fish=config.n_animals,
-                n_sample_points=config.n_sample_points,
-            ) as writer,
-        ):
+        # Build ExitStack: always wrap Midline3DWriter; only wrap VideoFrameSource
+        # when we own the lifecycle (i.e. caller did not pass frame_source).
+        with contextlib.ExitStack() as stack:
+            if self._frame_source is not None:
+                video_source = self._frame_source
+            else:
+                video_source = stack.enter_context(
+                    VideoFrameSource(
+                        video_dir=config.video_dir,
+                        calibration_path=config.calibration_path,
+                    )
+                )
+            writer = stack.enter_context(
+                Midline3DWriter(
+                    output_path=hdf5_path,
+                    max_fish=config.n_animals,
+                    n_sample_points=config.n_sample_points,
+                )
+            )
+
             total_frames = len(video_source)
 
             if chunk_size is None or chunk_size <= 0:
@@ -204,6 +252,10 @@ class ChunkOrchestrator:
                     (s, min(s + chunk_size, total_frames))
                     for s in range(0, total_frames, chunk_size)
                 ]
+
+            # Limit to max_chunks if specified
+            if self._max_chunks is not None:
+                boundaries = boundaries[: self._max_chunks]
 
             n_chunks = len(boundaries)
             chunk_times: list[float] = []
@@ -222,7 +274,8 @@ class ChunkOrchestrator:
                 if prev_handoff is not None:
                     initial_context.carry_forward = prev_handoff
 
-                # Build observers; suppress ConsoleObserver (and HDF5) unless verbose
+                # Build observers; pass chunk_source so overlay observers see chunk frames
+                # and suppress ConsoleObserver unless verbose.
                 try:
                     from aquapose.engine.observer_factory import build_observers
 
@@ -231,6 +284,8 @@ class ChunkOrchestrator:
                         mode=config.mode,
                         verbose=self._verbose,
                         total_stages=len(stages),
+                        extra_observers=self._extra_observers,
+                        frame_source=chunk_source,
                     )
                 except Exception:
                     observers = []

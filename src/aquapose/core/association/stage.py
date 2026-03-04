@@ -74,19 +74,34 @@ class AssociationStage:
         inverse_lut = load_inverse_luts(calibration_path, self._config.lut)
 
         if forward_luts is None or inverse_lut is None:
-            from aquapose.calibration.loader import load_calibration_data
+            from aquapose.calibration.loader import (
+                compute_undistortion_maps,
+                load_calibration_data,
+            )
 
             logger.info(
                 "LUTs not cached -- generating (first run may take a few minutes)"
             )
             calibration = load_calibration_data(calibration_path)
 
+            # Compute undistortion maps so LUTs are built in undistorted pixel
+            # space (K_new), matching the coordinate system of the tracklet
+            # centroids produced by VideoFrameSource (which undistorts frames).
+            undistortion_maps = {
+                cam_id: compute_undistortion_maps(calibration.cameras[cam_id])
+                for cam_id in calibration.ring_cameras
+            }
+
             if forward_luts is None:
-                forward_luts = generate_forward_luts(calibration, self._config.lut)
+                forward_luts = generate_forward_luts(
+                    calibration, self._config.lut, undistortion_maps=undistortion_maps
+                )
                 save_forward_luts(forward_luts, calibration_path, self._config.lut)
 
             if inverse_lut is None:
-                inverse_lut = generate_inverse_lut(calibration, self._config.lut)
+                inverse_lut = generate_inverse_lut(
+                    calibration, self._config.lut, undistortion_maps=undistortion_maps
+                )
                 save_inverse_luts(inverse_lut, calibration_path, self._config.lut)
 
         # Step 1: Score all pairs

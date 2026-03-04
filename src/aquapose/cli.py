@@ -212,6 +212,9 @@ def eval_cmd(run_dir: str, report: str, n_frames: int | None) -> None:
         format_eval_report,
     )
     from aquapose.evaluation.runner import EvalRunner
+    from aquapose.logging import setup_file_logging
+
+    setup_file_logging(Path(run_dir), "eval")
 
     runner = EvalRunner(Path(run_dir))
     try:
@@ -285,8 +288,11 @@ def tune_cmd(
         format_config_diff,
         format_yield_matrix,
     )
+    from aquapose.logging import setup_file_logging
 
     config_path = _Path(config)
+    setup_file_logging(config_path.parent, "tune")
+
     try:
         orchestrator = TuningOrchestrator(config_path)
     except StaleCacheError as exc:

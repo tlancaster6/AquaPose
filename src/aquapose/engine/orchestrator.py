@@ -216,6 +216,11 @@ class ChunkOrchestrator:
         config = self._config
         output_dir = Path(config.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
+
+        from aquapose.logging import setup_file_logging
+
+        setup_file_logging(output_dir, "run")
+
         chunk_size = config.chunk_size or None
 
         hdf5_path = output_dir / "midlines.h5"

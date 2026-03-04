@@ -389,7 +389,7 @@ def _try_merge_pair(
     }
 
     if det_earlier & det_later:
-        logger.warning(
+        logger.debug(
             "Detection-backed overlap between tracklets %s-%d and %s-%d; skipping merge",
             earlier.camera_id,
             earlier.track_id,

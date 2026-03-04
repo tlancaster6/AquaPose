@@ -67,6 +67,10 @@ def yolo_obb(
     mosaic: float,
 ) -> None:
     """Train YOLO-OBB oriented bounding-box detection model."""
+    from aquapose.logging import setup_file_logging
+
+    setup_file_logging(Path(output_dir), "train-yolo-obb")
+
     from .yolo_obb import train_yolo_obb
 
     best_path = train_yolo_obb(
@@ -140,6 +144,10 @@ def seg(
     mosaic: float,
 ) -> None:
     """Train YOLO-seg instance segmentation model."""
+    from aquapose.logging import setup_file_logging
+
+    setup_file_logging(Path(output_dir), "train-seg")
+
     from .yolo_seg import train_yolo_seg
 
     best_path = train_yolo_seg(
@@ -213,6 +221,10 @@ def pose(
     mosaic: float,
 ) -> None:
     """Train YOLO-pose keypoint estimation model."""
+    from aquapose.logging import setup_file_logging
+
+    setup_file_logging(Path(output_dir), "train-pose")
+
     from .yolo_pose import train_yolo_pose
 
     best_path = train_yolo_pose(

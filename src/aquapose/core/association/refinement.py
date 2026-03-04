@@ -142,7 +142,7 @@ def refine_clusters(
 
         if not kept_tracklets:
             # All tracklets evicted -- should not normally happen
-            logger.warning(
+            logger.debug(
                 "Fish %d: all tracklets evicted, keeping original group",
                 group.fish_id,
             )

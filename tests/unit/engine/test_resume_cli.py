@@ -68,8 +68,10 @@ def test_load_stage_cache_returns_context(tmp_path: Path) -> None:
 
 
 def test_end_to_end_cache_write_and_reload(tmp_path: Path) -> None:
-    """DiagnosticObserver writes a cache; load_stage_cache loads it; context is intact."""
-    observer = DiagnosticObserver(output_dir=tmp_path)
+    """DiagnosticObserver writes a chunk cache; load_stage_cache loads it; context intact."""
+    from aquapose.engine.events import PipelineComplete
+
+    observer = DiagnosticObserver(output_dir=tmp_path, chunk_idx=0)
 
     # Fire PipelineStart so observer captures run_id
     observer.on_event(PipelineStart(run_id="e2e_run"))
@@ -77,7 +79,7 @@ def test_end_to_end_cache_write_and_reload(tmp_path: Path) -> None:
     # Build a context with detections populated
     ctx = _make_context(frame_count=5)
 
-    # Fire StageComplete for DetectionStage to trigger cache write
+    # Fire StageComplete for DetectionStage (in-memory snapshot)
     observer.on_event(
         StageComplete(
             stage_name="DetectionStage",
@@ -87,11 +89,14 @@ def test_end_to_end_cache_write_and_reload(tmp_path: Path) -> None:
         )
     )
 
-    # Verify cache file was written
-    cache_path = tmp_path / "diagnostics" / "detection_cache.pkl"
+    # Fire PipelineComplete to trigger cache write (new layout)
+    observer.on_event(PipelineComplete(context=ctx))
+
+    # Verify cache file was written at the new chunk-aware path
+    cache_path = tmp_path / "diagnostics" / "chunk_000" / "cache.pkl"
     assert cache_path.exists(), f"Cache file should exist at {cache_path}"
 
-    # Load the cache and verify context
+    # load_stage_cache still works with the new format
     loaded = load_stage_cache(cache_path)
     assert loaded.frame_count == 5
     assert loaded.detections is not None

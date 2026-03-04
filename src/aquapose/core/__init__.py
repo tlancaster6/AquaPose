@@ -18,6 +18,7 @@ from aquapose.core.context import (
     Stage,
     StaleCacheError,
     context_fingerprint,
+    load_chunk_cache,
     load_stage_cache,
 )
 from aquapose.core.detection import DetectionStage
@@ -35,5 +36,6 @@ __all__ = [
     "StaleCacheError",
     "SyntheticDataStage",
     "context_fingerprint",
+    "load_chunk_cache",
     "load_stage_cache",
 ]

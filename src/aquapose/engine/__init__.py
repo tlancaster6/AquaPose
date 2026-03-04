@@ -9,7 +9,7 @@ computation modules must NEVER import from engine/. This is enforced at all
 levels with no TYPE_CHECKING exceptions.
 """
 
-from aquapose.core.context import PipelineContext, Stage
+from aquapose.core.context import PipelineContext, Stage, load_chunk_cache
 from aquapose.engine.animation_observer import Animation3DObserver
 from aquapose.engine.config import (
     AssociationConfig,
@@ -71,6 +71,7 @@ __all__ = [
     "TrackingConfig",
     "TrackletTrailObserver",
     "build_observers",
+    "load_chunk_cache",
     "load_config",
     "serialize_config",
     "write_handoff",

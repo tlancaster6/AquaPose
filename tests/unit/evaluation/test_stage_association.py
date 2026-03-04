@@ -229,31 +229,29 @@ def test_default_grid_has_exactly_five_keys() -> None:
 
 def test_default_grid_ray_distance_threshold_values() -> None:
     """DEFAULT_GRID ray_distance_threshold has expected values."""
-    assert DEFAULT_GRID["ray_distance_threshold"] == pytest.approx(
-        [0.02, 0.04, 0.06, 0.10, 0.15]
-    )
+    assert DEFAULT_GRID["ray_distance_threshold"] == pytest.approx([0.01, 0.02, 0.03])
 
 
 def test_default_grid_score_min_values() -> None:
     """DEFAULT_GRID score_min has expected values."""
-    assert DEFAULT_GRID["score_min"] == pytest.approx([0.03, 0.08, 0.15, 0.20, 0.30])
+    assert DEFAULT_GRID["score_min"] == pytest.approx([0.03, 0.15, 0.30])
 
 
 def test_default_grid_eviction_reproj_threshold_values() -> None:
     """DEFAULT_GRID eviction_reproj_threshold has expected values."""
     assert DEFAULT_GRID["eviction_reproj_threshold"] == pytest.approx(
-        [0.01, 0.03, 0.05, 0.08, 0.10]
+        [0.02, 0.03, 0.05]
     )
 
 
 def test_default_grid_leiden_resolution_values() -> None:
     """DEFAULT_GRID leiden_resolution has expected values."""
-    assert DEFAULT_GRID["leiden_resolution"] == pytest.approx([0.5, 1.0, 1.5, 2.0])
+    assert DEFAULT_GRID["leiden_resolution"] == pytest.approx([0.5, 1.0, 2.0])
 
 
 def test_default_grid_early_k_values() -> None:
     """DEFAULT_GRID early_k has expected values."""
-    assert DEFAULT_GRID["early_k"] == pytest.approx([5.0, 10.0, 20.0, 30.0])
+    assert DEFAULT_GRID["early_k"] == pytest.approx([5.0, 10.0, 30.0])
 
 
 # ---------------------------------------------------------------------------

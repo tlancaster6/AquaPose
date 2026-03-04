@@ -323,12 +323,13 @@ class TuningOrchestrator:
         # Lazy-loaded projection models for centroid reprojection
         self._projection_models: dict[str, Any] | None = None
 
-        # Load and merge all chunk caches into a single context
+        # Try chunk-based loading first (Phase 54+), fall back to legacy
+        # per-stage cache files for older diagnostic runs.
         ctx, _manifest = load_run_context(self._run_dir)
 
-        # Build stage-keyed cache dict from merged context fields
         self._caches: dict[str, PipelineContext] = {}
         if ctx is not None:
+            # Build stage-keyed cache dict from merged context fields
             if ctx.detections is not None:
                 self._caches["detection"] = ctx
             if ctx.tracks_2d is not None:
@@ -339,6 +340,21 @@ class TuningOrchestrator:
                 self._caches["midline"] = ctx
             if ctx.midlines_3d is not None:
                 self._caches["reconstruction"] = ctx
+        else:
+            # Legacy: load individual stage caches
+            from aquapose.core.context import load_stage_cache
+
+            diag_dir = self._run_dir / "diagnostics"
+            for stage_key in (
+                "detection",
+                "tracking",
+                "association",
+                "midline",
+                "reconstruction",
+            ):
+                cache_path = diag_dir / f"{stage_key}_cache.pkl"
+                if cache_path.exists():
+                    self._caches[stage_key] = load_stage_cache(cache_path)
 
     def sweep_association(self) -> TuningResult:
         """Sweep association parameters over a joint 2D grid then carry-forward.

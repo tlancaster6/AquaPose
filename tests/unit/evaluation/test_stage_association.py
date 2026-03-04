@@ -82,8 +82,8 @@ def test_evaluate_association_yield_ratio_full() -> None:
 
 
 def test_evaluate_association_yield_ratio_partial() -> None:
-    """Half the fish observed yields fish_yield_ratio=0.5."""
-    frame = _make_midline_set({fish_id: ["cam0"] for fish_id in range(5)})
+    """5 multi-view fish out of 10 expected yields fish_yield_ratio=0.5."""
+    frame = _make_midline_set({fish_id: ["cam0", "cam1"] for fish_id in range(5)})
     result = evaluate_association([frame], n_animals=10)
     assert result.fish_yield_ratio == pytest.approx(0.5)
 
@@ -228,36 +228,32 @@ def test_default_grid_has_exactly_five_keys() -> None:
 
 
 def test_default_grid_ray_distance_threshold_values() -> None:
-    """DEFAULT_GRID ray_distance_threshold matches tune_association.py."""
+    """DEFAULT_GRID ray_distance_threshold has expected values."""
     assert DEFAULT_GRID["ray_distance_threshold"] == pytest.approx(
-        [0.02, 0.03, 0.04, 0.06, 0.08, 0.10, 0.15]
+        [0.02, 0.04, 0.06, 0.10, 0.15]
     )
 
 
 def test_default_grid_score_min_values() -> None:
-    """DEFAULT_GRID score_min matches tune_association.py."""
-    assert DEFAULT_GRID["score_min"] == pytest.approx(
-        [0.03, 0.05, 0.08, 0.10, 0.15, 0.20, 0.25, 0.30]
-    )
+    """DEFAULT_GRID score_min has expected values."""
+    assert DEFAULT_GRID["score_min"] == pytest.approx([0.03, 0.08, 0.15, 0.20, 0.30])
 
 
 def test_default_grid_eviction_reproj_threshold_values() -> None:
-    """DEFAULT_GRID eviction_reproj_threshold matches tune_association.py."""
+    """DEFAULT_GRID eviction_reproj_threshold has expected values."""
     assert DEFAULT_GRID["eviction_reproj_threshold"] == pytest.approx(
-        [0.01, 0.02, 0.03, 0.04, 0.05, 0.08, 0.10]
+        [0.01, 0.03, 0.05, 0.08, 0.10]
     )
 
 
 def test_default_grid_leiden_resolution_values() -> None:
-    """DEFAULT_GRID leiden_resolution matches tune_association.py."""
-    assert DEFAULT_GRID["leiden_resolution"] == pytest.approx(
-        [0.5, 0.8, 1.0, 1.2, 1.5, 2.0]
-    )
+    """DEFAULT_GRID leiden_resolution has expected values."""
+    assert DEFAULT_GRID["leiden_resolution"] == pytest.approx([0.5, 1.0, 1.5, 2.0])
 
 
 def test_default_grid_early_k_values() -> None:
-    """DEFAULT_GRID early_k values match tune_association.py (as floats)."""
-    assert DEFAULT_GRID["early_k"] == pytest.approx([5.0, 10.0, 15.0, 20.0, 25.0, 30.0])
+    """DEFAULT_GRID early_k has expected values."""
+    assert DEFAULT_GRID["early_k"] == pytest.approx([5.0, 10.0, 20.0, 30.0])
 
 
 # ---------------------------------------------------------------------------

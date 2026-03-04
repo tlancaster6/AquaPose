@@ -8,11 +8,11 @@ from dataclasses import dataclass
 from aquapose.core.types.reconstruction import MidlineSet
 
 DEFAULT_GRID: dict[str, list[float]] = {
-    "ray_distance_threshold": [0.02, 0.03, 0.04, 0.06, 0.08, 0.10, 0.15],
-    "score_min": [0.03, 0.05, 0.08, 0.10, 0.15, 0.20, 0.25, 0.30],
-    "eviction_reproj_threshold": [0.01, 0.02, 0.03, 0.04, 0.05, 0.08, 0.10],
-    "leiden_resolution": [0.5, 0.8, 1.0, 1.2, 1.5, 2.0],
-    "early_k": [5.0, 10.0, 15.0, 20.0, 25.0, 30.0],
+    "ray_distance_threshold": [0.02, 0.04, 0.06, 0.10, 0.15],
+    "score_min": [0.03, 0.08, 0.15, 0.20, 0.30],
+    "eviction_reproj_threshold": [0.01, 0.03, 0.05, 0.08, 0.10],
+    "leiden_resolution": [0.5, 1.0, 1.5, 2.0],
+    "early_k": [5.0, 10.0, 20.0, 30.0],
 }
 
 
@@ -78,6 +78,8 @@ def evaluate_association(
     total_observations = 0
     singleton_count = 0
 
+    multi_view_count = 0
+
     for midline_set in midline_sets:
         for _fish_id, cam_map in midline_set.items():
             n_cams = len(cam_map)
@@ -85,10 +87,12 @@ def evaluate_association(
             total_observations += 1
             if n_cams == 1:
                 singleton_count += 1
+            else:
+                multi_view_count += 1
 
     frames = len(midline_sets)
     singleton_rate = singleton_count / max(total_observations, 1)
-    fish_per_frame = total_observations / max(frames, 1)
+    fish_per_frame = multi_view_count / max(frames, 1)
     yield_ratio = fish_per_frame / max(n_animals, 1)
 
     # Convert defaultdict to plain dict for frozen dataclass storage

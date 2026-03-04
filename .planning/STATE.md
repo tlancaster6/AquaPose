@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.3
 milestone_name: Chunk Mode
-status: in_progress
-last_updated: "2026-03-04T20:07:01Z"
+status: unknown
+last_updated: "2026-03-04T20:23:36.704Z"
 progress:
-  total_phases: 2
-  completed_phases: 1
+  total_phases: 4
+  completed_phases: 2
   total_plans: 11
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-03-03)
 ## Current Position
 
 Phase: 54 of 54 (Chunk-Aware Diagnostics and Eval Migration)
-Plan: 2 of 4 complete
+Plan: 3 of 4 complete
 Status: In Progress
-Last activity: 2026-03-04 — Completed 54-02: EvalRunner and TuningOrchestrator migrated to chunk cache layout with load_run_context() shared utility
+Last activity: 2026-03-04 — Completed 54-03: aquapose viz CLI group + evaluation/viz/ package with overlay, animation, trails generators
 
-Progress: [████████░░] 87% (1/2 phases, 8 plans complete)
+Progress: [█████████░] 88% (1/2 phases, 9 plans complete)
 
 ## Accumulated Context
 
@@ -53,6 +53,7 @@ Phase 51 Plan 02 decisions:
 - VideoFrameSource imported at module level in cli.py so tests can patch aquapose.cli.VideoFrameSource
 - Observers accept frame_source=None and fall back to synthetic black frames — preserves synthetic mode compatibility
 - stop_frame in YAML now raises ValueError with _RENAME_HINTS pointing to max_frames on frame source
+- [Phase 54]: evaluation/viz/ package provides post-run visualization CLI; chunks merged by rebasing tracklet frame indices; generate_all() catches per-viz failures
 
 ### Pending Todos
 
@@ -112,8 +113,14 @@ Phase 54 Plan 02 decisions:
 - Tracklet frame indices offset by chunk start_frame during merge: critical for cross-chunk eval correctness
 - Single-chunk runs bypass merge: original PipelineContext returned as-is for zero overhead and identical behavior
 
+Phase 54 Plan 03 decisions:
+- evaluation/viz/ package provides post-run visualization CLI; chunks merged by rebasing tracklet frame indices; generate_all() catches per-viz failures
+- VideoFrameSource requires both video_dir and calibration_path — raise FileNotFoundError before construction if calib missing
+- spline.knots/degree accessed via getattr() since spline parameter typed as object throughout codebase
+- Deterministic fish color: palette[fish_id % palette_length] — consistent across overlay, animation, and trails modules
+
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed 54-02 — EvalRunner and TuningOrchestrator migrated to chunk cache layout via load_run_context() shared utility
+Stopped at: Completed 54-03 — aquapose viz CLI group + evaluation/viz/ package with overlay, animation, trails generators
 Resume file: None

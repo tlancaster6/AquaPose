@@ -15,7 +15,6 @@ from aquapose.engine.animation_observer import Animation3DObserver
 from aquapose.engine.config import PipelineConfig
 from aquapose.engine.console_observer import ConsoleObserver
 from aquapose.engine.diagnostic_observer import DiagnosticObserver
-from aquapose.engine.hdf5_observer import HDF5ExportObserver
 from aquapose.engine.observers import Observer
 from aquapose.engine.overlay_observer import Overlay2DObserver
 from aquapose.engine.timing import TimingObserver
@@ -32,7 +31,6 @@ __all__ = ["build_observers"]
 
 _OBSERVER_MAP: dict[str, type] = {
     "timing": TimingObserver,
-    "hdf5": HDF5ExportObserver,
     "overlay2d": Overlay2DObserver,
     "animation3d": Animation3DObserver,
     "diagnostic": DiagnosticObserver,
@@ -56,8 +54,7 @@ def build_observers(
     ready to pass to :class:`~aquapose.engine.pipeline.PosePipeline`.
 
     Mode behaviour:
-    - ``"production"`` / ``"synthetic"``: ConsoleObserver + TimingObserver +
-      HDF5ExportObserver.
+    - ``"production"`` / ``"synthetic"``: ConsoleObserver + TimingObserver.
     - ``"diagnostic"``: All production observers plus Overlay2DObserver,
       Animation3DObserver, DiagnosticObserver, and TrackletTrailObserver.
     - ``"benchmark"``: ConsoleObserver + TimingObserver only.
@@ -89,7 +86,6 @@ def build_observers(
 
     if mode in ("production", "synthetic"):
         observers.append(TimingObserver(output_path=output_dir / "timing.txt"))
-        observers.append(HDF5ExportObserver(output_dir=config.output_dir))
         if mode == "synthetic":
             observers.append(
                 Overlay2DObserver(
@@ -109,7 +105,6 @@ def build_observers(
 
     elif mode == "diagnostic":
         observers.append(TimingObserver(output_path=output_dir / "timing.txt"))
-        observers.append(HDF5ExportObserver(output_dir=config.output_dir))
         observers.append(
             Overlay2DObserver(
                 output_dir=config.output_dir,
@@ -142,8 +137,6 @@ def build_observers(
             continue
         if cls is TimingObserver:
             observers.append(TimingObserver(output_path=output_dir / "timing.txt"))
-        elif cls is HDF5ExportObserver:
-            observers.append(HDF5ExportObserver(output_dir=config.output_dir))
         elif cls is Overlay2DObserver:
             observers.append(
                 Overlay2DObserver(

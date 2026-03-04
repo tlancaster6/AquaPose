@@ -235,16 +235,6 @@ class ChunkOrchestrator:
                 except Exception:
                     observers = []
 
-                # Remove HDF5ExportObserver — orchestrator manages HDF5 directly
-                try:
-                    from aquapose.engine.hdf5_observer import HDF5ExportObserver
-
-                    observers = [
-                        o for o in observers if not isinstance(o, HDF5ExportObserver)
-                    ]
-                except ImportError:
-                    pass
-
                 # Remove ConsoleObserver unless verbose
                 if not self._verbose:
                     try:

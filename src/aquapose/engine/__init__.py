@@ -33,7 +33,6 @@ from aquapose.engine.events import (
     StageComplete,
     StageStart,
 )
-from aquapose.engine.hdf5_observer import HDF5ExportObserver
 from aquapose.engine.observer_factory import build_observers
 from aquapose.engine.observers import EventBus, Observer
 from aquapose.engine.orchestrator import ChunkHandoff, ChunkOrchestrator, write_handoff
@@ -53,7 +52,6 @@ __all__ = [
     "Event",
     "EventBus",
     "FrameProcessed",
-    "HDF5ExportObserver",
     "MidlineConfig",
     "Observer",
     "Overlay2DObserver",

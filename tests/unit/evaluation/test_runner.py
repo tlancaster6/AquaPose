@@ -137,64 +137,32 @@ def _make_annotated_detections(n_frames: int, cam_ids: list[str]) -> list:
     return frames
 
 
-def _write_cache(
-    path: Path,
-    ctx: PipelineContext,
-    stage_name: str,
+def _make_full_context(
+    n_frames: int,
     run_id: str = "run_test_001",
-) -> None:
-    """Write a minimal cache envelope pickle file."""
-    envelope = {
-        "run_id": run_id,
-        "timestamp": "2026-03-03T00:00:00Z",
-        "stage_name": stage_name,
-        "version_fingerprint": "abc123",
-        "context": ctx,
-    }
-    path.write_bytes(pickle.dumps(envelope, protocol=pickle.HIGHEST_PROTOCOL))
+    frame_offset: int = 0,
+) -> PipelineContext:
+    """Build a synthetic PipelineContext with all stages populated.
 
+    Args:
+        n_frames: Number of frames in this context.
+        run_id: Run ID for the context (not stored on PipelineContext directly).
+        frame_offset: Offset to add to frame indices (for multi-chunk contexts).
 
-def _write_config_yaml(path: Path, n_animals: int = _N_ANIMALS) -> None:
-    """Write a minimal config.yaml with n_animals set."""
-    content = f"n_animals: {n_animals}\n"
-    path.write_text(content)
-
-
-# ---------------------------------------------------------------------------
-# Fixtures: run directory with various combinations of caches
-# ---------------------------------------------------------------------------
-
-
-def _make_run_dir_with_stages(
-    tmp_path: Path,
-    stages: list[str],
-    n_frames: int = _N_FRAMES,
-    write_config: bool = True,
-) -> Path:
-    """Create a run directory with the specified stage caches written."""
-    run_dir = tmp_path / "run_001"
-    diag_dir = run_dir / "diagnostics"
-    diag_dir.mkdir(parents=True)
-
-    if write_config:
-        _write_config_yaml(run_dir / "config.yaml")
-
-    # Build detection frames: list[dict[str, list[Detection]]]
+    Returns:
+        PipelineContext with all fields populated.
+    """
+    all_frames_tuple = tuple(range(frame_offset, frame_offset + n_frames))
     detection_frames = [
         {cam_id: [_make_detection(cam_id, fi)] for cam_id in _CAM_IDS}
         for fi in range(n_frames)
     ]
-
-    # Build tracklets for tracking stage: dict[str, list[Tracklet2D]]
-    all_frames_tuple = tuple(range(n_frames))
     tracks_2d = {
         cam_id: [
             _make_tracklet2d(fish_id, cam_id, all_frames_tuple) for fish_id in _FISH_IDS
         ]
         for cam_id in _CAM_IDS
     }
-
-    # Build tracklet groups for association stage: list[TrackletGroup]
     tracklet_groups = [
         _make_tracklet_group(
             fish_id,
@@ -205,48 +173,12 @@ def _make_run_dir_with_stages(
         )
         for fish_id in _FISH_IDS
     ]
-
-    # Build annotated_detections for midline stage
     annotated_detections = _make_annotated_detections(n_frames, _CAM_IDS)
-
-    # Build midlines_3d for reconstruction stage: list[dict[int, Midline3D]]
     midlines_3d = [
         {fish_id: _make_midline3d(fish_id, fi) for fish_id in _FISH_IDS}
         for fi in range(n_frames)
     ]
-
-    # Build progressive contexts (each stage adds its output field)
-    detection_ctx = PipelineContext(
-        frame_count=n_frames,
-        camera_ids=_CAM_IDS,
-        detections=detection_frames,
-    )
-
-    tracking_ctx = PipelineContext(
-        frame_count=n_frames,
-        camera_ids=_CAM_IDS,
-        detections=detection_frames,
-        tracks_2d=tracks_2d,
-    )
-
-    association_ctx = PipelineContext(
-        frame_count=n_frames,
-        camera_ids=_CAM_IDS,
-        detections=detection_frames,
-        tracks_2d=tracks_2d,
-        tracklet_groups=tracklet_groups,
-    )
-
-    midline_ctx = PipelineContext(
-        frame_count=n_frames,
-        camera_ids=_CAM_IDS,
-        detections=detection_frames,
-        tracks_2d=tracks_2d,
-        tracklet_groups=tracklet_groups,
-        annotated_detections=annotated_detections,
-    )
-
-    reconstruction_ctx = PipelineContext(
+    return PipelineContext(
         frame_count=n_frames,
         camera_ids=_CAM_IDS,
         detections=detection_frames,
@@ -256,24 +188,135 @@ def _make_run_dir_with_stages(
         midlines_3d=midlines_3d,
     )
 
-    stage_map = {
-        "detection": ("DetectionStage", detection_ctx),
-        "tracking": ("TrackingStage", tracking_ctx),
-        "association": ("AssociationStage", association_ctx),
-        "midline": ("MidlineStage", midline_ctx),
-        "reconstruction": ("ReconstructionStage", reconstruction_ctx),
-    }
 
-    for stage_key in stages:
-        stage_name, ctx = stage_map[stage_key]
-        cache_path = diag_dir / f"{stage_key}_cache.pkl"
-        _write_cache(cache_path, ctx, stage_name)
+def _write_chunk_cache(
+    chunk_dir: Path,
+    ctx: PipelineContext,
+    run_id: str = "run_test_001",
+) -> None:
+    """Write a chunk cache.pkl in the new per-chunk layout."""
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = chunk_dir / "cache.pkl"
+    envelope = {
+        "run_id": run_id,
+        "timestamp": "2026-03-03T00:00:00Z",
+        "version_fingerprint": "abc123",
+        "context": ctx,
+    }
+    cache_path.write_bytes(pickle.dumps(envelope, protocol=pickle.HIGHEST_PROTOCOL))
+
+
+def _write_manifest(
+    diag_dir: Path,
+    chunks: list[dict],
+    run_id: str = "run_test_001",
+    total_frames: int | None = None,
+) -> None:
+    """Write a diagnostics/manifest.json."""
+    manifest = {
+        "run_id": run_id,
+        "total_frames": total_frames,
+        "chunk_size": _N_FRAMES,
+        "version_fingerprint": "abc123",
+        "chunks": chunks,
+    }
+    (diag_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
+
+
+def _write_config_yaml(path: Path, n_animals: int = _N_ANIMALS) -> None:
+    """Write a minimal config.yaml with n_animals set."""
+    content = f"n_animals: {n_animals}\n"
+    path.write_text(content)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for legacy-style (old flat layout) test fixtures
+# ---------------------------------------------------------------------------
+
+
+def _write_legacy_cache(
+    path: Path,
+    ctx: PipelineContext,
+    stage_name: str,
+    run_id: str = "run_test_001",
+) -> None:
+    """Write a minimal cache envelope pickle file in the old per-stage flat layout."""
+    envelope = {
+        "run_id": run_id,
+        "timestamp": "2026-03-03T00:00:00Z",
+        "stage_name": stage_name,
+        "version_fingerprint": "abc123",
+        "context": ctx,
+    }
+    path.write_bytes(pickle.dumps(envelope, protocol=pickle.HIGHEST_PROTOCOL))
+
+
+# ---------------------------------------------------------------------------
+# New chunk layout test fixtures
+# ---------------------------------------------------------------------------
+
+
+def _make_chunk_run_dir(
+    tmp_path: Path,
+    n_chunks: int = 1,
+    n_frames_per_chunk: int = _N_FRAMES,
+    write_config: bool = True,
+    write_manifest: bool = True,
+) -> Path:
+    """Create a run directory using the new per-chunk cache layout.
+
+    Args:
+        tmp_path: Base temp directory.
+        n_chunks: Number of chunks to create.
+        n_frames_per_chunk: Frames per chunk.
+        write_config: Whether to write config.yaml.
+        write_manifest: Whether to write manifest.json.
+
+    Returns:
+        Path to the run directory.
+    """
+    run_dir = tmp_path / "run_001"
+    diag_dir = run_dir / "diagnostics"
+    diag_dir.mkdir(parents=True)
+
+    if write_config:
+        _write_config_yaml(run_dir / "config.yaml")
+
+    chunk_entries = []
+    for chunk_idx in range(n_chunks):
+        frame_offset = chunk_idx * n_frames_per_chunk
+        ctx = _make_full_context(n_frames_per_chunk, frame_offset=frame_offset)
+        chunk_dir = diag_dir / f"chunk_{chunk_idx:03d}"
+        _write_chunk_cache(chunk_dir, ctx)
+        chunk_entries.append(
+            {
+                "index": chunk_idx,
+                "start_frame": frame_offset,
+                "end_frame": frame_offset + n_frames_per_chunk,
+                "stages_cached": [
+                    "DetectionStage",
+                    "TrackingStage",
+                    "AssociationStage",
+                    "MidlineStage",
+                    "ReconstructionStage",
+                ],
+            }
+        )
+
+    if write_manifest:
+        _write_manifest(
+            diag_dir,
+            chunk_entries,
+            total_frames=n_chunks * n_frames_per_chunk,
+        )
 
     return run_dir
 
 
 # ---------------------------------------------------------------------------
-# Tests
+# Tests: single-chunk behavior (chunk_000 only)
 # ---------------------------------------------------------------------------
 
 
@@ -299,32 +342,11 @@ def test_empty_run_dir_returns_all_none(tmp_path: Path) -> None:
     assert result.frames_available == 0
 
 
-def test_detection_only_cache(tmp_path: Path) -> None:
-    """Run dir with only detection_cache.pkl -> result.detection is not None, others None."""
+def test_single_chunk_all_stages_present(tmp_path: Path) -> None:
+    """Single-chunk run with chunk_000/cache.pkl -> all 5 metrics populated."""
     from aquapose.evaluation.runner import EvalRunner
 
-    run_dir = _make_run_dir_with_stages(tmp_path, ["detection"])
-
-    runner = EvalRunner(run_dir)
-    result = runner.run()
-
-    assert result.detection is not None
-    assert result.tracking is None
-    assert result.association is None
-    assert result.midline is None
-    assert result.reconstruction is None
-    assert result.stages_present == frozenset({"detection"})
-    assert result.frames_evaluated == _N_FRAMES
-    assert result.frames_available == _N_FRAMES
-
-
-def test_all_stages_present(tmp_path: Path) -> None:
-    """Full run dir -> all 5 metrics populated, stages_present has 5 elements."""
-    from aquapose.evaluation.runner import EvalRunner
-
-    run_dir = _make_run_dir_with_stages(
-        tmp_path, ["detection", "tracking", "association", "midline", "reconstruction"]
-    )
+    run_dir = _make_chunk_run_dir(tmp_path, n_chunks=1)
 
     runner = EvalRunner(run_dir)
     result = runner.run()
@@ -337,14 +359,15 @@ def test_all_stages_present(tmp_path: Path) -> None:
     assert result.stages_present == frozenset(
         {"detection", "tracking", "association", "midline", "reconstruction"}
     )
-    assert len(result.stages_present) == 5
+    assert result.frames_available == _N_FRAMES
+    assert result.frames_evaluated == _N_FRAMES
 
 
-def test_n_frames_sampling(tmp_path: Path) -> None:
-    """Verify frames_evaluated reflects sampled count when n_frames < frame_count."""
+def test_single_chunk_n_frames_sampling(tmp_path: Path) -> None:
+    """Single-chunk run respects n_frames sampling."""
     from aquapose.evaluation.runner import EvalRunner
 
-    run_dir = _make_run_dir_with_stages(tmp_path, ["detection"], n_frames=10)
+    run_dir = _make_chunk_run_dir(tmp_path, n_chunks=1, n_frames_per_chunk=10)
 
     runner = EvalRunner(run_dir)
     result = runner.run(n_frames=3)
@@ -353,19 +376,18 @@ def test_n_frames_sampling(tmp_path: Path) -> None:
     assert result.frames_evaluated == 3
 
 
-def test_to_dict_is_json_serializable(tmp_path: Path) -> None:
-    """json.dumps(result.to_dict()) succeeds without error."""
+def test_single_chunk_to_dict_is_json_serializable(tmp_path: Path) -> None:
+    """json.dumps(result.to_dict()) succeeds without error on single-chunk run."""
     from aquapose.evaluation.runner import EvalRunner
 
-    run_dir = _make_run_dir_with_stages(
-        tmp_path, ["detection", "tracking", "association", "midline", "reconstruction"]
-    )
+    run_dir = _make_chunk_run_dir(tmp_path, n_chunks=1)
 
     runner = EvalRunner(run_dir)
     result = runner.run()
 
     d = result.to_dict()
-    # Should not raise
+    import json
+
     serialized = json.dumps(d)
     parsed = json.loads(serialized)
     assert "run_id" in parsed
@@ -374,11 +396,113 @@ def test_to_dict_is_json_serializable(tmp_path: Path) -> None:
     assert "frames_available" in parsed
 
 
-def test_missing_config_yaml_with_association_cache(tmp_path: Path) -> None:
-    """Raises FileNotFoundError when config.yaml is missing and association cache is present."""
+# ---------------------------------------------------------------------------
+# Tests: manifest-based discovery
+# ---------------------------------------------------------------------------
+
+
+def test_manifest_based_discovery(tmp_path: Path) -> None:
+    """EvalRunner reads manifest.json to find chunk directories."""
     from aquapose.evaluation.runner import EvalRunner
 
-    run_dir = _make_run_dir_with_stages(tmp_path, ["association"], write_config=False)
+    run_dir = _make_chunk_run_dir(tmp_path, n_chunks=1)
+
+    runner = EvalRunner(run_dir)
+    result = runner.run()
+
+    # Should succeed using manifest-driven discovery
+    assert result.detection is not None
+    assert result.frames_available == _N_FRAMES
+
+
+def test_fallback_discovery_without_manifest(tmp_path: Path) -> None:
+    """EvalRunner globs chunk_*/cache.pkl when manifest.json is absent."""
+    from aquapose.evaluation.runner import EvalRunner
+
+    run_dir = _make_chunk_run_dir(tmp_path, n_chunks=1, write_manifest=False)
+    # Confirm no manifest was written
+    assert not (run_dir / "diagnostics" / "manifest.json").exists()
+
+    runner = EvalRunner(run_dir)
+    result = runner.run()
+
+    assert result.detection is not None
+    assert result.frames_available == _N_FRAMES
+
+
+# ---------------------------------------------------------------------------
+# Tests: multi-chunk merging with frame offsets
+# ---------------------------------------------------------------------------
+
+
+def test_multi_chunk_merges_frame_counts(tmp_path: Path) -> None:
+    """Multi-chunk run: frames_available equals sum of all chunk frame counts."""
+    from aquapose.evaluation.runner import EvalRunner
+
+    n_chunks = 3
+    run_dir = _make_chunk_run_dir(tmp_path, n_chunks=n_chunks)
+
+    runner = EvalRunner(run_dir)
+    result = runner.run()
+
+    assert result.frames_available == n_chunks * _N_FRAMES
+
+
+def test_multi_chunk_all_stages_present(tmp_path: Path) -> None:
+    """Multi-chunk run: all stage metrics populated when all chunks have full contexts."""
+    from aquapose.evaluation.runner import EvalRunner
+
+    run_dir = _make_chunk_run_dir(tmp_path, n_chunks=2)
+
+    runner = EvalRunner(run_dir)
+    result = runner.run()
+
+    assert result.detection is not None
+    assert result.tracking is not None
+    assert result.association is not None
+    assert result.midline is not None
+    assert result.reconstruction is not None
+
+
+def test_multi_chunk_stages_present_frozenset(tmp_path: Path) -> None:
+    """Multi-chunk run: stages_present contains all 5 stage keys."""
+    from aquapose.evaluation.runner import EvalRunner
+
+    run_dir = _make_chunk_run_dir(tmp_path, n_chunks=2)
+
+    runner = EvalRunner(run_dir)
+    result = runner.run()
+
+    assert result.stages_present == frozenset(
+        {"detection", "tracking", "association", "midline", "reconstruction"}
+    )
+
+
+def test_multi_chunk_tracking_count(tmp_path: Path) -> None:
+    """Multi-chunk run: tracking track_count reflects merged tracklets across chunks."""
+    from aquapose.evaluation.runner import EvalRunner
+
+    n_chunks = 2
+    run_dir = _make_chunk_run_dir(tmp_path, n_chunks=n_chunks)
+
+    runner = EvalRunner(run_dir)
+    result = runner.run()
+
+    assert result.tracking is not None
+    # Each chunk has 2 cameras * 2 fish = 4 tracklets -> 2 chunks = 8 total
+    assert result.tracking.track_count == n_chunks * len(_CAM_IDS) * len(_FISH_IDS)
+
+
+# ---------------------------------------------------------------------------
+# Tests: backward compatibility with old per-stage flat layout
+# ---------------------------------------------------------------------------
+
+
+def test_missing_config_yaml_with_association_cache(tmp_path: Path) -> None:
+    """Raises FileNotFoundError when config.yaml is missing and association cache present."""
+    from aquapose.evaluation.runner import EvalRunner
+
+    run_dir = _make_chunk_run_dir(tmp_path, n_chunks=1, write_config=False)
 
     runner = EvalRunner(run_dir)
     with pytest.raises(FileNotFoundError):
@@ -386,13 +510,13 @@ def test_missing_config_yaml_with_association_cache(tmp_path: Path) -> None:
 
 
 def test_stale_cache_error_propagates(tmp_path: Path) -> None:
-    """StaleCacheError from load_stage_cache propagates upward (not silently caught)."""
+    """StaleCacheError from load_chunk_cache propagates upward."""
     from aquapose.evaluation.runner import EvalRunner
 
-    run_dir = _make_run_dir_with_stages(tmp_path, ["detection"])
+    run_dir = _make_chunk_run_dir(tmp_path, n_chunks=1)
 
     with mock.patch(
-        "aquapose.evaluation.runner.load_stage_cache",
+        "aquapose.evaluation.runner.load_chunk_cache",
         side_effect=StaleCacheError("Cache is stale"),
     ):
         runner = EvalRunner(run_dir)
@@ -400,24 +524,84 @@ def test_stale_cache_error_propagates(tmp_path: Path) -> None:
             runner.run()
 
 
-def test_tracking_only_no_frame_count(tmp_path: Path) -> None:
-    """Tracking stage evaluator is called with flat list from tracks_2d.values()."""
-    from aquapose.evaluation.runner import EvalRunner
+# ---------------------------------------------------------------------------
+# Tests: load_run_context shared utility
+# ---------------------------------------------------------------------------
 
-    run_dir = _make_run_dir_with_stages(tmp_path, ["tracking"])
 
-    runner = EvalRunner(run_dir)
-    result = runner.run()
+def test_load_run_context_returns_merged_context_and_metadata(tmp_path: Path) -> None:
+    """load_run_context returns a (PipelineContext, dict) tuple."""
+    from aquapose.evaluation.runner import load_run_context
 
-    assert result.tracking is not None
-    assert result.tracking.track_count == len(_CAM_IDS) * len(_FISH_IDS)
+    run_dir = _make_chunk_run_dir(tmp_path, n_chunks=1)
+    ctx, meta = load_run_context(run_dir)
+
+    assert isinstance(ctx, PipelineContext)
+    assert isinstance(meta, dict)
+    assert ctx.frame_count == _N_FRAMES
+
+
+def test_load_run_context_multi_chunk_frame_count(tmp_path: Path) -> None:
+    """load_run_context merges chunk frame counts correctly."""
+    from aquapose.evaluation.runner import load_run_context
+
+    n_chunks = 3
+    run_dir = _make_chunk_run_dir(tmp_path, n_chunks=n_chunks)
+    ctx, _meta = load_run_context(run_dir)
+
+    assert ctx.frame_count == n_chunks * _N_FRAMES
+
+
+def test_load_run_context_empty_dir_returns_none(tmp_path: Path) -> None:
+    """load_run_context returns (None, {}) when no chunk caches are found."""
+    from aquapose.evaluation.runner import load_run_context
+
+    run_dir = tmp_path / "empty_run"
+    run_dir.mkdir()
+    (run_dir / "diagnostics").mkdir()
+
+    ctx, meta = load_run_context(run_dir)
+
+    assert ctx is None
+    assert meta == {}
+
+
+# ---------------------------------------------------------------------------
+# Tests: to_dict correctness
+# ---------------------------------------------------------------------------
 
 
 def test_to_dict_absent_stages_omitted(tmp_path: Path) -> None:
     """to_dict stages dict only contains present stages, absent stages are omitted."""
     from aquapose.evaluation.runner import EvalRunner
 
-    run_dir = _make_run_dir_with_stages(tmp_path, ["detection"])
+    # Create a context with only detection data
+    run_dir = tmp_path / "run_001"
+    diag_dir = run_dir / "diagnostics"
+    diag_dir.mkdir(parents=True)
+    _write_config_yaml(run_dir / "config.yaml")
+
+    # Write a chunk cache with only detection data
+    detection_only_ctx = PipelineContext(
+        frame_count=_N_FRAMES,
+        camera_ids=_CAM_IDS,
+        detections=[
+            {cam_id: [_make_detection(cam_id, fi)] for cam_id in _CAM_IDS}
+            for fi in range(_N_FRAMES)
+        ],
+    )
+    _write_chunk_cache(diag_dir / "chunk_000", detection_only_ctx)
+    _write_manifest(
+        diag_dir,
+        [
+            {
+                "index": 0,
+                "start_frame": 0,
+                "end_frame": _N_FRAMES,
+                "stages_cached": ["DetectionStage"],
+            }
+        ],
+    )
 
     runner = EvalRunner(run_dir)
     result = runner.run()
@@ -434,7 +618,7 @@ def test_stages_present_sorted_list_in_to_dict(tmp_path: Path) -> None:
     """to_dict returns stages_present as a sorted list."""
     from aquapose.evaluation.runner import EvalRunner
 
-    run_dir = _make_run_dir_with_stages(tmp_path, ["detection", "tracking"])
+    run_dir = _make_chunk_run_dir(tmp_path, n_chunks=1)
 
     runner = EvalRunner(run_dir)
     result = runner.run()

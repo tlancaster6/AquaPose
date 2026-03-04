@@ -1,4 +1,4 @@
-"""AquaPose CLI -- thin wrapper over PosePipeline."""
+"""AquaPose CLI -- thin wrapper over ChunkOrchestrator."""
 
 from __future__ import annotations
 
@@ -10,12 +10,8 @@ import click
 import yaml
 
 from aquapose.core.types import VideoFrameSource
-from aquapose.engine import (
-    PosePipeline,
-    build_observers,
-    load_config,
-)
-from aquapose.engine.pipeline import build_stages
+from aquapose.engine import load_config
+from aquapose.engine.orchestrator import ChunkOrchestrator
 from aquapose.training.cli import train_group
 from aquapose.training.prep import prep_group
 
@@ -57,7 +53,7 @@ def cli() -> None:
     "extra_observers",
     multiple=True,
     type=click.Choice(
-        ["timing", "hdf5", "overlay2d", "animation3d", "diagnostic", "console"],
+        ["timing", "overlay2d", "animation3d", "diagnostic", "console"],
         case_sensitive=False,
     ),
     help="Add observer by name (additive).",
@@ -73,11 +69,11 @@ def cli() -> None:
 )
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Verbose output.")
 @click.option(
-    "--resume-from",
-    "resume_from",
-    type=click.Path(exists=True),
+    "--max-chunks",
+    "max_chunks",
+    type=int,
     default=None,
-    help="Path to a stage cache pickle file. Skips stages whose outputs are already populated.",
+    help="Process at most N chunks then stop (e.g. --max-chunks 1 for single-chunk).",
 )
 def run(
     config: str,
@@ -86,7 +82,7 @@ def run(
     extra_observers: tuple[str, ...],
     stop_after: str | None,
     verbose: bool,
-    resume_from: str | None,
+    max_chunks: int | None,
 ) -> None:
     """Run the AquaPose pipeline."""
     # 1. Parse --set overrides into dict
@@ -116,54 +112,28 @@ def run(
     # 3. Load config
     pipeline_config = load_config(yaml_path=config, cli_overrides=cli_overrides)
 
-    # 4. Resolve effective mode (CLI > YAML > default)
-    effective_mode = pipeline_config.mode
-
-    # 5. Build frame source (non-synthetic modes only) and stages.
-    # The frame source is created here so it can be shared with observers
-    # (e.g. Overlay2DObserver, TrackletTrailObserver) that need frame access.
+    # 4. Build frame source for non-synthetic modes.
+    # Passed to ChunkOrchestrator so it can share the frame source across chunks.
     frame_source = None
+    effective_mode = pipeline_config.mode
     if effective_mode != "synthetic":
         frame_source = VideoFrameSource(
             video_dir=pipeline_config.video_dir,
             calibration_path=pipeline_config.calibration_path,
         )
 
-    stages = build_stages(pipeline_config, frame_source=frame_source)
-
-    # 5.5. Load initial context from cache if --resume-from provided.
-    # Each resumed run gets its own run_id (not inherited from cache).
-    initial_context = None
-    if resume_from is not None:
-        from aquapose.core.context import StaleCacheError, load_stage_cache
-
-        try:
-            initial_context = load_stage_cache(resume_from)
-            click.echo(f"Loaded stage cache from {resume_from}")
-        except StaleCacheError as exc:
-            raise click.ClickException(str(exc)) from exc
-        except FileNotFoundError:
-            raise click.ClickException(f"Cache file not found: {resume_from}") from None
-
-    # 6. Assemble observers
-    observers = build_observers(
+    # 5. Delegate to ChunkOrchestrator (config-only handoff)
+    orchestrator = ChunkOrchestrator(
         config=pipeline_config,
-        mode=effective_mode,
         verbose=verbose,
-        total_stages=len(stages),
+        max_chunks=max_chunks,
+        stop_after=stop_after,
         extra_observers=extra_observers,
         frame_source=frame_source,
     )
 
-    # 7. Create and run pipeline
-    pipeline = PosePipeline(
-        stages=stages,
-        config=pipeline_config,
-        observers=observers,
-    )
-
     try:
-        pipeline.run(initial_context=initial_context)
+        orchestrator.run()
     except Exception:
         import traceback
 

@@ -2,6 +2,353 @@
 
 <!-- version list -->
 
+## v1.1.0-dev.7 (2026-03-04)
+
+### Bug Fixes
+
+- Edge extrapolation overshoot and multi-fish pose annotations
+  ([`517b017`](https://github.com/tlancaster6/AquaPose/commit/517b017ddf94ac74f1c0497c01d344539353c804))
+
+- **47-02**: Fix import order in test_stage_midline.py
+  ([`6280f60`](https://github.com/tlancaster6/AquaPose/commit/6280f607f3a3d682d165cc9642dd180ccfe9b313))
+
+- **52-02**: Fix typecheck errors in orchestrator.py
+  ([`1e239a8`](https://github.com/tlancaster6/AquaPose/commit/1e239a84235447b2252a64eb7d832e9fc928999e))
+
+- **52-03**: Update tests and ocsort_wrapper to use ChunkHandoff
+  ([`041e556`](https://github.com/tlancaster6/AquaPose/commit/041e556b7aeb5c78437418c3d76bddaa337591fb))
+
+- **53-01**: Don't pre-create VideoFrameSource in CLI — let orchestrator manage lifecycle
+  ([`123ccb8`](https://github.com/tlancaster6/AquaPose/commit/123ccb814889ced43116b7a9f900dfad92aae576))
+
+- **viz**: Improve overlay mosaic readability
+  ([`aeb3250`](https://github.com/tlancaster6/AquaPose/commit/aeb32500990ed087cb0b26db75f4b7f7057dc5b4))
+
+### Chores
+
+- Clean up v3.2 tech debt — stale docs, legacy golden/regression tests
+  ([`50c25a2`](https://github.com/tlancaster6/AquaPose/commit/50c25a2405d21ca198aeaf695de17cd6b63f630c))
+
+- Complete v3.2 Evaluation Ecosystem milestone
+  ([`200d0c0`](https://github.com/tlancaster6/AquaPose/commit/200d0c08876f2a16475112da59c54dbe92f07740))
+
+- Triage pending TODOs for v3.2 milestone launch
+  ([`b994a7a`](https://github.com/tlancaster6/AquaPose/commit/b994a7a3ff12000b85caf18c4b9b6f14dfe373a9))
+
+- **49-02**: Delete legacy tuning scripts
+  ([`c17312d`](https://github.com/tlancaster6/AquaPose/commit/c17312d2a1ecc315badf501acc61b1f1ea7a1e5b))
+
+- **50-01**: Clean up legacy tests and fix docstring references
+  ([`fc03147`](https://github.com/tlancaster6/AquaPose/commit/fc031475ce518cdd0520af77fce096ce0646c349))
+
+- **50-01**: Delete legacy evaluation machinery and midline fixture NPZ
+  ([`ba47aa8`](https://github.com/tlancaster6/AquaPose/commit/ba47aa8c85202658bfcae78b1671d764f7086d67))
+
+### Documentation
+
+- Add GPU PyTorch install instructions to README
+  ([`13283ff`](https://github.com/tlancaster6/AquaPose/commit/13283ffcf78c78f071840943abe47c9b65aa3f13))
+
+- Capture todo - Migrate visualization observers to eval suite
+  ([`a33c89b`](https://github.com/tlancaster6/AquaPose/commit/a33c89b6fe8b74fc99c59d53a5605fd36b583fda))
+
+- Complete project research
+  ([`65bdd3f`](https://github.com/tlancaster6/AquaPose/commit/65bdd3fe92e89550a0aa9eb620e115c763fa62e7))
+
+- Create milestone v3.2 roadmap (5 phases)
+  ([`eceba29`](https://github.com/tlancaster6/AquaPose/commit/eceba29d0b65c58d05faadd3b8b527169e399212))
+
+- Create milestone v3.3 roadmap (3 phases)
+  ([`5136782`](https://github.com/tlancaster6/AquaPose/commit/513678276ce1e2d07bbdb5a8db8af33b2af2b512))
+
+- Define milestone v3.2 requirements
+  ([`0a6acfd`](https://github.com/tlancaster6/AquaPose/commit/0a6acfd5d917406c515ca99980571bea247f773a))
+
+- Define milestone v3.3 requirements
+  ([`24484b0`](https://github.com/tlancaster6/AquaPose/commit/24484b0298ca8511d717185433a6a7bf38f552d1))
+
+- Refine evaluation system design for v3.2
+  ([`63232b9`](https://github.com/tlancaster6/AquaPose/commit/63232b969c5891fe607f5f0aca23b53db48931cf))
+
+- Start milestone v3.2 Evaluation Ecosystem
+  ([`1f7f0c2`](https://github.com/tlancaster6/AquaPose/commit/1f7f0c21576765d0a092043d3de1c07f9ff6539d))
+
+- Start milestone v3.3 Chunk Mode
+  ([`329ffbb`](https://github.com/tlancaster6/AquaPose/commit/329ffbb5edfb4523bfbe361b4ae728266b7346ba))
+
+- Update planning state — phases 51-52 complete, add phase 54, gitignore .pt files
+  ([`3e2dbd8`](https://github.com/tlancaster6/AquaPose/commit/3e2dbd81044da051c87bda82ec8b13a1a8f847a8))
+
+- **46**: Capture phase context
+  ([`cccffb8`](https://github.com/tlancaster6/AquaPose/commit/cccffb89eaf564daa965f8df92e8ab405c7a9940))
+
+- **46**: Capture phase research and plans
+  ([`58a1490`](https://github.com/tlancaster6/AquaPose/commit/58a1490b59d6072c9bb98aa24ca76b85cf20a82f))
+
+- **46**: Fix plan file naming convention for GSD tooling
+  ([`63c7197`](https://github.com/tlancaster6/AquaPose/commit/63c719701aaf22d2efe51a480125c64763dbb80d))
+
+- **46**: Research phase domain
+  ([`7253575`](https://github.com/tlancaster6/AquaPose/commit/725357504b5d3e3a1c303b8c4c614c1aececefa4))
+
+- **46-01**: Complete StaleCacheError, load_stage_cache, context_fingerprint plan
+  ([`7ac4a78`](https://github.com/tlancaster6/AquaPose/commit/7ac4a785ff3c59e96192b6555251983098663fcc))
+
+- **46-02**: Complete per-stage pickle cache writing and stage-skip plan
+  ([`061efc1`](https://github.com/tlancaster6/AquaPose/commit/061efc1e968c30f8270602b8c4630b55bd05943f))
+
+- **46-03**: Complete CLI --resume-from plan with summary and state update
+  ([`92e691b`](https://github.com/tlancaster6/AquaPose/commit/92e691b7edb9e1d043dcf376e761783b49c14124))
+
+- **47**: Add phase plans (3 plans, 2 waves)
+  ([`e38ef4f`](https://github.com/tlancaster6/AquaPose/commit/e38ef4f9dd3b9d70d0458245e767737ac7e55b7d))
+
+- **47**: Capture phase context
+  ([`188d127`](https://github.com/tlancaster6/AquaPose/commit/188d1273be4cc7be42a3d383105a0705c14f42ab))
+
+- **47**: Research evaluation primitives phase
+  ([`0d2392c`](https://github.com/tlancaster6/AquaPose/commit/0d2392c5472181cde0fdbdcdec097f9fd2423dbf))
+
+- **47-01**: Complete detection and tracking stage evaluators plan with summary and state update
+  ([`2fd9f5b`](https://github.com/tlancaster6/AquaPose/commit/2fd9f5b1af20c62188f34b9c5d59c774cbd5ebd4))
+
+- **47-02**: Complete association and midline stage evaluators plan
+  ([`d15ea3d`](https://github.com/tlancaster6/AquaPose/commit/d15ea3dad73b21c4c1cbb58f9109b315de51aebf))
+
+- **47-03**: Complete reconstruction stage evaluator plan with summary and state update
+  ([`14be136`](https://github.com/tlancaster6/AquaPose/commit/14be1368a73bfa8e49763ac58ea87695e9871c42))
+
+- **48**: Capture phase context
+  ([`d372fb7`](https://github.com/tlancaster6/AquaPose/commit/d372fb77fb883293025f470a9d8d15bca477b1c6))
+
+- **48**: Create phase plan
+  ([`d1c55c8`](https://github.com/tlancaster6/AquaPose/commit/d1c55c8c3e54dac0afef9ff07da3a9b6854a1b78))
+
+- **48**: Fix verify command to use hatch run python
+  ([`4d0dd6a`](https://github.com/tlancaster6/AquaPose/commit/4d0dd6a23c11c0bc3301f7f330617127b8daa23c))
+
+- **48**: Research phase domain
+  ([`12e7c00`](https://github.com/tlancaster6/AquaPose/commit/12e7c004e9ddbc7dc544364cb25fd374ec9a465a))
+
+- **48-01**: Complete EvalRunner plan with summary and state update
+  ([`f71b769`](https://github.com/tlancaster6/AquaPose/commit/f71b7691f195aad95ad9eb806e435ae0cdddb28d))
+
+- **48-02**: Complete output formatters and eval CLI plan with summary and state update
+  ([`791acc5`](https://github.com/tlancaster6/AquaPose/commit/791acc58a22641abe4caaa2069635f7340ea4b3a))
+
+- **49**: Capture phase context
+  ([`c49b06c`](https://github.com/tlancaster6/AquaPose/commit/c49b06cc8ae9bd5065aa0896ef0e3900e5942604))
+
+- **49**: Create phase plan
+  ([`3119606`](https://github.com/tlancaster6/AquaPose/commit/31196068ea92c43d2139dfc134cd656593a7f48d))
+
+- **49**: Research phase domain
+  ([`739fe03`](https://github.com/tlancaster6/AquaPose/commit/739fe0302dfb5e77db6d25d2fdf1939f99ec6185))
+
+- **49-01**: Complete TuningOrchestrator plan with summary and state update
+  ([`497c478`](https://github.com/tlancaster6/AquaPose/commit/497c478eb5b7c19b138ca4cb27c6e3178b98ebd5))
+
+- **49-02**: Complete aquapose tune CLI plan with summary and state update
+  ([`e1d27fa`](https://github.com/tlancaster6/AquaPose/commit/e1d27fa53b260f338c7c03a8b2c8da75254eacda))
+
+- **50**: Capture phase context
+  ([`65a23d5`](https://github.com/tlancaster6/AquaPose/commit/65a23d5a59608b0471e82f3f0c1a12af6f2551e6))
+
+- **50**: Create phase plan
+  ([`87c3e94`](https://github.com/tlancaster6/AquaPose/commit/87c3e948797ad3f1bcca7aea419e731c15c862c9))
+
+- **50**: Research phase domain
+  ([`5a578f2`](https://github.com/tlancaster6/AquaPose/commit/5a578f2646b54fb87e6df25f64e6c1e0cda8e7ca))
+
+- **50-01**: Complete legacy evaluation cleanup plan with summary and state update
+  ([`3caec62`](https://github.com/tlancaster6/AquaPose/commit/3caec627d212bfa81842d9af4eb6dc422edbfb5b))
+
+- **51**: Capture phase context
+  ([`202ef5d`](https://github.com/tlancaster6/AquaPose/commit/202ef5df22bd8f031e5e66043383593e5b3c9779))
+
+- **51**: Create phase plan
+  ([`f3ba761`](https://github.com/tlancaster6/AquaPose/commit/f3ba76157182edcadea3d7c416924e69c9656e1e))
+
+- **51-01**: Complete frame-source-refactor plan 01
+  ([`f1eb790`](https://github.com/tlancaster6/AquaPose/commit/f1eb790f3976fa8c4339edf100f429cffedbec24))
+
+- **51-02**: Complete observer-migration and VideoSet-deletion plan
+  ([`1385d20`](https://github.com/tlancaster6/AquaPose/commit/1385d204ea9fe6c70461da078c1881c29fec7278))
+
+- **52**: Capture phase context
+  ([`544a3aa`](https://github.com/tlancaster6/AquaPose/commit/544a3aae245a4cad0b6120136512eb4120b20df9))
+
+- **52**: Create phase plans for chunk orchestrator and handoff
+  ([`633788e`](https://github.com/tlancaster6/AquaPose/commit/633788eec649a3c8b4911cd3b58e9699bff4a005))
+
+- **52-01**: Complete chunk orchestrator foundation plan
+  ([`8858536`](https://github.com/tlancaster6/AquaPose/commit/885853680638742d23d0aec2e6106e6dc222e2c7))
+
+- **52-02**: Complete ChunkOrchestrator plan
+  ([`0a4acc2`](https://github.com/tlancaster6/AquaPose/commit/0a4acc2f34c77a091b1968220604f52a4243ff9d))
+
+- **52-03**: Complete CarryForward migration plan — Phase 52 all requirements met
+  ([`4f8992e`](https://github.com/tlancaster6/AquaPose/commit/4f8992e67b4a31a3baf2abdb2f6c0a3fe0ed0068))
+
+- **53**: Capture phase context
+  ([`d3c0874`](https://github.com/tlancaster6/AquaPose/commit/d3c0874d4e72e2386e4d818756033cd0962528b5))
+
+- **53-01**: Complete ChunkOrchestrator integration plan — OUT-02, INTEG-01, INTEG-02 met
+  ([`b9affea`](https://github.com/tlancaster6/AquaPose/commit/b9affea57853d93be15340d3dead9c34743b3005))
+
+- **phase-46**: Complete phase execution
+  ([`a547b98`](https://github.com/tlancaster6/AquaPose/commit/a547b988aba29ffb6f84fdbdbf735ff208596e0e))
+
+- **phase-47**: Complete phase execution
+  ([`acf06cf`](https://github.com/tlancaster6/AquaPose/commit/acf06cf8a4ad7ecb4720f46fc62d6f1c35858e6b))
+
+- **phase-48**: Complete phase execution
+  ([`a86c080`](https://github.com/tlancaster6/AquaPose/commit/a86c080cda373ba0795a7958eac3f0a41a16ce7b))
+
+- **phase-49**: Complete phase execution
+  ([`b53e5a2`](https://github.com/tlancaster6/AquaPose/commit/b53e5a26b45604931a6943d9375081d7efdae7d8))
+
+- **phase-50**: Complete phase execution
+  ([`9f3ddda`](https://github.com/tlancaster6/AquaPose/commit/9f3ddda3733764bf127c1e4f7cc06a3f39f86fef))
+
+- **phase-51**: Complete phase execution
+  ([`5ad9639`](https://github.com/tlancaster6/AquaPose/commit/5ad96392e36e08a292ded67f1f3d5ef421730f91))
+
+- **phase-52**: Complete phase execution
+  ([`c83a868`](https://github.com/tlancaster6/AquaPose/commit/c83a868220957d56f32debf981bb66ac559e6368))
+
+### Features
+
+- Add --mosaic flag to YOLO training CLI commands
+  ([`2c50f8e`](https://github.com/tlancaster6/AquaPose/commit/2c50f8e7faac3e5fc866898a29cad69d7d3fe3a6))
+
+- Add --patience option to train CLI subcommands
+  ([`14b0b5d`](https://github.com/tlancaster6/AquaPose/commit/14b0b5d84b92672d23f0087ae145059f1201556c))
+
+- Color singletons gray in tracklet trail observer
+  ([`fcf10b0`](https://github.com/tlancaster6/AquaPose/commit/fcf10b08e7f5f915ef800b814368660fbe03a764))
+
+- **46-01**: Add carry_forward field, StaleCacheError, context_fingerprint, and load_stage_cache to
+  context.py
+  ([`9216797`](https://github.com/tlancaster6/AquaPose/commit/921679738d87c18b3dca5db839609f48cc2b3ec0))
+
+- **46-01**: Export StaleCacheError, load_stage_cache, context_fingerprint from core.__init__ and
+  add unit tests
+  ([`339e769`](https://github.com/tlancaster6/AquaPose/commit/339e769943e3479cae306686a1dc69cfeae7f282))
+
+- **46-02**: Add initial_context, stage-skip logic, and cache write tests
+  ([`3d732b6`](https://github.com/tlancaster6/AquaPose/commit/3d732b67109da69e7b8ecbe0d233754c3ff8392b))
+
+- **46-03**: Add --resume-from CLI flag with integration tests
+  ([`a9e3e1b`](https://github.com/tlancaster6/AquaPose/commit/a9e3e1b26204544b6448fd28b68dee7adbe1bb4f))
+
+- **47-01**: Add evaluation/stages/ subpackage with detection evaluator
+  ([`08e3791`](https://github.com/tlancaster6/AquaPose/commit/08e3791fee4ef36a590f04ab2f7a14b37a636065))
+
+- **47-01**: Add tracking evaluator with TrackingMetrics and evaluate_tracking()
+  ([`b104d16`](https://github.com/tlancaster6/AquaPose/commit/b104d162a9d1b104e095a7f2f2be308d5d89c808))
+
+- **47-02**: Implement AssociationMetrics, evaluate_association(), and DEFAULT_GRID
+  ([`8fcf8c0`](https://github.com/tlancaster6/AquaPose/commit/8fcf8c0548a2821e83eb6e5a6c9dafe8a470ef1b))
+
+- **47-02**: Implement MidlineMetrics and evaluate_midline()
+  ([`c69254b`](https://github.com/tlancaster6/AquaPose/commit/c69254b33906e8ddafb6d82df1647cd908191e9f))
+
+- **47-03**: Implement reconstruction stage evaluator
+  ([`0d57e98`](https://github.com/tlancaster6/AquaPose/commit/0d57e98d1f62f2dd3b8163497a3ca8d491f41407))
+
+- **47-03**: Wire __init__.py exports for stages/ and evaluation/
+  ([`9692f71`](https://github.com/tlancaster6/AquaPose/commit/9692f71bb4a2c6a29f7fa7e44c4030a7cfcc90c5))
+
+- **48-01**: Implement EvalRunner and EvalRunnerResult for per-stage evaluation
+  ([`bbae5a6`](https://github.com/tlancaster6/AquaPose/commit/bbae5a661c544014b12d4d9d505f1ed09315b39a))
+
+- **48-02**: Add aquapose eval CLI command, update __init__.py, delete measure_baseline.py
+  ([`053a653`](https://github.com/tlancaster6/AquaPose/commit/053a6538f763611f5edf5682fb2942de25597520))
+
+- **48-02**: Add format_eval_report and format_eval_json to output.py
+  ([`c93fc82`](https://github.com/tlancaster6/AquaPose/commit/c93fc8235e3e637ca49a767a0e656a4550ea403c))
+
+- **49-01**: Implement TuningOrchestrator with grid sweep engine
+  ([`16d167f`](https://github.com/tlancaster6/AquaPose/commit/16d167f5a53f91a90cc8c818e56a05eba3f3273b))
+
+- **49-02**: Add aquapose tune CLI command
+  ([`dd00bc3`](https://github.com/tlancaster6/AquaPose/commit/dd00bc324cdac656a9bd49531a285a14ec9aa071))
+
+- **51-01**: Define FrameSource protocol and VideoFrameSource implementation
+  ([`b89eb4e`](https://github.com/tlancaster6/AquaPose/commit/b89eb4e58a561e77ff4444f8faa875abbf6e9187))
+
+- **51-01**: Migrate DetectionStage and MidlineStage to accept FrameSource
+  ([`1357b68`](https://github.com/tlancaster6/AquaPose/commit/1357b6801a4bd88415af8e0a6b933894b94d53b3))
+
+- **51-02**: Migrate observers to FrameSource, update observer_factory and CLI
+  ([`c23abf8`](https://github.com/tlancaster6/AquaPose/commit/c23abf875977c53ca75365a70f215ddb603ae5d5))
+
+- **51-02**: Remove stop_frame from config, delete VideoSet, update tests
+  ([`64ba5cc`](https://github.com/tlancaster6/AquaPose/commit/64ba5cc4482b223d14125c46d4c0c554f82520d3))
+
+- **52-01**: Add chunk_size field to PipelineConfig with warning
+  ([`ed304f6`](https://github.com/tlancaster6/AquaPose/commit/ed304f64ac8206066c266d9c784a8b70649cf574))
+
+- **52-01**: Create engine/orchestrator.py with ChunkHandoff and write_handoff
+  ([`777d4e8`](https://github.com/tlancaster6/AquaPose/commit/777d4e868d8e84e049d8a28c57025c9735355a7b))
+
+- **52-01**: Implement ChunkFrameSource windowed frame source
+  ([`d1093af`](https://github.com/tlancaster6/AquaPose/commit/d1093af467604103f16f9878660688b3d8f06412))
+
+- **52-02**: Add track_id_to_global to ChunkHandoff and _stitch_identities helper
+  ([`24e8b4a`](https://github.com/tlancaster6/AquaPose/commit/24e8b4a77f302ea3ae2b6ba01c896c2a4067c7d7))
+
+- **52-02**: Export ChunkOrchestrator and add unit tests
+  ([`a696e9b`](https://github.com/tlancaster6/AquaPose/commit/a696e9b0b79dca2c08aedf42795b3d9676a6976f))
+
+- **52-02**: Implement ChunkOrchestrator with run(), helper functions
+  ([`bf91a9d`](https://github.com/tlancaster6/AquaPose/commit/bf91a9dffaf4b0eda68411fb0ec3c0044d102c89))
+
+- **53-01**: Add max_chunks, stop_after, extra_observers to ChunkOrchestrator
+  ([`db5ebef`](https://github.com/tlancaster6/AquaPose/commit/db5ebef678261369d4030297a44b06c83e67b4fd))
+
+- **53-01**: Delete HDF5ExportObserver and remove all references
+  ([`96187c9`](https://github.com/tlancaster6/AquaPose/commit/96187c987c48a5ec28d74abcb9e93ec1a5b6866e))
+
+- **53-01**: Refactor CLI run command to delegate to ChunkOrchestrator
+  ([`9fc6fef`](https://github.com/tlancaster6/AquaPose/commit/9fc6fef68c24af4c66ff00a020f8511f9c4e1cbd))
+
+- **53-01**: Update tests for new CLI dispatch and mode conflict validation
+  ([`bf6aa49`](https://github.com/tlancaster6/AquaPose/commit/bf6aa49c097dd72498e01c6f96096687bfae535f))
+
+### Refactoring
+
+- **52-03**: Move ChunkHandoff to core/context.py, remove CarryForward
+  ([`fbb0fd2`](https://github.com/tlancaster6/AquaPose/commit/fbb0fd27e86d3f730cb3b9286437f3e9f12d5e80))
+
+- **52-03**: Update TrackingStage and ChunkOrchestrator to use ChunkHandoff
+  ([`d6e50d4`](https://github.com/tlancaster6/AquaPose/commit/d6e50d4338c43f10c407c9d178218f5629ee44cc))
+
+### Testing
+
+- **47-02**: Add failing tests for association evaluator and DEFAULT_GRID
+  ([`6a19fc7`](https://github.com/tlancaster6/AquaPose/commit/6a19fc7c02033d49997c98dab89e9bbbfabb1ddf))
+
+- **47-02**: Add failing tests for MidlineMetrics and evaluate_midline()
+  ([`f27ade7`](https://github.com/tlancaster6/AquaPose/commit/f27ade72ca64444aa8783bce0d4df29e741bcd1a))
+
+- **47-03**: Add failing tests for reconstruction stage evaluator
+  ([`c0e914f`](https://github.com/tlancaster6/AquaPose/commit/c0e914f40b3862f462a8c0ae21a42929375457fe))
+
+- **48-01**: Add failing tests for EvalRunner with synthetic cache fixtures
+  ([`e547e9b`](https://github.com/tlancaster6/AquaPose/commit/e547e9bb14141c6c55d96adee94e4b7329c05713))
+
+- **48-02**: Add failing tests for format_eval_report and format_eval_json
+  ([`9bfbf7a`](https://github.com/tlancaster6/AquaPose/commit/9bfbf7aad9183263aedeb37e476ffb0169670e69))
+
+- **51-01**: Add failing tests for FrameSource protocol and VideoFrameSource
+  ([`7899062`](https://github.com/tlancaster6/AquaPose/commit/78990622fb64f09e0147ea3e805c325a1004e10d))
+
+- **52-01**: Add unit tests for ChunkHandoff, ChunkFrameSource, write_handoff
+  ([`82e2ca1`](https://github.com/tlancaster6/AquaPose/commit/82e2ca120f4f93dae085bf87b4c847e90f6188b4))
+
+
 ## v1.1.0-dev.6 (2026-03-03)
 
 ### Bug Fixes

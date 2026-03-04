@@ -6,6 +6,7 @@ import contextlib
 import logging
 import math
 import sys
+from contextlib import AbstractContextManager
 from pathlib import Path
 
 import cv2
@@ -415,10 +416,11 @@ def generate_trails(
             try:
                 from aquapose.core.types.frame_source import VideoFrameSource
 
+                if not calib_path.exists():
+                    raise FileNotFoundError(f"Calibration file not found: {calib_path}")
                 frame_source = VideoFrameSource(
                     video_dir=video_path,
-                    camera_ids=camera_ids,
-                    calibration_path=calib_path if calib_path.exists() else None,
+                    calibration_path=calib_path,
                 )
             except Exception as exc:
                 logger.warning(
@@ -563,6 +565,7 @@ def _write_per_camera_trails(
         if not cam_lookup:
             continue
 
+        ctx_mgr: AbstractContextManager  # type: ignore[type-arg]
         if use_synthetic:
             assert frame_sizes is not None
             ctx_mgr = contextlib.nullcontext(
@@ -635,6 +638,7 @@ def _write_association_mosaic(
     if frame_source is None and not use_synthetic:
         return
 
+    ctx_mgr: AbstractContextManager  # type: ignore[type-arg]
     if use_synthetic:
         assert frame_sizes is not None
         ctx_mgr = contextlib.nullcontext(

@@ -38,9 +38,13 @@ def _eval_spline(
         return [], [], []
 
     cp = np.asarray(control_points, dtype=np.float64)
+    knots = getattr(spline, "knots", None)
+    degree = getattr(spline, "degree", None)
+    if knots is None or degree is None:
+        return [], [], []
     try:
         bspl = scipy.interpolate.BSpline(
-            np.asarray(spline.knots, dtype=np.float64), cp, spline.degree
+            np.asarray(knots, dtype=np.float64), cp, degree
         )
         t_vals = np.linspace(0.0, 1.0, n_eval)
         pts = bspl(t_vals)  # (N, 3)

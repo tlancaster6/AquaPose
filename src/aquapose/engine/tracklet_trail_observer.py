@@ -171,10 +171,20 @@ class TrackletTrailObserver:
         fish_color_map: dict[int, tuple[int, int, int]] = {}
         track_to_fish: dict[tuple[str, int], int] = {}
 
+        # Assign unique palette colors only to non-singleton groups;
+        # singletons (1 tracklet) all share _GRAY_BGR so multi-camera
+        # associations visually stand out.
+        color_idx = 0
         for group in tracklet_groups:
             fish_id: int = group.fish_id
-            color = FISH_COLORS_BGR[fish_id % len(FISH_COLORS_BGR)]
-            fish_color_map[fish_id] = color
+            is_singleton = len(group.tracklets) <= 1
+            if is_singleton:
+                fish_color_map[fish_id] = _GRAY_BGR
+            else:
+                fish_color_map[fish_id] = FISH_COLORS_BGR[
+                    color_idx % len(FISH_COLORS_BGR)
+                ]
+                color_idx += 1
             for tracklet in group.tracklets:
                 key = (tracklet.camera_id, tracklet.track_id)
                 track_to_fish[key] = fish_id

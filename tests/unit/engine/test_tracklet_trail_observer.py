@@ -101,23 +101,27 @@ def test_color_assignment_from_tracklet_groups(tmp_path: Path) -> None:
     t0 = _make_tracklet("cam1", 10, (0, 1), ((100.0, 200.0), (110.0, 205.0)))
     t1 = _make_tracklet("cam2", 20, (0, 1), ((300.0, 150.0), (305.0, 152.0)))
     t2 = _make_tracklet("cam1", 30, (0, 1), ((50.0, 50.0), (55.0, 52.0)))
+    t3 = _make_tracklet("cam2", 40, (0, 1), ((60.0, 60.0), (65.0, 62.0)))
 
     groups = [
-        _make_tracklet_group(0, [t0]),
-        _make_tracklet_group(1, [t1]),
-        _make_tracklet_group(2, [t2]),
+        _make_tracklet_group(0, [t0]),  # singleton
+        _make_tracklet_group(1, [t1, t3]),  # multi-tracklet
+        _make_tracklet_group(2, [t2]),  # singleton
     ]
 
     fish_color_map, track_to_fish = observer._build_color_map(groups)
 
-    # Each fish_id gets the correct palette color.
-    assert fish_color_map[0] == FISH_COLORS_BGR[0 % len(FISH_COLORS_BGR)]
-    assert fish_color_map[1] == FISH_COLORS_BGR[1 % len(FISH_COLORS_BGR)]
-    assert fish_color_map[2] == FISH_COLORS_BGR[2 % len(FISH_COLORS_BGR)]
+    # Singleton groups get gray; multi-tracklet groups get palette colors.
+    from aquapose.engine.tracklet_trail_observer import _GRAY_BGR
+
+    assert fish_color_map[0] == _GRAY_BGR
+    assert fish_color_map[1] == FISH_COLORS_BGR[0]  # first palette slot
+    assert fish_color_map[2] == _GRAY_BGR
 
     # Reverse mapping is correct.
     assert track_to_fish[("cam1", 10)] == 0
     assert track_to_fish[("cam2", 20)] == 1
+    assert track_to_fish[("cam2", 40)] == 1
     assert track_to_fish[("cam1", 30)] == 2
 
 

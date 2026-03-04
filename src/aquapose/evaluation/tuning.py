@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+import torch
 import yaml
 
 from aquapose.core.context import PipelineContext, load_stage_cache
@@ -181,6 +183,102 @@ def _build_midline_sets(
     return [collected.get(fi, {}) for fi in effective_indices]
 
 
+def _compute_centroid_reprojection(
+    tracklet_groups: list[Any],
+    models: dict[str, Any],
+    sampled_indices: list[int],
+    n_animals: int,
+) -> ReconstructionMetrics:
+    """Compute lightweight reprojection error from consensus centroids.
+
+    Projects each TrackletGroup's pre-computed 3D consensus centroids back
+    into the cameras that observed them, and compares against the observed 2D
+    tracklet centroids. Much faster than full reconstruction since it skips
+    body-point triangulation and spline fitting.
+
+    Args:
+        tracklet_groups: TrackletGroup list from AssociationStage output.
+        models: Dict mapping camera_id to RefractiveProjectionModel.
+        sampled_indices: Frame indices to evaluate.
+        n_animals: Expected number of fish (for fish_available).
+
+    Returns:
+        ReconstructionMetrics populated with centroid-based reprojection
+        error. Fields not applicable to centroid reprojection (tier2_stability,
+        low_confidence_flag_rate) are set to None/0.
+    """
+    sampled_set = set(sampled_indices)
+    all_residuals: list[float] = []
+    per_camera_residuals: dict[str, list[float]] = {}
+    per_fish_residuals: dict[int, list[float]] = {}
+    fish_frames_reconstructed = 0
+
+    for group in tracklet_groups:
+        if group.consensus_centroids is None:
+            continue
+
+        # Build per-frame observed 2D centroids keyed by camera
+        cam_frame_centroids: dict[str, dict[int, tuple[float, float]]] = {}
+        for tracklet in group.tracklets:
+            cam_id: str = tracklet.camera_id
+            cam_frame_centroids.setdefault(cam_id, {})
+            for frame_idx, centroid, status in zip(
+                tracklet.frames, tracklet.centroids, tracklet.frame_status, strict=False
+            ):
+                if status == "detected" and frame_idx in sampled_set:
+                    cam_frame_centroids[cam_id][frame_idx] = centroid
+
+        for frame_idx, point_3d in group.consensus_centroids:
+            if point_3d is None or frame_idx not in sampled_set:
+                continue
+
+            pt_tensor = torch.from_numpy(
+                np.asarray(point_3d, dtype=np.float32)
+            ).unsqueeze(0)
+            has_residual = False
+
+            for cam_id, frame_map in cam_frame_centroids.items():
+                if frame_idx not in frame_map or cam_id not in models:
+                    continue
+                observed = frame_map[frame_idx]
+                proj_px, valid = models[cam_id].project(pt_tensor)
+                if not valid[0]:
+                    continue
+                obs_tensor = torch.tensor(observed, dtype=torch.float32)
+                err = float(torch.linalg.norm(proj_px[0] - obs_tensor).item())
+                all_residuals.append(err)
+                per_camera_residuals.setdefault(cam_id, []).append(err)
+                per_fish_residuals.setdefault(group.fish_id, []).append(err)
+                has_residual = True
+
+            if has_residual:
+                fish_frames_reconstructed += 1
+
+    mean_err = float(np.mean(all_residuals)) if all_residuals else 0.0
+    max_err = float(np.max(all_residuals)) if all_residuals else 0.0
+
+    per_camera_error = {
+        cam_id: {"mean_px": float(np.mean(res)), "max_px": float(np.max(res))}
+        for cam_id, res in per_camera_residuals.items()
+    }
+    per_fish_error = {
+        fish_id: {"mean_px": float(np.mean(res)), "max_px": float(np.max(res))}
+        for fish_id, res in per_fish_residuals.items()
+    }
+
+    return ReconstructionMetrics(
+        mean_reprojection_error=mean_err,
+        max_reprojection_error=max_err,
+        fish_reconstructed=fish_frames_reconstructed,
+        fish_available=n_animals * len(sampled_indices),
+        inlier_ratio=1.0,
+        low_confidence_flag_rate=0.0,
+        tier2_stability=None,
+        per_camera_error=per_camera_error,
+        per_fish_error=per_fish_error,
+    )
+
+
 class TuningOrchestrator:
     """Orchestrates parameter grid sweeps for association and reconstruction stages.
 
@@ -191,7 +289,7 @@ class TuningOrchestrator:
     Example::
 
         orchestrator = TuningOrchestrator(config_path)
-        result = orchestrator.sweep_association(n_frames=30, top_n=3)
+        result = orchestrator.sweep_association()
         print(format_comparison_table(result.baseline_metrics, result.winner_metrics))
     """
 
@@ -212,6 +310,9 @@ class TuningOrchestrator:
         self._run_dir = self._config_path.parent
         self._config = load_config(config_path)
 
+        # Lazy-loaded projection models for centroid reprojection
+        self._projection_models: dict[str, Any] | None = None
+
         # Discover and load caches
         self._caches: dict[str, PipelineContext] = {}
         diag_dir = self._run_dir / "diagnostics"
@@ -226,18 +327,11 @@ class TuningOrchestrator:
             if cache_path.exists():
                 self._caches[stage_key] = load_stage_cache(cache_path)
 
-    def sweep_association(
-        self,
-        n_frames: int = 30,
-        n_frames_validate: int = 100,
-        top_n: int = 3,
-    ) -> TuningResult:
+    def sweep_association(self) -> TuningResult:
         """Sweep association parameters over a joint 2D grid then carry-forward.
 
-        Args:
-            n_frames: Frame count for fast sweep tier.
-            n_frames_validate: Frame count for top-N validation tier.
-            top_n: Number of top candidates for full validation.
+        Evaluates metrics on all frames (no subsampling) since centroid
+        reprojection is cheap compared to re-running association.
 
         Returns:
             TuningResult with winner, baseline, and all combo results.
@@ -252,14 +346,14 @@ class TuningOrchestrator:
         midline_ctx = self._require_cache("midline")
 
         frame_count = tracking_ctx.frame_count or 0
-        sampled_indices = select_frames(tuple(range(frame_count)), n_frames)
+        all_indices = list(range(frame_count))
 
         grid = ASSOCIATION_DEFAULT_GRID
         n_animals = self._config.n_animals
 
         # Compute baseline metrics
         baseline_assoc, baseline_recon = self._evaluate_association_combo(
-            tracking_ctx, midline_ctx, self._config, sampled_indices, n_animals
+            tracking_ctx, midline_ctx, self._config, all_indices, n_animals
         )
         _compute_association_score(baseline_assoc, baseline_recon)
 
@@ -271,7 +365,7 @@ class TuningOrchestrator:
         all_results: list[dict[str, Any]] = []
         joint_grid_results: list[dict[str, Any]] = []
 
-        print(f"Joint grid: {len(joint_combos)} combos")
+        print(f"Joint grid: {len(joint_combos)} combos ({frame_count} frames)")
         for combo_vals in joint_combos:
             params = dict(zip(joint_params, combo_vals, strict=True))
             config = self._patch_association_config(params)
@@ -285,7 +379,7 @@ class TuningOrchestrator:
                 continue
 
             assoc_m, recon_m = self._evaluate_association_with_ctx(
-                ctx_copy, midline_ctx, config, sampled_indices, n_animals
+                ctx_copy, midline_ctx, config, all_indices, n_animals
             )
             score = _compute_association_score(assoc_m, recon_m)
             entry = {
@@ -336,7 +430,7 @@ class TuningOrchestrator:
                     continue
 
                 assoc_m, recon_m = self._evaluate_association_with_ctx(
-                    ctx_copy, midline_ctx, config, sampled_indices, n_animals
+                    ctx_copy, midline_ctx, config, all_indices, n_animals
                 )
                 score = _compute_association_score(assoc_m, recon_m)
                 entry = {
@@ -361,55 +455,20 @@ class TuningOrchestrator:
                 best_val = int(best_val)
             best_params[param] = best_val
 
-        # Sort all results and take top-N for validation
+        # Find overall winner
         all_results.sort(key=lambda r: r["score"])
-        top_candidates = all_results[:top_n]
+        winner = all_results[0] if all_results else None
 
-        # Top-N validation at higher frame count
-        validate_indices = select_frames(tuple(range(frame_count)), n_frames_validate)
-        best_validated = None
-
-        print(
-            f"\nValidating top {len(top_candidates)} candidates at {n_frames_validate} frames"
-        )
-        for candidate in top_candidates:
-            params = candidate["params"]
-            config = self._patch_association_config(params)
-            ctx_copy = copy.copy(tracking_ctx)
-
-            try:
-                assoc_stage = AssociationStage(config=config)
-                ctx_copy = assoc_stage.run(ctx_copy)
-            except Exception:
-                continue
-
-            assoc_m, recon_m = self._evaluate_association_with_ctx(
-                ctx_copy, midline_ctx, config, validate_indices, n_animals
-            )
-            score = _compute_association_score(assoc_m, recon_m)
-            candidate["validated_assoc"] = assoc_m
-            candidate["validated_recon"] = recon_m
-            candidate["validated_score"] = score
-            print(
-                f"  {params} -> "
-                f"yield={assoc_m.fish_yield_ratio:.1%} "
-                f"error={recon_m.mean_reprojection_error:.2f}px"
-            )
-
-            if best_validated is None or score < best_validated["validated_score"]:
-                best_validated = candidate
-
-        # Build result
-        if best_validated is not None:
-            winner_params = best_validated["params"]
-            v_assoc = best_validated["validated_assoc"]
-            v_recon = best_validated["validated_recon"]
+        if winner is not None:
+            winner_params = winner["params"]
+            w_assoc = winner["assoc_metrics"]
+            w_recon = winner["recon_metrics"]
             winner_metrics = {
-                "fish_yield_ratio": v_assoc.fish_yield_ratio,
-                "mean_reprojection_error": v_recon.mean_reprojection_error,
-                "max_reprojection_error": v_recon.max_reprojection_error,
-                "singleton_rate": v_assoc.singleton_rate,
-                "tier2_stability": v_recon.tier2_stability,
+                "fish_yield_ratio": w_assoc.fish_yield_ratio,
+                "mean_reprojection_error": w_recon.mean_reprojection_error,
+                "max_reprojection_error": w_recon.max_reprojection_error,
+                "singleton_rate": w_assoc.singleton_rate,
+                "tier2_stability": w_recon.tier2_stability,
             }
         else:
             winner_params = best_params
@@ -699,6 +758,34 @@ class TuningOrchestrator:
             ctx_copy, midline_ctx, config, sampled_indices, n_animals
         )
 
+    def _get_projection_models(self) -> dict[str, Any]:
+        """Lazily load projection models for centroid reprojection.
+
+        Returns:
+            Dict mapping camera_id to RefractiveProjectionModel.
+        """
+        if self._projection_models is None:
+            from aquapose.calibration.loader import (
+                compute_undistortion_maps,
+                load_calibration_data,
+            )
+            from aquapose.calibration.projection import RefractiveProjectionModel
+
+            calib = load_calibration_data(str(self._config.calibration_path))
+            self._projection_models = {}
+            for cam_id, cam_data in calib.cameras.items():
+                maps = compute_undistortion_maps(cam_data)
+                self._projection_models[cam_id] = RefractiveProjectionModel(
+                    K=maps.K_new,
+                    R=cam_data.R,
+                    t=cam_data.t,
+                    water_z=calib.water_z,
+                    normal=calib.interface_normal,
+                    n_air=calib.n_air,
+                    n_water=calib.n_water,
+                )
+        return self._projection_models
+
     def _evaluate_association_with_ctx(
         self,
         assoc_ctx: PipelineContext,
@@ -707,49 +794,31 @@ class TuningOrchestrator:
         sampled_indices: list[int],
         n_animals: int,
     ) -> tuple[AssociationMetrics, ReconstructionMetrics]:
-        """Evaluate association + reconstruction metrics from an already-run context.
+        """Evaluate association metrics and centroid reprojection error.
+
+        Uses lightweight centroid reprojection from consensus_centroids
+        instead of full reconstruction. Much faster per combo.
 
         Args:
             assoc_ctx: Context after AssociationStage.run (has tracklet_groups).
             midline_ctx: Context with annotated_detections.
-            config: PipelineConfig for reconstruction stage construction.
+            config: PipelineConfig (unused, kept for interface compatibility).
             sampled_indices: Frame indices to evaluate.
             n_animals: Expected number of fish.
 
         Returns:
             Tuple of (AssociationMetrics, ReconstructionMetrics).
         """
-        from aquapose.core.reconstruction.stage import ReconstructionStage
-
         tracklet_groups = assoc_ctx.tracklet_groups or []
         midline_sets = _build_midline_sets(
             midline_ctx, tracklet_groups, sampled_indices
         )
         assoc_m = evaluate_association(midline_sets, n_animals)
 
-        # Run reconstruction to get reprojection errors
-        recon_ctx = copy.copy(assoc_ctx)
-        # Copy annotated_detections from midline cache
-        recon_ctx.annotated_detections = midline_ctx.annotated_detections
-
-        recon_stage = ReconstructionStage(
-            calibration_path=config.calibration_path,
-            backend=config.reconstruction.backend,
-            min_cameras=config.reconstruction.min_cameras,
-            max_interp_gap=config.reconstruction.max_interp_gap,
-            n_control_points=config.reconstruction.n_control_points,
-            outlier_threshold=config.reconstruction.outlier_threshold,
+        models = self._get_projection_models()
+        recon_m = _compute_centroid_reprojection(
+            tracklet_groups, models, sampled_indices, n_animals
         )
-        recon_ctx = recon_stage.run(recon_ctx)
-
-        midlines_3d = recon_ctx.midlines_3d or []
-        frame_results = [
-            (i, midlines_3d[i])
-            for i in sampled_indices
-            if i < len(midlines_3d) and midlines_3d[i]
-        ]
-        fish_available = n_animals * len(sampled_indices)
-        recon_m = evaluate_reconstruction(frame_results, fish_available)
 
         return assoc_m, recon_m
 

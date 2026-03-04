@@ -255,21 +255,21 @@ def eval_cmd(run_dir: str, report: str, n_frames: int | None) -> None:
     "n_frames",
     type=int,
     default=30,
-    help="Frame count for fast sweep (default: 30).",
+    help="Frame count for fast sweep (reconstruction only, default: 30).",
 )
 @click.option(
     "--n-frames-validate",
     "n_frames_validate",
     type=int,
     default=100,
-    help="Frame count for top-N validation (default: 100).",
+    help="Frame count for top-N validation (reconstruction only, default: 100).",
 )
 @click.option(
     "--top-n",
     "top_n",
     type=int,
     default=3,
-    help="Number of top candidates for validation (default: 3).",
+    help="Number of top candidates for validation (reconstruction only, default: 3).",
 )
 def tune_cmd(
     stage: str,
@@ -302,11 +302,7 @@ def tune_cmd(
 
     try:
         if stage == "association":
-            result = orchestrator.sweep_association(
-                n_frames=n_frames,
-                n_frames_validate=n_frames_validate,
-                top_n=top_n,
-            )
+            result = orchestrator.sweep_association()
         else:
             result = orchestrator.sweep_reconstruction(
                 n_frames=n_frames,

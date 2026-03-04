@@ -8,11 +8,11 @@ from dataclasses import dataclass
 from aquapose.core.types.reconstruction import MidlineSet
 
 DEFAULT_GRID: dict[str, list[float]] = {
-    "ray_distance_threshold": [0.02, 0.04, 0.06, 0.10, 0.15],
-    "score_min": [0.03, 0.08, 0.15, 0.20, 0.30],
-    "eviction_reproj_threshold": [0.01, 0.03, 0.05, 0.08, 0.10],
-    "leiden_resolution": [0.5, 1.0, 1.5, 2.0],
-    "early_k": [5.0, 10.0, 20.0, 30.0],
+    "ray_distance_threshold": [0.01, 0.02, 0.03],
+    "score_min": [0.03, 0.15, 0.30],
+    "eviction_reproj_threshold": [0.02, 0.03, 0.05],
+    "leiden_resolution": [0.5, 1.0, 2.0],
+    "early_k": [5.0, 10.0, 30.0],
 }
 
 

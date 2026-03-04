@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import itertools
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -254,8 +255,16 @@ def _compute_centroid_reprojection(
             if has_residual:
                 fish_frames_reconstructed += 1
 
-    mean_err = float(np.mean(all_residuals)) if all_residuals else 0.0
-    max_err = float(np.max(all_residuals)) if all_residuals else 0.0
+    if not all_residuals:
+        logging.getLogger(__name__).warning(
+            "Centroid reprojection: no residuals computed — all groups lack "
+            "consensus_centroids (likely over-merged then fully evicted)"
+        )
+        mean_err = float("inf")
+        max_err = float("inf")
+    else:
+        mean_err = float(np.mean(all_residuals))
+        max_err = float(np.max(all_residuals))
 
     per_camera_error = {
         cam_id: {"mean_px": float(np.mean(res)), "max_px": float(np.max(res))}

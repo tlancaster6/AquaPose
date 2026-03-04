@@ -8,7 +8,7 @@ progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 11
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-03-03)
 ## Current Position
 
 Phase: 54 of 54 (Chunk-Aware Diagnostics and Eval Migration)
-Plan: 1 of 4 complete
+Plan: 2 of 4 complete
 Status: In Progress
-Last activity: 2026-03-04 — Completed 54-01: DiagnosticObserver restructured for per-chunk single-cache layout; mutual exclusion removed
+Last activity: 2026-03-04 — Completed 54-02: EvalRunner and TuningOrchestrator migrated to chunk cache layout with load_run_context() shared utility
 
-Progress: [████████░░] 86% (1/2 phases, 7 plans complete)
+Progress: [████████░░] 87% (1/2 phases, 8 plans complete)
 
 ## Accumulated Context
 
@@ -106,8 +106,14 @@ Phase 54 Plan 01 decisions:
 - Fingerprint mismatch = warning not error: load_chunk_cache() warns on version mismatch but loads anyway
 - Mutual exclusion removed: diagnostic+chunk ValueError removed; DiagnosticObserver works with multi-chunk runs via chunk_idx parameter
 
+Phase 54 Plan 02 decisions:
+- load_run_context() placed in runner.py: shared utility for both EvalRunner and TuningOrchestrator, exported from evaluation package
+- stages_present inferred from merged context fields: aligns with single-cache-per-chunk model (no per-stage file probing)
+- Tracklet frame indices offset by chunk start_frame during merge: critical for cross-chunk eval correctness
+- Single-chunk runs bypass merge: original PipelineContext returned as-is for zero overhead and identical behavior
+
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed 54-01 — DiagnosticObserver per-chunk cache layout; mutual exclusion removed; load_chunk_cache added
+Stopped at: Completed 54-02 — EvalRunner and TuningOrchestrator migrated to chunk cache layout via load_run_context() shared utility
 Resume file: None

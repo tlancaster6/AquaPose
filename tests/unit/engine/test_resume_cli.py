@@ -1,16 +1,22 @@
-"""Integration tests for --resume-from CLI flag and stage-cache round-trip."""
+"""Tests for the stage-cache programmatic API (load_stage_cache, StaleCacheError).
+
+The --resume-from CLI flag was removed in Phase 53. These tests cover the
+programmatic stage-cache functions that remain in aquapose.core.context for
+use by evaluation sweeps and other tooling.
+"""
 
 from __future__ import annotations
 
 import pickle
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-import click.testing
 import pytest
 
-from aquapose.cli import cli
-from aquapose.core.context import PipelineContext, StaleCacheError, load_stage_cache
+from aquapose.core.context import (
+    PipelineContext,
+    StaleCacheError,
+    load_stage_cache,
+)
 from aquapose.engine.diagnostic_observer import DiagnosticObserver
 from aquapose.engine.events import PipelineStart, StageComplete
 
@@ -40,32 +46,12 @@ def _write_envelope(path: Path, ctx: PipelineContext) -> None:
     path.write_bytes(pickle.dumps(envelope, protocol=pickle.HIGHEST_PROTOCOL))
 
 
-def _mock_pipeline_context(tmp_path: Path):
-    """Context manager that patches load_config, build_stages, and PosePipeline."""
-    mock_config = MagicMock()
-    mock_config.output_dir = str(tmp_path / "output")
-    mock_config.video_dir = str(tmp_path / "videos")
-    mock_config.calibration_path = str(tmp_path / "cal.json")
-    mock_config.mode = "production"
-
-    mock_pipeline_instance = MagicMock()
-    mock_pipeline_instance.run.return_value = MagicMock()
-
-    return (
-        patch("aquapose.cli.load_config", return_value=mock_config),
-        patch("aquapose.cli.build_stages", return_value=[MagicMock()]),
-        patch("aquapose.cli.PosePipeline", return_value=mock_pipeline_instance),
-        patch("aquapose.cli.VideoFrameSource"),
-        mock_pipeline_instance,
-    )
-
-
 # ---------------------------------------------------------------------------
 # Task 1: load_stage_cache loads valid cache and returns context
 # ---------------------------------------------------------------------------
 
 
-def test_resume_from_loads_and_returns_context(tmp_path: Path) -> None:
+def test_load_stage_cache_returns_context(tmp_path: Path) -> None:
     """load_stage_cache() returns a PipelineContext from a valid envelope pickle."""
     ctx = _make_context(frame_count=3)
     cache_path = tmp_path / "test_cache.pkl"
@@ -77,59 +63,7 @@ def test_resume_from_loads_and_returns_context(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Task 2: --resume-from with a corrupt file gives ClickException
-# ---------------------------------------------------------------------------
-
-
-def test_resume_from_stale_cache_gives_click_exception(tmp_path: Path) -> None:
-    """--resume-from with an unloadable pickle emits a non-zero exit and error message."""
-    runner = click.testing.CliRunner()
-    config_file = tmp_path / "config.yaml"
-    config_file.write_text("mode: production\n")
-
-    corrupt_file = tmp_path / "corrupt_cache.pkl"
-    corrupt_file.write_bytes(b"this is not a valid pickle file at all")
-
-    # Mock load_config and build_stages so the corrupt-pickle code path is reached
-    p_lc, p_bs, p_pp, p_vfs, _mock_inst = _mock_pipeline_context(tmp_path)
-    with p_lc, p_bs, p_pp, p_vfs:
-        result = runner.invoke(
-            cli,
-            ["run", "--config", str(config_file), "--resume-from", str(corrupt_file)],
-        )
-
-    assert result.exit_code != 0
-    # The error message should reference "incompatible" or "re-run"
-    assert "incompatible" in result.output or "re-run" in result.output, (
-        f"Expected incompatible/re-run in output, got: {result.output!r}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Task 3: --resume-from with nonexistent file gives non-zero exit
-# ---------------------------------------------------------------------------
-
-
-def test_resume_from_nonexistent_file_gives_click_exception(tmp_path: Path) -> None:
-    """--resume-from with a path that does not exist causes Click to fail (exists=True)."""
-    runner = click.testing.CliRunner()
-    config_file = tmp_path / "config.yaml"
-    config_file.write_text("mode: production\n")
-
-    nonexistent = tmp_path / "does_not_exist.pkl"
-    # nonexistent does NOT exist on disk
-
-    result = runner.invoke(
-        cli,
-        ["run", "--config", str(config_file), "--resume-from", str(nonexistent)],
-    )
-
-    # Click's exists=True on the Path option handles the missing-file check automatically
-    assert result.exit_code != 0
-
-
-# ---------------------------------------------------------------------------
-# Task 4: End-to-end — DiagnosticObserver writes cache, load_stage_cache loads it
+# Task 2: End-to-end — DiagnosticObserver writes cache, load_stage_cache loads it
 # ---------------------------------------------------------------------------
 
 

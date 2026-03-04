@@ -19,7 +19,7 @@ def runner() -> click.testing.CliRunner:
 
 @pytest.fixture
 def mock_pipeline(tmp_path: Path):
-    """Mock load_config, build_stages, and PosePipeline for CLI tests.
+    """Mock load_config and ChunkOrchestrator for CLI tests.
 
     Yields a dict with the mocks for introspection.
     """
@@ -28,6 +28,7 @@ def mock_pipeline(tmp_path: Path):
     mock_config.video_dir = str(tmp_path / "videos")
     mock_config.calibration_path = str(tmp_path / "cal.json")
     mock_config.mode = "production"
+    mock_config.chunk_size = None  # degenerate single-chunk
 
     def _load_config_side_effect(**kwargs: object) -> MagicMock:
         cli_overrides = kwargs.get("cli_overrides", {})
@@ -35,29 +36,22 @@ def mock_pipeline(tmp_path: Path):
             mock_config.mode = cli_overrides["mode"]
         return mock_config
 
-    mock_stages = [MagicMock() for _ in range(5)]
-    mock_pipeline_instance = MagicMock()
-    mock_pipeline_instance.run.return_value = MagicMock()
+    mock_orchestrator_instance = MagicMock()
 
     with (
         patch(
             "aquapose.cli.load_config", side_effect=_load_config_side_effect
         ) as mock_lc,
-        patch("aquapose.cli.build_stages", return_value=mock_stages) as mock_bs,
         patch(
-            "aquapose.cli.PosePipeline", return_value=mock_pipeline_instance
-        ) as mock_pp,
-        patch(
-            "aquapose.cli.VideoFrameSource",
-        ) as mock_vfs,
+            "aquapose.cli.ChunkOrchestrator", return_value=mock_orchestrator_instance
+        ) as mock_co,
+        patch("aquapose.cli.VideoFrameSource") as mock_vfs,
     ):
         yield {
             "load_config": mock_lc,
-            "build_stages": mock_bs,
-            "PosePipeline": mock_pp,
-            "pipeline_instance": mock_pipeline_instance,
+            "ChunkOrchestrator": mock_co,
+            "orchestrator_instance": mock_orchestrator_instance,
             "config": mock_config,
-            "stages": mock_stages,
             "VideoFrameSource": mock_vfs,
         }
 
@@ -102,7 +96,7 @@ class TestCLIExecution:
         tmp_path: Path,
         mock_pipeline: dict,
     ) -> None:
-        mock_pipeline["pipeline_instance"].run.side_effect = RuntimeError("boom")
+        mock_pipeline["orchestrator_instance"].run.side_effect = RuntimeError("boom")
         config_file = tmp_path / "config.yaml"
         config_file.write_text("mode: production\n")
         result = runner.invoke(cli, ["run", "--config", str(config_file)])
@@ -117,14 +111,7 @@ class TestCLIExecution:
         config_file = tmp_path / "config.yaml"
         config_file.write_text("output_dir: /tmp/test\n")
         runner.invoke(cli, ["run", "--config", str(config_file)])
-        call_kwargs = mock_pipeline["load_config"].call_args
-        cli_overrides = call_kwargs[1].get(
-            "cli_overrides", call_kwargs[0][0] if call_kwargs[0] else {}
-        )
-        if isinstance(cli_overrides, dict):
-            pass  # cli_overrides checked via load_config kwargs
         # When --mode is not passed, mode should NOT be injected into overrides
-        # (defers to YAML config value or PipelineConfig default of "production")
         lc_kwargs = mock_pipeline["load_config"].call_args
         overrides = lc_kwargs.kwargs.get("cli_overrides", {})
         assert "mode" not in overrides
@@ -171,7 +158,7 @@ class TestCLIExecution:
         assert overrides.get("detection.detector_kind") == "yolo"
         assert overrides.get("tracking.max_age") == 10
 
-    def test_pipeline_constructed_with_stages_and_observers(
+    def test_orchestrator_constructed_with_config(
         self,
         runner: click.testing.CliRunner,
         tmp_path: Path,
@@ -180,158 +167,50 @@ class TestCLIExecution:
         config_file = tmp_path / "config.yaml"
         config_file.write_text("output_dir: /tmp/test\n")
         runner.invoke(cli, ["run", "--config", str(config_file)])
-        pp_call = mock_pipeline["PosePipeline"].call_args
-        assert pp_call.kwargs["stages"] == mock_pipeline["stages"]
-        assert len(pp_call.kwargs["observers"]) >= 1  # At least ConsoleObserver
+        co_call = mock_pipeline["ChunkOrchestrator"].call_args
+        assert co_call is not None
+        assert co_call.kwargs["config"] is mock_pipeline["config"]
 
-    def test_production_mode_has_timing_and_hdf5(
+    def test_add_observer_passed_to_orchestrator(
         self,
         runner: click.testing.CliRunner,
         tmp_path: Path,
         mock_pipeline: dict,
     ) -> None:
-        from aquapose.engine import ConsoleObserver, HDF5ExportObserver, TimingObserver
-
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("output_dir: /tmp/test\n")
-        runner.invoke(cli, ["run", "--config", str(config_file)])
-        pp_call = mock_pipeline["PosePipeline"].call_args
-        observers = pp_call.kwargs["observers"]
-        types = [type(o) for o in observers]
-        assert ConsoleObserver in types
-        assert TimingObserver in types
-        assert HDF5ExportObserver in types
-
-    def test_add_observer_augments_list(
-        self,
-        runner: click.testing.CliRunner,
-        tmp_path: Path,
-        mock_pipeline: dict,
-    ) -> None:
-        from aquapose.engine import TimingObserver
-
         config_file = tmp_path / "config.yaml"
         config_file.write_text("output_dir: /tmp/test\n")
         runner.invoke(
             cli,
             ["run", "--config", str(config_file), "--add-observer", "timing"],
         )
-        pp_call = mock_pipeline["PosePipeline"].call_args
-        observers = pp_call.kwargs["observers"]
-        timing_count = sum(1 for o in observers if isinstance(o, TimingObserver))
-        # Production already has TimingObserver, plus --add-observer adds another
-        assert timing_count >= 2
+        co_call = mock_pipeline["ChunkOrchestrator"].call_args
+        extra = co_call.kwargs.get("extra_observers", ())
+        assert "timing" in extra
 
-    def test_verbose_flag_passed_to_console_observer(
+    def test_verbose_flag_passed_to_orchestrator(
         self,
         runner: click.testing.CliRunner,
         tmp_path: Path,
         mock_pipeline: dict,
     ) -> None:
-        from aquapose.engine import ConsoleObserver
-
         config_file = tmp_path / "config.yaml"
         config_file.write_text("output_dir: /tmp/test\n")
         runner.invoke(cli, ["run", "--config", str(config_file), "--verbose"])
-        pp_call = mock_pipeline["PosePipeline"].call_args
-        observers = pp_call.kwargs["observers"]
-        console_obs = [o for o in observers if isinstance(o, ConsoleObserver)]
-        assert len(console_obs) >= 1
-        assert console_obs[0]._verbose is True
+        co_call = mock_pipeline["ChunkOrchestrator"].call_args
+        assert co_call.kwargs.get("verbose") is True
 
-
-class TestDiagnosticMode:
-    """Tests for --mode diagnostic observer assembly."""
-
-    def test_diagnostic_mode_assembles_all_observers(
+    def test_max_chunks_passed_to_orchestrator(
         self,
         runner: click.testing.CliRunner,
         tmp_path: Path,
         mock_pipeline: dict,
     ) -> None:
-        from aquapose.engine import (
-            Animation3DObserver,
-            ConsoleObserver,
-            DiagnosticObserver,
-            HDF5ExportObserver,
-            Overlay2DObserver,
-            TimingObserver,
-        )
-
+        """--max-chunks 2 passes max_chunks=2 to ChunkOrchestrator."""
         config_file = tmp_path / "config.yaml"
         config_file.write_text("output_dir: /tmp/test\n")
-        runner.invoke(
-            cli, ["run", "--config", str(config_file), "--mode", "diagnostic"]
-        )
-        pp_call = mock_pipeline["PosePipeline"].call_args
-        observers = pp_call.kwargs["observers"]
-        types = [type(o) for o in observers]
-        assert ConsoleObserver in types
-        assert TimingObserver in types
-        assert HDF5ExportObserver in types
-        assert Overlay2DObserver in types
-        assert Animation3DObserver in types
-        assert DiagnosticObserver in types
-
-
-class TestBenchmarkMode:
-    """Tests for --mode benchmark observer assembly."""
-
-    def test_benchmark_mode_assembles_timing_only(
-        self,
-        runner: click.testing.CliRunner,
-        tmp_path: Path,
-        mock_pipeline: dict,
-    ) -> None:
-        from aquapose.engine import (
-            Animation3DObserver,
-            ConsoleObserver,
-            DiagnosticObserver,
-            HDF5ExportObserver,
-            Overlay2DObserver,
-            TimingObserver,
-        )
-
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("output_dir: /tmp/test\n")
-        runner.invoke(cli, ["run", "--config", str(config_file), "--mode", "benchmark"])
-        pp_call = mock_pipeline["PosePipeline"].call_args
-        observers = pp_call.kwargs["observers"]
-        types = [type(o) for o in observers]
-        assert ConsoleObserver in types
-        assert TimingObserver in types
-        # These should NOT be present in benchmark mode
-        assert HDF5ExportObserver not in types
-        assert Overlay2DObserver not in types
-        assert Animation3DObserver not in types
-        assert DiagnosticObserver not in types
-
-    def test_add_observer_augments_benchmark_mode(
-        self,
-        runner: click.testing.CliRunner,
-        tmp_path: Path,
-        mock_pipeline: dict,
-    ) -> None:
-        from aquapose.engine import HDF5ExportObserver
-
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("output_dir: /tmp/test\n")
-        runner.invoke(
-            cli,
-            [
-                "run",
-                "--config",
-                str(config_file),
-                "--mode",
-                "benchmark",
-                "--add-observer",
-                "hdf5",
-            ],
-        )
-        pp_call = mock_pipeline["PosePipeline"].call_args
-        observers = pp_call.kwargs["observers"]
-        types = [type(o) for o in observers]
-        assert HDF5ExportObserver in types
+        runner.invoke(cli, ["run", "--config", str(config_file), "--max-chunks", "2"])
+        co_call = mock_pipeline["ChunkOrchestrator"].call_args
+        assert co_call.kwargs.get("max_chunks") == 2
 
 
 class TestInitConfig:
@@ -449,7 +328,7 @@ class TestInitConfig:
 class TestSyntheticMode:
     """Tests for --mode synthetic CLI behavior."""
 
-    def test_synthetic_mode_calls_build_stages(
+    def test_synthetic_mode_calls_orchestrator(
         self,
         runner: click.testing.CliRunner,
         tmp_path: Path,
@@ -458,25 +337,7 @@ class TestSyntheticMode:
         config_file = tmp_path / "config.yaml"
         config_file.write_text("output_dir: /tmp/test\n")
         runner.invoke(cli, ["run", "--config", str(config_file), "--mode", "synthetic"])
-        mock_pipeline["build_stages"].assert_called_once()
-
-    def test_synthetic_mode_uses_production_observers(
-        self,
-        runner: click.testing.CliRunner,
-        tmp_path: Path,
-        mock_pipeline: dict,
-    ) -> None:
-        from aquapose.engine import ConsoleObserver, HDF5ExportObserver, TimingObserver
-
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("output_dir: /tmp/test\n")
-        runner.invoke(cli, ["run", "--config", str(config_file), "--mode", "synthetic"])
-        pp_call = mock_pipeline["PosePipeline"].call_args
-        observers = pp_call.kwargs["observers"]
-        types = [type(o) for o in observers]
-        assert ConsoleObserver in types
-        assert TimingObserver in types
-        assert HDF5ExportObserver in types
+        mock_pipeline["ChunkOrchestrator"].assert_called_once()
 
     def test_synthetic_mode_passes_mode_in_config(
         self,

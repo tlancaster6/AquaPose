@@ -52,7 +52,7 @@ def cli() -> None:
     "extra_observers",
     multiple=True,
     type=click.Choice(
-        ["timing", "overlay2d", "animation3d", "diagnostic", "console"],
+        ["timing", "diagnostic", "console"],
         case_sensitive=False,
     ),
     help="Add observer by name (additive).",

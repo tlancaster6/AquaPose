@@ -10,7 +10,6 @@ levels with no TYPE_CHECKING exceptions.
 """
 
 from aquapose.core.context import PipelineContext, Stage, load_chunk_cache
-from aquapose.engine.animation_observer import Animation3DObserver
 from aquapose.engine.config import (
     AssociationConfig,
     DetectionConfig,
@@ -36,13 +35,10 @@ from aquapose.engine.events import (
 from aquapose.engine.observer_factory import build_observers
 from aquapose.engine.observers import EventBus, Observer
 from aquapose.engine.orchestrator import ChunkHandoff, ChunkOrchestrator, write_handoff
-from aquapose.engine.overlay_observer import Overlay2DObserver
 from aquapose.engine.pipeline import PosePipeline
 from aquapose.engine.timing import TimingObserver
-from aquapose.engine.tracklet_trail_observer import TrackletTrailObserver
 
 __all__ = [
-    "Animation3DObserver",
     "AssociationConfig",
     "ChunkHandoff",
     "ChunkOrchestrator",
@@ -54,7 +50,6 @@ __all__ = [
     "FrameProcessed",
     "MidlineConfig",
     "Observer",
-    "Overlay2DObserver",
     "PipelineComplete",
     "PipelineConfig",
     "PipelineContext",
@@ -69,7 +64,6 @@ __all__ = [
     "SyntheticConfig",
     "TimingObserver",
     "TrackingConfig",
-    "TrackletTrailObserver",
     "build_observers",
     "load_chunk_cache",
     "load_config",

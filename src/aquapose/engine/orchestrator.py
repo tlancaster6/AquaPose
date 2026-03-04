@@ -260,8 +260,7 @@ class ChunkOrchestrator:
                 if prev_handoff is not None:
                     initial_context.carry_forward = prev_handoff
 
-                # Build observers; pass chunk_source so overlay observers see chunk frames
-                # and suppress ConsoleObserver unless verbose.
+                # Build observers for this chunk; suppress ConsoleObserver unless verbose.
                 try:
                     from aquapose.engine.observer_factory import build_observers
 
@@ -271,7 +270,6 @@ class ChunkOrchestrator:
                         verbose=self._verbose,
                         total_stages=len(stages),
                         extra_observers=self._extra_observers,
-                        frame_source=chunk_source,
                         chunk_idx=chunk_idx,
                     )
                 except Exception:

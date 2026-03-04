@@ -17,7 +17,7 @@ from aquapose.visualization.frames import synthetic_frame_iter
 
 logger = logging.getLogger(__name__)
 
-# Paul Tol 22-color palette in BGR for OpenCV (same as TrackletTrailObserver).
+# Paul Tol 22-color palette in BGR for OpenCV.
 FISH_COLORS_BGR: list[tuple[int, int, int]] = [
     (112, 48, 0),
     (76, 211, 234),

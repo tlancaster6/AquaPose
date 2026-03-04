@@ -9,19 +9,12 @@ engine layer rather than the CLI.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-from aquapose.engine.animation_observer import Animation3DObserver
 from aquapose.engine.config import PipelineConfig
 from aquapose.engine.console_observer import ConsoleObserver
 from aquapose.engine.diagnostic_observer import DiagnosticObserver
 from aquapose.engine.observers import Observer
-from aquapose.engine.overlay_observer import Overlay2DObserver
 from aquapose.engine.timing import TimingObserver
-from aquapose.engine.tracklet_trail_observer import TrackletTrailObserver
-
-if TYPE_CHECKING:
-    from aquapose.core.types.frame_source import FrameSource
 
 __all__ = ["build_observers"]
 
@@ -31,11 +24,8 @@ __all__ = ["build_observers"]
 
 _OBSERVER_MAP: dict[str, type] = {
     "timing": TimingObserver,
-    "overlay2d": Overlay2DObserver,
-    "animation3d": Animation3DObserver,
     "diagnostic": DiagnosticObserver,
     "console": ConsoleObserver,
-    "tracklet_trail": TrackletTrailObserver,
 }
 
 
@@ -45,7 +35,6 @@ def build_observers(
     verbose: bool,
     total_stages: int,
     extra_observers: tuple[str, ...] = (),
-    frame_source: FrameSource | None = None,
     chunk_idx: int = 0,
 ) -> list[Observer]:
     """Assemble the observer list based on execution mode and additive flags.
@@ -55,9 +44,9 @@ def build_observers(
     ready to pass to :class:`~aquapose.engine.pipeline.PosePipeline`.
 
     Mode behaviour:
+
     - ``"production"`` / ``"synthetic"``: ConsoleObserver + TimingObserver.
-    - ``"diagnostic"``: All production observers plus Overlay2DObserver,
-      Animation3DObserver, DiagnosticObserver, and TrackletTrailObserver.
+    - ``"diagnostic"``: ConsoleObserver + TimingObserver + DiagnosticObserver.
     - ``"benchmark"``: ConsoleObserver + TimingObserver only.
     - Any other mode: ConsoleObserver only.
 
@@ -71,10 +60,6 @@ def build_observers(
         extra_observers: Additional observer names from ``--add-observer``
             flags. Supported names match the keys of the internal
             ``_OBSERVER_MAP``.
-        frame_source: Optional FrameSource providing camera frames for
-            Overlay2DObserver and TrackletTrailObserver. When None (synthetic
-            mode or no video dir), those observers fall back to synthetic
-            black frames.
         chunk_idx: Zero-based chunk index forwarded to DiagnosticObserver so
             it writes caches to the correct ``diagnostics/chunk_NNN/`` subdirectory.
             Default 0 (single-chunk or non-diagnostic mode).
@@ -88,52 +73,17 @@ def build_observers(
 
     output_dir = Path(config.output_dir)
 
-    if mode in ("production", "synthetic"):
+    if mode in ("production", "synthetic", "benchmark"):
         observers.append(TimingObserver(output_path=output_dir / "timing.txt"))
-        if mode == "synthetic":
-            observers.append(
-                Overlay2DObserver(
-                    output_dir=config.output_dir,
-                    calibration_path=config.calibration_path,
-                    frame_source=frame_source,
-                )
-            )
-            observers.append(Animation3DObserver(output_dir=config.output_dir))
-            observers.append(
-                TrackletTrailObserver(
-                    output_dir=config.output_dir,
-                    calibration_path=config.calibration_path,
-                    frame_source=frame_source,
-                )
-            )
 
     elif mode == "diagnostic":
         observers.append(TimingObserver(output_path=output_dir / "timing.txt"))
-        observers.append(
-            Overlay2DObserver(
-                output_dir=config.output_dir,
-                calibration_path=config.calibration_path,
-                frame_source=frame_source,
-                show_bbox=True,
-            )
-        )
-        observers.append(Animation3DObserver(output_dir=config.output_dir))
         observers.append(
             DiagnosticObserver(
                 output_dir=config.output_dir,
                 chunk_idx=chunk_idx,
             )
         )
-        observers.append(
-            TrackletTrailObserver(
-                output_dir=config.output_dir,
-                calibration_path=config.calibration_path,
-                frame_source=frame_source,
-            )
-        )
-
-    elif mode == "benchmark":
-        observers.append(TimingObserver(output_path=output_dir / "timing.txt"))
 
     # Additive --add-observer flags
     for name in extra_observers:
@@ -142,16 +92,6 @@ def build_observers(
             continue
         if cls is TimingObserver:
             observers.append(TimingObserver(output_path=output_dir / "timing.txt"))
-        elif cls is Overlay2DObserver:
-            observers.append(
-                Overlay2DObserver(
-                    output_dir=config.output_dir,
-                    calibration_path=config.calibration_path,
-                    frame_source=frame_source,
-                )
-            )
-        elif cls is Animation3DObserver:
-            observers.append(Animation3DObserver(output_dir=config.output_dir))
         elif cls is DiagnosticObserver:
             observers.append(
                 DiagnosticObserver(
@@ -162,14 +102,6 @@ def build_observers(
         elif cls is ConsoleObserver:
             observers.append(
                 ConsoleObserver(verbose=verbose, total_stages=total_stages)
-            )
-        elif cls is TrackletTrailObserver:
-            observers.append(
-                TrackletTrailObserver(
-                    output_dir=config.output_dir,
-                    calibration_path=config.calibration_path,
-                    frame_source=frame_source,
-                )
             )
 
     return observers

@@ -37,6 +37,17 @@ class Midline3D:
         per_camera_residuals: Mean spline reprojection residual per camera.
             Maps camera_id to mean pixel error across all body points for
             that camera.  Useful for diagnosing cross-view identity errors.
+        plane_normal: Unit normal of the best-fit bending plane, shape (3,),
+            float32.  None when plane projection is disabled.
+        plane_centroid: Weighted centroid of the best-fit plane, shape (3,),
+            float32.  None when plane projection is disabled.
+        off_plane_residuals: Signed off-plane distances for each body sample
+            point, shape (n_sample_points,), float32.  NaN for body points
+            that were not triangulated.  None when plane projection is
+            disabled.
+        is_degenerate_plane: True when the point distribution was too
+            degenerate (collinear) for a reliable plane fit.  The plane
+            normal defaults to [0, 0, 1] in this case.
     """
 
     fish_id: int
@@ -51,3 +62,7 @@ class Midline3D:
     max_residual: float
     is_low_confidence: bool = False
     per_camera_residuals: dict[str, float] | None = None
+    plane_normal: np.ndarray | None = None
+    plane_centroid: np.ndarray | None = None
+    off_plane_residuals: np.ndarray | None = None
+    is_degenerate_plane: bool = False

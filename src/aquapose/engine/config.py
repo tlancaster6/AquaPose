@@ -249,6 +249,21 @@ class SyntheticConfig:
 
 
 @dataclass(frozen=True)
+class PlaneProjectionConfig:
+    """Config for the plane projection z-denoising step (Component A).
+
+    When enabled, triangulated body points are projected onto a weighted
+    best-fit plane before spline fitting, removing z-axis noise.
+
+    Attributes:
+        enabled: Whether to apply plane projection during reconstruction.
+            Default True.
+    """
+
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
 class ReconstructionConfig:
     """Config for the Reconstruction stage (Stage 5).
 
@@ -271,6 +286,7 @@ class ReconstructionConfig:
         n_sample_points: Number of sample points along each midline for
             triangulation output. Default 15. Propagated from top-level
             n_sample_points when not explicitly overridden.
+        plane_projection: Plane projection z-denoising config (Component A).
     """
 
     backend: str = "dlt"
@@ -279,6 +295,9 @@ class ReconstructionConfig:
     max_interp_gap: int = 5
     n_control_points: int = 7
     n_sample_points: int = 15
+    plane_projection: PlaneProjectionConfig = dataclasses.field(
+        default_factory=PlaneProjectionConfig
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -654,6 +673,16 @@ def load_config(
     # --- propagate n_sample_points to reconstruction.n_sample_points -------
     if "n_sample_points" not in rec_kwargs:
         rec_kwargs["n_sample_points"] = top_kwargs.get("n_sample_points", 15)
+
+    # --- resolve nested sub-configs in reconstruction -----------------------
+    # plane_projection may arrive as a plain dict from YAML; convert to
+    # the frozen dataclass before constructing ReconstructionConfig.
+    if "plane_projection" in rec_kwargs and isinstance(
+        rec_kwargs["plane_projection"], dict
+    ):
+        rec_kwargs["plane_projection"] = PlaneProjectionConfig(
+            **_filter_fields(PlaneProjectionConfig, rec_kwargs["plane_projection"])
+        )
 
     # --- construct & freeze -----------------------------------------------
     # Apply _filter_fields() to all stage configs and the top-level config.

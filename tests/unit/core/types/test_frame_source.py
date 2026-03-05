@@ -9,7 +9,11 @@ import cv2
 import numpy as np
 import pytest
 
-from aquapose.core.types.frame_source import FrameSource, VideoFrameSource
+from aquapose.core.types.frame_source import (
+    ChunkFrameSource,
+    FrameSource,
+    VideoFrameSource,
+)
 
 # ---------------------------------------------------------------------------
 # Protocol conformance
@@ -141,6 +145,99 @@ def test_k_new_returns_dict_of_tensors(tmp_path: Path) -> None:
     assert set(k_new.keys()) == {"cam1", "cam2"}
     for v in k_new.values():
         assert isinstance(v, torch.Tensor)
+
+
+# ---------------------------------------------------------------------------
+# ChunkFrameSource prefetch tests
+# ---------------------------------------------------------------------------
+
+
+def test_chunk_prefetch_yields_correct_frames(tmp_path: Path) -> None:
+    """ChunkFrameSource iteration yields correct (local_idx, frames_dict) tuples."""
+    vfs = _build_vfs(tmp_path, cam_ids=["cam1", "cam2"], n_frames=5)
+    with vfs:
+        chunk = ChunkFrameSource(vfs, start_frame=0, end_frame=5)
+        results = list(chunk)
+
+    assert len(results) == 5
+    for i, (local_idx, frames_dict) in enumerate(results):
+        assert local_idx == i
+        assert isinstance(frames_dict, dict)
+        assert "cam1" in frames_dict
+        assert "cam2" in frames_dict
+        for frame in frames_dict.values():
+            assert isinstance(frame, np.ndarray)
+
+
+def test_chunk_prefetch_cleanup_on_early_exit(tmp_path: Path) -> None:
+    """Prefetch thread is cleaned up when iteration is abandoned early."""
+    vfs = _build_vfs(tmp_path, cam_ids=["cam1"], n_frames=10)
+    with vfs:
+        chunk = ChunkFrameSource(vfs, start_frame=0, end_frame=10)
+        with chunk:
+            for i, (_idx, _frames) in enumerate(chunk):
+                if i == 2:
+                    break
+            chunk.__exit__(None, None, None)
+
+        # After exit, the prefetch thread should not be alive
+        if chunk._prefetch_thread is not None:
+            assert not chunk._prefetch_thread.is_alive()
+
+
+def test_chunk_prefetch_no_concurrent_iteration(tmp_path: Path) -> None:
+    """Concurrent iteration on ChunkFrameSource raises RuntimeError."""
+    vfs = _build_vfs(tmp_path, cam_ids=["cam1"], n_frames=10)
+    with vfs:
+        chunk = ChunkFrameSource(vfs, start_frame=0, end_frame=10)
+        it = iter(chunk)
+        next(it)  # Start first iteration
+        with pytest.raises(RuntimeError, match=r"[Cc]oncurrent|[Aa]lready"):
+            iter(chunk)  # Attempt second concurrent iteration
+        # Exhaust or clean up
+        chunk.__exit__(None, None, None)
+
+
+def test_chunk_prefetch_missing_camera_skips(tmp_path: Path) -> None:
+    """If a camera decode fails, iteration continues with remaining cameras."""
+    vfs = _build_vfs(tmp_path, cam_ids=["cam1", "cam2"], n_frames=5)
+    with vfs:
+        # Mock cam2's capture to return (False, None) on read
+        mock_cap = MagicMock()
+        mock_cap.read.return_value = (False, None)
+        mock_cap.get.return_value = 0.0
+        vfs._captures["cam2"] = mock_cap
+
+        chunk = ChunkFrameSource(vfs, start_frame=0, end_frame=5)
+        results = list(chunk)
+
+    assert len(results) == 5
+    for _idx, frames_dict in results:
+        # cam2 should be missing since its decode failed
+        assert "cam1" in frames_dict
+        assert "cam2" not in frames_dict
+
+
+def test_chunk_prefetch_exception_propagation(tmp_path: Path) -> None:
+    """Unexpected exception in background thread propagates to main thread."""
+    vfs = _build_vfs(tmp_path, cam_ids=["cam1", "cam2"], n_frames=5)
+    with vfs:
+        # Mock cam1's capture to raise RuntimeError on read
+        mock_cap = MagicMock()
+        mock_cap.read.side_effect = RuntimeError("hardware fault")
+        mock_cap.get.return_value = 0.0
+        vfs._captures["cam1"] = mock_cap
+
+        chunk = ChunkFrameSource(vfs, start_frame=0, end_frame=5)
+        with pytest.raises(RuntimeError, match="hardware fault"):
+            list(chunk)
+
+
+def test_chunk_frame_source_satisfies_protocol(tmp_path: Path) -> None:
+    """ChunkFrameSource satisfies the FrameSource protocol."""
+    vfs = _build_vfs(tmp_path, cam_ids=["cam1"])
+    chunk = ChunkFrameSource(vfs, start_frame=0, end_frame=5)
+    assert isinstance(chunk, FrameSource)
 
 
 # ---------------------------------------------------------------------------

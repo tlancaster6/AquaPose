@@ -9,12 +9,12 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 
 ### Reconstruction (Z-Denoising)
 
-- [ ] **RECON-01**: Per-frame plane fit projects triangulated body points onto best-fit plane before spline fitting, with endpoint downweighting
-- [ ] **RECON-02**: Robust/weighted plane fit (RANSAC or IRLS SVD) with signed off-plane residuals stored per body point (no hard bypass; real out-of-plane structure preserved in residuals)
-- [ ] **RECON-03**: Temporal smoothing of plane orientation vectors (per-fish, per-track-segment) reduces frame-to-frame z-profile noise
-- [ ] **RECON-04**: Plane normals stored in Midline3D or sidecar for temporal smoothing to consume
-- [ ] **RECON-05**: Median z-range along spine drops below ~1 cm; reprojection residuals increase by no more than ~0.5 px (do-no-harm sanity check; primary metrics are z-range and temporal stability)
-- [ ] **RECON-06**: Plane projection and temporal smoothing are togglable via a reconstruction config parameter (default on, can disable to fall back to raw triangulation)
+- [ ] **RECON-01**: Per-frame plane fit projects triangulated body points onto best-fit plane before spline fitting, with endpoint downweighting via per-point camera count / reprojection residual
+- [ ] **RECON-02**: IRLS-weighted SVD plane fit (not RANSAC) with signed off-plane residuals stored per body point; no hard bypass — always project, preserve real out-of-plane structure in residuals
+- [ ] **RECON-03**: Temporal smoothing of plane orientation vectors (per-fish, within continuous track segments) reduces frame-to-frame z-profile noise; smoothed plane applied by rotating control points via stored normal/centroid
+- [ ] **RECON-04**: Plane normal (3 floats) and centroid (3 floats) stored per fish per frame in Midline3D for Component B to consume; HDF5 writer updated with corresponding schema
+- [ ] **RECON-05**: Component A gate: reprojection residuals increase by no more than ~0.5 px (do-no-harm). Component B gate: median z-range drops below ~1 cm; frame-to-frame z-profile RMS < 0.1 cm; SNR > 1 for most fish
+- [ ] **RECON-06**: Separate config toggles — `plane_projection.enabled` (reconstruction-time, Component A) and `plane_smoothing.enabled` + `plane_smoothing.sigma_frames` (post-processing, Component B). A can run without B; B requires A
 
 ### Prep Infrastructure
 
@@ -25,10 +25,10 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 
 ### Pseudo-Label Generation (Source A)
 
-- [ ] **LABEL-01**: User can generate OBB pseudo-labels by reprojecting 3D spline + half-widths into contributing camera views
-- [ ] **LABEL-02**: User can generate pose pseudo-labels by evaluating 3D spline at configured keypoint t-values and reprojecting
-- [ ] **LABEL-03**: Each pseudo-label carries a confidence score derived from reconstruction quality (mean residual, per-camera residual variance, n_cameras, per-view residual)
-- [ ] **LABEL-04**: Labels are output in standard YOLO txt+yaml format (OBB and pose) with confidence metadata sidecar
+- [x] **LABEL-01**: User can generate OBB pseudo-labels by reprojecting 3D spline + half-widths into contributing camera views
+- [x] **LABEL-02**: User can generate pose pseudo-labels by evaluating 3D spline at configured keypoint t-values and reprojecting
+- [x] **LABEL-03**: Each pseudo-label carries a confidence score derived from reconstruction quality (mean residual, per-camera residual variance, n_cameras, per-view residual)
+- [x] **LABEL-04**: Labels are output in standard YOLO txt+yaml format (OBB and pose) with confidence metadata sidecar
 
 ### Gap Detection (Source B)
 
@@ -65,9 +65,9 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 
 - **MVC-01**: Reprojection consistency loss term during training (requires custom training infrastructure)
 
-### Dorsoventral Arch Recovery
+### Dorsoventral Arch Recovery (Component C)
 
-- **RECON-C-01**: Temporal averaging of off-plane residuals to recover dorsoventral arch shape
+- **RECON-C-01**: Temporal averaging of off-plane residuals (stored by Component A, transformed by Component B) to recover ~0.5 cm dorsoventral arch shape per fish. Not needed for pseudo-label quality; revisit if dorsoventral body shape becomes a research objective.
 
 ## Out of Scope
 
@@ -93,10 +93,10 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 | PREP-02 | Phase 62 | Pending |
 | PREP-03 | Phase 62 | Pending |
 | PREP-04 | Phase 62 | Pending |
-| LABEL-01 | Phase 63 | Pending |
-| LABEL-02 | Phase 63 | Pending |
-| LABEL-03 | Phase 63 | Pending |
-| LABEL-04 | Phase 63 | Pending |
+| LABEL-01 | Phase 63 | Complete |
+| LABEL-02 | Phase 63 | Complete |
+| LABEL-03 | Phase 63 | Complete |
+| LABEL-04 | Phase 63 | Complete |
 | GAP-01 | Phase 64 | Pending |
 | GAP-02 | Phase 64 | Pending |
 | GAP-03 | Phase 64 | Pending |
@@ -118,4 +118,4 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 
 ---
 *Requirements defined: 2026-03-05*
-*Last updated: 2026-03-05 after roadmap creation*
+*Last updated: 2026-03-05 after z-denoising design review*

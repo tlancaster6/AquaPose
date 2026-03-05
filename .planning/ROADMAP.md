@@ -276,5 +276,5 @@ Phases execute in numeric order: 61 -> 62 -> 63 -> 64 -> 65 -> 66
 | 62. Prep Infrastructure | v3.5 | 2/2 | Complete | 2026-03-05 |
 | 63. Pseudo-Label Generation (Source A) | 2/2 | Complete   | 2026-03-05 | - |
 | 64. Gap Detection and Fill (Source B) | 2/2 | Complete    | 2026-03-05 | - |
-| 65. Frame Selection and Dataset Assembly | 3/3 | Complete   | 2026-03-05 | - |
+| 65. Frame Selection and Dataset Assembly | 3/3 | Complete    | 2026-03-05 | - |
 | 66. Training Run Management | v3.5 | 0/2 | Not started | - |

@@ -591,8 +591,12 @@ class TestAssembleDataset:
         sidecar = json.loads(sidecar_path.read_text())
         assert len(sidecar) == 2
 
-        # Build lookup by stem suffix
-        by_stem = {e["stem"].split("_", 1)[1]: e for e in sidecar}
+        # Build lookup by original stem (strip run_id prefix "run_001_")
+        by_stem = {}
+        for e in sidecar:
+            # Stem format: run_001_000001_cam0 -> strip "run_001_" prefix
+            original_stem = e["stem"].removeprefix(f"{e['run_id']}_")
+            by_stem[original_stem] = e
         assert by_stem["000001_cam0"]["gap_reason"] == "no-detection"
         assert by_stem["000002_cam0"]["gap_reason"] == "no-tracklet"
 

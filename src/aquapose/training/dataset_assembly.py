@@ -226,6 +226,62 @@ def split_pseudo_val(
     return train, val
 
 
+def _filter_by_frames(
+    labels: list[dict],
+    selected_frames: dict[str, set[int]],
+) -> list[dict]:
+    """Filter labels to only include selected frame indices per run.
+
+    Args:
+        labels: Label dicts with ``stem`` and ``run_id`` keys.
+        selected_frames: Mapping of ``run_id`` to allowed frame indices.
+            Runs not present in the dict are kept unfiltered.
+
+    Returns:
+        Filtered list of label dicts.
+    """
+    result: list[dict] = []
+    for lbl in labels:
+        run_id = lbl["run_id"]
+        if run_id not in selected_frames:
+            # Run wasn't frame-selected, keep all its labels
+            result.append(lbl)
+            continue
+        frame_idx = int(lbl["stem"][:6])
+        if frame_idx in selected_frames[run_id]:
+            result.append(lbl)
+    return result
+
+
+def _extract_dominant_gap_reason(lbl: dict) -> str | None:
+    """Extract the most common gap_reason from a label's metadata.
+
+    Args:
+        lbl: Label dict with ``source`` and ``metadata`` keys.
+
+    Returns:
+        The dominant gap_reason string, or None for consensus labels or
+        labels without gap_reason metadata.
+    """
+    if lbl["source"] != "gap":
+        return None
+
+    fish_labels = lbl.get("metadata", {}).get("labels", [])
+    if not fish_labels:
+        return None
+
+    from collections import Counter
+
+    reasons = [
+        f.get("gap_reason") for f in fish_labels if f.get("gap_reason") is not None
+    ]
+    if not reasons:
+        return None
+
+    # Most common reason (first if tied)
+    return Counter(reasons).most_common(1)[0][0]
+
+
 def assemble_dataset(
     output_dir: Path,
     manual_dir: Path | None,
@@ -237,6 +293,7 @@ def assemble_dataset(
     manual_val_fraction: float,
     pseudo_val_fraction: float,
     seed: int,
+    selected_frames: dict[str, set[int]] | None = None,
 ) -> dict:
     """Assemble a YOLO-format training dataset from manual + pseudo-labels.
 
@@ -255,6 +312,11 @@ def assemble_dataset(
         manual_val_fraction: Fraction of manual data for validation.
         pseudo_val_fraction: Fraction of pseudo-labels held out.
         seed: Random seed.
+        selected_frames: Optional mapping of ``run_id`` to allowed frame
+            indices. When provided, only pseudo-labels whose frame index
+            (first 6 chars of stem parsed as int) is in the allowed set
+            for that run are included. Runs not in the dict are unfiltered.
+            When None, all pseudo-labels are included.
 
     Returns:
         Summary dict with counts per category.
@@ -310,6 +372,11 @@ def assemble_dataset(
     gap_labels = filter_by_confidence(gap_labels, gap_threshold)
     gap_labels = filter_by_gap_reason(gap_labels, exclude_gap_reasons)
 
+    # --- Frame-level filtering ---
+    if selected_frames is not None:
+        consensus_labels = _filter_by_frames(consensus_labels, selected_frames)
+        gap_labels = _filter_by_frames(gap_labels, selected_frames)
+
     # --- Combine and split pseudo-labels ---
     all_pseudo = consensus_labels + gap_labels
     pseudo_train, pseudo_val = split_pseudo_val(all_pseudo, pseudo_val_fraction, seed)
@@ -339,6 +406,7 @@ def assemble_dataset(
                 "source": lbl["source"],
                 "confidence": lbl["confidence"],
                 "run_id": lbl["run_id"],
+                "gap_reason": _extract_dominant_gap_reason(lbl),
             }
         )
         if lbl["source"] == "consensus":

@@ -776,6 +776,8 @@ def assemble(
     # Only activate if temporal_step > 1 or diversity_max_per_bin is set
     need_frame_selection = temporal_step > 1 or diversity_max_per_bin is not None
 
+    selected_frames: dict[str, set[int]] | None = None
+
     if need_frame_selection:
         import importlib
 
@@ -787,6 +789,8 @@ def assemble(
 
         _eval_mod = importlib.import_module("aquapose.evaluation.runner")
         load_run_context = _eval_mod.load_run_context
+
+        selected_frames = {}
 
         # Collect all midlines_3d across runs to build frame selection
         click.echo("Loading diagnostic caches for frame selection...")
@@ -815,9 +819,7 @@ def assemble(
             )
 
             click.echo(f"  {rd.name}: {len(all_frames)} frames selected")
-            # TODO: pass selected frames to assembly to filter pseudo-labels
-            # For now, frame selection is informational only -- the assembly
-            # module does not yet support frame-level filtering.
+            selected_frames[rd.name] = set(all_frames)
 
     result = assemble_dataset(
         output_dir=output_path,
@@ -830,6 +832,7 @@ def assemble(
         manual_val_fraction=manual_val_fraction,
         pseudo_val_fraction=pseudo_val_fraction,
         seed=seed,
+        selected_frames=selected_frames,
     )
 
     # Print summary

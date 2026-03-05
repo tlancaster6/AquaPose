@@ -1,30 +1,25 @@
 # Feature Research
 
-**Domain:** Evaluation and parameter tuning system for multi-stage computer vision pipeline (AquaPose v3.2)
-**Researched:** 2026-03-03
-**Confidence:** HIGH — project has a detailed resolved-design seed document; existing code is readable; domain patterns for CV pipeline evaluation/tuning are well-understood.
+**Domain:** Performance optimization of a multi-camera YOLO inference pipeline (AquaPose v3.4)
+**Researched:** 2026-03-05
+**Confidence:** HIGH — codebase was read directly; Ultralytics batch inference API was verified against official docs; PyTorch batched linalg is documented; threading patterns are well-established.
 
 ---
 
-## Context: What Already Exists (Do Not Re-Implement)
+## Context: What Already Exists and Must Be Preserved
 
-The following infrastructure is ALREADY BUILT and must be built upon, not replaced:
-
-| Existing Component | Location | What It Does |
-|-------------------|----------|--------------|
-| `run_evaluation()` | `evaluation/harness.py` | Loads NPZ fixture, runs reconstruction, computes Tier1/Tier2 metrics |
-| `generate_fixture()` | `evaluation/harness.py` | Runs full pipeline with overrides, emits NPZ fixture |
-| `Tier1Result`, `Tier2Result` | `evaluation/metrics.py` | Reprojection error + leave-one-out displacement dataclasses |
-| `compute_tier1()`, `compute_tier2()` | `evaluation/metrics.py` | Reconstruction metric computation functions |
-| `select_frames()` | `evaluation/metrics.py` | Deterministic frame sampling via linspace |
-| `format_summary_table()` | `evaluation/output.py` | ASCII summary table |
-| `write_regression_json()` | `evaluation/output.py` | JSON regression output |
-| `DiagnosticObserver`, `StageSnapshot` | `engine/diagnostic_observer.py` | Per-stage context capture (monolithic NPZ currently) |
-| `PosePipeline.run()` | `engine/pipeline.py` | Single-pass pipeline executor |
-| `tune_association.py` | `scripts/` | Standalone association sweep (retire after milestone) |
-| `tune_threshold.py` | `scripts/` | Standalone reconstruction sweep (retire after milestone) |
-| `measure_baseline.py` | `scripts/` | Standalone baseline measurement (retire after milestone) |
-| `MidlineFixture`, `CalibBundle` | `io/midline_fixture.py` | NPZ v2.0 serialization |
+| Existing Component | What It Does | Constraint |
+|-------------------|--------------|------------|
+| `DetectionStage.run()` | Iterates frames, calls `detector.detect(frame)` per camera per frame | Must preserve Result type: `list[dict[str, list[Detection]]]` |
+| `YOLOOBBBackend.detect(frame)` | Calls `model.predict(frame, ...)` for a single image | Hot path — currently 1 image per GPU call |
+| `MidlineStage.run()` | Iterates frames, calls `backend.process_frame(...)` per frame | Must preserve Result type: `list[dict[str, list[AnnotatedDetection]]]` |
+| `PoseEstimationBackend._process_detection()` | Extracts crop, calls `model.predict(crop, ...)` for a single crop | Hot path — currently 1 crop per GPU call |
+| `DltBackend._reconstruct_fish()` | Loops over `n_body_points` (15), triangulating one point at a time | Per-point Python loop calling `_triangulate_body_point()` per point |
+| `DltBackend._triangulate_body_point()` | Casts rays, stacks tensors, calls `triangulate_rays()` / `weighted_triangulate_rays()` | Called 15x per fish per frame — loop overhead adds up |
+| `score_tracklet_pair()` | Loops over shared frames; per-frame numpy ops; single pair at a time | Python loop inside; called O(tracklets^2) times |
+| `score_all_pairs()` | Double loop over camera pairs, tracklet-A × tracklet-B | Outer Python loop; inner calls `score_tracklet_pair()` |
+| `VideoFrameSource.__iter__()` | Sequential `cap.read()` per camera per frame; undistorts synchronously | CPU-bound decode blocks main thread; no overlap with GPU |
+| `ChunkFrameSource.__iter__()` | Calls `source.read_frame(global_idx)` which seeks and reads each camera | Seek-per-frame is expensive; no prefetching |
 
 ---
 
@@ -32,206 +27,173 @@ The following infrastructure is ALREADY BUILT and must be built upon, not replac
 
 ### Table Stakes (Users Expect These)
 
-Features a researcher expects from any evaluation/tuning CLI. Missing these makes the system feel broken or incomplete.
+Features a researcher expects from a "performance optimization" milestone. Missing these means the milestone has not delivered on its stated goal.
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| `aquapose eval <run-dir>` CLI subcommand | Any evaluation system needs a CLI entrypoint; long-argument scripts are not acceptable for regular use | LOW | Thin Click wrapper; existing CLI already uses Click; extends `aquapose` command group |
-| Multi-stage metric report covering all 5 stages | Current system evaluates reconstruction only; researchers need to see where in the pipeline quality degrades | MEDIUM | Five metric evaluator functions needed; detection/tracking/association/midline/reconstruction each get dedicated functions |
-| Stage filter flag (`--stage <name>`) for eval | Running all stages is slow during focused debugging; targeted eval is essential | LOW | Simple filtering layer over full metric computation; no structural change needed |
-| Human-readable stdout report (tabular) | Researchers want numbers immediately without parsing files | LOW | Extend existing `format_summary_table()` pattern to multi-stage output |
-| JSON output flag (`--report json`) | Machine-readable output for scripting, comparison, and CI | LOW | Extend existing `write_regression_json()` to multi-stage structure |
-| `aquapose tune --stage <name>` CLI subcommand | Direct replacement for standalone tune scripts; all params, ranges, and logic in one command | MEDIUM | Core sweep loop, param grid loading, stage-specific metric selection, top-N validation |
-| Per-stage diagnostic files (replacing monolithic NPZ) | Monolithic NPZ cannot represent partial pipeline runs (when `stop_after` is used); per-stage files enable selective loading during sweep | MEDIUM | DiagnosticObserver refactor: emit per-stage files on `StageComplete`; context loader reads stages selectively |
-| Stage-isolated parameter sweep (re-run only target stage per combo) | Sweeping the full pipeline per combo is O(N_combos * full_pipeline_time); upstream caching is the critical efficiency gain | HIGH | Requires context loader (pickle) + PosePipeline accepting pre-populated context; this is the architectural centerpiece of the milestone |
-| Two-tier frame counts (fast sweep + thorough validation) | Full validation on every combo wastes GPU time; sweep fast with fewer frames, validate winners with more | LOW | `--n-frames` and `--n-frames-validate` CLI flags; already designed in seed doc; configurable defaults |
-| Top-N validation (full pipeline for sweep winners) | Stage-specific metrics do not prove E2E quality; winners must be validated end-to-end | MEDIUM | Configurable N (default 3); validation uses more frames than sweep phase; runs full pipeline for each winner |
-| Before/after comparison in tuning output | Researcher needs to know whether tuning actually improved things relative to baseline | LOW | Compare baseline (D0) metrics to winner metrics; shown in final report alongside metric deltas |
-| Config diff in tuning output | Researcher needs to know what params changed in order to update their `config.yaml` | LOW | Emit recommended override block alongside metrics table; do NOT auto-mutate the user's config |
-| Retire standalone tuning scripts | `tune_association.py`, `tune_threshold.py`, `measure_baseline.py` must be fully subsumed so there is one canonical way to tune | LOW | Delete scripts after confirming CLI covers all functionality; migrate domain knowledge (param grids, scoring logic) into evaluation module |
+| Feature | Why Expected | Complexity | Expected Speedup | Notes |
+|---------|--------------|------------|-----------------|-------|
+| Batched YOLO detection inference | 12-camera rig calling predict() 12× per frame is the obvious GPU bottleneck; batch inference is the canonical first fix for unbatched YOLO pipelines | MEDIUM | 2–5× detection throughput (GPU util goes from ~30% to ~80%+) | Ultralytics `model.predict([img1, img2, ...])` accepts a list of numpy arrays — confirmed in official docs. Batch of 12 images per frame call replaces 12 single-image calls. DetectionStage collects all 12 camera frames, calls predict once, redistributes Results list by camera index. Breaking change to `YOLOOBBBackend.detect()` signature — needs `detect_batch(frames)` variant or signature change to accept list. |
+| Batched YOLO midline inference (crop batching) | Same root cause as detection: each fish crop is a separate GPU call. A frame with 9 fish visible across 12 cameras generates ~108 predict() calls — all unbatched | HIGH | 3–8× midline throughput | Crops from all cameras for one frame (or multiple frames) are stacked into a single `model.predict([crop1, crop2, ...])` call. Complexity is HIGHER than detection batch because crops are variable-count (fish may be missing in some cameras), and the Results list must be redistributed back to (cam_id, detection_index) pairs. Affine crop extraction is still per-detection (CPU) — only the GPU predict() call is batched. |
+| Vectorized DLT triangulation across all body points | Currently 15 sequential Python-loop iterations per fish per frame, each constructing and solving a small linear system. With 9 fish and ~12 cameras, this is 1,620+ small solve calls per frame. Vectorized solves over all body points at once is the standard fix. | MEDIUM | 5–15× DLT reconstruction (est. 9% of wall time → <1%) | The DLT system per body point is `A @ x = 0` with A of shape (2*n_cams, 4). Stacking all 15 body points gives a batched A of shape (15, 2*n_cams, 4). `torch.linalg.svd` and `torch.linalg.lstsq` both support batched inputs natively (batch dim = first dim). Outlier rejection still requires per-point residual computation but can also be vectorized with batched `project()`. The two-pass structure (triangulate all → reject → re-triangulate inliers) complicates batching of the second pass because inlier sets differ per point — this is manageable with masking. |
+| Frame I/O overlap with GPU inference | VideoFrameSource decodes synchronously on the main thread, blocking GPU between frames. This is the standard producer-consumer problem. A prefetch thread reading the next frame batch while GPU processes the current one eliminates this dead time. | MEDIUM | Eliminate ~12% I/O wall-time overhead; actual net speedup depends on how much GPU was idle waiting for frames | Standard pattern: background thread fills a `queue.Queue(maxsize=N)` with pre-decoded frame dicts; main inference thread consumes from the queue. OpenCV `cap.read()` releases the GIL so the background thread genuinely runs concurrently. Constraint: GPU inference must happen on main thread (ultralytics requirement confirmed). The prefetch thread only does decode + undistort (CPU work). |
 
-### Differentiators (Competitive Advantage)
+### Differentiators (Nice to Have, Real Value)
 
-Features that go beyond baseline expectations and provide meaningful research value for this domain.
+Features that go beyond the baseline four bottlenecks and could provide additional speedup, but are not required to declare the milestone successful.
 
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| `aquapose tune --cascade` (association then reconstruction in sequence) | Sequential tuning with locked-in winners is the correct approach for dependent stages; naive independent tuning of each stage gives suboptimal results because association quality directly controls reconstruction input quality | HIGH | Cascade orchestrator: run association sweep → validate winner D1 → use D1 as upstream cache → run reconstruction sweep → validate winner D2 → emit final delta report; complex but architecturally correct |
-| Per-stage proxy metrics without ground truth | Most CV evaluation frameworks require annotations; self-consistency metrics (yield, fragmentation rates, reprojection error) work on any production run without labels | HIGH | Each stage gets its own evaluator module with distinct metric logic: detection yield, track length distribution, association fish yield ratio, midline completeness/smoothness, reconstruction reprojection error |
-| Pickle-based upstream caching during sweeps | Avoids GPU re-execution of stages upstream of the target; turns O(N_combos * full_pipeline_time) into O(upstream_time + N_combos * target_stage_time) — typically 10-50x speedup for reconstruction sweeps | MEDIUM | Per-stage pickle in tuning work directory; discarded when tuning session ends; session-scoped to avoid stale cache bugs |
-| Default sweep grids colocated with metric evaluator functions | Keeps sweep ranges as an evaluation concern, not a pipeline config concern; easy to find, easy to modify without touching pipeline code | LOW | `DEFAULT_GRIDS` dict in each stage's evaluator module; grids cover a reasonable neighborhood around current defaults |
-| CLI parameter range override (`--param name --range min:max:step`) | Researcher can probe a specific parameter without editing code | LOW | Parses range string into value list; overrides DEFAULT_GRIDS entry for that param; enables targeted investigation after initial sweep |
-| `stop_after` support for partial pipeline execution | Enables "run only stages 1-3 and cache the result" without paying for expensive midline/reconstruction; critical for rapid association iteration | MEDIUM | PosePipeline accepts optional `stop_after: str` parameter naming the last stage to execute; DiagnosticObserver emits what's available; context loader reads only the stages present |
+| Feature | Value Proposition | Complexity | Expected Speedup | Notes |
+|---------|-------------------|------------|-----------------|-------|
+| Vectorized pairwise association scoring (score_all_pairs) | Association scoring is ~5% of wall time. The inner loop over shared frames per pair does LUT lookups and ray-ray distance, all numpy. Vectorizing the shared-frame loop into a matrix operation eliminates per-frame Python overhead. | HIGH | 2–4× association scoring speed; net effect small (5% of total → ~1–2%) | The ray-ray distance formula is analytic and vectorizable: given matrices of origins O (T, 3) and directions D (T, 3) for both cameras, the full shared-frame batch can be solved in one numpy broadcasting call. Difficulty: early termination (stop after `early_k` frames with zero score) is inherently sequential — must decide whether to drop it or approximate with threshold on first-K-frames score. Removing early termination simplifies vectorization at the cost of slightly more compute for clearly-zero pairs. This is a judgment call. |
+| Parallel per-camera video decode (ProcessPoolExecutor) | Each camera file is an independent decode. With 12 cameras, 12 cap.read() calls could theoretically run in parallel. | HIGH | Unclear — cv2.VideoCapture is not fork-safe; multiprocessing adds IPC overhead for large frame arrays. May not improve over threaded prefetch. | LOW priority. The threading prefetch approach (table stakes #4) already parallelizes decode with inference. True parallel decode via subprocesses is complex and IPC-expensive. Do not implement unless profiling post-threading-prefetch shows decode is still a bottleneck. |
+| Batch frame processing across multiple frames in detection stage | Instead of collecting 12 cameras × 1 frame per predict() call, collect 12 cameras × N frames (e.g., N=4) per call, making the batch size 48. | MEDIUM | Marginal — memory bandwidth bound beyond batch ~16. Pipeline's chunk processing already amortizes scheduling overhead. | LOW priority. Batch size of 12 (one full frame across all cameras) is likely sufficient to saturate GPU. Larger batches add latency (must buffer N frames before calling predict) and complicate downstream result redistribution. Profile first. |
 
-### Anti-Features (Commonly Requested, Often Problematic)
+### Anti-Features (Do Not Build)
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| Bayesian or Gaussian process optimization | Promises smarter parameter search than grid search | Obscures what the search is doing; requires additional dependencies (scikit-optimize, Optuna); parameter spaces here are small (2-5 params with defined ranges) and grid search is fully interpretable; Bayesian methods add value only at 10+ params | Grid search with overridable ranges; 2D joint grids for pairs of correlated params if needed |
-| Automatic config file mutation on tuning completion | Saves a manual YAML editing step | Mutating user config files without explicit consent destroys reproducibility and is surprising behavior; researcher must review config diff before applying | Print recommended config diff block to stdout; let researcher apply it manually to their config.yaml |
-| Real-time / streaming evaluation during pipeline execution | Evaluate quality as each stage completes in a live run | Evaluation currently requires the full stage output to be available; partial evaluation adds synchronization complexity and changes the pipeline's execution model | Evaluate in a separate offline step after the diagnostic run completes; the run directory is the evaluation input |
-| Pydantic for sweep config validation | Type-safe validation of sweep parameter dicts | Project decision (PROJECT.md) is frozen dataclasses; Pydantic is explicitly out of scope | Frozen dataclasses + Click type annotations on CLI flags; DEFAULT_GRIDS dicts with documented types |
-| Cross-session cache persistence | Reuse upstream caches from previous tuning sessions | Pipeline code may change between sessions, making cached pickles invalid; stale pickles produce silent correctness bugs; seed doc explicitly chose session-scoped caches | Fresh baseline run per tuning session; tuning work directory is discarded when session ends |
-| Composite weighted scoring for parameter ranking | Combine multiple metrics into one comparable score | Weights are arbitrary and obscure which metric drove the ranking decision; single primary metric with tiebreaker is more auditable and explainable | Primary metric (fish yield or mean reprojection error) with a single tiebreaker; report all metrics in the output table for human review |
-| Automatic cascade state propagation (implicit config mutation mid-cascade) | After association sweep, automatically apply winner params before reconstruction sweep begins | Implicit config changes mid-cascade break auditability; researcher should know what changed and why at each step | Cascade orchestrator manages config propagation internally during the session only; the final report shows the accumulated config diff from D0 to D2 |
-| Sweep capability for tracking and midline stages at launch | Complete the full tuning surface for all 5 stages | Seed doc explicitly decided these are evaluate-only at launch: OC-SORT tracking defaults are well-understood; midline params are precision/recall filters that reconstruction's own outlier rejection already handles; adding tuning before confirming it's a bottleneck is speculative over-engineering | Implement evaluate-only for tracking and midline; add sweep support in a future milestone only if evaluation data reveals them as bottlenecks |
-| Ground-truth-based metrics | More rigorous than proxy metrics | No ground truth is available at pipeline runtime; training data has annotations but those are consumed during model training, not pipeline evaluation | Self-consistency proxy metrics (yield, reprojection error, cross-view consistency) are always available and sufficient for parameter optimization |
-| Retroactive evaluation of pre-v3.2 run directories | Evaluate older runs without re-running the pipeline | Pre-v3.2 run directories use the monolithic NPZ format; the new per-stage file format is not backward-compatible; building a translation layer adds complexity for limited benefit | Not required at launch; the seed doc explicitly defers retroactive compatibility; researcher re-runs the pipeline in diagnostic mode to get a v3.2-compatible run directory |
+| TensorRT / ONNX export for YOLO models | Promises 2–4× inference speedup over PyTorch | Custom YOLO training workflow with Ultralytics must remain compatible with `aquapose train`. TensorRT export requires separate `.engine` file management, breaks the single-weights-path config decision, and Ultralytics export is version-sensitive. Speedup benefit is real but the maintenance cost and workflow disruption are not justified when batching alone likely delivers comparable gains. | Achieve GPU efficiency through batching first; revisit TensorRT if profiling post-batching still shows GPU as bottleneck. |
+| Multiprocessing pipeline parallelism (stage overlap) | Run detection and tracking in parallel for different frames | The 5-stage pipeline is strictly sequential per chunk (each stage writes context consumed by the next). Stage-level parallelism requires either per-frame streaming (breaking the current batch-per-chunk model) or complex double-buffering. Architectural risk is high; not justified when the bottleneck is within-stage GPU utilization, not between-stage latency. | Fix within-stage efficiency first. If E2E time is still unsatisfactory after the four table-stakes optimizations, reconsider. |
+| Async/await (asyncio) for video I/O | Modern async I/O promises cleaner code than threading | cv2.VideoCapture is not async-compatible. Ultralytics inference is synchronous. Asyncio provides no benefit for CPU-bound C extension work. Threading with a Queue is the correct primitive here. | Use `threading.Thread` + `queue.Queue` for producer-consumer overlap. |
+| Replacing OpenCV VideoCapture with PyAV or decord | Faster GPU-accelerated decoders | GPU-accelerated decode (NVDEC via PyAV or decord) would help only if decode is the bottleneck after threading. Currently decode time is ~12% — large but manageable with threading. New decode library adds a dependency, changes frame format, and may affect undistortion pipeline. | Profile after threading prefetch. Add GPU-decode library only if profiling reveals decode is still dominant. |
+| Numba JIT compilation for triangulation | JIT compile the inner loop for speed | The triangulation bottleneck is not per-iteration Python overhead — it is the sequential structure (15 separate small matrix solves). PyTorch batched SVD is the correct fix, not JIT. Numba introduces a compilation step, type restrictions, and debugging complexity. | Use `torch.linalg.svd` with a batch dimension of n_body_points. |
+| Caching triangulation results across frames | Avoid re-triangulating stationary fish | Fish are moving continuously at 30fps. Body points change each frame. No valid reuse opportunity without approximate matching that would introduce correctness risk. | Not applicable. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-[Per-stage diagnostic files]
-    └──requires──> [DiagnosticObserver refactor: emit per-stage files on StageComplete]
+[Batched YOLO detection inference]
+    └──modifies──> YOLOOBBBackend: detect() → detect_batch(frames: list[np.ndarray])
+    └──modifies──> DetectionStage.run(): collect frames, call detect_batch, redistribute Results
+    └──no dependency on──> [Frame I/O overlap] (independent)
 
-[Context loader (pickle deserialization into PipelineContext)]
-    └──requires──> [Per-stage diagnostic files]  (knows which stages are available)
+[Batched YOLO midline inference]
+    └──modifies──> PoseEstimationBackend: _process_detection() → process_frame_batch()
+    └──modifies──> MidlineStage.run(): collect crops across cameras, call batch predict, redistribute
+    └──depends on knowledge of──> [Batched YOLO detection inference] (same API pattern)
+    └──independent of──> [Frame I/O overlap]
 
-[PosePipeline: accept pre-populated PipelineContext + optional stop_after]
-    └──minimal change──> existing single-pass architecture preserved
+[Vectorized DLT triangulation]
+    └──modifies──> DltBackend._reconstruct_fish(): replace 15-iteration loop with batched SVD
+    └──modifies──> DltBackend._triangulate_body_point(): replaced by vectorized equivalent
+    └──requires──> torch.linalg.svd batched input support (confirmed in PyTorch docs)
+    └──independent of──> inference batching features
 
-[Stage-isolated parameter sweep]
-    └──requires──> [Per-stage diagnostic files]
-    └──requires──> [Context loader]
-    └──requires──> [PosePipeline: accept pre-populated context]
+[Frame I/O overlap with GPU inference]
+    └──modifies──> VideoFrameSource or ChunkFrameSource: add background decode thread + Queue
+    └──or──> new PrefetchingFrameSource wrapper satisfying FrameSource protocol
+    └──independent of──> inference batching features
+    └──independent of──> DLT vectorization
 
-[Per-stage metric evaluator functions (5 stages)]
-    └──builds on──> [Tier1Result, Tier2Result] (existing reconstruction metrics reused)
-    └──new work──>  detection, tracking, association, midline metric functions
-
-[aquapose eval <run-dir>]
-    └──requires──> [Per-stage metric evaluator functions]
-    └──requires──> [Per-stage diagnostic files]  (data source for evaluation)
-    └──extends──>  [format_summary_table(), write_regression_json()] (existing output utilities)
-
-[aquapose tune --stage association]
-    └──requires──> [Stage-isolated parameter sweep]
-    └──requires──> [Per-stage metric evaluator functions: association]
-    └──requires──> [Two-tier frame counts]
-    └──requires──> [Top-N validation]
-    └──subsumes──> [scripts/tune_association.py]
-
-[aquapose tune --stage reconstruction]
-    └──requires──> [Stage-isolated parameter sweep]
-    └──requires──> [Per-stage metric evaluator functions: reconstruction]
-    └──requires──> [Two-tier frame counts]
-    └──requires──> [Top-N validation]
-    └──subsumes──> [scripts/tune_threshold.py]
-
-[aquapose tune --cascade]
-    └──requires──> [aquapose tune --stage association]
-    └──requires──> [aquapose tune --stage reconstruction]
-    └──requires──> [Cascade orchestrator that sequences the two and threads D1 into reconstruction sweep]
-
-[Retire standalone scripts]
-    └──requires──> [aquapose tune --stage association]  (full supersession of tune_association.py)
-    └──requires──> [aquapose tune --stage reconstruction]  (full supersession of tune_threshold.py)
-    └──requires──> [aquapose eval]  (full supersession of measure_baseline.py)
+[Vectorized pairwise association scoring] (differentiator)
+    └──modifies──> score_tracklet_pair(): replace per-frame loop with batched numpy ops
+    └──modifies──> score_all_pairs(): optionally parallelize pair scoring
+    └──independent of all other features
+    └──lowest priority: only 5% of wall time
 ```
 
 ### Dependency Notes
 
-- **Per-stage diagnostic files is the critical prerequisite.** Everything else depends on having per-stage serialized outputs in the run directory. DiagnosticObserver currently writes a monolithic NPZ at `PipelineComplete`; it must emit per-stage pickle/structured files at each `StageComplete` event.
+- **Batched detection and batched midline share the same API pattern** but are independent changes. Detection batch is simpler (all inputs are full frames, fixed per-frame count = n_cameras). Midline batch is harder (variable crop count per frame, per-detection affine transforms must still run sequentially on CPU before the batched GPU call).
 
-- **PosePipeline change is minimal by design.** The orchestrator manages context population externally. PosePipeline only needs to accept an optional pre-populated context (skipping internal context creation) and an optional `stop_after` stage name. The single-pass execution model is preserved; the orchestrator is the new outer loop.
+- **Vectorized DLT has a two-pass structure constraint.** The first triangulation (all cameras) can be fully batched (shape: `[n_body_points, 2*n_cams, 4]`). The second triangulation (inlier cameras only) cannot use a uniform batch because inlier sets differ per body point. Use padded masked tensors or fall back to a masked loop for the second pass. The first pass alone (eliminating 15 separate small solves) is the majority of the gain.
 
-- **cascade requires both stage sweeps to be complete and independently testable** before the cascade orchestrator can be wired. The cascade orchestrator is thin: call association sweep, take winner, use winner's run directory as the upstream cache for reconstruction sweep, collect final delta report.
+- **Frame I/O prefetch must keep GPU on the main thread.** Ultralytics inference is not thread-safe for GPU execution. Only decode + undistort moves to the background thread. The main thread does inference and consumes from the queue.
 
-- **Retire standalone scripts is the last step.** Scripts should be retained until the CLI has been exercised against the same test cases and produces equivalent results. The migration transfers domain knowledge (param grids, scoring formulas) from scripts into the evaluation module's `DEFAULT_GRIDS` dicts and metric functions.
+- **Prefetching changes the iteration contract for ChunkFrameSource.** The current sequential `read_frame(global_idx)` seek pattern is the most expensive possible access pattern for prefetching. The prefetch thread should decode sequentially (no seeking) ahead of the main thread's consumption.
 
 ---
 
 ## MVP Definition
 
-### Launch With (v3.2 — all of these are success criteria)
+### Launch With (v3.4 — all four are required for milestone success)
 
-- [ ] Per-stage diagnostic files replacing monolithic NPZ (DiagnosticObserver refactor)
-- [ ] Context loader: pickle serialization/deserialization of PipelineContext stage outputs
-- [ ] PosePipeline: accept optional pre-populated PipelineContext + optional `stop_after`
-- [ ] Per-stage metric evaluator functions for all 5 stages (detection, tracking, association, midline, reconstruction)
-- [ ] `aquapose eval <run-dir>` CLI with multi-stage report (stdout human-readable + optional `--report json`)
-- [ ] `aquapose tune --stage association` with grid sweep, two-tier frame counts, top-N validation
-- [ ] `aquapose tune --stage reconstruction` with grid sweep, two-tier frame counts, top-N validation
-- [ ] `aquapose tune --cascade` for association-then-reconstruction in sequence with E2E validation between stages
-- [ ] Before/after metric comparison + config diff block in all `tune` output
-- [ ] Retire `scripts/tune_association.py`, `scripts/tune_threshold.py`, `scripts/measure_baseline.py`
+- [ ] **Batched YOLO detection inference** — collect all n_cameras frames per frame-tick, call `model.predict([frame_1, ..., frame_12])` once, redistribute Results by index. Requires `detect_batch()` variant in `YOLOOBBBackend`. Expected speedup: 2–5× detection throughput.
 
-### Add After Validation (v3.x)
+- [ ] **Batched YOLO midline inference (crop batching)** — collect all crops across all cameras for a frame (or frame-window), call `model.predict([crop_1, ..., crop_N])` once, redistribute keypoints back to (cam_id, detection_index). Expected speedup: 3–8× midline throughput.
 
-- [ ] `--stage <name>` filter for `aquapose eval` — add once multi-stage eval is working and the filtering need is confirmed
-- [ ] `--param name --range min:max:step` CLI override for custom sweep ranges — add when researchers want to narrow in on specific params after initial grid
-- [ ] `aquapose tune --stage tracking` — add only if evaluation data reveals tracking fragmentation as a bottleneck
-- [ ] `aquapose tune --stage midline` — add only if evaluation data reveals midline completion rate as a bottleneck
-- [ ] 2D joint grid sweeps (two correlated params simultaneously) — add when 1D sweeps prove insufficient
+- [ ] **Vectorized DLT triangulation** — replace per-body-point loop in `_reconstruct_fish()` with batched `torch.linalg.svd` or `torch.linalg.lstsq` over all body points simultaneously. Minimum viable: vectorize the first-pass triangulation (all cameras); second-pass inlier re-triangulation can remain looped or be masked. Expected speedup: 5–15× reconstruction throughput.
 
-### Future Consideration (v4+)
+- [ ] **Frame I/O overlap with GPU inference** — background thread prefetches decoded frames into a bounded queue. Main inference thread consumes. Eliminates the ~12% wall-time gap where GPU is idle waiting for the next decoded frame batch.
 
-- [ ] Cross-session cache reuse with version tagging to detect stale caches
-- [ ] Per-stage metric trending across multiple runs (longitudinal quality tracking as data grows)
-- [ ] Sweep results export to CSV/parquet for external analysis or plotting
-- [ ] Parallel sweep execution across multiple GPU processes
+### Add After Validation (v3.4.x)
+
+- [ ] **Vectorized pairwise association scoring** — vectorize the per-frame loop in `score_tracklet_pair()` using batched numpy ops. Add only if profiling post-v3.4 shows association is a meaningful share of remaining wall time.
+
+### Future Consideration (v3.5+)
+
+- [ ] Per-frame streaming pipeline with stage-level parallelism (requires pipeline architecture change — out of scope)
+- [ ] TensorRT / ONNX export (revisit if batching delivers insufficient speedup)
+- [ ] GPU-accelerated video decode via decord or PyAV (revisit if decode remains dominant after threading)
 
 ---
 
 ## Feature Prioritization Matrix
 
-| Feature | User Value | Implementation Cost | Priority |
-|---------|------------|---------------------|----------|
-| DiagnosticObserver refactor: per-stage files | HIGH | MEDIUM | P1 |
-| Context loader (pickle round-trip) | HIGH | MEDIUM | P1 |
-| PosePipeline: accept pre-populated context + stop_after | HIGH | LOW | P1 |
-| Per-stage metric evaluators (5 stages) | HIGH | HIGH | P1 |
-| `aquapose eval` CLI, multi-stage report | HIGH | LOW | P1 |
-| `aquapose tune --stage association` | HIGH | MEDIUM | P1 |
-| `aquapose tune --stage reconstruction` | HIGH | MEDIUM | P1 |
-| Two-tier frame counts | HIGH | LOW | P1 |
-| Top-N validation (full pipeline for winners) | HIGH | LOW | P1 |
-| Before/after comparison + config diff output | HIGH | LOW | P1 |
-| `aquapose tune --cascade` | HIGH | MEDIUM | P1 |
-| Retire standalone scripts | MEDIUM | LOW | P1 |
-| `--stage` filter for eval | MEDIUM | LOW | P2 |
-| `--param name --range` CLI override | MEDIUM | LOW | P2 |
-| `aquapose tune --stage tracking` | LOW | MEDIUM | P3 |
-| `aquapose tune --stage midline` | LOW | MEDIUM | P3 |
+| Feature | User Value | Implementation Cost | Priority | Estimated Wall-Time Reduction |
+|---------|------------|---------------------|----------|-------------------------------|
+| Batched YOLO detection inference | HIGH | MEDIUM | P1 | Large (detection is dominant bottleneck at ~74% GPU-bound time) |
+| Batched YOLO midline inference | HIGH | HIGH | P1 | Large (midline uses same model.predict path, same bottleneck) |
+| Vectorized DLT triangulation | HIGH | MEDIUM | P1 | Medium (reconstruction ~9% of wall time, 5–15× speedup within that) |
+| Frame I/O overlap | HIGH | MEDIUM | P1 | Medium-small (~12% of wall time, most eliminated) |
+| Vectorized association scoring | MEDIUM | HIGH | P2 | Small (~5% of wall time, 2–4× within that) |
+| TensorRT / ONNX export | LOW | HIGH | P3 | Potentially large but high risk/complexity |
+| GPU-accelerated video decode | LOW | HIGH | P3 | Small after threading overlap |
+| Parallel-frame decode (multiprocessing) | LOW | HIGH | P3 | Unclear, likely negative ROI |
 
 **Priority key:**
-- P1: Must ship for v3.2 success criteria
-- P2: Should add within milestone if time permits
-- P3: Future milestone, add only after evaluation reveals bottleneck
+- P1: Required for v3.4 milestone declaration
+- P2: Add if profiling post-P1 shows residual bottleneck
+- P3: Future milestone, revisit only after profiling confirms need
 
 ---
 
-## Existing Infrastructure Refactor Map
+## Implementation Complexity Notes
 
-Features in this milestone refactor existing components. The changes required are listed here to inform phase planning.
+### Batched YOLO Detection (MEDIUM complexity)
+The Ultralytics API accepts `model.predict(list_of_numpy_arrays)` — confirmed in official docs. The primary complexity is in redistribution: `model.predict([f1, f2, ..., f12])` returns a list of 12 `Results` objects in the same order as inputs. The existing `detect()` method processes one frame and returns `list[Detection]`. A new `detect_batch(frames: dict[str, np.ndarray]) -> dict[str, list[Detection]]` method collects camera_ids, builds an ordered list of frames, calls predict once, and reconstructs the per-camera dict from the Results list. `DetectionStage.run()` changes to call `detect_batch` instead of `detect` per camera.
 
-| Existing Component | Change Required | Scope |
-|-------------------|----------------|-------|
-| `evaluation/harness.py` | Reconstruction-specific logic migrates to reconstruction stage evaluator; harness becomes a thin orchestrator or is retired | MEDIUM refactor |
-| `evaluation/metrics.py` | Tier1/Tier2 types become reconstruction-stage metric types; add 4 new result types (one per remaining stage) | MEDIUM expansion |
-| `evaluation/output.py` | Generalize format functions to accept multi-stage metric dicts; extend JSON schema | MEDIUM expansion |
-| `engine/diagnostic_observer.py` | Add per-stage file emit on `StageComplete`; monolithic NPZ may be retained for backward compat or retired | MEDIUM refactor |
-| `engine/pipeline.py` | Accept optional initial `PipelineContext`; accept optional `stop_after: str` | LOW change |
-| `engine/config.py` | No change — sweep ranges live in evaluation module, not config | None |
-| `scripts/tune_association.py` | Migrate param grids and metric scoring into `evaluation/`; delete script | Migrate + delete |
-| `scripts/tune_threshold.py` | Migrate param grids and metric scoring into `evaluation/`; delete script | Migrate + delete |
-| `scripts/measure_baseline.py` | Migrate baseline measurement logic into `aquapose eval`; delete script | Migrate + delete |
+### Batched YOLO Midline (HIGH complexity)
+The crop-batching approach requires: (1) extract affine crops for all detections across all cameras for the current frame (CPU, sequential, unchanged); (2) collect all crops into a single list with a parallel index mapping `[(cam_id, det_idx), ...]`; (3) call `model.predict(crops_list)` once; (4) redistribute Results back to `(cam_id, det_idx)` pairs using the index map. The keypoint extraction and spline interpolation post-predict remain unchanged and sequential. The higher complexity vs. detection batching comes from variable crop count per frame (some cameras may have 0–9 crops) and the need to maintain the (cam_id, det_idx) index.
+
+### Vectorized DLT (MEDIUM complexity)
+The key mathematical structure: for body point `i`, the current code builds a system `A_i @ x_i ≈ 0` where `A_i` has shape `(2*n_cams, 4)`. Stacking gives `A` of shape `(n_body_points, 2*n_cams, 4)`. `torch.linalg.svd(A)` returns `V` of shape `(n_body_points, 4, 4)`; the solution for each point is `V[:, :, -1]` (last column = smallest singular value). The outlier rejection second pass is harder to vectorize uniformly because inlier sets differ per point. Acceptable approach: vectorize first pass fully (eliminates ~half the compute); for second pass, use a masked approach or a short loop only over points that had outliers in the first pass (typically a minority).
+
+### Frame I/O Prefetch (MEDIUM complexity)
+Standard producer-consumer pattern. Create a `PrefetchingFrameSource` wrapper that satisfies the `FrameSource` protocol. On `__enter__`, start a `threading.Thread` that sequentially decodes frames and pushes `(frame_idx, frames_dict)` to a `queue.Queue(maxsize=4)` (4-frame buffer). Main thread consumes from the queue in `__iter__`. The thread sets a sentinel value when exhausted. Key constraint: the existing `ChunkFrameSource.__iter__()` uses `source.read_frame(global_idx)` with seeks — the prefetch thread should use sequential `cap.read()` (no seeks) for maximum efficiency. This may require the prefetch thread to operate on the underlying `VideoFrameSource` directly rather than through `ChunkFrameSource`.
+
+### Vectorized Association Scoring (HIGH complexity, LOW priority)
+The `score_tracklet_pair()` function iterates over `shared_frames` and computes a LUT lookup + ray-ray distance per frame. Vectorizing requires: (1) collecting all shared-frame centroid tensors into matrices `O_a (T, 3)`, `D_a (T, 3)`, `O_b (T, 3)`, `D_b (T, 3)`; (2) computing ray-ray distances as a batched numpy op — the analytic formula `ray_ray_closest_point` is vectorizable with broadcasting; (3) aggregating scores. The early-termination heuristic (bail after `early_k` frames with zero score) is incompatible with full vectorization — it would need to be dropped or replaced with a first-K-frames pre-filter. Given that association is only ~5% of wall time, the complexity/benefit ratio is poor. Do not implement in v3.4.
+
+---
+
+## Correctness Preservation Requirements
+
+All optimizations are correctness-neutral: the mathematical result must be numerically identical (or within floating-point tolerance) to the pre-optimization baseline. This is enforced by the existing golden-data verification framework and `aquapose eval`.
+
+| Optimization | Correctness Risk | Mitigation |
+|--------------|-----------------|------------|
+| Batched detection | LOW — same predict call, just batched | Verify per-camera Results ordering matches input ordering |
+| Batched midline | LOW — same predict call, variable crop count | Verify (cam_id, det_idx) index round-trip |
+| Vectorized DLT | MEDIUM — batched SVD numerically equivalent, but outlier rejection second pass needs care | Compare Tier1 reprojection metrics before/after using `aquapose eval` |
+| Frame I/O prefetch | LOW — same frames, different delivery timing | Verify frame_idx ordering is preserved; assert on frame content in unit tests |
 
 ---
 
 ## Sources
 
-- `.planning/PROJECT.md` — v3.1 state, v3.2 milestone definition, existing decisions (HIGH confidence — primary source)
-- `.planning/inbox/evaluation_and_tuning_system.md` — resolved design decisions, CLI design, caching strategy, cascade flow, stage-specific metric definitions (HIGH confidence — primary source)
-- `src/aquapose/evaluation/harness.py` — existing reconstruction eval implementation (HIGH confidence — direct code inspection)
-- `src/aquapose/evaluation/metrics.py` — Tier1/Tier2 metric result types and computation (HIGH confidence — direct code inspection)
-- `src/aquapose/engine/diagnostic_observer.py` — StageSnapshot structure, monolithic NPZ pattern (HIGH confidence — direct code inspection)
-- `src/aquapose/engine/pipeline.py` — PosePipeline architecture and single-pass execution model (HIGH confidence — direct code inspection)
-- CV pipeline evaluation patterns (stage-isolated sweeps, proxy metrics, cascade tuning) — established patterns in ML system design; analogous to sklearn Pipeline partial-fit patterns and MLflow sweep orchestration (MEDIUM confidence — domain knowledge, not externally verified for this codebase)
+- `/home/tlancaster6/Projects/AquaPose/.planning/PROJECT.md` — v3.4 milestone definition and profiling targets (HIGH confidence — primary source)
+- Direct codebase inspection: `YOLOOBBBackend`, `DetectionStage`, `MidlineStage`, `PoseEstimationBackend`, `DltBackend`, `score_all_pairs`, `VideoFrameSource`, `ChunkFrameSource` (HIGH confidence)
+- [Ultralytics Predict Docs](https://docs.ultralytics.com/modes/predict/) — confirmed batch inference API accepts list of numpy arrays (HIGH confidence)
+- [Ultralytics YOLO11 Batch Inference Blog](https://www.ultralytics.com/blog/using-ultralytics-yolo11-to-run-batch-inferences) — batch arg behavior, default size=1 (MEDIUM confidence)
+- [YOLOv8 Batch Inference Speed Analysis](https://dev-kit.io/blog/machine-learning/yolov8-batch-inference-speed-and-efficiency) — throughput scaling characteristics (MEDIUM confidence)
+- [torch.linalg.svd PyTorch Docs](https://docs.pytorch.org/docs/stable/generated/torch.linalg.svd.html) — confirmed batched SVD support (HIGH confidence)
+- [torch.linalg.lstsq PyTorch Docs](https://docs.pytorch.org/docs/stable/generated/torch.linalg.lstsq.html) — confirmed batched least-squares, CUDA limitation (gels driver = full-rank only) (HIGH confidence)
+- [OpenCV multithreading with VideoCapture](https://nrsyed.com/2018/07/05/multithreading-with-opencv-python-to-improve-video-processing-performance/) — threading pattern, GIL behavior for cap.read() (MEDIUM confidence)
+- [PyTorch DataLoader prefetch tactics](https://medium.com/@Modexa/8-pytorch-dataloader-tactics-to-max-out-your-gpu-22270f6f3fa8) — pin_memory, non-blocking transfer, producer-consumer patterns (MEDIUM confidence)
+- [NumPy pairwise vectorization](https://towardsdatascience.com/how-to-vectorize-pairwise-dis-similarity-metrics-5d522715fb4e/) — broadcasting patterns for distance matrices (MEDIUM confidence)
 
 ---
 
-*Feature research for: AquaPose v3.2 Evaluation Ecosystem — unified `aquapose eval` and `aquapose tune` CLI*
-*Researched: 2026-03-03*
+*Feature research for: AquaPose v3.4 Performance Optimization*
+*Researched: 2026-03-05*

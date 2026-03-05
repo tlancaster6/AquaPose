@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import cv2
 import numpy as np
 
 
@@ -87,6 +88,88 @@ def pca_obb(
     corners_world = corners_local @ rot.T + centroid  # (4, 2)
 
     return corners_world
+
+
+def affine_warp_crop(
+    image: np.ndarray,
+    obb_corners: np.ndarray,
+    crop_w: int,
+    crop_h: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Warp OBB region to an axis-aligned rectangle.
+
+    Maps 3 of the 4 OBB corners to corresponding destination corners of a
+    ``(crop_w, crop_h)`` rectangle using ``cv2.getAffineTransform``.
+
+    The OBB is assumed to have corners in order: TL, TR, BR, BL. The mapping
+    ensures the fish is in landscape orientation (long axis = horizontal).
+
+    Args:
+        image: BGR image array of shape ``(H, W, 3)``.
+        obb_corners: float64 array of shape ``(4, 2)`` with OBB corner
+            coordinates in image space (TL, TR, BR, BL).
+        crop_w: Output crop width in pixels.
+        crop_h: Output crop height in pixels.
+
+    Returns:
+        Tuple of:
+        - warped: uint8 BGR crop of shape ``(crop_h, crop_w, 3)``.
+        - affine: float64 affine matrix of shape ``(2, 3)``.
+    """
+    # Source points: TL, TR, BL (3 corners for affine) -- must be float32 for cv2
+    src = np.array([obb_corners[0], obb_corners[1], obb_corners[3]], dtype=np.float32)
+    # Destination: top-left, top-right, bottom-left of crop
+    dst = np.array([[0, 0], [crop_w - 1, 0], [0, crop_h - 1]], dtype=np.float32)
+
+    affine = cv2.getAffineTransform(src, dst)
+    warped = cv2.warpAffine(image, affine, (crop_w, crop_h))
+    return warped, affine.astype(np.float64)
+
+
+def transform_keypoints(
+    coords: np.ndarray,
+    visible: np.ndarray,
+    affine_matrix: np.ndarray,
+    crop_w: int,
+    crop_h: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Apply a 2x3 affine matrix to keypoint coordinates.
+
+    Out-of-bounds keypoints (after transform) are marked invisible.
+
+    Args:
+        coords: float array of shape ``(N, 2)`` with (x, y) pixel coordinates.
+        visible: bool array of shape ``(N,)``, True if keypoint is visible.
+        affine_matrix: float64 affine transform matrix of shape ``(2, 3)``.
+        crop_w: Output crop width in pixels.
+        crop_h: Output crop height in pixels.
+
+    Returns:
+        Tuple of:
+        - coords_out: float64 array of shape ``(N, 2)`` with transformed
+          coordinates, clamped to ``[0, crop_w) x [0, crop_h)``.
+        - visible_out: bool array of shape ``(N,)``, marking OOB points
+          invisible.
+    """
+    n = len(coords)
+    # Homogeneous coordinates
+    ones = np.ones((n, 1), dtype=np.float64)
+    pts_h = np.hstack([coords, ones])  # (N, 3)
+
+    transformed = (affine_matrix @ pts_h.T).T  # (N, 2)
+
+    # Check out-of-bounds
+    oob = (
+        (transformed[:, 0] < 0)
+        | (transformed[:, 0] >= crop_w)
+        | (transformed[:, 1] < 0)
+        | (transformed[:, 1] >= crop_h)
+    )
+
+    coords_out = np.clip(transformed, [0, 0], [crop_w - 1, crop_h - 1])
+    visible_out = visible & ~oob
+
+    return coords_out, visible_out
 
 
 def extrapolate_edge_keypoints(

@@ -10,10 +10,12 @@ from .common import (
 )
 from .datasets import CropDataset, apply_augmentation, stratified_split
 from .geometry import (
+    affine_warp_crop,
     extrapolate_edge_keypoints,
     format_obb_annotation,
     format_pose_annotation,
     pca_obb,
+    transform_keypoints,
 )
 from .prep import prep_group
 from .pseudo_labels import (
@@ -31,6 +33,7 @@ __all__ = [
     "CropDataset",
     "EarlyStopping",
     "MetricsLogger",
+    "affine_warp_crop",
     "apply_augmentation",
     "compute_confidence_score",
     "detect_gaps",
@@ -48,4 +51,5 @@ __all__ = [
     "train_yolo_obb",
     "train_yolo_pose",
     "train_yolo_seg",
+    "transform_keypoints",
 ]

@@ -6,10 +6,12 @@ import numpy as np
 import pytest
 
 from aquapose.training.geometry import (
+    affine_warp_crop,
     extrapolate_edge_keypoints,
     format_obb_annotation,
     format_pose_annotation,
     pca_obb,
+    transform_keypoints,
 )
 
 
@@ -179,3 +181,83 @@ class TestFormatPoseAnnotation:
         assert row[5] == pytest.approx(0.5)
         assert row[6] == pytest.approx(0.5)
         assert row[7] == 2
+
+
+class TestAffineWarpCrop:
+    """Tests for affine_warp_crop function."""
+
+    def test_output_shape(self) -> None:
+        """Output crop has shape (crop_h, crop_w, 3) and affine is (2, 3)."""
+        image = np.zeros((200, 100, 3), dtype=np.uint8)
+        obb_corners = np.array(
+            [[10, 10], [90, 10], [90, 60], [10, 60]], dtype=np.float64
+        )
+        crop_w, crop_h = 128, 64
+        warped, affine = affine_warp_crop(image, obb_corners, crop_w, crop_h)
+        assert warped.shape == (crop_h, crop_w, 3)
+        assert affine.shape == (2, 3)
+        assert affine.dtype == np.float64
+
+    def test_identity_like(self) -> None:
+        """Axis-aligned OBB matching crop dims produces near-identity affine."""
+        crop_w, crop_h = 128, 64
+        image = np.zeros((200, 300, 3), dtype=np.uint8)
+        # OBB corners form axis-aligned rectangle of crop_w x crop_h at origin
+        obb_corners = np.array(
+            [
+                [0, 0],
+                [crop_w - 1, 0],
+                [crop_w - 1, crop_h - 1],
+                [0, crop_h - 1],
+            ],
+            dtype=np.float64,
+        )
+        _warped, affine = affine_warp_crop(image, obb_corners, crop_w, crop_h)
+        # The affine should be near-identity: [[1, 0, 0], [0, 1, 0]]
+        expected = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+        np.testing.assert_allclose(affine, expected, atol=1e-6)
+
+
+class TestTransformKeypoints:
+    """Tests for transform_keypoints function."""
+
+    def test_in_bounds_remain_visible(self) -> None:
+        """Keypoints inside the crop remain visible with correct coords."""
+        crop_w, crop_h = 128, 64
+        affine = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])  # identity
+        coords = np.array([[10, 10], [50, 30], [100, 50]], dtype=np.float64)
+        visible = np.array([True, True, True])
+        out_coords, out_vis = transform_keypoints(
+            coords, visible, affine, crop_w, crop_h
+        )
+        assert out_vis.all()
+        np.testing.assert_allclose(out_coords, coords)
+        # All within bounds
+        assert (out_coords[:, 0] >= 0).all()
+        assert (out_coords[:, 0] < crop_w).all()
+        assert (out_coords[:, 1] >= 0).all()
+        assert (out_coords[:, 1] < crop_h).all()
+
+    def test_oob_marked_invisible(self) -> None:
+        """Keypoints outside crop bounds after transform are marked invisible."""
+        crop_w, crop_h = 128, 64
+        # Translate by +200 in x, pushing most points out of bounds
+        affine = np.array([[1.0, 0.0, 200.0], [0.0, 1.0, 0.0]])
+        coords = np.array([[10, 10], [50, 30]], dtype=np.float64)
+        visible = np.array([True, True])
+        _out_coords, out_vis = transform_keypoints(
+            coords, visible, affine, crop_w, crop_h
+        )
+        # Both points at x=210 and x=250 are out of [0, 128)
+        assert not out_vis.any()
+
+    def test_already_invisible_stays_invisible(self) -> None:
+        """Keypoints that start invisible remain invisible."""
+        crop_w, crop_h = 128, 64
+        affine = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+        coords = np.array([[10, 10]], dtype=np.float64)
+        visible = np.array([False])
+        _out_coords, out_vis = transform_keypoints(
+            coords, visible, affine, crop_w, crop_h
+        )
+        assert not out_vis[0]

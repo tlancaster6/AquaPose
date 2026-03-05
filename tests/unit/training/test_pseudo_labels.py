@@ -594,3 +594,141 @@ class TestPassesBoundsCheck:
         )
         vis = np.array([True, True])
         assert _passes_bounds_check(kpts, vis, 1920, 1080) is True
+
+
+class TestPartialOobFish:
+    """Tests for partial out-of-frame fish handling."""
+
+    def test_oob_keypoints_marked_invisible(self) -> None:
+        """Fish with 3/6 keypoints OOB has only 3 visible in result."""
+        midline = _make_midline(per_camera_residuals={"cam0": 2.0})
+        mock_proj = MagicMock()
+
+        def mock_project(pts: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+            n = pts.shape[0]
+            pixels = torch.zeros(n, 2)
+            # 3 in-frame, 3 out-of-frame
+            pixels[0] = torch.tensor([100.0, 200.0])
+            pixels[1] = torch.tensor([200.0, 300.0])
+            pixels[2] = torch.tensor([300.0, 400.0])
+            pixels[3] = torch.tensor([-50.0, 500.0])  # OOB left
+            pixels[4] = torch.tensor([2000.0, 500.0])  # OOB right
+            pixels[5] = torch.tensor([500.0, -100.0])  # OOB top
+            valid = torch.ones(n, dtype=torch.bool)
+            return pixels, valid
+
+        mock_proj.project.side_effect = mock_project
+
+        result = generate_fish_labels(
+            midline,
+            mock_proj,
+            img_w=1920,
+            img_h=1080,
+            keypoint_t_values=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+            lateral_pad=40.0,
+            max_camera_residual_px=15.0,
+            camera_id="cam0",
+        )
+
+        assert result is not None
+        # Only 3 keypoints should be visible
+        assert result["visibility"].sum() == 3
+        assert result["visibility"][0] is np.True_
+        assert result["visibility"][1] is np.True_
+        assert result["visibility"][2] is np.True_
+        assert result["visibility"][3] is np.False_
+        assert result["visibility"][4] is np.False_
+        assert result["visibility"][5] is np.False_
+
+    def test_obb_annotation_normalized_to_unit_range(self) -> None:
+        """OBB annotation values are clipped to [0,1] even if corners exceed image."""
+        midline = _make_midline(per_camera_residuals={"cam0": 2.0})
+        mock_proj = MagicMock()
+
+        def mock_project(pts: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+            n = pts.shape[0]
+            pixels = torch.zeros(n, 2)
+            # Fish near left edge — some keypoints in, some out
+            pixels[0] = torch.tensor([5.0, 500.0])
+            pixels[1] = torch.tensor([50.0, 510.0])
+            pixels[2] = torch.tensor([100.0, 520.0])
+            pixels[3] = torch.tensor([-30.0, 530.0])  # OOB
+            valid = torch.ones(n, dtype=torch.bool)
+            return pixels, valid
+
+        mock_proj.project.side_effect = mock_project
+
+        result = generate_fish_labels(
+            midline,
+            mock_proj,
+            img_w=1920,
+            img_h=1080,
+            keypoint_t_values=[0.0, 0.33, 0.67, 1.0],
+            lateral_pad=40.0,
+            max_camera_residual_px=15.0,
+            camera_id="cam0",
+        )
+
+        assert result is not None
+        # OBB annotation normalized values are clipped to [0,1]
+        # (by format_obb_annotation), but raw corners may extend past image
+        obb_tokens = result["obb_line"].split()
+        for i in range(1, 9):
+            val = float(obb_tokens[i])
+            assert 0.0 <= val <= 1.0, f"OBB token {i} = {val} out of [0,1]"
+
+    def test_returns_none_when_all_oob(self) -> None:
+        """Fish entirely out of frame returns None."""
+        midline = _make_midline(per_camera_residuals={"cam0": 2.0})
+        mock_proj = MagicMock()
+
+        def mock_project(pts: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+            n = pts.shape[0]
+            pixels = torch.full((n, 2), -100.0)  # All OOB
+            valid = torch.ones(n, dtype=torch.bool)
+            return pixels, valid
+
+        mock_proj.project.side_effect = mock_project
+
+        result = generate_fish_labels(
+            midline,
+            mock_proj,
+            img_w=1920,
+            img_h=1080,
+            keypoint_t_values=[0.0, 0.5, 1.0],
+            lateral_pad=40.0,
+            max_camera_residual_px=15.0,
+            camera_id="cam0",
+        )
+
+        assert result is None
+
+    def test_gap_fish_oob_keypoints_marked_invisible(self) -> None:
+        """Gap fish with OOB keypoints has them marked invisible."""
+        midline = _make_midline(per_camera_residuals={"cam0": 2.0})
+        mock_proj = MagicMock()
+
+        def mock_project(pts: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+            n = pts.shape[0]
+            pixels = torch.zeros(n, 2)
+            pixels[0] = torch.tensor([100.0, 200.0])
+            pixels[1] = torch.tensor([200.0, 300.0])
+            pixels[2] = torch.tensor([300.0, 400.0])
+            pixels[3] = torch.tensor([-50.0, 500.0])  # OOB
+            valid = torch.ones(n, dtype=torch.bool)
+            return pixels, valid
+
+        mock_proj.project.side_effect = mock_project
+
+        result = generate_gap_fish_labels(
+            midline,
+            mock_proj,
+            img_w=1920,
+            img_h=1080,
+            keypoint_t_values=[0.0, 0.33, 0.67, 1.0],
+            lateral_pad=40.0,
+        )
+
+        assert result is not None
+        assert result["visibility"].sum() == 3
+        assert result["visibility"][3] is np.False_

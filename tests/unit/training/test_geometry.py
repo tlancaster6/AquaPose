@@ -7,6 +7,7 @@ import pytest
 
 from aquapose.training.geometry import (
     affine_warp_crop,
+    clip_obb_to_image,
     extrapolate_edge_keypoints,
     format_obb_annotation,
     format_pose_annotation,
@@ -57,6 +58,45 @@ class TestPcaObb:
         height_small = np.linalg.norm(corners_small[0] - corners_small[3])
         height_large = np.linalg.norm(corners_large[0] - corners_large[3])
         assert height_large > height_small
+
+
+class TestClipObbToImage:
+    """Tests for clip_obb_to_image function."""
+
+    def test_no_clip_when_inside(self) -> None:
+        """Corners inside image bounds are unchanged."""
+        corners = np.array([[10, 20], [100, 20], [100, 80], [10, 80]], dtype=np.float64)
+        clipped = clip_obb_to_image(corners, img_w=200, img_h=200)
+        np.testing.assert_array_equal(clipped, corners)
+
+    def test_clips_negative_coords(self) -> None:
+        """Negative coordinates are clipped to 0."""
+        corners = np.array(
+            [[-50, -30], [100, -30], [100, 80], [-50, 80]], dtype=np.float64
+        )
+        clipped = clip_obb_to_image(corners, img_w=200, img_h=200)
+        assert clipped[:, 0].min() >= 0
+        assert clipped[:, 1].min() >= 0
+        np.testing.assert_allclose(clipped[0], [0, 0])
+        np.testing.assert_allclose(clipped[3], [0, 80])
+
+    def test_clips_beyond_image(self) -> None:
+        """Coordinates beyond image bounds are clipped to img_w-1, img_h-1."""
+        corners = np.array(
+            [[10, 10], [300, 10], [300, 250], [10, 250]], dtype=np.float64
+        )
+        clipped = clip_obb_to_image(corners, img_w=200, img_h=200)
+        assert clipped[:, 0].max() <= 199
+        assert clipped[:, 1].max() <= 199
+
+    def test_does_not_modify_input(self) -> None:
+        """Returns a new array, does not modify the input."""
+        corners = np.array(
+            [[-10, -10], [300, -10], [300, 300], [-10, 300]], dtype=np.float64
+        )
+        original = corners.copy()
+        clip_obb_to_image(corners, img_w=200, img_h=200)
+        np.testing.assert_array_equal(corners, original)
 
 
 class TestExtrapolateEdgeKeypoints:

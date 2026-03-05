@@ -172,6 +172,24 @@ def transform_keypoints(
     return coords_out, visible_out
 
 
+def clip_obb_to_image(obb_corners: np.ndarray, img_w: int, img_h: int) -> np.ndarray:
+    """Clip OBB corner coordinates to image bounds.
+
+    Args:
+        obb_corners: float64 array of shape ``(4, 2)`` with corner (x, y).
+        img_w: Image width in pixels.
+        img_h: Image height in pixels.
+
+    Returns:
+        Clipped copy of obb_corners with coordinates in
+        ``[0, img_w-1] x [0, img_h-1]``.
+    """
+    clipped = obb_corners.copy()
+    clipped[:, 0] = np.clip(clipped[:, 0], 0, img_w - 1)
+    clipped[:, 1] = np.clip(clipped[:, 1], 0, img_h - 1)
+    return clipped
+
+
 def extrapolate_edge_keypoints(
     coords: np.ndarray,
     visible: np.ndarray,

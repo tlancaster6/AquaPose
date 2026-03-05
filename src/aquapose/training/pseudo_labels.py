@@ -10,7 +10,6 @@ from aquapose.calibration.luts import InverseLUT, ghost_point_lookup
 from aquapose.calibration.projection import RefractiveProjectionModel
 from aquapose.core.types.reconstruction import Midline3D
 from aquapose.training.geometry import (
-    extrapolate_edge_keypoints,
     format_obb_annotation,
     format_pose_annotation,
     pca_obb,
@@ -160,17 +159,23 @@ def generate_fish_labels(
         midline, keypoint_t_values, projection_model
     )
 
+    # Mark out-of-bounds keypoints as invisible
+    oob = (
+        (keypoints_2d[:, 0] < 0)
+        | (keypoints_2d[:, 0] >= img_w)
+        | (keypoints_2d[:, 1] < 0)
+        | (keypoints_2d[:, 1] >= img_h)
+    )
+    visibility = visibility & ~oob
+
     # Need at least 2 visible keypoints
     if visibility.sum() < 2:
         return None
 
-    # Edge extrapolation and OBB computation
-    coords_ext, vis_ext = extrapolate_edge_keypoints(
-        keypoints_2d, visibility, img_w, img_h, lateral_pad
-    )
-    obb_corners = pca_obb(coords_ext, vis_ext, lateral_pad)
+    # OBB computation (no edge extrapolation for pseudo-labels)
+    obb_corners = pca_obb(keypoints_2d, visibility, lateral_pad)
 
-    # Format OBB annotation line
+    # Format OBB annotation line (format_obb_annotation clips to [0,1])
     obb_row = format_obb_annotation(obb_corners, img_w, img_h)
     obb_line = " ".join(str(v) for v in obb_row)
 
@@ -394,6 +399,15 @@ def generate_gap_fish_labels(
         midline, keypoint_t_values, projection_model
     )
 
+    # Mark out-of-bounds keypoints as invisible
+    oob = (
+        (keypoints_2d[:, 0] < 0)
+        | (keypoints_2d[:, 0] >= img_w)
+        | (keypoints_2d[:, 1] < 0)
+        | (keypoints_2d[:, 1] >= img_h)
+    )
+    visibility = visibility & ~oob
+
     # Need at least 2 visible keypoints
     if visibility.sum() < 2:
         return None
@@ -402,13 +416,10 @@ def generate_gap_fish_labels(
     if not _passes_bounds_check(keypoints_2d, visibility, img_w, img_h):
         return None
 
-    # Edge extrapolation and OBB computation
-    coords_ext, vis_ext = extrapolate_edge_keypoints(
-        keypoints_2d, visibility, img_w, img_h, lateral_pad
-    )
-    obb_corners = pca_obb(coords_ext, vis_ext, lateral_pad)
+    # OBB computation (no edge extrapolation for pseudo-labels)
+    obb_corners = pca_obb(keypoints_2d, visibility, lateral_pad)
 
-    # Format OBB annotation line
+    # Format OBB annotation line (format_obb_annotation clips to [0,1])
     obb_row = format_obb_annotation(obb_corners, img_w, img_h)
     obb_line = " ".join(str(v) for v in obb_row)
 

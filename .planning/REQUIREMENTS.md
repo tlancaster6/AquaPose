@@ -10,10 +10,10 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 ### Reconstruction (Z-Denoising)
 
 - [ ] **RECON-01**: Per-frame plane fit projects triangulated body points onto best-fit plane before spline fitting, with endpoint downweighting
-- [ ] **RECON-02**: Plane projection bypasses when RMS off-plane distance exceeds threshold (preserves real 3D structure during fast maneuvers)
+- [ ] **RECON-02**: Robust/weighted plane fit (RANSAC or IRLS SVD) with signed off-plane residuals stored per body point (no hard bypass; real out-of-plane structure preserved in residuals)
 - [ ] **RECON-03**: Temporal smoothing of plane orientation vectors (per-fish, per-track-segment) reduces frame-to-frame z-profile noise
 - [ ] **RECON-04**: Plane normals stored in Midline3D or sidecar for temporal smoothing to consume
-- [ ] **RECON-05**: Median z-range along spine drops below ~1 cm; reprojection residuals unchanged or improved (validation gate)
+- [ ] **RECON-05**: Median z-range along spine drops below ~1 cm; reprojection residuals increase by no more than ~0.5 px (do-no-harm sanity check; primary metrics are z-range and temporal stability)
 - [ ] **RECON-06**: Plane projection and temporal smoothing are togglable via a reconstruction config parameter (default on, can disable to fall back to raw triangulation)
 
 ### Prep Infrastructure
@@ -83,39 +83,39 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RECON-01 | - | Pending |
-| RECON-02 | - | Pending |
-| RECON-03 | - | Pending |
-| RECON-04 | - | Pending |
-| RECON-05 | - | Pending |
-| RECON-06 | - | Pending |
-| PREP-01 | - | Pending |
-| PREP-02 | - | Pending |
-| PREP-03 | - | Pending |
-| PREP-04 | - | Pending |
-| LABEL-01 | - | Pending |
-| LABEL-02 | - | Pending |
-| LABEL-03 | - | Pending |
-| LABEL-04 | - | Pending |
-| GAP-01 | - | Pending |
-| GAP-02 | - | Pending |
-| GAP-03 | - | Pending |
-| GAP-04 | - | Pending |
-| FRAME-01 | - | Pending |
-| FRAME-02 | - | Pending |
-| FRAME-03 | - | Pending |
-| DATA-01 | - | Pending |
-| DATA-02 | - | Pending |
-| DATA-03 | - | Pending |
-| TRAIN-01 | - | Pending |
-| TRAIN-02 | - | Pending |
-| TRAIN-03 | - | Pending |
+| RECON-01 | Phase 61 | Pending |
+| RECON-02 | Phase 61 | Pending |
+| RECON-03 | Phase 61 | Pending |
+| RECON-04 | Phase 61 | Pending |
+| RECON-05 | Phase 61 | Pending |
+| RECON-06 | Phase 61 | Pending |
+| PREP-01 | Phase 62 | Pending |
+| PREP-02 | Phase 62 | Pending |
+| PREP-03 | Phase 62 | Pending |
+| PREP-04 | Phase 62 | Pending |
+| LABEL-01 | Phase 63 | Pending |
+| LABEL-02 | Phase 63 | Pending |
+| LABEL-03 | Phase 63 | Pending |
+| LABEL-04 | Phase 63 | Pending |
+| GAP-01 | Phase 64 | Pending |
+| GAP-02 | Phase 64 | Pending |
+| GAP-03 | Phase 64 | Pending |
+| GAP-04 | Phase 64 | Pending |
+| FRAME-01 | Phase 65 | Pending |
+| FRAME-02 | Phase 65 | Pending |
+| FRAME-03 | Phase 65 | Pending |
+| DATA-01 | Phase 65 | Pending |
+| DATA-02 | Phase 65 | Pending |
+| DATA-03 | Phase 65 | Pending |
+| TRAIN-01 | Phase 66 | Pending |
+| TRAIN-02 | Phase 66 | Pending |
+| TRAIN-03 | Phase 66 | Pending |
 
 **Coverage:**
 - v3.5 requirements: 27 total
-- Mapped to phases: 0
-- Unmapped: 27
+- Mapped to phases: 27
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-05*
-*Last updated: 2026-03-05 after initial definition*
+*Last updated: 2026-03-05 after roadmap creation*

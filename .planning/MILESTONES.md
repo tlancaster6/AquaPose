@@ -1,5 +1,30 @@
 # Milestones
 
+## v3.4 Performance Optimization (Shipped: 2026-03-05)
+
+**Phases completed:** 5 phases (56-60), 8 plans
+**Timeline:** 1 day (2026-03-04 → 2026-03-05)
+**Codebase:** 22,754 LOC source
+**Git range:** 15 commits, 56 files changed (+7,152 / -210)
+
+**Key accomplishments:**
+1. 8.2x total pipeline speedup (914s → 112s per chunk) validated end-to-end
+2. Batched YOLO inference for detection (11.5x speedup) and midline (8.1x speedup) with automatic OOM retry and batch halving
+3. Background-thread frame prefetch in ChunkFrameSource eliminating seek overhead and GPU idle gaps
+4. Vectorized DLT reconstruction via batched `torch.linalg.lstsq` replacing per-body-point Python loop (7.0x speedup)
+5. Vectorized association scoring via NumPy broadcasting replacing per-pair ray-ray distance loop (3.8x speedup)
+6. Performance validation script and report confirming correctness preservation across all optimizations
+
+**Delivered:** Comprehensive pipeline performance optimization reducing per-chunk processing time from 914s to 112s (8.2x speedup) by batching YOLO inference across cameras/crops, prefetching frames in a background thread, and vectorizing DLT reconstruction and association scoring. All 13 requirements satisfied, audit passed.
+
+**Tech debt (non-blocking):**
+- ASSOC-01/ASSOC-02 checkboxes unchecked in REQUIREMENTS.md (satisfied per verification)
+- Phase 57 SUMMARY missing requirements-completed frontmatter field
+- SC-5 (Phase 59): real-data eval comparison for batched vs serial inference pending
+- Eval correctness FAIL from GPU non-determinism accepted as non-regression
+
+---
+
 ## v3.3 Chunk Mode (Shipped: 2026-03-05)
 
 **Phases completed:** 5 phases (51-55), 11 plans

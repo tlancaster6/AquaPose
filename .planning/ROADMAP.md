@@ -206,6 +206,16 @@ Plans:
 - [ ] 59-02-PLAN.md — Batched detection backends and stage refactor
 - [ ] 59-03-PLAN.md — Batched midline backends and stage refactor
 
+### Phase 60: End-to-End Performance Validation
+
+**Goal:** Validate that v3.4 optimizations delivered measurable speedups across all optimized bottlenecks while preserving correctness, producing a markdown report with before/after timing and eval pass/fail
+**Requirements**: VAL-01, VAL-02, VAL-03
+**Depends on:** Phase 59
+**Plans:** 1 plan
+
+Plans:
+- [ ] 60-01-PLAN.md — Run post-optimization pipeline, compare timing and eval metrics, generate validation report
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -222,13 +232,3 @@ Plans:
 | 57. Vectorized DLT Reconstruction | 1/1 | Complete    | 2026-03-05 | - |
 | 58. Frame I/O Optimization | 1/1 | Complete    | 2026-03-05 | - |
 | 59. Batched YOLO Inference | 3/3 | Complete   | 2026-03-05 | - |
-
-### Phase 60: End-to-End Performance Validation
-
-**Goal:** [To be planned]
-**Requirements**: TBD
-**Depends on:** Phase 59
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (run /gsd:plan-phase 60 to break down)

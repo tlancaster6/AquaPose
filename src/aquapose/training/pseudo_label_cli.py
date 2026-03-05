@@ -276,9 +276,15 @@ def generate(
         pipeline_config.calibration_path,
     ) as frame_source:
         n_frames = len(context.midlines_3d)
-        n_selected = (n_frames + temporal_step - 1) // temporal_step if temporal_step > 1 else n_frames
+        n_selected = (
+            (n_frames + temporal_step - 1) // temporal_step
+            if temporal_step > 1
+            else n_frames
+        )
         step_msg = f" (every {temporal_step}th)" if temporal_step > 1 else ""
-        click.echo(f"Processing {n_selected}/{n_frames} frames{step_msg} across {len(proj_models)} cameras...")
+        click.echo(
+            f"Processing {n_selected}/{n_frames} frames{step_msg} across {len(proj_models)} cameras..."
+        )
         if consensus:
             click.echo("  Generating consensus (Source A) labels")
         if gaps:
@@ -730,7 +736,8 @@ def inspect(
 
     # Collect image files that have matching label files
     image_files = sorted(
-        p for p in images_dir.iterdir()
+        p
+        for p in images_dir.iterdir()
         if p.suffix.lower() in {".jpg", ".jpeg", ".png"}
         and (labels_dir / f"{p.stem}.txt").exists()
     )
@@ -745,7 +752,10 @@ def inspect(
 
     # Load confidence sidecar if available
     confidence_data: dict = {}
-    for candidate in [data_path / "confidence.json", data_path.parent / "confidence.json"]:
+    for candidate in [
+        data_path / "confidence.json",
+        data_path.parent / "confidence.json",
+    ]:
         if candidate.exists():
             confidence_data = json.loads(candidate.read_text())
             break
@@ -756,8 +766,7 @@ def inspect(
     is_obb = len(first_tokens) == 9  # cls + 4 corners x 2
 
     click.echo(
-        f"Inspecting {len(image_files)} images "
-        f"({'OBB' if is_obb else 'pose'} labels)"
+        f"Inspecting {len(image_files)} images ({'OBB' if is_obb else 'pose'} labels)"
     )
 
     for img_path in image_files:
@@ -808,16 +817,32 @@ def inspect(
                     tx = int(float(tokens[1]) * img_w)
                     ty = max(15, int(float(tokens[2]) * img_h) - 10)
                 else:
-                    tx = max(5, int(float(tokens[1]) * img_w - float(tokens[3]) * img_w / 2))
-                    ty = max(15, int(float(tokens[2]) * img_h - float(tokens[4]) * img_h / 2) - 10)
+                    tx = max(
+                        5, int(float(tokens[1]) * img_w - float(tokens[3]) * img_w / 2)
+                    )
+                    ty = max(
+                        15,
+                        int(float(tokens[2]) * img_h - float(tokens[4]) * img_h / 2)
+                        - 10,
+                    )
 
                 cv2.putText(
-                    image, text, (tx, ty),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 2,
+                    image,
+                    text,
+                    (tx, ty),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45,
+                    (255, 255, 255),
+                    2,
                 )
                 cv2.putText(
-                    image, text, (tx, ty),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 200, 0), 1,
+                    image,
+                    text,
+                    (tx, ty),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45,
+                    (0, 200, 0),
+                    1,
                 )
 
         cv2.imwrite(str(out_path / f"{img_path.stem}.png"), image)

@@ -392,7 +392,9 @@ def assemble_dataset(
         indices.sort()
         all_pseudo = [all_pseudo[i] for i in indices]
         logger.info(
-            "Applied max_frames cap: %d -> %d pseudo-labels", len(consensus_labels) + len(gap_labels), max_frames
+            "Applied max_frames cap: %d -> %d pseudo-labels",
+            len(consensus_labels) + len(gap_labels),
+            max_frames,
         )
 
     pseudo_train, pseudo_val = split_pseudo_val(all_pseudo, pseudo_val_fraction, seed)

@@ -299,6 +299,7 @@ def assemble_dataset(
     seed: int,
     max_frames: int | None = None,
     selected_frames: dict[str, set[int]] | None = None,
+    diversity_bin_map: dict[str, dict[int, int]] | None = None,
 ) -> dict:
     """Assemble a YOLO-format training dataset from manual + pseudo-labels.
 
@@ -330,6 +331,9 @@ def assemble_dataset(
             (parsed from first 6 chars of stem) after confidence/gap
             filtering but before the *max_frames* cap. Runs not in the
             dict are kept unfiltered. None disables frame filtering.
+        diversity_bin_map: Mapping of ``run_id`` to ``{frame_idx: bin_id}``
+            from diversity sampling. When provided, a ``curvature_bin``
+            field is included in pseudo-label val metadata. None omits it.
 
     Returns:
         Summary dict with counts per category.
@@ -435,15 +439,19 @@ def assemble_dataset(
         prefixed_stem = f"{lbl['run_id']}_{lbl['stem']}"
         _copy_if_exists(lbl["image_path"], out_img_train / f"{prefixed_stem}.jpg")
         _copy_if_exists(lbl["label_path"], out_lbl_train / f"{prefixed_stem}.txt")
-        pseudo_val_metadata.append(
-            {
-                "stem": prefixed_stem,
-                "source": lbl["source"],
-                "confidence": lbl["confidence"],
-                "run_id": lbl["run_id"],
-                "gap_reason": _extract_dominant_gap_reason(lbl),
-            }
-        )
+        entry_meta: dict = {
+            "stem": prefixed_stem,
+            "source": lbl["source"],
+            "confidence": lbl["confidence"],
+            "run_id": lbl["run_id"],
+            "gap_reason": _extract_dominant_gap_reason(lbl),
+        }
+        if diversity_bin_map is not None:
+            run_bins = diversity_bin_map.get(lbl["run_id"])
+            if run_bins is not None:
+                frame_idx = int(lbl["stem"][:6])
+                entry_meta["curvature_bin"] = run_bins.get(frame_idx)
+        pseudo_val_metadata.append(entry_meta)
         if lbl["source"] == "consensus":
             counts["consensus_val"] += 1
         elif lbl["source"] == "gap":

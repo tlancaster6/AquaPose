@@ -1079,6 +1079,8 @@ def assemble(
     selected_frames: dict[str, set[int]] | None = None
     frame_selection_active = temporal_step > 1 or diversity_max_per_bin is not None
 
+    diversity_bin_map: dict[str, dict[int, int]] | None = None
+
     if frame_selection_active:
         from aquapose.evaluation.runner import load_run_context
         from aquapose.training.frame_selection import (
@@ -1100,13 +1102,17 @@ def assemble(
             selected_indices = temporal_subsample(frame_indices, temporal_step)
 
             if diversity_max_per_bin is not None:
-                selected_indices = diversity_sample(
+                ds_result = diversity_sample(
                     context.midlines_3d,
                     selected_indices,
                     diversity_bins,
                     diversity_max_per_bin,
                     seed,
                 )
+                selected_indices = ds_result.frame_indices
+                if diversity_bin_map is None:
+                    diversity_bin_map = {}
+                diversity_bin_map[run_dir_path.name] = ds_result.frame_bins
 
             selected_frames[run_dir_path.name] = set(selected_indices)
             logger.info(
@@ -1129,6 +1135,7 @@ def assemble(
         seed=seed,
         max_frames=max_frames,
         selected_frames=selected_frames,
+        diversity_bin_map=diversity_bin_map,
     )
 
     # Print summary

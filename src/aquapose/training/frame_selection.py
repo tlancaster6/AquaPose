@@ -6,7 +6,18 @@ and diversity-based sampling to build balanced training sets from pseudo-labels.
 
 from __future__ import annotations
 
+from collections import Counter
+from typing import NamedTuple
+
 import numpy as np
+
+
+class DiversitySampleResult(NamedTuple):
+    """Result of diversity sampling with per-frame bin assignments."""
+
+    frame_indices: list[int]
+    frame_bins: dict[int, int]
+    """Mapping of frame index to dominant curvature bin across fish."""
 
 
 def temporal_subsample(frame_indices: list[int], step: int) -> list[int]:
@@ -81,7 +92,7 @@ def diversity_sample(
     n_bins: int = 5,
     max_per_bin: int | None = None,
     seed: int = 42,
-) -> list[int]:
+) -> DiversitySampleResult:
     """Select frames covering diverse fish body curvatures via K-means binning.
 
     For each fish across all candidate frames, computes curvature from the
@@ -98,7 +109,9 @@ def diversity_sample(
         seed: Random seed for reproducibility.
 
     Returns:
-        Sorted list of selected frame indices (union across all fish).
+        A :class:`DiversitySampleResult` with ``frame_indices`` (sorted list
+        of selected frame indices, union across all fish) and ``frame_bins``
+        (mapping of frame index to dominant curvature bin).
     """
     from scipy.cluster.vq import kmeans2
 
@@ -113,11 +126,7 @@ def diversity_sample(
             triples.append((fish_id, fidx, curv))
 
     if not triples:
-        return []
-
-    # If max_per_bin is None, return all frame indices that have data
-    if max_per_bin is None:
-        return sorted({t[1] for t in triples})
+        return DiversitySampleResult([], {})
 
     curvatures = np.array([t[2] for t in triples], dtype=np.float64)
 
@@ -133,6 +142,21 @@ def diversity_sample(
         seed=rng,  # pyright: ignore[reportCallIssue]
     )
 
+    # Build per-frame bin assignments (dominant bin across fish)
+    frame_label_lists: dict[int, list[int]] = {}
+    for i, (_, fidx, _) in enumerate(triples):
+        frame_label_lists.setdefault(fidx, []).append(int(labels[i]))
+
+    frame_bins: dict[int, int] = {
+        fidx: Counter(bins).most_common(1)[0][0]
+        for fidx, bins in frame_label_lists.items()
+    }
+
+    # If max_per_bin is None, return all frame indices that have data
+    if max_per_bin is None:
+        all_frames = sorted({t[1] for t in triples})
+        return DiversitySampleResult(all_frames, {f: frame_bins[f] for f in all_frames})
+
     # Sample max_per_bin from each cluster
     selected_frames: set[int] = set()
     for bin_id in range(effective_bins):
@@ -145,4 +169,7 @@ def diversity_sample(
         for ci in chosen:
             selected_frames.add(triples[ci][1])
 
-    return sorted(selected_frames)
+    sorted_frames = sorted(selected_frames)
+    return DiversitySampleResult(
+        sorted_frames, {f: frame_bins[f] for f in sorted_frames}
+    )

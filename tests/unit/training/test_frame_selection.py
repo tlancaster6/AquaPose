@@ -140,9 +140,13 @@ class TestDiversitySample:
             midlines_3d, frame_indices, n_bins=5, max_per_bin=1, seed=42
         )
         # At most 5 frames (1 per bin, 1 fish)
-        assert len(result) <= 5
+        assert len(result.frame_indices) <= 5
         # All returned indices are valid
-        assert all(idx in frame_indices for idx in result)
+        assert all(idx in frame_indices for idx in result.frame_indices)
+        # frame_bins covers all selected frames
+        assert set(result.frame_bins.keys()) == set(result.frame_indices)
+        # bin ids are in valid range
+        assert all(0 <= b < 5 for b in result.frame_bins.values())
 
     def test_max_per_bin_none_preserves_all(self) -> None:
         midlines_3d: list[dict[int, Midline3D]] = []
@@ -154,7 +158,8 @@ class TestDiversitySample:
         result = diversity_sample(
             midlines_3d, frame_indices, n_bins=3, max_per_bin=None, seed=42
         )
-        assert sorted(result) == frame_indices
+        assert sorted(result.frame_indices) == frame_indices
+        assert set(result.frame_bins.keys()) == set(frame_indices)
 
     def test_returns_sorted_indices(self) -> None:
         midlines_3d: list[dict[int, Midline3D]] = []
@@ -165,7 +170,7 @@ class TestDiversitySample:
         result = diversity_sample(
             midlines_3d, list(range(10)), n_bins=3, max_per_bin=2, seed=42
         )
-        assert result == sorted(result)
+        assert result.frame_indices == sorted(result.frame_indices)
 
     def test_deterministic_with_seed(self) -> None:
         midlines_3d: list[dict[int, Midline3D]] = []

@@ -17,6 +17,7 @@ from .compare import (
 from .dataset_assembly import assemble_dataset
 from .datasets import CropDataset, apply_augmentation, stratified_split
 from .frame_selection import (
+    DiversitySampleResult,
     compute_curvature,
     diversity_sample,
     filter_empty_frames,
@@ -52,6 +53,7 @@ from .yolo_seg import train_yolo_seg
 
 __all__ = [
     "CropDataset",
+    "DiversitySampleResult",
     "EarlyStopping",
     "MetricsLogger",
     "affine_warp_crop",

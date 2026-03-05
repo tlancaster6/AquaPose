@@ -130,6 +130,57 @@ def yolo_obb(
     print_next_steps(run_dir, model_type, best_path)
 
 
+@train_group.command("compare")
+@click.option(
+    "--config",
+    required=True,
+    type=click.Path(exists=True),
+    help="Project config YAML path (to resolve training directory).",
+)
+@click.option(
+    "--model-type",
+    required=True,
+    type=click.Choice(["obb", "seg", "pose"]),
+    help="Model type to compare runs for.",
+)
+@click.option(
+    "--csv",
+    "csv_path",
+    default=None,
+    type=click.Path(),
+    help="Export comparison to CSV file.",
+)
+@click.argument("run_paths", nargs=-1, type=click.Path(exists=True))
+def compare(
+    config: str,
+    model_type: str,
+    csv_path: str | None,
+    run_paths: tuple[str, ...],
+) -> None:
+    """Compare training runs side-by-side."""
+    from .compare import (
+        discover_runs,
+        format_comparison_table,
+        load_run_summaries,
+        write_comparison_csv,
+    )
+    from .run_manager import resolve_project_dir
+
+    if run_paths:
+        run_dirs = [Path(p) for p in run_paths]
+    else:
+        project_dir = resolve_project_dir(Path(config))
+        run_dirs = discover_runs(project_dir / "training" / model_type)
+
+    summaries = load_run_summaries(run_dirs)
+    table = format_comparison_table(summaries)
+    click.echo(table)
+
+    if csv_path is not None:
+        write_comparison_csv(summaries, Path(csv_path))
+        click.echo(f"\nCSV exported to {csv_path}")
+
+
 @train_group.command("seg")
 @click.option(
     "--data-dir",

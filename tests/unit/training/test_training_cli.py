@@ -5,7 +5,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-import pytest
 from click.testing import CliRunner
 
 from aquapose.cli import cli
@@ -145,10 +144,21 @@ def test_train_pose_help_shows_expected_flags() -> None:
     assert "--output-dir" not in result.output, "--output-dir should be removed"
 
 
-@pytest.mark.xfail(reason="compare command added in Plan 66-02")
 def test_train_help_lists_compare() -> None:
     """aquapose train --help should list the compare subcommand."""
     runner = CliRunner()
     result = runner.invoke(cli, ["train", "--help"])
     assert result.exit_code == 0, result.output
     assert "compare" in result.output
+
+
+def test_compare_help_shows_expected_flags() -> None:
+    """aquapose train compare --help should show --config, --model-type, --csv."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["train", "compare", "--help"])
+    assert result.exit_code == 0, result.output
+    expected_flags = ["--config", "--model-type", "--csv"]
+    for flag in expected_flags:
+        assert flag in result.output, (
+            f"Expected flag {flag!r} not found in compare help"
+        )

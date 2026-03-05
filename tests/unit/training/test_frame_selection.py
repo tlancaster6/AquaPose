@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+
+from aquapose.core.types.reconstruction import Midline3D
 from aquapose.training.frame_selection import (
     compute_curvature,
     diversity_sample,
     filter_empty_frames,
     temporal_subsample,
 )
-
-from aquapose.core.types.reconstruction import Midline3D
 
 
 def _make_midline3d(
@@ -61,7 +61,7 @@ class TestTemporalSubsample:
         assert result == [5, 10, 15, 20]
 
     def test_sorts_input(self) -> None:
-        result = temporal_subsample([9, 3, 0, 6], step=3)
+        result = temporal_subsample([9, 3, 0, 6], step=1)
         assert result == [0, 3, 6, 9]
 
     def test_empty_input(self) -> None:

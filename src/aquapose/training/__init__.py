@@ -9,6 +9,12 @@ from .common import (
     save_best_and_last,
 )
 from .datasets import CropDataset, apply_augmentation, stratified_split
+from .frame_selection import (
+    compute_curvature,
+    diversity_sample,
+    filter_empty_frames,
+    temporal_subsample,
+)
 from .geometry import (
     affine_warp_crop,
     extrapolate_edge_keypoints,
@@ -36,8 +42,11 @@ __all__ = [
     "affine_warp_crop",
     "apply_augmentation",
     "compute_confidence_score",
+    "compute_curvature",
     "detect_gaps",
+    "diversity_sample",
     "extrapolate_edge_keypoints",
+    "filter_empty_frames",
     "format_obb_annotation",
     "format_pose_annotation",
     "generate_fish_labels",
@@ -48,6 +57,7 @@ __all__ = [
     "reproject_spline_keypoints",
     "save_best_and_last",
     "stratified_split",
+    "temporal_subsample",
     "train_yolo_obb",
     "train_yolo_pose",
     "train_yolo_seg",

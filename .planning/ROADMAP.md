@@ -167,7 +167,7 @@ Full details: `.planning/milestones/v3.4-ROADMAP.md`
 - [x] **Phase 63: Pseudo-Label Generation (Source A)** - Reproject consensus 3D reconstructions into camera views as training labels (completed 2026-03-05)
 - [x] **Phase 64: Gap Detection and Fill (Source B)** - Identify and label detection gaps via inverse LUT visibility cross-referencing (completed 2026-03-05)
 - [x] **Phase 65: Frame Selection and Dataset Assembly** - Temporal subsampling, pose-diversity sampling, and pooled dataset construction (completed 2026-03-05)
-- [ ] **Phase 66: Training Run Management** - Run organization, cross-run comparison, and iterative retraining support
+- [x] **Phase 66: Training Run Management** - Run organization, cross-run comparison, and iterative retraining support (completed 2026-03-05)
 
 ## Phase Details
 
@@ -251,7 +251,7 @@ Plans:
   1. Each training run outputs to a unique timestamped directory with a config snapshot and metric summary
   2. User can run `aquapose train compare` to generate a cross-run comparison table with both Ultralytics training metrics and aquapose eval pipeline metrics
   3. Comparison report tracks which pseudo-label round and confidence thresholds were used for each run
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 66-01-PLAN.md — Run manager module, CLI --config/--tag flags, provenance tracking
 - [ ] 66-02-PLAN.md — Compare command with terminal table, CSV export, source breakdown
@@ -277,4 +277,4 @@ Phases execute in numeric order: 61 -> 62 -> 63 -> 64 -> 65 -> 66
 | 63. Pseudo-Label Generation (Source A) | 2/2 | Complete   | 2026-03-05 | - |
 | 64. Gap Detection and Fill (Source B) | 2/2 | Complete    | 2026-03-05 | - |
 | 65. Frame Selection and Dataset Assembly | 3/3 | Complete    | 2026-03-05 | - |
-| 66. Training Run Management | 1/2 | In Progress|  | - |
+| 66. Training Run Management | 2/2 | Complete   | 2026-03-05 | - |

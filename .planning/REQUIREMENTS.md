@@ -52,7 +52,7 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 ### Training Run Management
 
 - [x] **TRAIN-01**: Each training run outputs to a unique timestamped directory with config snapshot and metric summary
-- [ ] **TRAIN-02**: User can run `aquapose train compare` to generate cross-run comparison (Ultralytics training metrics + aquapose eval pipeline metrics)
+- [x] **TRAIN-02**: User can run `aquapose train compare` to generate cross-run comparison (Ultralytics training metrics + aquapose eval pipeline metrics)
 - [x] **TRAIN-03**: Comparison tracks which pseudo-label round and confidence thresholds were used per run
 
 ## Future Requirements
@@ -108,7 +108,7 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 | DATA-02 | Phase 65 | Complete |
 | DATA-03 | Phase 65 | Complete |
 | TRAIN-01 | Phase 66 | Complete |
-| TRAIN-02 | Phase 66 | Pending |
+| TRAIN-02 | Phase 66 | Complete |
 | TRAIN-03 | Phase 66 | Complete |
 
 **Coverage:**

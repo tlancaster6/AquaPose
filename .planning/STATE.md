@@ -66,7 +66,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-17 pending todos from v2.2 --- see .planning/todos/pending/ (review for relevance)
+8 pending todos — see .planning/todos/pending/ (review for relevance)
 
 ### Blockers/Concerns
 

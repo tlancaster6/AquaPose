@@ -883,3 +883,274 @@ src/aquapose/evaluation/
 
 *Stack research for v3.2 Evaluation Ecosystem additions*
 *Researched: 2026-03-03*
+
+
+---
+
+## v3.4 Performance Optimization: Stack Requirements
+
+**Researched:** 2026-03-05
+**Milestone goal:** Reduce per-chunk pipeline wall time by optimizing the four profiled bottlenecks — inference batching (~GPU at ~30% utilization), frame I/O (~12% wall time), DLT reconstruction (~9% wall time), and association scoring (~5% wall time).
+
+### Key Finding: No New Runtime Dependencies Required
+
+All four optimization targets can be addressed using libraries already in the dependency set:
+- **Batched YOLO inference** — `ultralytics` already supports passing a list of numpy arrays to `model.predict()`
+- **Vectorized DLT** — `numpy` batch SVD (`np.linalg.svd` on stacked arrays) is already available
+- **Vectorized association scoring** — `numpy` broadcasting already available
+- **Frame I/O** — `threading` + `queue` (Python stdlib) + `cv2.VideoCapture` (already used via `opencv-python`)
+- **Profiling** — `torch.profiler` (bundled with `torch`) + `line_profiler` (dev-only, no runtime cost)
+
+The sole optional new dev dependency is `line_profiler`, which is purely for development profiling.
+
+---
+
+### Batched YOLO Inference
+
+**Current state:** `YOLOOBBBackend.detect()` and `PoseEstimationBackend` call `model.predict(frame, ...)` with a single numpy array per camera per frame. With 12 cameras and 200-frame chunks, this is ~2,400 single-image inference calls per detection stage run.
+
+**Optimization:** Pass a list of numpy arrays to a single `model.predict()` call. Ultralytics processes the list as a batch, pushing multiple images through the GPU in one forward pass.
+
+**API details (MEDIUM confidence — from official docs + GitHub issues):**
+
+```python
+# Current (one image at a time)
+results = self._model.predict(frame, conf=self._conf, iou=self._iou, verbose=False)
+
+# Batch: pass list of numpy arrays (HWC uint8)
+frames_list = [frames_per_cam[cam_id] for cam_id in camera_ids]
+results = self._model.predict(
+    frames_list,          # list of (H, W, 3) uint8 numpy arrays
+    conf=self._conf,
+    iou=self._iou,
+    verbose=False,
+    stream=False,         # return list of Results, not generator
+)
+# results[i] corresponds to frames_list[i]
+```
+
+**Batch size recommendations:**
+- Detection stage (OBB): 12 cameras × 1 frame = batch 12 per frame call, or accumulate N frames for batch 12×N
+- Midline stage (pose): crops per frame (variable, ~9 fish × 12 cameras = ~108), batch these together
+- GPU saturation test: start at batch 16, double until inference time/image stops improving
+- Do NOT over-batch: beyond saturation point, memory pressure increases with no throughput gain
+
+**Critical constraint — same-size padding:** When all images in a batch have identical size, Ultralytics uses `rect` (minimal) padding. When sizes differ (crops for midline stage), square padding to `imgsz` is applied automatically. Midline crops are all the same size (fixed canvas from `extract_affine_crop`), so rect padding applies and batching is clean.
+
+**Integration point:** `DetectionStage.run()` currently calls `self._detector.detect(frames[cam_id])` per camera in an inner loop. Refactor to call `self._detector.detect_batch(list_of_frames)` → returns `list[list[Detection]]`. The `YOLOOBBBackend` needs a `detect_batch(frames: list[np.ndarray]) -> list[list[Detection]]` method added alongside the existing `detect()`.
+
+Similarly, `MidlineStage` collects crops across all fish × all cameras and passes them as a single batch to the YOLO-pose model.
+
+---
+
+### Frame I/O: Threaded Prefetch
+
+**Current state:** `ChunkFrameSource.__iter__` calls `self._source.read_frame(global_idx)` sequentially per frame, which calls `cap.set(CAP_PROP_POS_FRAMES, idx)` + `cap.read()` + `undistort_image()` per camera per frame. With 13 cameras, each frame requires 13 sequential disk reads and 13 undistortion calls before control returns to the pipeline. The detection stage then calls YOLO inference — the GPU is idle during I/O.
+
+**Optimization:** Threaded prefetch using Python stdlib `threading.Thread` + `queue.Queue`. A producer thread reads and undistorts frames N-ahead of the consumer (pipeline stages). The main thread draws from the queue while the next frame is being decoded in the background.
+
+**Why not decord/torchcodec:**
+- `decord` (dmlc): The original repo is unmaintained; `decord2` (PyPI fork, 2025-12) is active but relatively new. Both require a separate build chain for GPU decode. Since OpenCV's `cv2.remap()` undistortion must run on CPU numpy arrays anyway, GPU decode gains are marginal — you'd immediately copy back to CPU for undistortion.
+- `torchcodec` (PyTorch/Meta): Returns PyTorch tensors, requires separate `cv2.remap()` conversion step for undistortion, and introduces a new dependency. Best for pure GPU decode pipelines where frames go directly into model input without CPU post-processing.
+- **Conclusion:** The bottleneck is the sequential decode → undistort → return pattern. A threaded producer using the existing `cv2.VideoCapture` + `cv2.remap()` stack eliminates the I/O dead time with zero new dependencies.
+
+**Pattern (Python stdlib only):**
+
+```python
+import queue
+import threading
+
+class ThreadedChunkFrameSource:
+    def __init__(self, source: VideoFrameSource, start: int, end: int, prefetch: int = 4):
+        self._source = source
+        self._start = start
+        self._end = end
+        self._queue: queue.Queue = queue.Queue(maxsize=prefetch)
+
+    def __iter__(self):
+        def producer():
+            for i in range(self._start, self._end):
+                frames = self._source.read_frame(i)
+                self._queue.put((i - self._start, frames))
+            self._queue.put(None)  # sentinel
+
+        t = threading.Thread(target=producer, daemon=True)
+        t.start()
+        while True:
+            item = self._queue.get()
+            if item is None:
+                break
+            yield item
+        t.join()
+```
+
+**Queue size:** 4 frames prefetch saturates I/O overlap without exceeding memory budget (13 cameras × 4 frames × 1600×1200×3 bytes ≈ ~360 MB at uint8).
+
+**Alternative if threading adds complexity:** `concurrent.futures.ThreadPoolExecutor` with `executor.submit(read_frame, idx)` and ordered result collection via `Future.result()`. Slightly more overhead per call but easier to manage than manual thread + queue.
+
+---
+
+### Vectorized DLT Reconstruction
+
+**Current state:** `DltBackend._reconstruct_fish()` loops over `n_body_points` (default 15), calling `_triangulate_body_point(i, ...)` per point. Each call builds per-camera origin/direction dicts, stacks them, calls `triangulate_rays()` or `weighted_triangulate_rays()`, projects back for residuals, re-triangulates inliers. This is 15 sequential SVD-based linear solves per fish per frame.
+
+**Optimization:** Vectorize the "triangulate all body points at once" step using NumPy's batched SVD.
+
+**Key finding — GPU SVD is wrong here (HIGH confidence):**
+PyTorch's `torch.linalg.svd` is 70x slower than CPU for small matrices (confirmed in PyTorch issue #41306). The DLT A-matrix is (2×n_cams, 4) — roughly (24, 4) for 12 cameras. These are exactly the "small matrix" cases where GPU SVD is catastrophically slow due to sequential cuSolver kernel launches. Keep SVD on CPU using `numpy.linalg.svd`.
+
+**Vectorized approach:**
+
+```python
+# Stack all body points: A shape (n_body_points, 2*n_cams, 4)
+# np.linalg.svd works in batched mode on (..., M, N) inputs
+# Vt shape: (n_body_points, 4, 4) — last row of each Vt is the solution
+A_batch = build_dlt_matrix_batch(...)  # (B, 2K, 4), B=body points, K=cameras
+_, _, Vt = np.linalg.svd(A_batch, full_matrices=False)
+pts_3d = Vt[:, -1, :3] / Vt[:, -1, 3:4]  # (B, 3) dehomogenize
+```
+
+**Vectorizing residual computation:** After initial triangulation, reprojection residuals for all body points × all cameras can be computed in a single batched projection call rather than a double loop. The current `for j in range(n_body_points)` inner loop in the spline residual section is also vectorizable with numpy broadcasting.
+
+**Outlier rejection loop remains sequential:** The per-body-point outlier rejection (mask cameras per point based on residual threshold) has variable structure per point (different inlier sets), making full vectorization harder. Vectorize the initial triangulation and residual computation; keep outlier rejection as a vectorized mask operation.
+
+**Integration:** The `_triangulate_body_point` method becomes `_triangulate_all_body_points` accepting the full `cam_midlines` dict and returning stacked results. The single-point outlier path is replaced by a vectorized mask-and-recompute.
+
+---
+
+### Vectorized Association Scoring
+
+**Current state:** `AssociationStage` builds a ray-ray score matrix for cross-camera tracklet pairs. The inner scoring loop is partially vectorized via LUTs but the per-frame score accumulation is sequential.
+
+**Optimization:** NumPy broadcasting for distance matrix computation across all tracklet pairs simultaneously. Convert the `for pair in tracklet_pairs` loop to a matrix operation:
+
+```python
+# Instead of: for each (i, j) pair, compute ray-ray distance
+# Do: vectorize as outer product of position arrays
+centroids_i = np.stack([t.centroid for t in cam_i_tracklets])  # (Ni, 3)
+centroids_j = np.stack([t.centroid for t in cam_j_tracklets])  # (Nj, 3)
+# Broadcasting: (Ni, 1, 3) - (1, Nj, 3) -> (Ni, Nj, 3)
+deltas = centroids_i[:, None, :] - centroids_j[None, :, :]
+distances = np.linalg.norm(deltas, axis=-1)  # (Ni, Nj)
+```
+
+No new libraries needed. Pure numpy broadcasting.
+
+---
+
+### Profiling Tools
+
+**To identify actual bottlenecks before optimizing (measure first, optimize second).**
+
+**Primary: `torch.profiler` (bundled with PyTorch — already installed)**
+
+Use to measure GPU kernel launches, CUDA utilization, and memory bandwidth during a short pipeline run. Identifies whether GPU is compute-bound or memory-bound.
+
+```python
+with torch.profiler.profile(
+    activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+    record_shapes=True,
+    with_stack=True,
+) as prof:
+    # run a few chunks
+prof.export_chrome_trace("trace.json")  # open in Chrome chrome://tracing
+```
+
+**Secondary: `line_profiler` (dev dependency only, not runtime)**
+
+Identifies which Python lines in hot paths (DLT loop, detection loop, frame iteration) consume wall time at line granularity. `cProfile` misses numpy array operations that complete in native code without Python call overhead; `line_profiler` captures them.
+
+Install as dev-only: `pip install line-profiler`. Use `@profile` decorator on suspect functions, run with `kernprof -l -v script.py`.
+
+**When to use which:**
+- `torch.profiler` → GPU utilization, CUDA kernel timing, memory transfers
+- `line_profiler` → Python-level hot lines in CPU-bound code (DLT loop body, frame decode loop)
+- `cProfile` → function-level call graph when you don't know which functions are hot (built-in, zero install)
+
+**What NOT to add:**
+- `scalene` — excellent profiler but overkill for targeted optimization of known bottlenecks; adds a new dependency for the same information `line_profiler` + `torch.profiler` provide
+- NVIDIA Nsight Systems — useful for deep CUDA profiling but requires separate installation outside pip and is more than needed for this work
+
+---
+
+### pyproject.toml Changes for v3.4
+
+**No new runtime dependencies.** One optional dev dependency:
+
+```toml
+[tool.hatch.envs.default]
+dependencies = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    "pre-commit",
+    "basedpyright",
+    "line-profiler",   # NEW: dev-only, not in runtime deps
+]
+```
+
+All optimization work uses existing runtime dependencies:
+- `ultralytics>=8.0` — batch predict API via list input (available since YOLO8)
+- `numpy>=1.24` — batched SVD via `np.linalg.svd` on stacked arrays (stable, available in all versions)
+- `opencv-python>=4.8` — `cv2.VideoCapture` + `cv2.remap()` (unchanged)
+- `torch>=2.0` — `torch.profiler` (bundled)
+- Python stdlib `threading`, `queue` — no install
+
+---
+
+### Alternatives Considered for v3.4
+
+| Recommended | Alternative | Why Not |
+|-------------|-------------|---------|
+| `threading` + `queue` for frame prefetch | `decord` / `decord2` | decord requires separate build or new pip dep; GPU decode advantage is negated by required CPU-side undistortion (cv2.remap). Zero-dep threading achieves same I/O overlap. |
+| `threading` + `queue` for frame prefetch | `torchcodec` | Returns torch tensors — requires conversion for cv2.remap undistortion. New dependency. No benefit over threading when CPU undistortion is the next step. |
+| `numpy.linalg.svd` batch on CPU | `torch.linalg.svd` on GPU | GPU SVD is 70x slower than CPU for small (24, 4) DLT matrices (confirmed PyTorch issue #41306). Keep on CPU. |
+| `line_profiler` (dev dep) | `scalene` | scalene is a heavier profiler with a web UI, AI optimization suggestions, and a larger footprint. line_profiler is minimal, focused on the hot-loop identification we need. |
+| Batch via `model.predict(list)` | Separate inference server (TensorRT/Triton) | Massive deployment complexity for a single-machine research tool. Ultralytics native batching is sufficient to address the ~30% GPU utilization issue. |
+| Same-batch detection (12 cams per frame) | Per-frame accumulation across frames | Collecting frames across multiple timesteps mixes temporal context, complicating the stage interface. Per-frame batching across cameras (batch=12) is cleaner and sufficient. |
+
+---
+
+### Integration Points with Existing Architecture
+
+| Optimization | Integration Point | Notes |
+|--------------|------------------|-------|
+| Batched detection | `YOLOOBBBackend.detect()` → new `detect_batch()` method; `DetectionStage.run()` collects all cam frames per frame then calls detect_batch | FrameSource interface unchanged; only the inner camera loop in DetectionStage changes |
+| Batched midline | `PoseEstimationBackend` — add `run_batch(crops: list[np.ndarray])` method; `MidlineStage` accumulates all crops for a frame then calls run_batch | Crops are all same size (affine canvas), so rect padding applies cleanly |
+| Threaded frame I/O | `ChunkFrameSource.__iter__` — replace sequential `read_frame(idx)` loop with threaded producer; or add `ThreadedChunkFrameSource` wrapper | FrameSource Protocol satisfied by both; ChunkOrchestrator selects which to instantiate |
+| Vectorized DLT | `DltBackend._triangulate_body_point` → `_triangulate_all_body_points`; internal loop removed | `reconstruct_frame` interface unchanged; only DltBackend internals change |
+| Vectorized association | `AssociationStage._score_pairs` inner loop → numpy broadcast matrix | Stage interface unchanged |
+
+---
+
+### Version Compatibility for v3.4
+
+| Component | Version | Notes |
+|-----------|---------|-------|
+| `ultralytics` | >=8.0 (current ~8.3.x) | List-of-ndarray batch predict API available since v8.0; behavior validated against docs at 8.3.x |
+| `numpy` | >=1.24 (current ~2.x) | Batched `np.linalg.svd` on (..., M, N) inputs: stable since NumPy 1.14; no version concerns |
+| `torch` | >=2.0 | `torch.profiler` with CUDA activity: available since PyTorch 1.9; chrome trace export stable since 2.0 |
+| `line-profiler` | >=4.0 (current 4.2.x) | Dev-only; Python 3.11 compatible; no runtime import |
+| `opencv-python` | >=4.8 | `cv2.VideoCapture.set(CAP_PROP_POS_FRAMES)` + `read()` unchanged; threading-safe with one thread per capture |
+
+---
+
+### Sources for v3.4 Stack Research
+
+- Ultralytics predict docs (batch inference, list input, stream parameter): https://docs.ultralytics.com/modes/predict/
+- Ultralytics batch inference blog (batch size parameter semantics): https://www.ultralytics.com/blog/using-ultralytics-yolo11-to-run-batch-inferences
+- Ultralytics GitHub issue #22898 (GPU saturation test methodology: start at 16, double until no improvement): https://github.com/ultralytics/ultralytics/issues/22898
+- PyTorch issue #41306 (GPU SVD 70x slower than CPU for small matrices, confirmed by PyTorch collaborator): https://github.com/pytorch/pytorch/issues/41306
+- NumPy batched SVD docs (stack mode for (..., M, N) inputs): https://numpy.org/doc/stable/reference/generated/numpy.linalg.svd.html
+- torch.profiler docs: https://docs.pytorch.org/docs/stable/profiler.html
+- line_profiler GitHub: https://github.com/pyutils/line_profiler
+- torchcodec (evaluated, not recommended for this use case): https://pytorch.org/blog/torchcodec/
+- decord GitHub (evaluated, not recommended — maintenance concerns): https://github.com/dmlc/decord
+- Python stdlib threading + queue (zero-dep frame prefetch pattern): https://docs.python.org/3/library/queue.html
+- Existing `src/aquapose/core/types/frame_source.py` — VideoFrameSource.read_frame() is the integration point for threaded prefetch
+- Existing `src/aquapose/core/detection/backends/yolo_obb.py` — detect() is the integration point for batch predict
+
+---
+
+*Stack research for v3.4 Performance Optimization additions*
+*Researched: 2026-03-05*

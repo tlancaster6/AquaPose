@@ -128,11 +128,13 @@ Full details: `.planning/milestones/v3.2-ROADMAP.md`
 
 </details>
 
-### v3.3 Chunk Mode (Phases 51-53) — ACTIVE
+### v3.3 Chunk Mode (Phases 51-55) — ACTIVE
 
-- [x] **Phase 51: Frame Source Refactor** - Extract video I/O from stages into injectable frame source (1/2 plans complete)
-- [x] **Phase 52: Chunk Orchestrator and Handoff** - Implement chunk loop, ChunkHandoff, identity stitching, per-chunk HDF5 flush (0/3 plans) (completed 2026-03-03)
-- [ ] **Phase 53: Integration and Validation** - Wire orchestrator into CLI, disable HDF5 observer under chunk mode, validate output equivalence
+- [x] **Phase 51: Frame Source Refactor** - Extract video I/O from stages into injectable frame source (2/2 plans) (completed 2026-03-03)
+- [x] **Phase 52: Chunk Orchestrator and Handoff** - Implement chunk loop, ChunkHandoff, identity stitching, per-chunk HDF5 flush (3/3 plans) (completed 2026-03-03)
+- [x] **Phase 53: Integration and Validation** - Wire orchestrator into CLI, disable HDF5 observer under chunk mode (1/1 plan) (completed 2026-03-04)
+- [x] **Phase 54: Chunk-Aware Diagnostics and Eval Migration** - Per-chunk diagnostic caches, eval migration, viz CLI (4/4 plans) (completed 2026-03-04)
+- [ ] **Phase 55: Chunk Validation and Gap Closure** - Audit gap closure: INTEG-03 validation tests, manifest start_frame fix, Phase 53 verification
 
 ## Phase Details
 
@@ -188,8 +190,9 @@ Plans:
 | 46-50 | v3.2 | 11/11 | Complete | 2026-03-03 |
 | 51 | 2/2 | Complete    | 2026-03-03 | - |
 | 52 | 3/3 | Complete    | 2026-03-03 | - |
-| 53 | 1/2 | In Progress |  | - |
+| 53 | 1/1 | Complete    | 2026-03-04 | - |
 | 54 | 4/4 | Complete    | 2026-03-04 | - |
+| 55 | 0/0 | Pending     |            | - |
 
 ### Phase 54: Chunk-Aware Diagnostics and Eval Migration
 
@@ -203,3 +206,15 @@ Plans:
 - [ ] 54-02-PLAN.md — Migrate EvalRunner and TuningOrchestrator to chunk cache layout (Wave 2)
 - [ ] 54-03-PLAN.md — Create evaluation/viz/ modules and aquapose viz CLI (Wave 2)
 - [ ] 54-04-PLAN.md — Delete visualization observers from engine, clean up references (Wave 3)
+
+### Phase 55: Chunk Validation and Gap Closure
+
+**Goal:** Close all gaps from v3.3 milestone audit: validate chunk output correctness with stage-level mock tests, fix manifest.json start_frame, and formally verify Phase 53 requirements.
+**Requirements**: INTEG-03, OUT-02, INTEG-01, INTEG-02
+**Depends on:** Phase 54
+**Gap Closure:** Closes gaps from v3.3-MILESTONE-AUDIT.md
+**Success Criteria** (what must be TRUE):
+  1. Stage-level mock tests verify orchestrator produces correct frame offsets, identity stitching, and HDF5 writes across chunk boundaries (degenerate + multi-chunk cases)
+  2. manifest.json chunk entries contain correct start_frame from orchestrator's chunk_start
+  3. Phase 53 requirements (OUT-02, INTEG-01, INTEG-02) are formally verified
+**Plans:** TBD

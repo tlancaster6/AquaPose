@@ -81,16 +81,18 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - ✓ Legacy evaluation machinery removed: harness.py, NPZ export, standalone scripts (CLEAN-01 through CLEAN-05) — v3.2
 - ✓ Partial pipeline execution via --resume-from and initial_context (INFRA-02, INFRA-03) — v3.2
 
+- ✓ FrameSource protocol + VideoFrameSource replacing direct VideoSet usage in stages (FRAME-01, FRAME-02, FRAME-03) — v3.3
+- ✓ ChunkOrchestrator processing video in fixed-size temporal chunks above PosePipeline (CHUNK-01 through CHUNK-05) — v3.3
+- ✓ ChunkHandoff carrying tracker state + identity map across chunk boundaries with atomic serialization (CHUNK-04, CHUNK-05) — v3.3
+- ✓ Identity stitching mapping chunk-local fish IDs to globally consistent IDs (IDENT-01, IDENT-02) — v3.3
+- ✓ Per-chunk HDF5 flush with global frame offsets; HDF5Observer removed (OUT-01, OUT-02) — v3.3
+- ✓ CLI delegates to ChunkOrchestrator; degenerate and multi-chunk output correctness validated (INTEG-01, INTEG-02, INTEG-03) — v3.3
+- ✓ Per-chunk diagnostic caches with manifest.json; EvalRunner/TuningOrchestrator chunk-aware — v3.3
+- ✓ Visualization migrated from engine observers to `aquapose viz` CLI in evaluation suite — v3.3
+
 ### Active
 
-<!-- Current milestone: v3.3 Chunk Mode -->
-
-- [ ] Frame source abstraction replacing direct VideoSet usage in stages
-- [ ] ChunkOrchestrator managing fixed-size temporal chunk processing above PosePipeline
-- [ ] ChunkHandoff carrying tracker state + identity map across chunk boundaries
-- [ ] Identity stitching mapping chunk-local fish IDs to globally consistent IDs
-- [ ] Per-chunk HDF5 flush via existing Midline3DWriter with global frame offsets
-- [ ] Validation that chunked output matches non-chunked output
+(No active milestone — use `/gsd:new-milestone` to start next)
 
 ### Out of Scope
 
@@ -107,15 +109,16 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ## Context
 
-### Current State (v3.2 shipped)
+### Current State (v3.3 shipped)
 
-- **Codebase:** 20,789 LOC source across `src/aquapose/` (calibration, core/, engine/, io, evaluation, visualization)
-- **Architecture:** Event-driven 3-layer — Core Computation (5 stages) → PosePipeline (orchestrator) → Observers (6 side-effect handlers)
+- **Codebase:** 21,634 LOC source across `src/aquapose/` (calibration, core/, engine/, io, evaluation)
+- **Architecture:** Event-driven 3-layer — Core Computation (5 stages) → PosePipeline (orchestrator) → Observers (3: console, timing, diagnostic). ChunkOrchestrator sits above PosePipeline managing chunk loop, identity stitching, and HDF5 output.
 - **Pipeline order:** Detection (YOLO-OBB) → 2D Tracking (OC-SORT) → Association (Leiden) → Midline (YOLO-seg or YOLO-pose) → Reconstruction (DLT triangulation + B-spline)
+- **Chunk processing:** ChunkOrchestrator processes video in fixed-size temporal chunks (default 1000 frames). ChunkHandoff carries tracker state + identity map across boundaries. Per-chunk HDF5 flush with global frame offsets.
 - **Tech stack:** Python 3.11, PyTorch, PyTorch3D, scikit-image, OpenCV, h5py, ultralytics (YOLO), Click (CLI), Plotly (3D viz), boxmot (OC-SORT), leidenalg/igraph, hatch build system
 - **Midline backends:** SegmentationBackend (YOLO-seg + skeletonization) and PoseEstimationBackend (YOLO-pose + spline), selectable via `midline.backend` config field
 - **Reconstruction:** Single DLT backend — confidence-weighted triangulation with outlier rejection (threshold=10.0), B-spline fitting (7 control points)
-- **Evaluation:** Per-stage pickle caching, five typed stage evaluators, `aquapose eval` (quality reports), `aquapose tune` (parameter sweeps with two-tier validation)
+- **Evaluation:** Per-chunk pickle caching (chunk_NNN/cache.pkl + manifest.json), five typed stage evaluators, `aquapose eval` (quality reports), `aquapose tune` (parameter sweeps with two-tier validation), `aquapose viz` (overlay, animation, trails from cached data)
 - **Training infrastructure:** `aquapose train {yolo-obb, seg, pose}` CLI subcommands with standard YOLO txt+yaml data format
 - **Core organization:** Shared types in `core/types/`, implementations in `core/<stage>/`, legacy top-level dirs eliminated
 - **Known limitation:** Z-reconstruction uncertainty 132x larger than XY due to top-down camera geometry; ~70% singleton rate in association (upstream detection/tracking bottleneck)
@@ -191,17 +194,12 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Two-tier validation for parameter sweeps | Fast sweep (few frames) → thorough top-N validation (many frames) | ✓ Good — balances speed and reliability |
 
 ---
-## Current Milestone: v3.3 Chunk Mode
-
-**Goal:** Process videos in fixed-size temporal chunks to bound association complexity, enabling reliable processing of long recordings without O(T²) scaling.
-
-**Target features:**
-- Frame source abstraction decoupling stages from video I/O
-- ChunkOrchestrator above PosePipeline for chunk loop management
-- ChunkHandoff replacing CarryForward with tracker state + identity map
-- Post-chunk identity stitching via track ID continuity
-- Per-chunk HDF5 flush with global frame indexing
-- Mutual exclusivity with diagnostic mode
+| ChunkOrchestrator above PosePipeline for chunk loop | Fixed-size temporal chunks bound association complexity; orchestrator owns HDF5 output and identity stitching | ✓ Good — enables reliable long-video processing |
+| ChunkHandoff in core/context.py (not engine/) | core/tracking/stage.py must construct it; core must not import from engine | ✓ Good — avoids circular import |
+| Identity stitching via track ID continuity | Lightweight majority-vote using OC-SORT carry-forward track IDs | ✓ Good — simple, effective |
+| Diagnostic + chunk mode co-existence | Originally mutual exclusion (Phase 53); removed in Phase 54 to support multi-chunk diagnostic runs | ✓ Good — per-chunk cache layout makes it work |
+| Visualization migrated to eval suite | Overlay, animation, trails operate on cached data post-run instead of during pipeline execution | ✓ Good — decouples viz from pipeline; enables multi-chunk continuous output |
+| Per-chunk single cache (not per-stage) | One cache.pkl per chunk containing full PipelineContext; simpler than per-stage files | ✓ Good — reduces file count, enables chunk-aware eval/tuning |
 
 ---
-*Last updated: 2026-03-03 after v3.3 Chunk Mode milestone started*
+*Last updated: 2026-03-05 after v3.3 Chunk Mode milestone*

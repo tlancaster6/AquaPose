@@ -1,5 +1,29 @@
 # Milestones
 
+## v3.3 Chunk Mode (Shipped: 2026-03-05)
+
+**Phases completed:** 5 phases (51-55), 11 plans
+**Timeline:** 2 days (2026-03-03 → 2026-03-04)
+**Codebase:** 21,634 LOC source
+**Git range:** 66 commits, 108 files changed (+11,046 / -4,401)
+
+**Key accomplishments:**
+1. FrameSource protocol + VideoFrameSource — injectable frame source replacing direct VideoSet usage in stages
+2. ChunkOrchestrator processing video in fixed-size temporal chunks with per-chunk PosePipeline invocation
+3. ChunkHandoff frozen dataclass carrying tracker state + identity map across chunk boundaries with atomic serialization
+4. Identity stitching mapping chunk-local fish IDs to globally consistent IDs via track ID continuity
+5. Per-chunk diagnostic caches (chunk_NNN/cache.pkl + manifest.json) with EvalRunner/TuningOrchestrator chunk-aware loading and merging
+6. Visualization migrated from engine observers to evaluation suite — `aquapose viz` CLI operating on cached data post-run
+
+**Delivered:** Chunk processing mode enabling reliable long-video processing without O(T²) association scaling. Videos processed in fixed-size temporal chunks with state carried across boundaries, per-chunk HDF5 flush with global frame offsets, and full diagnostic/evaluation support for multi-chunk runs. All 15 requirements satisfied, audit passed.
+
+**Tech debt (non-blocking):**
+- Phase 53 missing VERIFICATION.md (requirements verified by Phase 55)
+- INTEG-02 wording stale in REQUIREMENTS.md (mutual exclusion removed in Phase 54)
+- 5 pre-existing test failures in test_stage_association.py (stale DEFAULT_GRID expected values)
+
+---
+
 ## v3.2 Evaluation Ecosystem (Shipped: 2026-03-03)
 
 **Phases completed:** 5 phases (46-50), 11 plans

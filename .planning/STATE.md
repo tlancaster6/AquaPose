@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-03-03)
 
 ## Current Position
 
-Phase: 54 of 54 (Chunk-Aware Diagnostics and Eval Migration)
-Plan: 4 of 4 complete
+Phase: 55 of 55 (Chunk Validation and Gap Closure)
+Plan: 1 of 1 complete
 Status: Complete
-Last activity: 2026-03-04 — Completed 54-04: Remove visualization observers from engine layer
+Last activity: 2026-03-05 — Completed 55-01: Fix manifest start_frame bug and add INTEG-03 validation tests
 
-Progress: [██████████] 100% (2/2 phases, 11 plans complete)
+Progress: [██████████] 100% (2/2 phases, 12 plans complete)
 
 ## Accumulated Context
 
@@ -102,6 +102,11 @@ Phase 53 Plan 01 decisions:
 - contextlib.ExitStack used so caller-owned frame_source is not closed by orchestrator
 - Mode conflict validation: diagnostic + chunk_size>0 + max_chunks!=1 raises ValueError at construction
 
+Phase 55 Plan 01 decisions:
+- chunk_start parameter added to DiagnosticObserver.__init__ (default=0) and build_observers() — wired from orchestrator loop variable to fix manifest.json start_frame always-None bug
+- INTEG-03 reworded: "Degenerate single-chunk run produces identical output; multi-chunk runs produce structurally correct output with correct frame offsets and identity continuity"
+- Patch local imports in orchestrator tests at source module (aquapose.engine.pipeline.PosePipeline not aquapose.engine.orchestrator.PosePipeline)
+
 Phase 54 Plan 01 decisions:
 - Per-chunk single cache on PipelineComplete: one cache.pkl per chunk containing full final PipelineContext (replaces per-stage files)
 - Manifest append per observer instance: each DiagnosticObserver reads/appends to diagnostics/manifest.json atomically
@@ -122,6 +127,6 @@ Phase 54 Plan 03 decisions:
 
 ## Session Continuity
 
-Last session: 2026-03-04
-Stopped at: Completed 54-04 — Remove visualization observers from engine layer
+Last session: 2026-03-05
+Stopped at: Completed 55-01 — Fix manifest start_frame bug and add INTEG-03 validation tests
 Resume file: None

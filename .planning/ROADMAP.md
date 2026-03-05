@@ -134,7 +134,7 @@ Full details: `.planning/milestones/v3.2-ROADMAP.md`
 - [x] **Phase 52: Chunk Orchestrator and Handoff** - Implement chunk loop, ChunkHandoff, identity stitching, per-chunk HDF5 flush (3/3 plans) (completed 2026-03-03)
 - [x] **Phase 53: Integration and Validation** - Wire orchestrator into CLI, disable HDF5 observer under chunk mode (1/1 plan) (completed 2026-03-04)
 - [x] **Phase 54: Chunk-Aware Diagnostics and Eval Migration** - Per-chunk diagnostic caches, eval migration, viz CLI (4/4 plans) (completed 2026-03-04)
-- [ ] **Phase 55: Chunk Validation and Gap Closure** - Audit gap closure: INTEG-03 validation tests, manifest start_frame fix, Phase 53 verification
+- [x] **Phase 55: Chunk Validation and Gap Closure** - Audit gap closure: INTEG-03 validation tests, manifest start_frame fix, Phase 53 verification (completed 2026-03-05)
 
 ## Phase Details
 
@@ -192,7 +192,7 @@ Plans:
 | 52 | 3/3 | Complete    | 2026-03-03 | - |
 | 53 | 1/1 | Complete    | 2026-03-04 | - |
 | 54 | 4/4 | Complete    | 2026-03-04 | - |
-| 55 | 0/1 | Planned     |            | - |
+| 55 | 1/1 | Complete   | 2026-03-05 | - |
 
 ### Phase 54: Chunk-Aware Diagnostics and Eval Migration
 
@@ -217,7 +217,7 @@ Plans:
   1. Stage-level mock tests verify orchestrator produces correct frame offsets, identity stitching, and HDF5 writes across chunk boundaries (degenerate + multi-chunk cases)
   2. manifest.json chunk entries contain correct start_frame from orchestrator's chunk_start
   3. Phase 53 requirements (OUT-02, INTEG-01, INTEG-02) are formally verified
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] 55-01-PLAN.md — Fix manifest start_frame, add INTEG-03 validation tests (Wave 1)

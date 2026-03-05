@@ -643,10 +643,10 @@ class TestAssembleCommand:
         assert "--gap-threshold" in result.output
         assert "--exclude-gap-reason" in result.output
         assert "--seed" in result.output
-        # Removed options should not appear
-        assert "--temporal-step" not in result.output
-        assert "--diversity-bins" not in result.output
-        assert "--diversity-max-per-bin" not in result.output
+        # Frame selection options
+        assert "--temporal-step" in result.output
+        assert "--diversity-bins" in result.output
+        assert "--diversity-max-per-bin" in result.output
 
     def test_assemble_produces_output(self, tmp_path: Path) -> None:
         """assemble creates YOLO dataset from synthetic pseudo-labels."""

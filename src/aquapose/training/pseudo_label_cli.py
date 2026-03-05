@@ -1021,6 +1021,26 @@ def _draw_pose_inspection(
     help="Hard cap on total pseudo-label images after all filtering. Uniform random subsample.",
 )
 @click.option(
+    "--temporal-step",
+    default=1,
+    type=int,
+    show_default=True,
+    help="Take every Nth frame. 1 = no subsampling.",
+)
+@click.option(
+    "--diversity-bins",
+    default=5,
+    type=int,
+    show_default=True,
+    help="Number of curvature bins for diversity sampling.",
+)
+@click.option(
+    "--diversity-max-per-bin",
+    default=None,
+    type=int,
+    help="Max frames per curvature bin. None = no diversity cap.",
+)
+@click.option(
     "--seed",
     default=42,
     type=int,
@@ -1038,6 +1058,9 @@ def assemble(
     manual_val_fraction: float,
     pseudo_val_fraction: float,
     max_frames: int | None,
+    temporal_step: int,
+    diversity_bins: int,
+    diversity_max_per_bin: int | None,
     seed: int,
 ) -> None:
     """Assemble a YOLO training dataset from manual annotations and pseudo-labels.
@@ -1052,6 +1075,47 @@ def assemble(
     manual_dir_path = Path(manual_dir) if manual_dir is not None else None
     output_path = Path(output_dir)
 
+    # --- Frame selection ---
+    selected_frames: dict[str, set[int]] | None = None
+    frame_selection_active = temporal_step > 1 or diversity_max_per_bin is not None
+
+    if frame_selection_active:
+        from aquapose.evaluation.runner import load_run_context
+        from aquapose.training.frame_selection import (
+            diversity_sample,
+            temporal_subsample,
+        )
+
+        selected_frames = {}
+        for run_dir_path in run_dir_paths:
+            context, _ = load_run_context(run_dir_path)
+            if context is None or context.midlines_3d is None:
+                logger.warning(
+                    "No diagnostic caches for %s, skipping frame selection",
+                    run_dir_path.name,
+                )
+                continue
+
+            frame_indices = list(range(len(context.midlines_3d)))
+            selected_indices = temporal_subsample(frame_indices, temporal_step)
+
+            if diversity_max_per_bin is not None:
+                selected_indices = diversity_sample(
+                    context.midlines_3d,
+                    selected_indices,
+                    diversity_bins,
+                    diversity_max_per_bin,
+                    seed,
+                )
+
+            selected_frames[run_dir_path.name] = set(selected_indices)
+            logger.info(
+                "Run %s: %d/%d frames selected",
+                run_dir_path.name,
+                len(selected_indices),
+                len(frame_indices),
+            )
+
     result = assemble_dataset(
         output_dir=output_path,
         manual_dir=manual_dir_path,
@@ -1064,6 +1128,7 @@ def assemble(
         pseudo_val_fraction=pseudo_val_fraction,
         seed=seed,
         max_frames=max_frames,
+        selected_frames=selected_frames,
     )
 
     # Print summary
@@ -1084,5 +1149,10 @@ def assemble(
             result["manual_train"] + result["consensus_train"] + result["gap_train"]
         )
     total_val = result["manual_val"]
+    if selected_frames is not None:
+        click.echo(
+            f"  Frame selection: {sum(len(v) for v in selected_frames.values())} "
+            f"frames across {len(selected_frames)} runs"
+        )
     click.echo(f"  Total train: {total_train}")
     click.echo(f"  Total val (manual): {total_val}")

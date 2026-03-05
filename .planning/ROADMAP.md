@@ -216,3 +216,13 @@ Plans:
 | 57. Vectorized DLT Reconstruction | v3.4 | 0/? | Not started | - |
 | 58. Frame I/O Optimization | v3.4 | 0/? | Not started | - |
 | 59. Batched YOLO Inference | v3.4 | 0/? | Not started | - |
+
+### Phase 60: End-to-End Performance Validation
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 59
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 60 to break down)

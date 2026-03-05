@@ -64,6 +64,10 @@ See PROJECT.md Key Decisions table for full history.
 
 17 pending todos from v2.2 — see .planning/todos/pending/ (review for relevance)
 
+### Roadmap Evolution
+
+- Phase 60 added: End-to-End Performance Validation — consolidates deferred real-data checks (SC-2 etc.) into a single milestone gate
+
 ### Blockers/Concerns
 
 None.

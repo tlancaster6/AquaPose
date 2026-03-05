@@ -143,7 +143,7 @@ Full details: `.planning/milestones/v3.3-ROADMAP.md`
 
 </details>
 
-### 🚧 v3.4 Performance Optimization (In Progress)
+### v3.4 Performance Optimization (In Progress)
 
 **Milestone Goal:** Reduce per-chunk pipeline processing time by optimizing the four profiled bottlenecks — batched YOLO inference (~26% of wall time across detection + midline), frame I/O (~12%), vectorized DLT reconstruction (~9%), and vectorized association scoring (~5%). All changes are correctness-neutral and verified against the existing `aquapose eval` harness.
 
@@ -182,11 +182,13 @@ Plans:
 **Depends on**: Phase 57
 **Requirements**: FIO-01, FIO-02
 **Success Criteria** (what must be TRUE):
-  1. `BatchFrameSource` exists as a new class implementing the `FrameSource` protocol with a background decode thread and bounded prefetch queue
-  2. `BatchFrameSource` is a drop-in replacement for `ChunkFrameSource` — all stage code is unaffected and `aquapose eval` produces identical results
+  1. ChunkFrameSource internals replaced with background prefetch thread and bounded queue (per user decision — same class name, no new BatchFrameSource)
+  2. ChunkFrameSource is a drop-in replacement — all stage code is unaffected and `aquapose eval` produces identical results
   3. Frame identity is correct across all 12 cameras for every frame in a multi-chunk run (no seek inaccuracy or thread-safety corruption)
-  4. Prefetch buffer depth is configurable and defaults to a memory-safe value
-**Plans**: TBD
+  4. Prefetch buffer depth is hardcoded at 2 frames (~144 MB for 12 cameras)
+**Plans:** 1 plan
+Plans:
+- [ ] 58-01-PLAN.md — Implement background prefetch in ChunkFrameSource and fix DetectionStage missing-camera guard
 
 ### Phase 59: Batched YOLO Inference
 **Goal**: Detection and midline YOLO models receive batched inputs instead of one image at a time, increasing GPU utilization from ~30% toward its practical ceiling
@@ -214,7 +216,7 @@ Plans:
 | 51-55 | v3.3 | 11/11 | Complete | 2026-03-05 |
 | 56. Vectorized Association Scoring | v3.4 | Complete    | 2026-03-05 | - |
 | 57. Vectorized DLT Reconstruction | 1/1 | Complete   | 2026-03-05 | - |
-| 58. Frame I/O Optimization | v3.4 | 0/? | Not started | - |
+| 58. Frame I/O Optimization | v3.4 | 0/1 | Not started | - |
 | 59. Batched YOLO Inference | v3.4 | 0/? | Not started | - |
 
 ### Phase 60: End-to-End Performance Validation

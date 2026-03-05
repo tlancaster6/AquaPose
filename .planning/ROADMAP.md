@@ -192,7 +192,7 @@ Plans:
 | 52 | 3/3 | Complete    | 2026-03-03 | - |
 | 53 | 1/1 | Complete    | 2026-03-04 | - |
 | 54 | 4/4 | Complete    | 2026-03-04 | - |
-| 55 | 0/0 | Pending     |            | - |
+| 55 | 0/1 | Planned     |            | - |
 
 ### Phase 54: Chunk-Aware Diagnostics and Eval Migration
 
@@ -217,4 +217,7 @@ Plans:
   1. Stage-level mock tests verify orchestrator produces correct frame offsets, identity stitching, and HDF5 writes across chunk boundaries (degenerate + multi-chunk cases)
   2. manifest.json chunk entries contain correct start_frame from orchestrator's chunk_start
   3. Phase 53 requirements (OUT-02, INTEG-01, INTEG-02) are formally verified
-**Plans:** TBD
+**Plans:** 1 plan
+
+Plans:
+- [ ] 55-01-PLAN.md — Fix manifest start_frame, add INTEG-03 validation tests (Wave 1)

@@ -112,6 +112,13 @@ def pseudo_label_group() -> None:
     show_default=True,
     help="Pose crop height in pixels.",
 )
+@click.option(
+    "--temporal-step",
+    type=int,
+    default=1,
+    show_default=True,
+    help="Process every Nth frame (1 = all frames).",
+)
 def generate(
     config_path: str,
     lateral_pad: float,
@@ -121,6 +128,7 @@ def generate(
     min_cameras: int,
     crop_width: int,
     crop_height: int,
+    temporal_step: int,
 ) -> None:
     """Generate YOLO OBB and pose pseudo-labels from diagnostic caches.
 
@@ -268,7 +276,9 @@ def generate(
         pipeline_config.calibration_path,
     ) as frame_source:
         n_frames = len(context.midlines_3d)
-        click.echo(f"Processing {n_frames} frames across {len(proj_models)} cameras...")
+        n_selected = (n_frames + temporal_step - 1) // temporal_step if temporal_step > 1 else n_frames
+        step_msg = f" (every {temporal_step}th)" if temporal_step > 1 else ""
+        click.echo(f"Processing {n_selected}/{n_frames} frames{step_msg} across {len(proj_models)} cameras...")
         if consensus:
             click.echo("  Generating consensus (Source A) labels")
         if gaps:
@@ -276,6 +286,9 @@ def generate(
 
         for frame_idx, fish_dict in enumerate(context.midlines_3d):
             if not fish_dict:
+                continue
+
+            if temporal_step > 1 and frame_idx % temporal_step != 0:
                 continue
 
             # Collect labels per (frame_idx, cam_id) for consensus
@@ -656,6 +669,213 @@ def _yaml_dump(data: dict) -> str:
     return yaml.dump(data, default_flow_style=False, sort_keys=False)
 
 
+@pseudo_label_group.command("inspect")
+@click.option(
+    "--data-dir",
+    required=True,
+    type=click.Path(exists=True),
+    help="YOLO-format directory containing images/ and labels/ (e.g. pseudo_labels/consensus/obb).",
+)
+@click.option(
+    "--output-dir",
+    default=None,
+    type=click.Path(),
+    help="Output directory for annotated PNGs. Defaults to {data-dir}/inspect/.",
+)
+@click.option(
+    "-n",
+    "n_samples",
+    default=None,
+    type=int,
+    help="Number of images to sample randomly. Omit to inspect all.",
+)
+@click.option(
+    "--seed",
+    default=42,
+    type=int,
+    show_default=True,
+    help="Random seed for sampling.",
+)
+def inspect(
+    data_dir: str,
+    output_dir: str | None,
+    n_samples: int | None,
+    seed: int,
+) -> None:
+    """Visualize pseudo-labels by drawing annotations on images.
+
+    Reads YOLO-format images and labels, draws OBB polygons or pose
+    keypoints on the images, and writes annotated PNGs. If a
+    confidence.json sidecar is found, overlays confidence scores,
+    source type, and gap reasons as text.
+    """
+    import random
+
+    data_path = Path(data_dir)
+    out_path = Path(output_dir) if output_dir else data_path / "inspect"
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    # Find image/label directories (support both flat and train/ subdirectory)
+    images_dir = data_path / "images" / "train"
+    labels_dir = data_path / "labels" / "train"
+    if not images_dir.exists():
+        images_dir = data_path / "images"
+    if not labels_dir.exists():
+        labels_dir = data_path / "labels"
+
+    if not images_dir.exists() or not labels_dir.exists():
+        raise click.ClickException(
+            f"Expected images/ and labels/ subdirectories in {data_path}"
+        )
+
+    # Collect image files that have matching label files
+    image_files = sorted(
+        p for p in images_dir.iterdir()
+        if p.suffix.lower() in {".jpg", ".jpeg", ".png"}
+        and (labels_dir / f"{p.stem}.txt").exists()
+    )
+
+    if not image_files:
+        raise click.ClickException(f"No image/label pairs found in {data_path}")
+
+    # Sample if requested
+    if n_samples is not None and n_samples < len(image_files):
+        rng = random.Random(seed)
+        image_files = rng.sample(image_files, n_samples)
+
+    # Load confidence sidecar if available
+    confidence_data: dict = {}
+    for candidate in [data_path / "confidence.json", data_path.parent / "confidence.json"]:
+        if candidate.exists():
+            confidence_data = json.loads(candidate.read_text())
+            break
+
+    # Detect label type from first label file
+    first_label = (labels_dir / f"{image_files[0].stem}.txt").read_text().strip()
+    first_tokens = first_label.split("\n")[0].split()
+    is_obb = len(first_tokens) == 9  # cls + 4 corners x 2
+
+    click.echo(
+        f"Inspecting {len(image_files)} images "
+        f"({'OBB' if is_obb else 'pose'} labels)"
+    )
+
+    for img_path in image_files:
+        image = cv2.imread(str(img_path))
+        if image is None:
+            logger.warning("Failed to read %s, skipping", img_path)
+            continue
+
+        img_h, img_w = image.shape[:2]
+        label_path = labels_dir / f"{img_path.stem}.txt"
+        label_text = label_path.read_text().strip()
+
+        if not label_text:
+            continue
+
+        # Look up confidence metadata
+        conf_entry = confidence_data.get(img_path.stem, {})
+        fish_labels = conf_entry.get("labels", [])
+
+        for line_idx, line in enumerate(label_text.split("\n")):
+            tokens = line.split()
+            if not tokens:
+                continue
+
+            # Get per-fish metadata if available
+            fish_meta = fish_labels[line_idx] if line_idx < len(fish_labels) else {}
+            confidence = fish_meta.get("confidence")
+            gap_reason = fish_meta.get("gap_reason")
+
+            if is_obb:
+                _draw_obb_inspection(image, tokens, img_w, img_h)
+            else:
+                _draw_pose_inspection(image, tokens, img_w, img_h)
+
+            # Build text overlay
+            text_parts: list[str] = []
+            if confidence is not None:
+                text_parts.append(f"conf={confidence:.2f}")
+            if gap_reason is not None:
+                text_parts.append(f"gap:{gap_reason}")
+            elif fish_meta:
+                text_parts.append("consensus")
+
+            if text_parts:
+                text = " | ".join(text_parts)
+                # Position text near the annotation
+                if is_obb:
+                    tx = int(float(tokens[1]) * img_w)
+                    ty = max(15, int(float(tokens[2]) * img_h) - 10)
+                else:
+                    tx = max(5, int(float(tokens[1]) * img_w - float(tokens[3]) * img_w / 2))
+                    ty = max(15, int(float(tokens[2]) * img_h - float(tokens[4]) * img_h / 2) - 10)
+
+                cv2.putText(
+                    image, text, (tx, ty),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 2,
+                )
+                cv2.putText(
+                    image, text, (tx, ty),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 200, 0), 1,
+                )
+
+        cv2.imwrite(str(out_path / f"{img_path.stem}.png"), image)
+
+    click.echo(f"Wrote {len(image_files)} annotated images to {out_path}")
+
+
+def _draw_obb_inspection(
+    image: np.ndarray,
+    tokens: list[str],
+    img_w: int,
+    img_h: int,
+) -> None:
+    """Draw an OBB polygon from a YOLO-OBB label line."""
+    # tokens: cls x1 y1 x2 y2 x3 y3 x4 y4 (normalized)
+    corners = np.array(
+        [
+            [float(tokens[1]) * img_w, float(tokens[2]) * img_h],
+            [float(tokens[3]) * img_w, float(tokens[4]) * img_h],
+            [float(tokens[5]) * img_w, float(tokens[6]) * img_h],
+            [float(tokens[7]) * img_w, float(tokens[8]) * img_h],
+        ],
+        dtype=np.int32,
+    )
+    cv2.polylines(image, [corners.reshape(-1, 1, 2)], True, (0, 255, 0), 2)
+
+
+def _draw_pose_inspection(
+    image: np.ndarray,
+    tokens: list[str],
+    img_w: int,
+    img_h: int,
+) -> None:
+    """Draw a pose bbox and keypoints from a YOLO-Pose label line."""
+    # tokens: cls cx cy w h x1 y1 v1 x2 y2 v2 ...
+    cx = float(tokens[1]) * img_w
+    cy = float(tokens[2]) * img_h
+    bw = float(tokens[3]) * img_w
+    bh = float(tokens[4]) * img_h
+    x1 = int(cx - bw / 2)
+    y1 = int(cy - bh / 2)
+    x2 = int(cx + bw / 2)
+    y2 = int(cy + bh / 2)
+    cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+    # Draw keypoints
+    kp_tokens = tokens[5:]
+    for i in range(0, len(kp_tokens), 3):
+        if i + 2 >= len(kp_tokens):
+            break
+        kx = float(kp_tokens[i]) * img_w
+        ky = float(kp_tokens[i + 1]) * img_h
+        vis = int(float(kp_tokens[i + 2]))
+        if vis > 0:
+            color = (0, 0, 255) if i == 0 else (0, 255, 0)
+            cv2.circle(image, (int(kx), int(ky)), 4, color, -1)
+
+
 @pseudo_label_group.command("assemble")
 @click.option(
     "--run-dir",
@@ -739,6 +959,12 @@ def _yaml_dump(data: dict) -> str:
     help="Max frames per curvature bin (None = no limit).",
 )
 @click.option(
+    "--max-frames",
+    default=None,
+    type=int,
+    help="Hard cap on total pseudo-label images after all filtering. Uniform random subsample.",
+)
+@click.option(
     "--seed",
     default=42,
     type=int,
@@ -758,6 +984,7 @@ def assemble(
     temporal_step: int,
     diversity_bins: int,
     diversity_max_per_bin: int | None,
+    max_frames: int | None,
     seed: int,
 ) -> None:
     """Assemble a YOLO training dataset from manual annotations and pseudo-labels.
@@ -833,6 +1060,7 @@ def assemble(
         pseudo_val_fraction=pseudo_val_fraction,
         seed=seed,
         selected_frames=selected_frames,
+        max_frames=max_frames,
     )
 
     # Print summary

@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.5
 milestone_name: Pseudo-Labeling
-status: unknown
-last_updated: "2026-03-05T20:46:17.000Z"
+status: in-progress
+last_updated: "2026-03-05T20:58:00.000Z"
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 13
-  completed_plans: 11
+  completed_plans: 12
 ---
 
 # Project State
@@ -18,26 +18,26 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-05)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 65 frame selection and dataset assembly
+**Current focus:** Phase 66 training run management
 
 ## Current Position
 
-Phase: 65 (5 of 6 in v3.5 Pseudo-Labeling) -- COMPLETE
-Plan: 3/3 in current phase
-Status: Phase 65 complete (including gap closure). All v3.5 plans executed.
-Last activity: 2026-03-05 - Completed 65-03: Wire frame selection and gap_reason sidecar
+Phase: 66 (6 of 6 in v3.5 Pseudo-Labeling)
+Plan: 1/2 in current phase
+Status: Plan 66-01 complete (run manager + CLI integration). Plan 66-02 (compare command) remaining.
+Last activity: 2026-03-05 - Completed 66-01: Run manager and CLI integration
 
-Progress: [██████████] 100%
+Progress: [████████░░] 92%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7 (v3.5)
-- Average duration: ~10 min
-- Total execution time: ~59 min
+- Total plans completed: 8 (v3.5)
+- Average duration: ~9 min
+- Total execution time: ~65 min
 
 **Recent Trend:**
-- Last 7 plans: 61-01, 61-02, 62-01, 62-02, 65-01, 65-02, 65-03 all completed 2026-03-05
+- Last 8 plans: 61-01, 61-02, 62-01, 62-02, 65-01, 65-02, 65-03, 66-01 all completed 2026-03-05
 - Trend: Stable
 
 ## Accumulated Context
@@ -59,6 +59,9 @@ Recent decisions affecting current work:
 - v3.5 Phase 65: Multi-run filename collision resolved by run_dir.name prefix
 - v3.5 Phase 65: Frame index parsed from first 6 chars of stem; runs not in selected_frames kept unfiltered
 - v3.5 Phase 65: Dominant gap_reason via Counter.most_common for sidecar metadata
+- v3.5 Phase 66: yaml.safe_load for project config in run_manager (no engine imports, boundary compliant)
+- v3.5 Phase 66: summary.json schema with run_id, metrics, provenance, training_config
+- v3.5 Phase 66: xfail marker for compare command test (anticipating Plan 66-02)
 
 ### Pending Todos
 
@@ -78,5 +81,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Completed 65-03-PLAN.md
+Stopped at: Completed 66-01-PLAN.md
 Resume file: None

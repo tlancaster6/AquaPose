@@ -294,6 +294,7 @@ def assemble_dataset(
     pseudo_val_fraction: float,
     seed: int,
     selected_frames: dict[str, set[int]] | None = None,
+    max_frames: int | None = None,
 ) -> dict:
     """Assemble a YOLO-format training dataset from manual + pseudo-labels.
 
@@ -317,6 +318,9 @@ def assemble_dataset(
             (first 6 chars of stem parsed as int) is in the allowed set
             for that run are included. Runs not in the dict are unfiltered.
             When None, all pseudo-labels are included.
+        max_frames: Hard cap on total pseudo-label images. When the
+            filtered pool exceeds this, a uniform random subsample is
+            taken. Manual annotations are not affected. None means no cap.
 
     Returns:
         Summary dict with counts per category.
@@ -377,8 +381,20 @@ def assemble_dataset(
         consensus_labels = _filter_by_frames(consensus_labels, selected_frames)
         gap_labels = _filter_by_frames(gap_labels, selected_frames)
 
-    # --- Combine and split pseudo-labels ---
+    # --- Combine pseudo-labels and apply max_frames cap ---
     all_pseudo = consensus_labels + gap_labels
+
+    if max_frames is not None and len(all_pseudo) > max_frames:
+        import numpy as np
+
+        rng = np.random.default_rng(seed)
+        indices = rng.choice(len(all_pseudo), size=max_frames, replace=False)
+        indices.sort()
+        all_pseudo = [all_pseudo[i] for i in indices]
+        logger.info(
+            "Applied max_frames cap: %d -> %d pseudo-labels", len(consensus_labels) + len(gap_labels), max_frames
+        )
+
     pseudo_train, pseudo_val = split_pseudo_val(all_pseudo, pseudo_val_fraction, seed)
 
     # --- Copy pseudo-label train ---

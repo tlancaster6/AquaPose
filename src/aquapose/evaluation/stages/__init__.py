@@ -14,6 +14,8 @@ from aquapose.evaluation.stages.reconstruction import (
 )
 from aquapose.evaluation.stages.reconstruction import (
     ReconstructionMetrics,
+    ZDenoisingMetrics,
+    compute_z_denoising_metrics,
     evaluate_reconstruction,
 )
 from aquapose.evaluation.stages.tracking import TrackingMetrics, evaluate_tracking
@@ -26,6 +28,8 @@ __all__ = [
     "MidlineMetrics",
     "ReconstructionMetrics",
     "TrackingMetrics",
+    "ZDenoisingMetrics",
+    "compute_z_denoising_metrics",
     "evaluate_association",
     "evaluate_detection",
     "evaluate_midline",

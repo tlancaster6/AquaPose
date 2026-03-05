@@ -7,14 +7,15 @@ import itertools
 
 import numpy as np
 import pytest
-from aquapose.evaluation.stages.reconstruction import (
-    DEFAULT_GRID,
-    ReconstructionMetrics,
-    evaluate_reconstruction,
-)
 
 from aquapose.core.types.reconstruction import Midline3D
 from aquapose.evaluation.metrics import Tier1Result, Tier2Result
+from aquapose.evaluation.stages.reconstruction import (
+    DEFAULT_GRID,
+    ReconstructionMetrics,
+    compute_z_denoising_metrics,
+    evaluate_reconstruction,
+)
 
 # ---------------------------------------------------------------------------
 # Helper: build a synthetic Midline3D
@@ -386,3 +387,90 @@ def test_no_engine_imports_in_reconstruction_evaluator() -> None:
                         engine_imports.append(alias.name)
 
     assert not engine_imports, f"Found engine imports: {engine_imports}"
+
+
+# ---------------------------------------------------------------------------
+# Z-denoising metrics
+# ---------------------------------------------------------------------------
+
+
+def _make_midline3d_with_cp(
+    fish_id: int,
+    frame_index: int,
+    z_offset: float = 0.5,
+    z_noise: float = 0.0,
+) -> Midline3D:
+    """Build a Midline3D with specific control points for z-denoising tests.
+
+    Control points form a line in x with z = z_offset + noise.
+    """
+    rng = np.random.default_rng(seed=fish_id * 1000 + frame_index)
+    cp = np.zeros((7, 3), dtype=np.float32)
+    cp[:, 0] = np.linspace(0.0, 0.1, 7)  # x variation
+    cp[:, 2] = z_offset + rng.standard_normal(7).astype(np.float32) * z_noise
+    knots = np.array([0, 0, 0, 0, 0.25, 0.5, 0.75, 1, 1, 1, 1], dtype=np.float32)
+    return Midline3D(
+        fish_id=fish_id,
+        frame_index=frame_index,
+        control_points=cp,
+        knots=knots,
+        degree=3,
+        arc_length=0.1,
+        half_widths=np.zeros(15, dtype=np.float32),
+        n_cameras=3,
+        mean_residual=1.0,
+        max_residual=2.0,
+    )
+
+
+def test_z_denoising_metrics_empty() -> None:
+    """Empty input returns zeroed metrics."""
+    result = compute_z_denoising_metrics([])
+    assert result.total_fish == 0
+    assert result.median_z_range_cm == 0.0
+    assert result.mean_z_profile_rms_cm == 0.0
+
+
+def test_z_denoising_metrics_flat_fish() -> None:
+    """Fish with no z-noise has near-zero z-range."""
+    frame_results = [
+        (i, {0: _make_midline3d_with_cp(0, i, z_offset=0.5, z_noise=0.0)})
+        for i in range(10)
+    ]
+    result = compute_z_denoising_metrics(frame_results)
+    assert result.total_fish == 1
+    # With zero noise control points, z-range should be very small
+    assert result.median_z_range_cm < 0.1
+
+
+def test_z_denoising_metrics_noisy_fish() -> None:
+    """Fish with z-noise has larger z-range than flat fish."""
+    flat_results = [
+        (i, {0: _make_midline3d_with_cp(0, i, z_offset=0.5, z_noise=0.0)})
+        for i in range(10)
+    ]
+    noisy_results = [
+        (i, {0: _make_midline3d_with_cp(0, i, z_offset=0.5, z_noise=0.01)})
+        for i in range(10)
+    ]
+
+    flat_metrics = compute_z_denoising_metrics(flat_results)
+    noisy_metrics = compute_z_denoising_metrics(noisy_results)
+
+    assert noisy_metrics.median_z_range_cm > flat_metrics.median_z_range_cm
+
+
+def test_z_denoising_metrics_to_dict() -> None:
+    """ZDenoisingMetrics.to_dict returns JSON-serializable dict."""
+    result = compute_z_denoising_metrics([])
+    d = result.to_dict()
+    assert isinstance(d, dict)
+    assert isinstance(d["median_z_range_cm"], float)
+    assert isinstance(d["total_fish"], int)
+    assert d["residual_delta_px"] is None
+
+
+def test_z_denoising_metrics_residual_delta_passthrough() -> None:
+    """residual_delta_px is passed through to the result."""
+    result = compute_z_denoising_metrics([], residual_delta_px=0.42)
+    assert result.residual_delta_px == pytest.approx(0.42)

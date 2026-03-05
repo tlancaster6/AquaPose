@@ -31,9 +31,9 @@ Requirements for performance optimization milestone. Each maps to roadmap phases
 
 ### Validation
 
-- [ ] **VAL-01**: Post-optimization pipeline completes a single-chunk diagnostic run on the same YH workload as the pre-optimization baseline
-- [ ] **VAL-02**: Per-stage timing comparison report documents speedup ratios for all optimized stages
-- [ ] **VAL-03**: Eval correctness check confirms no regressions beyond floating-point tolerance
+- [x] **VAL-01**: Post-optimization pipeline completes a single-chunk diagnostic run on the same YH workload as the pre-optimization baseline
+- [x] **VAL-02**: Per-stage timing comparison report documents speedup ratios for all optimized stages
+- [x] **VAL-03**: Eval correctness check confirms no regressions beyond floating-point tolerance
 
 ## Future Requirements
 
@@ -64,9 +64,9 @@ None — this is a focused optimization milestone.
 | BATCH-02 | Phase 59 | Complete |
 | BATCH-03 | Phase 59 | Complete |
 | BATCH-04 | Phase 59 | Complete |
-| VAL-01 | Phase 60 | Pending |
-| VAL-02 | Phase 60 | Pending |
-| VAL-03 | Phase 60 | Pending |
+| VAL-01 | Phase 60 | Complete |
+| VAL-02 | Phase 60 | Complete |
+| VAL-03 | Phase 60 | Complete |
 
 **Coverage:**
 - v3.4 requirements: 13 total

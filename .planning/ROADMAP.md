@@ -163,7 +163,7 @@ Full details: `.planning/milestones/v3.4-ROADMAP.md`
 **Milestone Goal:** Use pipeline 3D reconstructions to generate training labels at scale, enabling iterative model retraining to improve detection and pose estimation quality.
 
 - [x] **Phase 61: Z-Denoising** - Plane projection and temporal smoothing to clean z-noise from 3D reconstructions (completed 2026-03-05)
-- [ ] **Phase 62: Prep Infrastructure** - CLI wiring for calibrate-keypoints and LUT generation extraction
+- [x] **Phase 62: Prep Infrastructure** - CLI wiring for calibrate-keypoints and LUT generation extraction (completed 2026-03-05)
 - [ ] **Phase 63: Pseudo-Label Generation (Source A)** - Reproject consensus 3D reconstructions into camera views as training labels
 - [ ] **Phase 64: Gap Detection and Fill (Source B)** - Identify and label detection gaps via inverse LUT visibility cross-referencing
 - [ ] **Phase 65: Frame Selection and Dataset Assembly** - Temporal subsampling, pose-diversity sampling, and pooled dataset construction
@@ -197,8 +197,8 @@ Plans:
   4. AssociationStage requires pre-generated LUTs as input and fails fast if missing (lazy generation removed)
 **Plans:** 2 plans
 Plans:
-- [ ] 62-01-PLAN.md — Rework calibrate-keypoints CLI, fail-fast enforcement, init-config reminders
-- [ ] 62-02-PLAN.md — Add generate-luts CLI, remove lazy LUT generation, early pipeline validation
+- [x] 62-01-PLAN.md — Rework calibrate-keypoints CLI, fail-fast enforcement, init-config reminders
+- [x] 62-02-PLAN.md — Add generate-luts CLI, remove lazy LUT generation, early pipeline validation
 
 ### Phase 63: Pseudo-Label Generation (Source A)
 **Goal**: Users can generate high-confidence OBB and pose training labels from consensus 3D reconstructions
@@ -260,7 +260,7 @@ Phases execute in numeric order: 61 -> 62 -> 63 -> 64 -> 65 -> 66
 | 51-55 | v3.3 | 11/11 | Complete | 2026-03-05 |
 | 56-60 | v3.4 | 8/8 | Complete | 2026-03-05 |
 | 61. Z-Denoising | 2/2 | Complete    | 2026-03-05 | - |
-| 62. Prep Infrastructure | v3.5 | 0/2 | Planning | - |
+| 62. Prep Infrastructure | v3.5 | 2/2 | Complete | 2026-03-05 |
 | 63. Pseudo-Label Generation (Source A) | v3.5 | 0/? | Not started | - |
 | 64. Gap Detection and Fill (Source B) | v3.5 | 0/? | Not started | - |
 | 65. Frame Selection and Dataset Assembly | v3.5 | 0/? | Not started | - |

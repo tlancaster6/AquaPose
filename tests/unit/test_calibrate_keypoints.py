@@ -149,6 +149,89 @@ class TestCalibrateKeypointsConfig:
         assert "keypoint_t_values" in updated["midline"]
 
 
+class TestCalibrateKeypointsYolo:
+    """Test calibrate-keypoints with YOLO-format label directories."""
+
+    @pytest.fixture
+    def yolo_labels_dir(self, tmp_path: Path) -> Path:
+        """Create a YOLO label directory with train/ and val/ subdirs."""
+        # Evenly spaced keypoints along x-axis (normalized coords)
+        # class cx cy w h x1 y1 v1 x2 y2 v2 ... (6 keypoints)
+        kps = " ".join(f"{x:.4f} 0.5 2" for x in [0.1, 0.28, 0.46, 0.64, 0.82, 1.0])
+        line = f"0 0.5 0.5 0.8 0.3 {kps}"
+
+        train_dir = tmp_path / "labels" / "train"
+        train_dir.mkdir(parents=True)
+        (train_dir / "img001.txt").write_text(line + "\n")
+        (train_dir / "img002.txt").write_text(line + "\n")
+
+        val_dir = tmp_path / "labels" / "val"
+        val_dir.mkdir(parents=True)
+        (val_dir / "img003.txt").write_text(line + "\n")
+
+        return tmp_path / "labels"
+
+    def test_yolo_labels_detected_and_parsed(
+        self, yolo_labels_dir: Path, config_yaml: Path
+    ) -> None:
+        """Directory input auto-detects YOLO format and computes t-values."""
+        runner = CliRunner()
+        result = runner.invoke(
+            prep_group,
+            [
+                "calibrate-keypoints",
+                "--annotations",
+                str(yolo_labels_dir),
+                "--config",
+                str(config_yaml),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "YOLO" in result.output
+
+        updated = yaml.safe_load(config_yaml.read_text())
+        t_values = updated["midline"]["keypoint_t_values"]
+        assert len(t_values) == 6
+        assert t_values[0] == pytest.approx(0.0, abs=0.01)
+        assert t_values[-1] == pytest.approx(1.0, abs=0.01)
+
+    def test_yolo_processes_all_subdirs(
+        self, yolo_labels_dir: Path, config_yaml: Path
+    ) -> None:
+        """YOLO mode recurses into train/ and val/ subdirectories."""
+        runner = CliRunner()
+        result = runner.invoke(
+            prep_group,
+            [
+                "calibrate-keypoints",
+                "--annotations",
+                str(yolo_labels_dir),
+                "--config",
+                str(config_yaml),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "Processed 3 annotations" in result.output
+
+    def test_yolo_empty_dir_fails(self, tmp_path: Path, config_yaml: Path) -> None:
+        """YOLO mode with empty directory reports error."""
+        empty_dir = tmp_path / "empty_labels"
+        empty_dir.mkdir()
+        runner = CliRunner()
+        result = runner.invoke(
+            prep_group,
+            [
+                "calibrate-keypoints",
+                "--annotations",
+                str(empty_dir),
+                "--config",
+                str(config_yaml),
+            ],
+        )
+        assert result.exit_code != 0
+        assert "No valid keypoint annotations" in result.output
+
+
 class TestPoseEstimationBackendFailFast:
     """Test PoseEstimationBackend raises when keypoint_t_values is None."""
 

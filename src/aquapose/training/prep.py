@@ -40,12 +40,126 @@ def prep_group() -> None:
     """Prepare calibration data and derived configuration."""
 
 
+def _parse_keypoints_coco(
+    annotations_path: Path, n_keypoints: int
+) -> list[list[tuple[float, float]]]:
+    """Parse keypoint instances from a COCO JSON file.
+
+    Returns a list of instances, each a list of (x, y) tuples with NaN for
+    invisible keypoints.
+    """
+    with annotations_path.open() as fh:
+        coco = json.load(fh)
+
+    instances: list[list[tuple[float, float]]] = []
+    for ann in coco.get("annotations", []):
+        raw_kps = ann.get("keypoints")
+        if not raw_kps:
+            continue
+        # COCO keypoints: [x, y, v, x, y, v, ...]
+        points: list[tuple[float, float]] = []
+        for k in range(n_keypoints):
+            base = k * 3
+            if base + 2 >= len(raw_kps):
+                break
+            x, y, v = raw_kps[base], raw_kps[base + 1], raw_kps[base + 2]
+            if v > 0:
+                points.append((float(x), float(y)))
+            else:
+                points.append((float("nan"), float("nan")))
+        instances.append(points)
+    return instances
+
+
+def _parse_keypoints_yolo(
+    labels_dir: Path, n_keypoints: int
+) -> list[list[tuple[float, float]]]:
+    """Parse keypoint instances from a directory of YOLO label txt files.
+
+    Recurses through subdirectories (e.g. train/, val/) to find all .txt
+    files. YOLO pose format per line:
+    ``class cx cy w h x1 y1 v1 x2 y2 v2 ...``
+    where coordinates are normalized [0, 1].
+    """
+    txt_files = sorted(labels_dir.rglob("*.txt"))
+    instances: list[list[tuple[float, float]]] = []
+    for txt_path in txt_files:
+        for line in txt_path.read_text().splitlines():
+            parts = line.strip().split()
+            if len(parts) < 5 + n_keypoints * 3:
+                continue
+            # Skip class + bbox (5 values), then parse keypoints
+            kp_values = parts[5:]
+            points: list[tuple[float, float]] = []
+            for k in range(n_keypoints):
+                base = k * 3
+                x, y, v = (
+                    float(kp_values[base]),
+                    float(kp_values[base + 1]),
+                    float(kp_values[base + 2]),
+                )
+                if v > 0:
+                    points.append((x, y))
+                else:
+                    points.append((float("nan"), float("nan")))
+            instances.append(points)
+    return instances
+
+
+def _compute_t_values(
+    instances: list[list[tuple[float, float]]], n_keypoints: int
+) -> tuple[list[float], int]:
+    """Compute mean arc-length t-values from keypoint instances.
+
+    Args:
+        instances: List of keypoint instances (each a list of (x, y) tuples).
+        n_keypoints: Expected number of keypoints per instance.
+
+    Returns:
+        Tuple of (t_values_list, n_processed).
+    """
+    all_t_values: list[list[float]] = []
+    n_processed = 0
+
+    for points in instances:
+        if len(points) < 2:
+            continue
+
+        visible_indices = [i for i, (x, _) in enumerate(points) if not np.isnan(x)]
+        if len(visible_indices) < 2:
+            continue
+
+        visible_pts = np.array([points[i] for i in visible_indices], dtype=np.float64)
+        diffs = np.diff(visible_pts, axis=0)
+        dists = np.sqrt((diffs**2).sum(axis=1))
+        cumulative = np.concatenate([[0.0], np.cumsum(dists)])
+        total_length = cumulative[-1]
+
+        if total_length < 1e-6:
+            continue
+
+        t_per_annotation = [float("nan")] * n_keypoints
+        for j, idx in enumerate(visible_indices):
+            t_per_annotation[idx] = cumulative[j] / total_length
+
+        all_t_values.append(t_per_annotation)
+        n_processed += 1
+
+    if n_processed == 0:
+        return [], 0
+
+    t_array = np.array(all_t_values, dtype=np.float64)
+    mean_t = np.nanmean(t_array, axis=0)
+    mean_t = np.clip(mean_t, 0.0, 1.0)
+    return [round(float(t), 4) for t in mean_t], n_processed
+
+
 @prep_group.command("calibrate-keypoints")
 @click.option(
     "--annotations",
     required=True,
     type=click.Path(exists=True),
-    help="Path to COCO keypoint annotations JSON.",
+    help="Path to COCO JSON file or directory of YOLO label txt files.",
 )
 @click.option(
     "--config",
@@ -60,93 +174,46 @@ def prep_group() -> None:
     help="Number of anatomical keypoints.",
 )
 def calibrate_keypoints(annotations: str, config: str, n_keypoints: int) -> None:
-    """Compute keypoint t-values from COCO keypoint annotations.
+    """Compute keypoint t-values from keypoint annotations.
 
-    Reads a COCO-format JSON with keypoint annotations and computes the
-    arc-length fraction (t-value) for each anatomical keypoint, averaged
-    across all annotated instances. The resulting t-values represent each
-    keypoint's position along the fish body curve (0.0 = nose, 1.0 = tail).
+    Auto-detects annotation format: if ``--annotations`` points to a JSON
+    file, reads COCO format. If it points to a directory, reads YOLO-format
+    txt labels (recursing through subdirectories like train/ and val/).
+
+    Computes the arc-length fraction (t-value) for each anatomical keypoint,
+    averaged across all annotated instances. The resulting t-values represent
+    each keypoint's position along the fish body curve (0.0 = nose, 1.0 = tail).
 
     Updates the pipeline config YAML in place, setting
     ``midline.keypoint_t_values`` to the computed values.
 
     Args:
-        annotations: Path to COCO keypoint annotations JSON.
+        annotations: Path to COCO JSON file or directory of YOLO label txts.
         config: Path to pipeline config YAML to update in place.
         n_keypoints: Number of anatomical keypoints expected per annotation.
     """
     annotations_path = Path(annotations)
     config_path = Path(config)
 
-    with annotations_path.open() as fh:
-        coco = json.load(fh)
+    if annotations_path.is_dir():
+        click.echo(f"Detected YOLO label directory: {annotations_path}")
+        instances = _parse_keypoints_yolo(annotations_path, n_keypoints)
+    elif annotations_path.suffix.lower() == ".json":
+        click.echo(f"Detected COCO JSON file: {annotations_path}")
+        instances = _parse_keypoints_coco(annotations_path, n_keypoints)
+    else:
+        raise click.ClickException(
+            f"Cannot detect annotation format for {annotations_path}. "
+            "Provide a .json file (COCO) or a directory (YOLO labels)."
+        )
 
-    # Collect per-keypoint t-values across all annotations
-    all_t_values: list[list[float]] = []
-    n_processed = 0
-
-    for ann in coco.get("annotations", []):
-        raw_kps = ann.get("keypoints")
-        if not raw_kps:
-            continue
-
-        # COCO keypoints: [x, y, v, x, y, v, ...]
-        # Extract visible keypoints (v > 0)
-        points: list[tuple[float, float]] = []
-        for k in range(n_keypoints):
-            base = k * 3
-            if base + 2 >= len(raw_kps):
-                break
-            x, y, v = raw_kps[base], raw_kps[base + 1], raw_kps[base + 2]
-            if v > 0:
-                points.append((float(x), float(y)))
-            else:
-                # Use NaN to mark invisible keypoints
-                points.append((float("nan"), float("nan")))
-
-        if len(points) < 2:
-            continue
-
-        # Compute arc-length fractions for visible keypoints only
-        # Build sequence of positions for visible keypoints
-        visible_indices = [i for i, (x, _) in enumerate(points) if not np.isnan(x)]
-
-        if len(visible_indices) < 2:
-            continue
-
-        visible_pts = np.array([points[i] for i in visible_indices], dtype=np.float64)
-
-        # Compute cumulative arc length between consecutive visible keypoints
-        diffs = np.diff(visible_pts, axis=0)
-        dists = np.sqrt((diffs**2).sum(axis=1))
-        cumulative = np.concatenate([[0.0], np.cumsum(dists)])
-        total_length = cumulative[-1]
-
-        if total_length < 1e-6:
-            continue
-
-        # Assign t-values by visible keypoint index in [0, 1]
-        # Fill full t-value array with NaN for invisible keypoints
-        t_per_annotation = [float("nan")] * n_keypoints
-        for j, idx in enumerate(visible_indices):
-            t_per_annotation[idx] = cumulative[j] / total_length
-
-        all_t_values.append(t_per_annotation)
-        n_processed += 1
+    t_values_list, n_processed = _compute_t_values(instances, n_keypoints)
 
     if n_processed == 0:
         raise click.ClickException(
             f"No valid keypoint annotations found in {annotations_path}. "
             "Ensure annotations have keypoints with visibility > 0."
         )
-
-    # Average t-values across all annotations (ignoring NaN)
-    t_array = np.array(all_t_values, dtype=np.float64)
-    mean_t = np.nanmean(t_array, axis=0)
-
-    # Clip to [0, 1] and round for readability
-    mean_t = np.clip(mean_t, 0.0, 1.0)
-    t_values_list = [round(float(t), 4) for t in mean_t]
 
     # Update pipeline config YAML in place
     with config_path.open() as fh:

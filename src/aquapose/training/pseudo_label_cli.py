@@ -11,7 +11,11 @@ import click
 import cv2
 import numpy as np
 
-from aquapose.training.pseudo_labels import generate_fish_labels
+from aquapose.training.pseudo_labels import (
+    detect_gaps,
+    generate_fish_labels,
+    generate_gap_fish_labels,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +27,22 @@ class PseudoLabelConfig:
     lateral_pad: float = 40.0
     max_camera_residual_px: float = 15.0
     edge_factor: float = 2.0
+
+
+class _LutConfigFromDict:
+    """Minimal LUT config satisfying the ``LutConfigLike`` protocol.
+
+    Built from a plain dict (YAML ``lut`` section) to avoid importing
+    ``aquapose.engine.config`` (which would violate the training->engine
+    import boundary). Pattern established in ``training/prep.py``.
+    """
+
+    def __init__(self, d: dict) -> None:
+        self.tank_diameter: float = float(d.get("tank_diameter", 1.0))
+        self.tank_height: float = float(d.get("tank_height", 0.5))
+        self.voxel_resolution_m: float = float(d.get("voxel_resolution_m", 0.01))
+        self.margin_fraction: float = float(d.get("margin_fraction", 0.1))
+        self.forward_grid_step: int = int(d.get("forward_grid_step", 4))
 
 
 @click.group("pseudo-label")
@@ -51,17 +71,47 @@ def pseudo_label_group() -> None:
     type=float,
     default=15.0,
     show_default=True,
-    help="Per-camera residual threshold in pixels.",
+    help="Per-camera residual threshold in pixels (consensus only).",
 )
-def generate(config_path: str, lateral_pad: float, max_camera_residual: float) -> None:
+@click.option(
+    "--consensus",
+    is_flag=True,
+    default=False,
+    help="Generate Source A consensus labels.",
+)
+@click.option(
+    "--gaps",
+    is_flag=True,
+    default=False,
+    help="Generate Source B gap-fill labels.",
+)
+@click.option(
+    "--min-cameras",
+    type=int,
+    default=3,
+    show_default=True,
+    help="Minimum contributing cameras before gap detection activates.",
+)
+def generate(
+    config_path: str,
+    lateral_pad: float,
+    max_camera_residual: float,
+    consensus: bool,
+    gaps: bool,
+    min_cameras: int,
+) -> None:
     """Generate YOLO OBB and pose pseudo-labels from diagnostic caches.
 
     Reads a pipeline run's frozen config, loads diagnostic caches containing
     3D midline reconstructions, reprojects them into camera views, extracts
     video frames, and writes YOLO-standard OBB and pose datasets.
+
+    At least one of ``--consensus`` or ``--gaps`` must be specified.
     """
+    if not consensus and not gaps:
+        raise click.ClickException("At least one of --consensus or --gaps is required.")
+
     # Dynamic imports to avoid training->engine import boundary violation
-    # (AST-level boundary check prohibits even lazy `from aquapose.engine` imports)
     import importlib
 
     _engine_config = importlib.import_module("aquapose.engine.config")
@@ -102,6 +152,19 @@ def generate(config_path: str, lateral_pad: float, max_camera_residual: float) -
             "Diagnostic caches contain no 3D midline reconstructions."
         )
 
+    # Fail fast for gaps: need detections and tracks_2d
+    if gaps:
+        if context.detections is None:
+            raise click.ClickException(
+                "Diagnostic caches contain no detections. "
+                "Gap detection requires detection data."
+            )
+        if context.tracks_2d is None:
+            raise click.ClickException(
+                "Diagnostic caches contain no 2D tracks. "
+                "Gap detection requires tracking data."
+            )
+
     # 5. Load calibration
     calibration = load_calibration_data(pipeline_config.calibration_path)
 
@@ -120,21 +183,61 @@ def generate(config_path: str, lateral_pad: float, max_camera_residual: float) -
             n_water=calibration.n_water,
         )
 
-    # 7. Create output directories
+    # 7. Load InverseLUT if gaps mode is active
+    inverse_lut = None
+    if gaps:
+        _luts_mod = importlib.import_module("aquapose.calibration.luts")
+        load_inverse_luts = _luts_mod.load_inverse_luts
+
+        # Build LUT config from frozen config's lut section
+        lut_raw = pipeline_config.lut.__dict__
+        lut_config = _LutConfigFromDict(lut_raw)
+        inverse_lut = load_inverse_luts(pipeline_config.calibration_path, lut_config)
+        if inverse_lut is None:
+            raise click.ClickException(
+                "Failed to load InverseLUT. Run 'aquapose prep generate-luts' first."
+            )
+
+        # Pre-build frame-to-tracklet index per camera for O(1) lookup
+        frame_tracklet_index: dict[str, dict[int, list]] = {}
+        assert context.tracks_2d is not None  # validated above
+        for cam_id, tracklets in context.tracks_2d.items():
+            cam_index: dict[int, list] = {}
+            for tracklet in tracklets:
+                for frame_i in tracklet.frames:
+                    cam_index.setdefault(frame_i, []).append(tracklet)
+            frame_tracklet_index[cam_id] = cam_index
+
+    # 8. Create output directories
     pseudo_dir = run_dir / "pseudo_labels"
-    obb_images_dir = pseudo_dir / "obb" / "images" / "train"
-    obb_labels_dir = pseudo_dir / "obb" / "labels" / "train"
-    pose_images_dir = pseudo_dir / "pose" / "images" / "train"
-    pose_labels_dir = pseudo_dir / "pose" / "labels" / "train"
 
-    for d in [obb_images_dir, obb_labels_dir, pose_images_dir, pose_labels_dir]:
-        d.mkdir(parents=True, exist_ok=True)
+    # Consensus directories
+    cons_obb_images = pseudo_dir / "consensus" / "obb" / "images" / "train"
+    cons_obb_labels = pseudo_dir / "consensus" / "obb" / "labels" / "train"
+    cons_pose_images = pseudo_dir / "consensus" / "pose" / "images" / "train"
+    cons_pose_labels = pseudo_dir / "consensus" / "pose" / "labels" / "train"
+    if consensus:
+        for d in [cons_obb_images, cons_obb_labels, cons_pose_images, cons_pose_labels]:
+            d.mkdir(parents=True, exist_ok=True)
 
-    # 8. Iterate frames and generate labels
-    confidence_sidecar: dict[str, dict] = {}
-    total_images = 0
-    total_labels = 0
-    confidence_values: list[float] = []
+    # Gap directories
+    gap_obb_images = pseudo_dir / "gap" / "obb" / "images" / "train"
+    gap_obb_labels = pseudo_dir / "gap" / "obb" / "labels" / "train"
+    gap_pose_images = pseudo_dir / "gap" / "pose" / "images" / "train"
+    gap_pose_labels = pseudo_dir / "gap" / "pose" / "labels" / "train"
+    if gaps:
+        for d in [gap_obb_images, gap_obb_labels, gap_pose_images, gap_pose_labels]:
+            d.mkdir(parents=True, exist_ok=True)
+
+    # 9. Iterate frames and generate labels
+    cons_confidence: dict[str, dict] = {}
+    gap_confidence: dict[str, dict] = {}
+    cons_images_count = 0
+    cons_labels_count = 0
+    gap_images_count = 0
+    gap_labels_count = 0
+    cons_confidence_values: list[float] = []
+    gap_confidence_values: list[float] = []
 
     n_keypoints = len(keypoint_t_values)
 
@@ -144,141 +247,271 @@ def generate(config_path: str, lateral_pad: float, max_camera_residual: float) -
     ) as frame_source:
         n_frames = len(context.midlines_3d)
         click.echo(f"Processing {n_frames} frames across {len(proj_models)} cameras...")
+        if consensus:
+            click.echo("  Generating consensus (Source A) labels")
+        if gaps:
+            click.echo("  Generating gap (Source B) labels")
 
         for frame_idx, fish_dict in enumerate(context.midlines_3d):
             if not fish_dict:
                 continue
 
-            # Collect labels per (frame_idx, cam_id)
-            image_labels: dict[
-                str, dict
-            ] = {}  # cam_id -> {obb_lines, pose_lines, conf_entries}
+            # Collect labels per (frame_idx, cam_id) for consensus
+            cons_image_labels: dict[str, dict] = {}
+            # Collect labels per (frame_idx, cam_id) for gap
+            gap_image_labels: dict[str, dict] = {}
 
             for fish_id, midline in fish_dict.items():
-                if midline.per_camera_residuals is None:
-                    continue
+                # --- Consensus path ---
+                if consensus and midline.per_camera_residuals is not None:
+                    for cam_id in midline.per_camera_residuals:
+                        if cam_id not in proj_models:
+                            continue
 
-                for cam_id in midline.per_camera_residuals:
-                    if cam_id not in proj_models:
-                        continue
+                        cam_data = calibration.cameras[cam_id]
+                        img_w, img_h = cam_data.image_size
 
-                    cam_data = calibration.cameras[cam_id]
-                    img_w, img_h = cam_data.image_size
+                        result = generate_fish_labels(
+                            midline=midline,
+                            projection_model=proj_models[cam_id],
+                            img_w=img_w,
+                            img_h=img_h,
+                            keypoint_t_values=keypoint_t_values,
+                            lateral_pad=lateral_pad,
+                            max_camera_residual_px=max_camera_residual,
+                            camera_id=cam_id,
+                        )
 
-                    result = generate_fish_labels(
-                        midline=midline,
-                        projection_model=proj_models[cam_id],
-                        img_w=img_w,
-                        img_h=img_h,
-                        keypoint_t_values=keypoint_t_values,
-                        lateral_pad=lateral_pad,
-                        max_camera_residual_px=max_camera_residual,
-                        camera_id=cam_id,
+                        if result is None:
+                            continue
+
+                        if cam_id not in cons_image_labels:
+                            cons_image_labels[cam_id] = {
+                                "obb_lines": [],
+                                "pose_lines": [],
+                                "conf_entries": [],
+                            }
+
+                        cons_image_labels[cam_id]["obb_lines"].append(
+                            result["obb_line"]
+                        )
+                        cons_image_labels[cam_id]["pose_lines"].append(
+                            result["pose_line"]
+                        )
+                        cons_image_labels[cam_id]["conf_entries"].append(
+                            {
+                                "fish_id": int(fish_id),
+                                "confidence": result["confidence"],
+                                "raw_metrics": result["raw_metrics"],
+                            }
+                        )
+
+                # --- Gap path ---
+                if gaps and inverse_lut is not None:
+                    # Build frame-specific tracklet lookup for this frame
+                    frame_tracks_for_frame: dict[str, list] = {}
+                    for cam_id_t, cam_index in frame_tracklet_index.items():
+                        tracklets_at_frame = cam_index.get(frame_idx, [])
+                        if tracklets_at_frame:
+                            frame_tracks_for_frame[cam_id_t] = tracklets_at_frame
+
+                    frame_dets = (
+                        context.detections[frame_idx]
+                        if context.detections is not None
+                        else {}
                     )
 
-                    if result is None:
-                        continue
-
-                    if cam_id not in image_labels:
-                        image_labels[cam_id] = {
-                            "obb_lines": [],
-                            "pose_lines": [],
-                            "conf_entries": [],
-                        }
-
-                    image_labels[cam_id]["obb_lines"].append(result["obb_line"])
-                    image_labels[cam_id]["pose_lines"].append(result["pose_line"])
-                    image_labels[cam_id]["conf_entries"].append(
-                        {
-                            "fish_id": int(fish_id),
-                            "confidence": result["confidence"],
-                            "raw_metrics": result["raw_metrics"],
-                        }
+                    gap_list = detect_gaps(
+                        midline,
+                        inverse_lut,
+                        proj_models,
+                        frame_dets,
+                        frame_tracks_for_frame,
+                        min_cameras=min_cameras,
                     )
 
-            if not image_labels:
+                    for cam_id, reason in gap_list:
+                        if cam_id not in proj_models:
+                            continue
+
+                        cam_data = calibration.cameras[cam_id]
+                        img_w, img_h = cam_data.image_size
+
+                        gap_result = generate_gap_fish_labels(
+                            midline=midline,
+                            projection_model=proj_models[cam_id],
+                            img_w=img_w,
+                            img_h=img_h,
+                            keypoint_t_values=keypoint_t_values,
+                            lateral_pad=lateral_pad,
+                        )
+
+                        if gap_result is None:
+                            continue
+
+                        if cam_id not in gap_image_labels:
+                            gap_image_labels[cam_id] = {
+                                "obb_lines": [],
+                                "pose_lines": [],
+                                "conf_entries": [],
+                            }
+
+                        gap_image_labels[cam_id]["obb_lines"].append(
+                            gap_result["obb_line"]
+                        )
+                        gap_image_labels[cam_id]["pose_lines"].append(
+                            gap_result["pose_line"]
+                        )
+                        gap_image_labels[cam_id]["conf_entries"].append(
+                            {
+                                "fish_id": int(fish_id),
+                                "confidence": gap_result["confidence"],
+                                "raw_metrics": gap_result["raw_metrics"],
+                                "gap_reason": reason,
+                                "n_source_cameras": midline.n_cameras,
+                            }
+                        )
+
+            # Determine which cameras need frame images
+            cams_needing_frames = set(cons_image_labels.keys()) | set(
+                gap_image_labels.keys()
+            )
+            if not cams_needing_frames:
                 continue
 
-            # Read frame images (only if we have labels for this frame)
+            # Read frame images once (shared between consensus and gap)
             try:
                 frames = frame_source.read_frame(frame_idx)
             except Exception:
                 logger.warning("Failed to read frame %d, skipping", frame_idx)
                 continue
 
-            # Write images and labels
-            for cam_id, labels in image_labels.items():
+            # Write consensus images and labels
+            for cam_id, labels in cons_image_labels.items():
                 if cam_id not in frames:
                     continue
 
                 image_name = f"{frame_idx:06d}_{cam_id}"
 
-                # Save image
-                img_path = obb_images_dir / f"{image_name}.jpg"
-                cv2.imwrite(str(img_path), frames[cam_id])
-                # Symlink for pose (same image, avoid duplication on disk)
-                pose_img_path = pose_images_dir / f"{image_name}.jpg"
-                if not pose_img_path.exists():
-                    cv2.imwrite(str(pose_img_path), frames[cam_id])
+                cv2.imwrite(str(cons_obb_images / f"{image_name}.jpg"), frames[cam_id])
+                cv2.imwrite(str(cons_pose_images / f"{image_name}.jpg"), frames[cam_id])
 
-                # Write OBB label file
-                obb_label_path = obb_labels_dir / f"{image_name}.txt"
-                obb_label_path.write_text("\n".join(labels["obb_lines"]) + "\n")
+                (cons_obb_labels / f"{image_name}.txt").write_text(
+                    "\n".join(labels["obb_lines"]) + "\n"
+                )
+                (cons_pose_labels / f"{image_name}.txt").write_text(
+                    "\n".join(labels["pose_lines"]) + "\n"
+                )
 
-                # Write pose label file
-                pose_label_path = pose_labels_dir / f"{image_name}.txt"
-                pose_label_path.write_text("\n".join(labels["pose_lines"]) + "\n")
-
-                # Record confidence
-                confidence_sidecar[image_name] = {"labels": labels["conf_entries"]}
-
-                total_images += 1
-                total_labels += len(labels["obb_lines"])
+                cons_confidence[image_name] = {"labels": labels["conf_entries"]}
+                cons_images_count += 1
+                cons_labels_count += len(labels["obb_lines"])
                 for entry in labels["conf_entries"]:
-                    confidence_values.append(entry["confidence"])
+                    cons_confidence_values.append(entry["confidence"])
+
+            # Write gap images and labels
+            for cam_id, labels in gap_image_labels.items():
+                if cam_id not in frames:
+                    continue
+
+                image_name = f"{frame_idx:06d}_{cam_id}"
+
+                cv2.imwrite(str(gap_obb_images / f"{image_name}.jpg"), frames[cam_id])
+                cv2.imwrite(str(gap_pose_images / f"{image_name}.jpg"), frames[cam_id])
+
+                (gap_obb_labels / f"{image_name}.txt").write_text(
+                    "\n".join(labels["obb_lines"]) + "\n"
+                )
+                (gap_pose_labels / f"{image_name}.txt").write_text(
+                    "\n".join(labels["pose_lines"]) + "\n"
+                )
+
+                gap_confidence[image_name] = {"labels": labels["conf_entries"]}
+                gap_images_count += 1
+                gap_labels_count += len(labels["obb_lines"])
+                for entry in labels["conf_entries"]:
+                    gap_confidence_values.append(entry["confidence"])
 
             if (frame_idx + 1) % 100 == 0:
                 click.echo(f"  Frame {frame_idx + 1}/{n_frames}...")
 
-    # 9. Write dataset.yaml for OBB
+    # 10. Write dataset.yaml and confidence.json for each subset
+    if consensus:
+        _write_dataset_yamls(
+            pseudo_dir / "consensus",
+            n_keypoints,
+            cons_confidence,
+            cons_confidence_values,
+        )
+        _write_confidence_json(pseudo_dir / "consensus", cons_confidence)
+
+    if gaps:
+        _write_dataset_yamls(
+            pseudo_dir / "gap", n_keypoints, gap_confidence, gap_confidence_values
+        )
+        _write_confidence_json(pseudo_dir / "gap", gap_confidence)
+
+    # 11. Print summary
+    click.echo("\nPseudo-label generation complete.")
+    if consensus:
+        mean_conf = (
+            float(np.mean(cons_confidence_values)) if cons_confidence_values else 0.0
+        )
+        click.echo(
+            f"  Consensus: {cons_images_count} images, {cons_labels_count} labels, mean confidence {mean_conf:.3f}"
+        )
+    if gaps:
+        mean_conf = (
+            float(np.mean(gap_confidence_values)) if gap_confidence_values else 0.0
+        )
+        click.echo(
+            f"  Gap: {gap_images_count} images, {gap_labels_count} labels, mean confidence {mean_conf:.3f}"
+        )
+    click.echo(f"  Output: {pseudo_dir}")
+
+
+def _write_dataset_yamls(
+    subset_dir: Path,
+    n_keypoints: int,
+    confidence_sidecar: dict[str, dict],
+    confidence_values: list[float],
+) -> None:
+    """Write OBB and pose dataset.yaml files for a subset directory."""
+    # OBB dataset.yaml
     obb_dataset = {
-        "path": str(pseudo_dir / "obb"),
+        "path": str(subset_dir / "obb"),
         "train": "images/train",
         "nc": 1,
         "names": {0: "fish"},
     }
-    (pseudo_dir / "obb" / "dataset.yaml").write_text(
+    (subset_dir / "obb" / "dataset.yaml").write_text(
         _yaml_dump(obb_dataset), encoding="utf-8"
     )
 
-    # 10. Write dataset.yaml for pose
-    # flip_idx: symmetric keypoint pairs (none for fish midline)
-    flip_idx = list(range(n_keypoints))  # identity = no symmetry
+    # Pose dataset.yaml
+    flip_idx = list(range(n_keypoints))
     pose_dataset = {
-        "path": str(pseudo_dir / "pose"),
+        "path": str(subset_dir / "pose"),
         "train": "images/train",
         "nc": 1,
         "names": {0: "fish"},
         "kpt_shape": [n_keypoints, 3],
         "flip_idx": flip_idx,
     }
-    (pseudo_dir / "pose" / "dataset.yaml").write_text(
+    (subset_dir / "pose" / "dataset.yaml").write_text(
         _yaml_dump(pose_dataset), encoding="utf-8"
     )
 
-    # 11. Write confidence sidecar
-    confidence_path = pseudo_dir / "confidence.json"
+
+def _write_confidence_json(
+    subset_dir: Path,
+    confidence_sidecar: dict[str, dict],
+) -> None:
+    """Write confidence.json sidecar for a subset directory."""
+    confidence_path = subset_dir / "confidence.json"
     confidence_path.write_text(
         json.dumps(confidence_sidecar, indent=2), encoding="utf-8"
     )
-
-    # 12. Print summary
-    mean_conf = float(np.mean(confidence_values)) if confidence_values else 0.0
-    click.echo("\nPseudo-label generation complete.")
-    click.echo(f"  Images: {total_images}")
-    click.echo(f"  Labels: {total_labels}")
-    click.echo(f"  Mean confidence: {mean_conf:.3f}")
-    click.echo(f"  Output: {pseudo_dir}")
 
 
 def _yaml_dump(data: dict) -> str:

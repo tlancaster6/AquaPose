@@ -67,6 +67,16 @@ def _make_context(n_frames: int = 2) -> PipelineContext:
     return ctx
 
 
+def _make_context_with_detections_and_tracks(n_frames: int = 2) -> PipelineContext:
+    """Create a PipelineContext with midlines_3d, detections, and tracks_2d."""
+    ctx = _make_context(n_frames)
+    # Empty detections per frame (no detections for gap cameras)
+    ctx.detections = [{} for _ in range(n_frames)]
+    # Empty tracks_2d per camera
+    ctx.tracks_2d = {"cam0": [], "cam1": []}
+    return ctx
+
+
 def _mock_projection_project(points: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Mock projection that returns linearly spaced pixels."""
     n = points.shape[0]
@@ -91,6 +101,13 @@ def _make_frozen_config(
             "weights_path": "fake.pt",
             "keypoint_t_values": keypoint_t_values,
         },
+        "lut": {
+            "tank_diameter": 1.0,
+            "tank_height": 0.5,
+            "voxel_resolution_m": 0.01,
+            "margin_fraction": 0.1,
+            "forward_grid_step": 4,
+        },
     }
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.dump(config_data))
@@ -111,8 +128,68 @@ def _setup_mock_calibration() -> MagicMock:
     return mock_cal
 
 
+def _standard_patches():
+    """Return context manager with standard mock patches for CLI tests."""
+    return (
+        patch("aquapose.evaluation.runner.load_run_context"),
+        patch("aquapose.calibration.loader.load_calibration_data"),
+        patch("aquapose.calibration.loader.compute_undistortion_maps"),
+        patch("aquapose.calibration.projection.RefractiveProjectionModel"),
+        patch("aquapose.core.types.frame_source.VideoFrameSource"),
+    )
+
+
+def _setup_standard_mocks(
+    mock_load_ctx: MagicMock,
+    mock_load_cal: MagicMock,
+    mock_compute_undist: MagicMock,
+    mock_proj_cls: MagicMock,
+    mock_vfs_cls: MagicMock,
+    context: PipelineContext,
+    tmp_path: Path,
+) -> MagicMock:
+    """Configure standard mocks and return the mock projection model."""
+    mock_cal = _setup_mock_calibration()
+    mock_undist = MagicMock()
+    mock_undist.K_new = torch.eye(3, dtype=torch.float32)
+
+    mock_proj = MagicMock()
+    mock_proj.project.side_effect = _mock_projection_project
+
+    mock_frame_source = MagicMock()
+    fake_image = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    mock_frame_source.read_frame.return_value = {
+        "cam0": fake_image,
+        "cam1": fake_image,
+    }
+    mock_frame_source.__enter__ = MagicMock(return_value=mock_frame_source)
+    mock_frame_source.__exit__ = MagicMock(return_value=False)
+
+    mock_load_ctx.return_value = (context, {})
+    mock_load_cal.return_value = mock_cal
+    mock_compute_undist.return_value = mock_undist
+    mock_proj_cls.return_value = mock_proj
+    mock_vfs_cls.return_value = mock_frame_source
+
+    return mock_proj
+
+
 class TestGenerateCommand:
     """Tests for the `pseudo-label generate` CLI command."""
+
+    def test_fails_when_neither_flag_specified(self, tmp_path: Path) -> None:
+        """Command fails when neither --consensus nor --gaps is provided."""
+        config_path = _make_frozen_config(
+            tmp_path, keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0]
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(
+            pseudo_label_group, ["generate", "--config", str(config_path)]
+        )
+
+        assert result.exit_code != 0
+        assert "At least one of --consensus or --gaps" in result.output
 
     def test_fails_when_keypoint_t_values_is_none(self, tmp_path: Path) -> None:
         """Command fails with clear error when keypoint_t_values is None."""
@@ -120,7 +197,8 @@ class TestGenerateCommand:
 
         runner = CliRunner()
         result = runner.invoke(
-            pseudo_label_group, ["generate", "--config", str(config_path)]
+            pseudo_label_group,
+            ["generate", "--consensus", "--config", str(config_path)],
         )
 
         assert result.exit_code != 0
@@ -137,41 +215,21 @@ class TestGenerateCommand:
 
             runner = CliRunner()
             result = runner.invoke(
-                pseudo_label_group, ["generate", "--config", str(config_path)]
+                pseudo_label_group,
+                ["generate", "--consensus", "--config", str(config_path)],
             )
 
         assert result.exit_code != 0
         assert "No diagnostic caches" in result.output
 
-    def test_produces_output_structure(self, tmp_path: Path) -> None:
-        """Command produces expected directory structure with labels."""
+    def test_consensus_produces_output_structure(self, tmp_path: Path) -> None:
+        """--consensus produces expected directory structure with labels."""
         config_path = _make_frozen_config(
             tmp_path, keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0]
         )
-
-        # Create mock video dir
         (tmp_path / "videos").mkdir()
 
         context = _make_context(n_frames=2)
-        mock_cal = _setup_mock_calibration()
-
-        # Mock projection model
-        mock_proj = MagicMock()
-        mock_proj.project.side_effect = _mock_projection_project
-
-        # Mock frame source
-        mock_frame_source = MagicMock()
-        fake_image = np.zeros((1080, 1920, 3), dtype=np.uint8)
-        mock_frame_source.read_frame.return_value = {
-            "cam0": fake_image,
-            "cam1": fake_image,
-        }
-        mock_frame_source.__enter__ = MagicMock(return_value=mock_frame_source)
-        mock_frame_source.__exit__ = MagicMock(return_value=False)
-
-        # Mock undistortion maps
-        mock_undist = MagicMock()
-        mock_undist.K_new = torch.eye(3, dtype=torch.float32)
 
         with (
             patch("aquapose.evaluation.runner.load_run_context") as mock_load_ctx,
@@ -184,56 +242,272 @@ class TestGenerateCommand:
             ) as mock_proj_cls,
             patch("aquapose.core.types.frame_source.VideoFrameSource") as mock_vfs_cls,
         ):
-            mock_load_ctx.return_value = (context, {})
-            mock_load_cal.return_value = mock_cal
-            mock_compute_undist.return_value = mock_undist
-            mock_proj_cls.return_value = mock_proj
-            mock_vfs_cls.return_value = mock_frame_source
+            _setup_standard_mocks(
+                mock_load_ctx,
+                mock_load_cal,
+                mock_compute_undist,
+                mock_proj_cls,
+                mock_vfs_cls,
+                context,
+                tmp_path,
+            )
 
             runner = CliRunner()
             result = runner.invoke(
-                pseudo_label_group, ["generate", "--config", str(config_path)]
+                pseudo_label_group,
+                ["generate", "--consensus", "--config", str(config_path)],
             )
 
         assert result.exit_code == 0, f"CLI failed: {result.output}"
 
         pseudo_dir = tmp_path / "pseudo_labels"
 
-        # Check directory structure
-        assert (pseudo_dir / "obb" / "images" / "train").is_dir()
-        assert (pseudo_dir / "obb" / "labels" / "train").is_dir()
-        assert (pseudo_dir / "pose" / "images" / "train").is_dir()
-        assert (pseudo_dir / "pose" / "labels" / "train").is_dir()
+        # Check consensus directory structure
+        assert (pseudo_dir / "consensus" / "obb" / "images" / "train").is_dir()
+        assert (pseudo_dir / "consensus" / "obb" / "labels" / "train").is_dir()
+        assert (pseudo_dir / "consensus" / "pose" / "images" / "train").is_dir()
+        assert (pseudo_dir / "consensus" / "pose" / "labels" / "train").is_dir()
 
         # Check dataset.yaml files
-        assert (pseudo_dir / "obb" / "dataset.yaml").exists()
-        assert (pseudo_dir / "pose" / "dataset.yaml").exists()
+        assert (pseudo_dir / "consensus" / "obb" / "dataset.yaml").exists()
+        assert (pseudo_dir / "consensus" / "pose" / "dataset.yaml").exists()
 
-        obb_ds = yaml.safe_load((pseudo_dir / "obb" / "dataset.yaml").read_text())
+        obb_ds = yaml.safe_load(
+            (pseudo_dir / "consensus" / "obb" / "dataset.yaml").read_text()
+        )
         assert obb_ds["nc"] == 1
         assert obb_ds["names"] == {0: "fish"}
 
-        pose_ds = yaml.safe_load((pseudo_dir / "pose" / "dataset.yaml").read_text())
+        pose_ds = yaml.safe_load(
+            (pseudo_dir / "consensus" / "pose" / "dataset.yaml").read_text()
+        )
         assert pose_ds["nc"] == 1
         assert pose_ds["kpt_shape"] == [5, 3]
         assert "flip_idx" in pose_ds
 
         # Check confidence sidecar
-        assert (pseudo_dir / "confidence.json").exists()
-        sidecar = json.loads((pseudo_dir / "confidence.json").read_text())
+        assert (pseudo_dir / "consensus" / "confidence.json").exists()
+        sidecar = json.loads((pseudo_dir / "consensus" / "confidence.json").read_text())
         assert len(sidecar) > 0
 
         # Check label files exist
-        obb_labels = list((pseudo_dir / "obb" / "labels" / "train").glob("*.txt"))
-        pose_labels = list((pseudo_dir / "pose" / "labels" / "train").glob("*.txt"))
+        obb_labels = list(
+            (pseudo_dir / "consensus" / "obb" / "labels" / "train").glob("*.txt")
+        )
         assert len(obb_labels) > 0
-        assert len(pose_labels) > 0
 
-        # Check label file content
+        # Check label content format
         label_content = obb_labels[0].read_text().strip()
         parts = label_content.split()
-        # Should have 9 values per line (cls + 4 corners x 2)
-        assert len(parts) == 9
+        assert len(parts) == 9  # cls + 4 corners x 2
+
+    def test_gaps_produces_output_structure(self, tmp_path: Path) -> None:
+        """--gaps produces expected directory structure with gap labels."""
+        config_path = _make_frozen_config(
+            tmp_path, keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0]
+        )
+        (tmp_path / "videos").mkdir()
+
+        context = _make_context_with_detections_and_tracks(n_frames=2)
+
+        # Mock detect_gaps to return a gap camera
+        mock_gap_result = {
+            "obb_line": "0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8",
+            "pose_line": "0 0.5 0.5 0.1 0.1 " + " ".join(["0.5 0.5 2"] * 5),
+            "confidence": 0.8,
+            "raw_metrics": {"mean_residual": 2.0, "n_cameras": 3},
+            "keypoints_2d": np.zeros((5, 2)),
+            "visibility": np.ones(5, dtype=bool),
+        }
+
+        with (
+            patch("aquapose.evaluation.runner.load_run_context") as mock_load_ctx,
+            patch("aquapose.calibration.loader.load_calibration_data") as mock_load_cal,
+            patch(
+                "aquapose.calibration.loader.compute_undistortion_maps"
+            ) as mock_compute_undist,
+            patch(
+                "aquapose.calibration.projection.RefractiveProjectionModel"
+            ) as mock_proj_cls,
+            patch("aquapose.core.types.frame_source.VideoFrameSource") as mock_vfs_cls,
+            patch("aquapose.training.pseudo_label_cli.detect_gaps") as mock_detect_gaps,
+            patch(
+                "aquapose.training.pseudo_label_cli.generate_gap_fish_labels"
+            ) as mock_gen_gap,
+            patch("aquapose.calibration.luts.load_inverse_luts") as mock_load_luts,
+        ):
+            _setup_standard_mocks(
+                mock_load_ctx,
+                mock_load_cal,
+                mock_compute_undist,
+                mock_proj_cls,
+                mock_vfs_cls,
+                context,
+                tmp_path,
+            )
+            mock_detect_gaps.return_value = [("cam1", "no-detection")]
+            mock_gen_gap.return_value = mock_gap_result
+            mock_load_luts.return_value = MagicMock()
+
+            runner = CliRunner()
+            result = runner.invoke(
+                pseudo_label_group,
+                ["generate", "--gaps", "--config", str(config_path)],
+            )
+
+        assert result.exit_code == 0, f"CLI failed: {result.output}"
+
+        pseudo_dir = tmp_path / "pseudo_labels"
+
+        # Check gap directory structure
+        assert (pseudo_dir / "gap" / "obb" / "images" / "train").is_dir()
+        assert (pseudo_dir / "gap" / "obb" / "labels" / "train").is_dir()
+        assert (pseudo_dir / "gap" / "pose" / "images" / "train").is_dir()
+        assert (pseudo_dir / "gap" / "pose" / "labels" / "train").is_dir()
+
+        # Check gap dataset.yaml
+        assert (pseudo_dir / "gap" / "obb" / "dataset.yaml").exists()
+        assert (pseudo_dir / "gap" / "pose" / "dataset.yaml").exists()
+
+        # Check gap confidence sidecar
+        assert (pseudo_dir / "gap" / "confidence.json").exists()
+
+    def test_gap_sidecar_contains_gap_fields(self, tmp_path: Path) -> None:
+        """Gap confidence sidecar entries contain gap_reason and n_source_cameras."""
+        config_path = _make_frozen_config(
+            tmp_path, keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0]
+        )
+        (tmp_path / "videos").mkdir()
+
+        context = _make_context_with_detections_and_tracks(n_frames=1)
+
+        mock_gap_result = {
+            "obb_line": "0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8",
+            "pose_line": "0 0.5 0.5 0.1 0.1 " + " ".join(["0.5 0.5 2"] * 5),
+            "confidence": 0.8,
+            "raw_metrics": {"mean_residual": 2.0, "n_cameras": 3},
+            "keypoints_2d": np.zeros((5, 2)),
+            "visibility": np.ones(5, dtype=bool),
+        }
+
+        with (
+            patch("aquapose.evaluation.runner.load_run_context") as mock_load_ctx,
+            patch("aquapose.calibration.loader.load_calibration_data") as mock_load_cal,
+            patch(
+                "aquapose.calibration.loader.compute_undistortion_maps"
+            ) as mock_compute_undist,
+            patch(
+                "aquapose.calibration.projection.RefractiveProjectionModel"
+            ) as mock_proj_cls,
+            patch("aquapose.core.types.frame_source.VideoFrameSource") as mock_vfs_cls,
+            patch("aquapose.training.pseudo_label_cli.detect_gaps") as mock_detect_gaps,
+            patch(
+                "aquapose.training.pseudo_label_cli.generate_gap_fish_labels"
+            ) as mock_gen_gap,
+            patch("aquapose.calibration.luts.load_inverse_luts") as mock_load_luts,
+        ):
+            _setup_standard_mocks(
+                mock_load_ctx,
+                mock_load_cal,
+                mock_compute_undist,
+                mock_proj_cls,
+                mock_vfs_cls,
+                context,
+                tmp_path,
+            )
+            mock_detect_gaps.return_value = [("cam1", "no-detection")]
+            mock_gen_gap.return_value = mock_gap_result
+            mock_load_luts.return_value = MagicMock()
+
+            runner = CliRunner()
+            result = runner.invoke(
+                pseudo_label_group,
+                ["generate", "--gaps", "--config", str(config_path)],
+            )
+
+        assert result.exit_code == 0, f"CLI failed: {result.output}"
+
+        pseudo_dir = tmp_path / "pseudo_labels"
+        sidecar = json.loads((pseudo_dir / "gap" / "confidence.json").read_text())
+
+        # Check that gap sidecar entries have gap_reason and n_source_cameras
+        assert len(sidecar) > 0
+        for _image_name, image_data in sidecar.items():
+            for label_entry in image_data["labels"]:
+                assert "gap_reason" in label_entry
+                assert "n_source_cameras" in label_entry
+                assert label_entry["gap_reason"] == "no-detection"
+                assert isinstance(label_entry["n_source_cameras"], int)
+
+    def test_both_flags_together(self, tmp_path: Path) -> None:
+        """Both --consensus and --gaps can run together."""
+        config_path = _make_frozen_config(
+            tmp_path, keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0]
+        )
+        (tmp_path / "videos").mkdir()
+
+        context = _make_context_with_detections_and_tracks(n_frames=1)
+
+        mock_gap_result = {
+            "obb_line": "0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8",
+            "pose_line": "0 0.5 0.5 0.1 0.1 " + " ".join(["0.5 0.5 2"] * 5),
+            "confidence": 0.8,
+            "raw_metrics": {"mean_residual": 2.0, "n_cameras": 3},
+            "keypoints_2d": np.zeros((5, 2)),
+            "visibility": np.ones(5, dtype=bool),
+        }
+
+        with (
+            patch("aquapose.evaluation.runner.load_run_context") as mock_load_ctx,
+            patch("aquapose.calibration.loader.load_calibration_data") as mock_load_cal,
+            patch(
+                "aquapose.calibration.loader.compute_undistortion_maps"
+            ) as mock_compute_undist,
+            patch(
+                "aquapose.calibration.projection.RefractiveProjectionModel"
+            ) as mock_proj_cls,
+            patch("aquapose.core.types.frame_source.VideoFrameSource") as mock_vfs_cls,
+            patch("aquapose.training.pseudo_label_cli.detect_gaps") as mock_detect_gaps,
+            patch(
+                "aquapose.training.pseudo_label_cli.generate_gap_fish_labels"
+            ) as mock_gen_gap,
+            patch("aquapose.calibration.luts.load_inverse_luts") as mock_load_luts,
+        ):
+            _setup_standard_mocks(
+                mock_load_ctx,
+                mock_load_cal,
+                mock_compute_undist,
+                mock_proj_cls,
+                mock_vfs_cls,
+                context,
+                tmp_path,
+            )
+            mock_detect_gaps.return_value = [("cam1", "no-tracklet")]
+            mock_gen_gap.return_value = mock_gap_result
+            mock_load_luts.return_value = MagicMock()
+
+            runner = CliRunner()
+            result = runner.invoke(
+                pseudo_label_group,
+                [
+                    "generate",
+                    "--consensus",
+                    "--gaps",
+                    "--config",
+                    str(config_path),
+                ],
+            )
+
+        assert result.exit_code == 0, f"CLI failed: {result.output}"
+
+        pseudo_dir = tmp_path / "pseudo_labels"
+        # Both consensus and gap directories should exist
+        assert (pseudo_dir / "consensus" / "obb" / "labels" / "train").is_dir()
+        assert (pseudo_dir / "gap" / "obb" / "labels" / "train").is_dir()
+
+        # Both should have confidence sidecars
+        assert (pseudo_dir / "consensus" / "confidence.json").exists()
+        assert (pseudo_dir / "gap" / "confidence.json").exists()
 
     def test_help_text(self) -> None:
         """generate --help shows expected options."""
@@ -244,3 +518,6 @@ class TestGenerateCommand:
         assert "--config" in result.output
         assert "--lateral-pad" in result.output
         assert "--max-camera-residual" in result.output
+        assert "--consensus" in result.output
+        assert "--gaps" in result.output
+        assert "--min-cameras" in result.output

@@ -45,9 +45,9 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 
 ### Dataset Assembly
 
-- [ ] **DATA-01**: User can assemble a training dataset pooling manual annotations + Source A + Source B with independent confidence thresholds
-- [ ] **DATA-02**: Assembled dataset includes separate validation splits: fixed manual val set + pseudo-label val set
-- [ ] **DATA-03**: Pseudo-label validation set is broken down by source (A/B) and gap reason for post-training analysis
+- [x] **DATA-01**: User can assemble a training dataset pooling manual annotations + Source A + Source B with independent confidence thresholds
+- [x] **DATA-02**: Assembled dataset includes separate validation splits: fixed manual val set + pseudo-label val set
+- [x] **DATA-03**: Pseudo-label validation set is broken down by source (A/B) and gap reason for post-training analysis
 
 ### Training Run Management
 
@@ -104,9 +104,9 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 | FRAME-01 | Phase 65 | Complete |
 | FRAME-02 | Phase 65 | Complete |
 | FRAME-03 | Phase 65 | Complete |
-| DATA-01 | Phase 65 | Pending |
-| DATA-02 | Phase 65 | Pending |
-| DATA-03 | Phase 65 | Pending |
+| DATA-01 | Phase 65 | Complete |
+| DATA-02 | Phase 65 | Complete |
+| DATA-03 | Phase 65 | Complete |
 | TRAIN-01 | Phase 66 | Pending |
 | TRAIN-02 | Phase 66 | Pending |
 | TRAIN-03 | Phase 66 | Pending |

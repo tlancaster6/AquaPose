@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.5
 milestone_name: Pseudo-Labeling
 status: in-progress
-last_updated: "2026-03-05T20:12:00.000Z"
+last_updated: "2026-03-05T20:20:00.000Z"
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # Project State
@@ -22,22 +22,22 @@ See: .planning/PROJECT.md (updated 2026-03-05)
 
 ## Current Position
 
-Phase: 65 (5 of 6 in v3.5 Pseudo-Labeling) -- IN PROGRESS
-Plan: 1/2 in current phase
-Status: Plan 65-01 complete, 65-02 remaining
-Last activity: 2026-03-05 - Completed 65-01: Frame selection module
+Phase: 65 (5 of 6 in v3.5 Pseudo-Labeling) -- COMPLETE
+Plan: 2/2 in current phase
+Status: Phase 65 complete. All v3.5 plans executed.
+Last activity: 2026-03-05 - Completed 65-02: Dataset assembly
 
-Progress: [█████████░] 90%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5 (v3.5)
-- Average duration: ~11 min
-- Total execution time: ~54 min
+- Total plans completed: 6 (v3.5)
+- Average duration: ~10 min
+- Total execution time: ~59 min
 
 **Recent Trend:**
-- Last 5 plans: 61-01, 61-02, 62-01, 62-02, 65-01 all completed 2026-03-05
+- Last 6 plans: 61-01, 61-02, 62-01, 62-02, 65-01, 65-02 all completed 2026-03-05
 - Trend: Stable
 
 ## Accumulated Context
@@ -55,6 +55,8 @@ Recent decisions affecting current work:
 - v3.5 Phase 63: Confidence composite: 50% residual + 30% camera + 20% variance
 - v3.5 Phase 65: scipy kmeans2 for curvature-based diversity sampling (avoids sklearn dependency)
 - v3.5 Phase 65: Finite-difference curvature from tangent vectors (no scipy.interpolate needed)
+- v3.5 Phase 65: Pseudo-label val stored in train/ with JSON sidecar (not separate val dir)
+- v3.5 Phase 65: Multi-run filename collision resolved by run_dir.name prefix
 
 ### Pending Todos
 
@@ -74,5 +76,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Completed 65-01-PLAN.md
+Stopped at: Completed 65-02-PLAN.md
 Resume file: None

@@ -166,7 +166,7 @@ Full details: `.planning/milestones/v3.4-ROADMAP.md`
 - [x] **Phase 62: Prep Infrastructure** - CLI wiring for calibrate-keypoints and LUT generation extraction (completed 2026-03-05)
 - [x] **Phase 63: Pseudo-Label Generation (Source A)** - Reproject consensus 3D reconstructions into camera views as training labels (completed 2026-03-05)
 - [x] **Phase 64: Gap Detection and Fill (Source B)** - Identify and label detection gaps via inverse LUT visibility cross-referencing (completed 2026-03-05)
-- [ ] **Phase 65: Frame Selection and Dataset Assembly** - Temporal subsampling, pose-diversity sampling, and pooled dataset construction
+- [x] **Phase 65: Frame Selection and Dataset Assembly** - Temporal subsampling, pose-diversity sampling, and pooled dataset construction (completed 2026-03-05)
 - [ ] **Phase 66: Training Run Management** - Run organization, cross-run comparison, and iterative retraining support
 
 ## Phase Details
@@ -237,7 +237,7 @@ Plans:
   2. Pose-diversity sampling selects frames that maximize coverage of body configurations (curved, straight, turning)
   3. User can assemble a training dataset pooling manual + Source A + Source B with independent confidence thresholds per source
   4. Assembled dataset includes a fixed manual validation set and a separate pseudo-label validation set broken down by source and gap reason
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 65-01-PLAN.md — Frame selection: temporal subsampling, empty-frame filtering, curvature diversity sampling
 - [ ] 65-02-PLAN.md — Dataset assembly: pooling, confidence filtering, validation splits, CLI command
@@ -275,5 +275,5 @@ Phases execute in numeric order: 61 -> 62 -> 63 -> 64 -> 65 -> 66
 | 62. Prep Infrastructure | v3.5 | 2/2 | Complete | 2026-03-05 |
 | 63. Pseudo-Label Generation (Source A) | 2/2 | Complete   | 2026-03-05 | - |
 | 64. Gap Detection and Fill (Source B) | 2/2 | Complete    | 2026-03-05 | - |
-| 65. Frame Selection and Dataset Assembly | 1/2 | In Progress|  | - |
+| 65. Frame Selection and Dataset Assembly | 2/2 | Complete   | 2026-03-05 | - |
 | 66. Training Run Management | v3.5 | 0/2 | Not started | - |

@@ -225,6 +225,51 @@
 
 ---
 
+## Milestone: v3.3 — Chunk Mode
+
+**Shipped:** 2026-03-05
+**Phases:** 5 | **Plans:** 11 | **Timeline:** 2 days
+
+### What Was Built
+- FrameSource protocol + VideoFrameSource — injectable frame source replacing VideoSet
+- ChunkOrchestrator processing video in fixed-size temporal chunks above PosePipeline
+- ChunkHandoff frozen dataclass carrying tracker state + identity map across chunk boundaries
+- Identity stitching mapping chunk-local fish IDs to globally consistent IDs via track ID continuity
+- Per-chunk diagnostic caches (chunk_NNN/cache.pkl + manifest.json) with chunk-aware eval/tuning
+- Visualization migrated from engine observers to `aquapose viz` CLI in evaluation suite
+
+### What Worked
+- **Layered architecture:** Frame source (51) → orchestrator (52) → CLI wiring (53) → diagnostics/eval (54) → gap closure (55) had clean dependency ordering with each phase building on the previous
+- **Gap closure phase pattern:** Phase 55 explicitly created from audit findings worked well — targeted fixes with clear scope
+- **Diagnostic + chunk mode co-existence:** Removing mutual exclusion in Phase 54 was the right call — per-chunk cache layout made it natural
+- **Single-cache-per-chunk simplification:** Replacing per-stage cache files with one cache.pkl per chunk reduced complexity for both writing and reading
+
+### What Was Inefficient
+- **SUMMARY one_liner fields still not populated:** Sixth consecutive milestone where automated accomplishment extraction fails — now firmly an endemic process gap
+- **Phase 53 scope underestimated:** Originally planned as 3 success criteria but only got 1 plan; Phase 54 and 55 had to close the remaining work
+- **Phase 53 missing VERIFICATION.md:** Had to be covered retroactively by Phase 55 — verification should happen per-phase
+- **54-VERIFICATION.md inaccurate about viz CLI shape:** Described subcommands but actual implementation uses flags — verification report quality control needed
+
+### Patterns Established
+- ChunkOrchestrator as layer above PosePipeline — owns chunk loop, identity stitching, HDF5 output
+- ChunkHandoff in core/ (not engine/) to avoid circular imports between core/tracking and engine
+- Per-chunk single cache layout: diagnostics/chunk_NNN/cache.pkl + manifest.json
+- Dual loader pattern: load_run_context() for merged eval context; load_all_chunk_caches() for per-chunk viz
+- Post-run visualization via evaluation suite CLI instead of in-pipeline observers
+
+### Key Lessons
+1. **Scope all integration work upfront** — Phase 53 was too thinly planned; diagnostic/eval migration should have been anticipated in the original 3-phase scope
+2. **Verify each phase as it completes** — skipping Phase 53 verification created audit gaps that required a gap-closure phase
+3. **Design for evolution** — INTEG-02 (mutual exclusion) was correct at Phase 53 but wrong by Phase 54; requirements should note when they may be superseded
+4. **Populate SUMMARY frontmatter** — six milestones in, this is still not happening; enforce in tooling or accept it as a known gap
+
+### Cost Observations
+- Model mix: ~60% sonnet (executors), ~30% opus (orchestrator), ~10% haiku (verifiers)
+- Sessions: ~3-4 across 2 days
+- Notable: Phase 54 was the largest (4 plans) — visualization migration was the most complex subsystem change
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -236,6 +281,7 @@
 | v3.0 | 2 days | 5 | Ultralytics migration; incremental file relocation strategy |
 | v3.1 | 2 days | 7 | Reconstruction rebuild with evaluation-first approach |
 | v3.2 | 1 day | 5 | Evaluation ecosystem; per-stage caching + CLI tools |
+| v3.3 | 2 days | 5 | Chunk processing; frame source abstraction + viz migration |
 
 ### Cumulative Quality
 
@@ -246,6 +292,7 @@
 | v3.0 | 22,087 + 18,829 test | 656 | 3 |
 | v3.1 | 19,493 source | - | 3 |
 | v3.2 | 20,789 source | ~788 | 0 |
+| v3.3 | 21,634 source | ~807 | 0 |
 
 ### Top Lessons (Verified Across Milestones)
 

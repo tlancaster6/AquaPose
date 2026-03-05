@@ -27,6 +27,8 @@ from aquapose.core.midline.types import AnnotatedDetection
 from aquapose.core.types.crop import AffineCrop
 from aquapose.core.types.detection import Detection
 
+_DEFAULT_T = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -110,7 +112,7 @@ def test_instantiation_no_weights_path(caplog: pytest.LogCaptureFixture) -> None
     with caplog.at_level(
         logging.WARNING, logger="aquapose.core.midline.backends.pose_estimation"
     ):
-        backend = PoseEstimationBackend(weights_path=None)
+        backend = PoseEstimationBackend(weights_path=None, keypoint_t_values=_DEFAULT_T)
 
     assert backend._model is None
     assert any("no weights_path" in msg for msg in caplog.messages)
@@ -123,14 +125,16 @@ def test_instantiation_nonexistent_weights(caplog: pytest.LogCaptureFixture) -> 
     with caplog.at_level(
         logging.WARNING, logger="aquapose.core.midline.backends.pose_estimation"
     ):
-        backend = PoseEstimationBackend(weights_path="/nonexistent/path/model.pt")
+        backend = PoseEstimationBackend(
+            weights_path="/nonexistent/path/model.pt", keypoint_t_values=_DEFAULT_T
+        )
 
     assert backend._model is None
 
 
 def test_instantiation_default_kwargs() -> None:
     """Default attribute values are stored correctly."""
-    backend = PoseEstimationBackend()
+    backend = PoseEstimationBackend(keypoint_t_values=_DEFAULT_T)
     assert backend.n_points == 15
     assert backend.n_keypoints == 6
     assert backend.confidence_floor == 0.3
@@ -146,11 +150,10 @@ def test_instantiation_custom_t_values() -> None:
     np.testing.assert_allclose(backend._keypoint_t_values, t)
 
 
-def test_instantiation_default_t_values_linspace() -> None:
-    """Default keypoint_t_values are linspace(0, 1, n_keypoints)."""
-    backend = PoseEstimationBackend(n_keypoints=4)
-    expected = np.linspace(0.0, 1.0, 4)
-    np.testing.assert_allclose(backend._keypoint_t_values, expected, atol=1e-6)
+def test_instantiation_none_t_values_raises() -> None:
+    """keypoint_t_values=None raises ValueError."""
+    with pytest.raises(ValueError, match="keypoint_t_values"):
+        PoseEstimationBackend(n_keypoints=4)
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +217,7 @@ def test_keypoints_to_midline_monotone_x() -> None:
 
 def test_process_frame_no_model_returns_none_midlines() -> None:
     """process_frame with no model returns midline=None for every detection."""
-    backend = PoseEstimationBackend(weights_path=None)
+    backend = PoseEstimationBackend(weights_path=None, keypoint_t_values=_DEFAULT_T)
 
     det1 = _make_det()
     det2 = _make_det(bbox=(100, 100, 60, 20))
@@ -237,7 +240,7 @@ def test_process_frame_no_model_returns_none_midlines() -> None:
 
 def test_process_frame_no_model_empty_camera() -> None:
     """process_frame with no detections returns empty list."""
-    backend = PoseEstimationBackend(weights_path=None)
+    backend = PoseEstimationBackend(weights_path=None, keypoint_t_values=_DEFAULT_T)
     result = backend.process_frame(
         frame_idx=0,
         frame_dets={"cam1": []},
@@ -268,7 +271,10 @@ def test_process_frame_with_mock_model_produces_midline(
     mock_invert.side_effect = lambda pts, M: pts.astype(np.float32) + 5.0
 
     backend = PoseEstimationBackend(
-        weights_path=None, n_points=n_points, n_keypoints=n_keypoints
+        weights_path=None,
+        n_points=n_points,
+        n_keypoints=n_keypoints,
+        keypoint_t_values=_DEFAULT_T,
     )
     mock_model = MagicMock()
     mock_model.predict.return_value = _make_yolo_keypoints_result(n_keypoints)
@@ -313,7 +319,10 @@ def test_too_few_visible_keypoints_returns_none(
     confidences = np.array([0.05, 0.05, 0.05, 0.05, 0.9, 0.9], dtype=np.float32)
 
     backend = PoseEstimationBackend(
-        weights_path=None, confidence_floor=0.3, min_observed_keypoints=3
+        weights_path=None,
+        confidence_floor=0.3,
+        min_observed_keypoints=3,
+        keypoint_t_values=_DEFAULT_T,
     )
     mock_model = MagicMock()
     mock_model.predict.return_value = _make_yolo_keypoints_result(6, confidences)
@@ -345,7 +354,10 @@ def test_exactly_min_visible_keypoints_produces_midline(
     confidences = np.array([0.05, 0.05, 0.05, 0.9, 0.9, 0.9], dtype=np.float32)
 
     backend = PoseEstimationBackend(
-        weights_path=None, confidence_floor=0.3, min_observed_keypoints=3
+        weights_path=None,
+        confidence_floor=0.3,
+        min_observed_keypoints=3,
+        keypoint_t_values=_DEFAULT_T,
     )
     mock_model = MagicMock()
     mock_model.predict.return_value = _make_yolo_keypoints_result(6, confidences)
@@ -378,7 +390,7 @@ def test_none_angle_falls_back_to_zero(
     mock_extract.return_value = affine_crop
     mock_invert.side_effect = lambda pts, M: pts.astype(np.float32)
 
-    backend = PoseEstimationBackend(weights_path=None)
+    backend = PoseEstimationBackend(weights_path=None, keypoint_t_values=_DEFAULT_T)
     mock_model = MagicMock()
     mock_model.predict.return_value = _make_yolo_keypoints_result(6)
     backend._model = mock_model

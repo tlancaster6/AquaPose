@@ -95,7 +95,7 @@ class PoseEstimationBackend:
         n_keypoints: Number of anatomical keypoints expected from the model.
             Default 6 (nose, head, spine1, spine2, spine3, tail).
         keypoint_t_values: Per-keypoint arc-fraction values in ``[0, 1]``.
-            If ``None``, defaults to ``np.linspace(0, 1, n_keypoints)``.
+            Required.  Raises ``ValueError`` if ``None``.
         confidence_floor: Minimum per-keypoint confidence to treat a keypoint
             as visible.  Default 0.3.
         min_observed_keypoints: Minimum number of visible keypoints required to
@@ -138,8 +138,9 @@ class PoseEstimationBackend:
         if keypoint_t_values is not None:
             self._keypoint_t_values = np.asarray(keypoint_t_values, dtype=np.float32)
         else:
-            self._keypoint_t_values = np.linspace(
-                0.0, 1.0, n_keypoints, dtype=np.float32
+            raise ValueError(
+                "keypoint_t_values is None. Run: "
+                "aquapose prep calibrate-keypoints --annotations <json> --config <yaml>"
             )
         self.keypoint_t_values = self._keypoint_t_values
 

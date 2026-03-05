@@ -31,10 +31,10 @@ def prep_group() -> None:
     help="Path to COCO keypoint annotations JSON.",
 )
 @click.option(
-    "--output",
+    "--config",
     required=True,
-    type=click.Path(),
-    help="Path to write t-values YAML snippet.",
+    type=click.Path(exists=True),
+    help="Path to pipeline config YAML. Updates keypoint_t_values in place.",
 )
 @click.option(
     "--n-keypoints",
@@ -42,7 +42,7 @@ def prep_group() -> None:
     type=int,
     help="Number of anatomical keypoints.",
 )
-def calibrate_keypoints(annotations: str, output: str, n_keypoints: int) -> None:
+def calibrate_keypoints(annotations: str, config: str, n_keypoints: int) -> None:
     """Compute keypoint t-values from COCO keypoint annotations.
 
     Reads a COCO-format JSON with keypoint annotations and computes the
@@ -50,16 +50,16 @@ def calibrate_keypoints(annotations: str, output: str, n_keypoints: int) -> None
     across all annotated instances. The resulting t-values represent each
     keypoint's position along the fish body curve (0.0 = nose, 1.0 = tail).
 
-    Writes a YAML snippet to the output path containing the computed
-    ``keypoint_t_values`` list, ready to paste into a pipeline config.
+    Updates the pipeline config YAML in place, setting
+    ``midline.keypoint_t_values`` to the computed values.
 
     Args:
         annotations: Path to COCO keypoint annotations JSON.
-        output: Path to write the t-values YAML snippet.
+        config: Path to pipeline config YAML to update in place.
         n_keypoints: Number of anatomical keypoints expected per annotation.
     """
     annotations_path = Path(annotations)
-    output_path = Path(output)
+    config_path = Path(config)
 
     with annotations_path.open() as fh:
         coco = json.load(fh)
@@ -131,20 +131,17 @@ def calibrate_keypoints(annotations: str, output: str, n_keypoints: int) -> None
     mean_t = np.clip(mean_t, 0.0, 1.0)
     t_values_list = [round(float(t), 4) for t in mean_t]
 
-    # Write YAML snippet
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    yaml_content = yaml.dump(
-        {"keypoint_t_values": t_values_list},
-        default_flow_style=False,
-        sort_keys=False,
-    )
-    header = (
-        f"# Auto-calibrated keypoint t-values\n"
-        f"# Source: {annotations_path.name}\n"
-        f"# Processed {n_processed} annotations with {n_keypoints} keypoints\n\n"
-    )
-    output_path.write_text(header + yaml_content, encoding="utf-8")
+    # Update pipeline config YAML in place
+    with config_path.open() as fh:
+        config_data = yaml.safe_load(fh) or {}
+
+    if "midline" not in config_data:
+        config_data["midline"] = {}
+    config_data["midline"]["keypoint_t_values"] = t_values_list
+
+    with config_path.open("w") as fh:
+        yaml.dump(config_data, fh, default_flow_style=False, sort_keys=False)
 
     click.echo(f"Processed {n_processed} annotations.")
     click.echo(f"Computed t-values: {t_values_list}")
-    click.echo(f"Written to: {output_path}")
+    click.echo(f"Updated config: {config_path}")

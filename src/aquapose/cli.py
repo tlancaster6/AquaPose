@@ -181,9 +181,22 @@ def init_config(name: str, synthetic: bool) -> None:
     # Write config.yaml with brief comment header
     header = "# AquaPose pipeline config\n# See documentation for advanced options\n\n"
     yaml_content = yaml.dump(data, default_flow_style=False, sort_keys=False)
+    # Inject reminder comment before the midline section
+    yaml_content = yaml_content.replace(
+        "midline:",
+        "# Run 'aquapose prep calibrate-keypoints' to set keypoint_t_values\nmidline:",
+    )
     (project_dir / "config.yaml").write_text(header + yaml_content)
 
     click.echo(f"Project created at {project_dir}")
+    click.echo("")
+    click.echo("Next steps:")
+    click.echo("  1. Place calibration JSON in geometry/calibration.json")
+    click.echo("  2. Run: aquapose prep generate-luts --config config.yaml")
+    click.echo(
+        "  3. Run: aquapose prep calibrate-keypoints"
+        " --annotations <json> --config config.yaml"
+    )
 
 
 @cli.command("eval")
@@ -424,6 +437,166 @@ def viz(
         click.echo("Skipped (failures):")
         for name, reason in skipped:
             click.echo(f"  {name}: {reason}")
+
+
+@cli.command("smooth-planes")
+@click.option(
+    "--input",
+    "-i",
+    "input_path",
+    required=True,
+    type=click.Path(exists=True),
+    help="Path to midlines.h5 file (from pipeline run).",
+)
+@click.option(
+    "--sigma-frames",
+    default=3,
+    type=int,
+    show_default=True,
+    help="Gaussian filter sigma in frames for normal smoothing.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Report metrics without modifying the file.",
+)
+def smooth_planes(input_path: str, sigma_frames: int, dry_run: bool) -> None:
+    """Smooth plane normals and rotate control points in a midlines HDF5 file.
+
+    Reads plane metadata from a pipeline run's midlines.h5, applies temporal
+    Gaussian smoothing to plane normals per-fish within continuous track
+    segments, rotates control points to match the smoothed orientation, and
+    writes the results back in-place.
+    """
+    import h5py
+    import numpy as np
+
+    from aquapose.core.reconstruction.temporal_smoothing import (
+        rotate_control_points_to_plane,
+        smooth_plane_normals,
+    )
+    from aquapose.io.midline_writer import read_midline3d_results
+
+    data = read_midline3d_results(input_path)
+
+    if data["plane_normal"] is None:
+        raise click.ClickException(
+            "No plane_normal dataset found in the HDF5 file. "
+            "Run the pipeline with plane_projection.enabled=True first."
+        )
+
+    frame_indices = data["frame_index"]  # (N,)
+    fish_ids_all = data["fish_id"]  # (N, max_fish)
+    plane_normals = data["plane_normal"]  # (N, max_fish, 3)
+    plane_centroids = data["plane_centroid"]  # (N, max_fish, 3)
+    control_points = data["control_points"]  # (N, max_fish, 7, 3)
+    is_degenerate = data["is_degenerate_plane"]  # (N, max_fish)
+
+    N, max_fish = fish_ids_all.shape
+    smoothed_normals = plane_normals.copy()
+    rotated_cp = control_points.copy()
+
+    # Collect unique fish IDs (excluding fill value -1)
+    unique_fish = set()
+    for f in range(N):
+        for s in range(max_fish):
+            fid = int(fish_ids_all[f, s])
+            if fid >= 0:
+                unique_fish.add(fid)
+
+    total_frames_processed = 0
+    total_angular_change = 0.0
+    n_angular = 0
+
+    for fid in sorted(unique_fish):
+        # Extract time series for this fish
+        ts_frames: list[int] = []
+        ts_frame_idx: list[int] = []
+        ts_slot: list[int] = []
+
+        for f in range(N):
+            for s in range(max_fish):
+                if int(fish_ids_all[f, s]) == fid:
+                    ts_frames.append(f)
+                    ts_frame_idx.append(int(frame_indices[f]))
+                    ts_slot.append(s)
+                    break
+
+        if len(ts_frames) < 2:
+            continue
+
+        # Build arrays for this fish
+        f_normals = np.array(
+            [plane_normals[ts_frames[i], ts_slot[i]] for i in range(len(ts_frames))]
+        )
+        f_degen = np.array(
+            [is_degenerate[ts_frames[i], ts_slot[i]] for i in range(len(ts_frames))]
+        )
+        f_fish_ids = np.full(len(ts_frames), fid, dtype=int)
+        f_frame_idx = np.array(ts_frame_idx, dtype=np.int64)
+
+        # Skip if all normals are NaN (no plane data)
+        if np.all(np.isnan(f_normals)):
+            continue
+
+        # Smooth
+        f_smoothed = smooth_plane_normals(
+            f_normals, f_degen, f_fish_ids, f_frame_idx, sigma_frames=sigma_frames
+        )
+
+        # Rotate control points and store results
+        for i in range(len(ts_frames)):
+            fi = ts_frames[i]
+            si = ts_slot[i]
+            raw_n = f_normals[i]
+            sm_n = f_smoothed[i]
+            cent = plane_centroids[fi, si]
+            cp = control_points[fi, si]
+
+            if np.any(np.isnan(raw_n)) or np.any(np.isnan(sm_n)):
+                continue
+
+            rotated = rotate_control_points_to_plane(cp, cent, raw_n, sm_n)
+            smoothed_normals[fi, si] = sm_n.astype(np.float32)
+            rotated_cp[fi, si] = rotated.astype(np.float32)
+
+            # Track angular change
+            dot_val = np.clip(np.dot(raw_n, sm_n), -1.0, 1.0)
+            total_angular_change += np.arccos(dot_val)
+            n_angular += 1
+            total_frames_processed += 1
+
+    mean_angular_deg = (
+        np.degrees(total_angular_change / n_angular) if n_angular > 0 else 0.0
+    )
+
+    click.echo(f"Fish processed: {len(unique_fish)}")
+    click.echo(f"Frames processed: {total_frames_processed}")
+    click.echo(f"Mean angular change: {mean_angular_deg:.2f} degrees")
+    click.echo(f"Sigma frames: {sigma_frames}")
+
+    if dry_run:
+        click.echo("Dry run -- no changes written.")
+        return
+
+    # Write back in-place
+    with h5py.File(input_path, "r+") as f:
+        grp = f["midlines"]
+
+        # Add smoothed_plane_normal dataset if it doesn't exist
+        if "smoothed_plane_normal" in grp:
+            del grp["smoothed_plane_normal"]
+        grp.create_dataset(
+            "smoothed_plane_normal",
+            data=smoothed_normals,
+            compression="gzip",
+            compression_opts=4,
+        )
+
+        # Overwrite control_points with rotated version
+        grp["control_points"][...] = rotated_cp
+
+    click.echo(f"Written to {input_path}")
 
 
 cli.add_command(train_group)

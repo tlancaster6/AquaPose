@@ -14,10 +14,12 @@ from aquapose.core.midline.backends.pose_estimation import PoseEstimationBackend
 from aquapose.core.midline.types import AnnotatedDetection
 from aquapose.core.types.detection import Detection
 
+_DEFAULT_T = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+
 
 def test_pose_estimation_stub_returns_none_midlines() -> None:
     """PoseEstimationBackend stub instantiates cleanly and returns midline=None."""
-    backend = PoseEstimationBackend()
+    backend = PoseEstimationBackend(keypoint_t_values=_DEFAULT_T)
 
     det1 = Detection(bbox=(10, 10, 50, 50), mask=None, area=2500, confidence=0.9)
     det2 = Detection(bbox=(60, 60, 30, 30), mask=None, area=900, confidence=0.8)
@@ -38,9 +40,9 @@ def test_pose_estimation_stub_returns_none_midlines() -> None:
         assert ann.midline is None, "Stub must return midline=None for all detections"
 
 
-def test_pose_estimation_stub_accepts_no_args() -> None:
-    """PoseEstimationBackend instantiates with no arguments."""
-    backend = PoseEstimationBackend()
+def test_pose_estimation_stub_accepts_minimal_args() -> None:
+    """PoseEstimationBackend instantiates with keypoint_t_values only."""
+    backend = PoseEstimationBackend(keypoint_t_values=_DEFAULT_T)
     assert backend is not None
 
 
@@ -51,6 +53,7 @@ def test_pose_estimation_stub_accepts_kwargs() -> None:
         device="cpu",
         n_points=15,
         n_keypoints=6,
+        keypoint_t_values=_DEFAULT_T,
         confidence_floor=0.3,
         min_observed_keypoints=3,
         crop_size=(128, 64),
@@ -62,7 +65,7 @@ def test_pose_estimation_stub_empty_camera() -> None:
     """process_frame handles cameras with no detections gracefully."""
     import numpy as np
 
-    backend = PoseEstimationBackend()
+    backend = PoseEstimationBackend(keypoint_t_values=_DEFAULT_T)
     frame_dets: dict[str, list[Detection]] = {"cam1": [], "cam2": []}
     frames: dict[str, np.ndarray] = {
         "cam1": np.zeros((480, 640, 3), dtype=np.uint8),
@@ -82,7 +85,7 @@ def test_pose_estimation_stub_empty_camera() -> None:
 
 def test_pose_estimation_stub_annotated_detection_fields() -> None:
     """AnnotatedDetection objects have correct camera_id and frame_index."""
-    backend = PoseEstimationBackend()
+    backend = PoseEstimationBackend(keypoint_t_values=_DEFAULT_T)
 
     det = Detection(bbox=(0, 0, 100, 100), mask=None, area=10000, confidence=0.95)
     frame_dets: dict[str, list[Detection]] = {"camA": [det]}

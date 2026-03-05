@@ -39,9 +39,9 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 
 ### Frame Selection
 
-- [ ] **FRAME-01**: User can apply temporal subsampling (every Kth frame, configurable)
-- [ ] **FRAME-02**: Frames with zero reconstructions are automatically filtered
-- [ ] **FRAME-03**: Pose-diversity sampling clusters 3D midline configurations and samples to maximize pose diversity
+- [x] **FRAME-01**: User can apply temporal subsampling (every Kth frame, configurable)
+- [x] **FRAME-02**: Frames with zero reconstructions are automatically filtered
+- [x] **FRAME-03**: Pose-diversity sampling clusters 3D midline configurations and samples to maximize pose diversity
 
 ### Dataset Assembly
 
@@ -101,9 +101,9 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 | GAP-02 | Phase 64 | Complete |
 | GAP-03 | Phase 64 | Complete |
 | GAP-04 | Phase 64 | Complete |
-| FRAME-01 | Phase 65 | Pending |
-| FRAME-02 | Phase 65 | Pending |
-| FRAME-03 | Phase 65 | Pending |
+| FRAME-01 | Phase 65 | Complete |
+| FRAME-02 | Phase 65 | Complete |
+| FRAME-03 | Phase 65 | Complete |
 | DATA-01 | Phase 65 | Pending |
 | DATA-02 | Phase 65 | Pending |
 | DATA-03 | Phase 65 | Pending |

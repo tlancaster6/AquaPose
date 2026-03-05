@@ -16,8 +16,8 @@ Requirements for performance optimization milestone. Each maps to roadmap phases
 
 ### Frame I/O
 
-- [ ] **FIO-01**: Frame source prefetches frames in a background thread via producer-consumer queue
-- [ ] **FIO-02**: Prefetch source satisfies existing FrameSource protocol (drop-in replacement)
+- [x] **FIO-01**: Frame source prefetches frames in a background thread via producer-consumer queue
+- [x] **FIO-02**: Prefetch source satisfies existing FrameSource protocol (drop-in replacement)
 
 ### Reconstruction
 
@@ -52,8 +52,8 @@ None — this is a focused optimization milestone.
 | ASSOC-02 | Phase 56 | Pending |
 | RECON-01 | Phase 57 | Complete |
 | RECON-02 | Phase 57 | Complete |
-| FIO-01 | Phase 58 | Pending |
-| FIO-02 | Phase 58 | Pending |
+| FIO-01 | Phase 58 | Complete |
+| FIO-02 | Phase 58 | Complete |
 | BATCH-01 | Phase 59 | Pending |
 | BATCH-02 | Phase 59 | Pending |
 | BATCH-03 | Phase 59 | Pending |

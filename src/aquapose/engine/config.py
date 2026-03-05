@@ -264,6 +264,25 @@ class PlaneProjectionConfig:
 
 
 @dataclass(frozen=True)
+class PlaneSmoothingConfig:
+    """Config for the temporal plane smoothing step (Component B).
+
+    Component B is a post-processing step that smooths plane normals
+    across time and rotates control points to match. It runs as a
+    separate CLI command (``aquapose smooth-planes``), not as part of
+    the reconstruction pipeline.
+
+    Attributes:
+        enabled: Whether temporal smoothing is enabled. Default True.
+        sigma_frames: Gaussian filter sigma in frames for normal
+            smoothing. Default 3.
+    """
+
+    enabled: bool = True
+    sigma_frames: int = 3
+
+
+@dataclass(frozen=True)
 class ReconstructionConfig:
     """Config for the Reconstruction stage (Stage 5).
 

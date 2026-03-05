@@ -208,6 +208,111 @@ class PoseEstimationBackend:
 
         return annotated
 
+    def process_batch(
+        self,
+        crops: list[AffineCrop],
+        metadata: list[tuple[Detection, str, int]],
+    ) -> list[AnnotatedDetection]:
+        """Run batched YOLO-pose inference on pre-extracted crops.
+
+        Accepts a list of crops and corresponding metadata tuples, runs a
+        single batched ``model.predict()`` call, and returns one
+        :class:`AnnotatedDetection` per input in positional correspondence.
+
+        Args:
+            crops: Pre-extracted affine crops for all detections.
+            metadata: Parallel list of ``(detection, camera_id, frame_idx)``
+                tuples for building output objects.
+
+        Returns:
+            List of :class:`AnnotatedDetection` in the same order as *crops*.
+            Entries where keypoint extraction or interpolation fails have
+            ``midline=None``.
+        """
+        if self._model is None or not crops:
+            return [
+                AnnotatedDetection(
+                    detection=det,
+                    mask=None,
+                    crop_region=None,
+                    midline=None,
+                    camera_id=cam_id,
+                    frame_index=frame_idx,
+                )
+                for det, cam_id, frame_idx in metadata
+            ]
+
+        crop_images = [c.image for c in crops]
+        results = self._model.predict(  # type: ignore[union-attr]
+            crop_images, conf=self._conf, verbose=False, batch=len(crop_images)
+        )
+
+        output: list[AnnotatedDetection] = []
+        for result, crop, (det, cam_id, frame_idx) in zip(
+            results, crops, metadata, strict=True
+        ):
+            _null = AnnotatedDetection(
+                detection=det,
+                mask=None,
+                crop_region=None,
+                midline=None,
+                camera_id=cam_id,
+                frame_index=frame_idx,
+            )
+
+            kpts_xy, kpts_conf = self._extract_keypoints([result])
+            if kpts_xy is None or kpts_conf is None:
+                output.append(_null)
+                continue
+
+            visible_mask = kpts_conf >= self._confidence_floor
+            n_visible = int(visible_mask.sum())
+
+            if n_visible < self._min_observed_keypoints:
+                output.append(_null)
+                continue
+
+            visible_kpts = kpts_xy[visible_mask]
+            visible_t = self._keypoint_t_values[visible_mask]
+            visible_conf = kpts_conf[visible_mask]
+
+            try:
+                xy_crop, conf_resampled = _keypoints_to_midline(
+                    visible_kpts, visible_t, visible_conf, self._n_points
+                )
+            except Exception:
+                logger.debug(
+                    "PoseEstimationBackend: keypoint interpolation failed",
+                    exc_info=True,
+                )
+                output.append(_null)
+                continue
+
+            xy_frame = invert_affine_points(xy_crop, crop.M).astype(np.float32)
+
+            midline = Midline2D(
+                points=xy_frame,
+                half_widths=np.zeros(self._n_points, dtype=np.float32),
+                fish_id=0,
+                camera_id=cam_id,
+                frame_index=frame_idx,
+                is_head_to_tail=True,
+                point_confidence=conf_resampled,
+            )
+
+            output.append(
+                AnnotatedDetection(
+                    detection=det,
+                    mask=None,
+                    crop_region=None,
+                    midline=midline,
+                    camera_id=cam_id,
+                    frame_index=frame_idx,
+                )
+            )
+
+        return output
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------

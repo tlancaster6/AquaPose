@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 from aquapose.cli import cli
@@ -33,7 +34,8 @@ def test_train_yolo_obb_help_shows_expected_flags() -> None:
     assert result.exit_code == 0, result.output
     expected_flags = [
         "--data-dir",
-        "--output-dir",
+        "--config",
+        "--tag",
         "--epochs",
         "--device",
         "--val-split",
@@ -44,6 +46,7 @@ def test_train_yolo_obb_help_shows_expected_flags() -> None:
     ]
     for flag in expected_flags:
         assert flag in result.output, f"Expected flag {flag!r} not found in help output"
+    assert "--output-dir" not in result.output, "--output-dir should be removed"
 
 
 def _get_training_module_imports(filepath: Path) -> list[tuple[int, str]]:
@@ -101,7 +104,8 @@ def test_train_seg_help_shows_expected_flags() -> None:
     assert result.exit_code == 0, result.output
     expected_flags = [
         "--data-dir",
-        "--output-dir",
+        "--config",
+        "--tag",
         "--epochs",
         "--batch-size",
         "--device",
@@ -114,6 +118,7 @@ def test_train_seg_help_shows_expected_flags() -> None:
         assert flag in result.output, (
             f"Expected flag {flag!r} not found in seg help output"
         )
+    assert "--output-dir" not in result.output, "--output-dir should be removed"
 
 
 def test_train_pose_help_shows_expected_flags() -> None:
@@ -123,7 +128,8 @@ def test_train_pose_help_shows_expected_flags() -> None:
     assert result.exit_code == 0, result.output
     expected_flags = [
         "--data-dir",
-        "--output-dir",
+        "--config",
+        "--tag",
         "--epochs",
         "--batch-size",
         "--device",
@@ -136,3 +142,13 @@ def test_train_pose_help_shows_expected_flags() -> None:
         assert flag in result.output, (
             f"Expected flag {flag!r} not found in pose help output"
         )
+    assert "--output-dir" not in result.output, "--output-dir should be removed"
+
+
+@pytest.mark.xfail(reason="compare command added in Plan 66-02")
+def test_train_help_lists_compare() -> None:
+    """aquapose train --help should list the compare subcommand."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["train", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "compare" in result.output

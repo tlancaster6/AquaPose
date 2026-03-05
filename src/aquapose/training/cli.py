@@ -20,10 +20,16 @@ def train_group() -> None:
     help="Directory containing dataset.yaml file.",
 )
 @click.option(
-    "--output-dir",
+    "--config",
     required=True,
-    type=click.Path(),
-    help="Directory for model weights and metrics.",
+    type=click.Path(exists=True),
+    help="Project config YAML path.",
+)
+@click.option(
+    "--tag",
+    default=None,
+    type=str,
+    help="Human-readable tag for this run (e.g. 'round2-high-conf').",
 )
 @click.option("--epochs", default=100, type=int, help="Number of training epochs.")
 @click.option("--batch-size", default=16, type=int, help="Batch size.")
@@ -55,7 +61,8 @@ def train_group() -> None:
 )
 def yolo_obb(
     data_dir: str,
-    output_dir: str,
+    config: str,
+    tag: str | None,
     epochs: int,
     batch_size: int,
     device: str | None,
@@ -69,13 +76,37 @@ def yolo_obb(
     """Train YOLO-OBB oriented bounding-box detection model."""
     from aquapose.logging import setup_file_logging
 
-    setup_file_logging(Path(output_dir), "train-yolo-obb")
+    from .run_manager import (
+        create_run_dir,
+        print_next_steps,
+        snapshot_config,
+        write_summary,
+    )
+
+    model_type = "obb"
+    run_dir = create_run_dir(Path(config), model_type)
+    setup_file_logging(run_dir, "train-yolo-obb")
+
+    cli_args = {
+        "epochs": epochs,
+        "batch_size": batch_size,
+        "device": device,
+        "val_split": val_split,
+        "imgsz": imgsz,
+        "model": model,
+        "weights": str(weights) if weights else None,
+        "mosaic": mosaic,
+        "patience": patience,
+        "data_dir": data_dir,
+        "tag": tag,
+    }
+    snapshot_config(run_dir, cli_args, dataset_dir=Path(data_dir))
 
     from .yolo_obb import train_yolo_obb
 
     best_path = train_yolo_obb(
         data_dir=Path(data_dir),
-        output_dir=Path(output_dir),
+        output_dir=run_dir,
         epochs=epochs,
         batch_size=batch_size,
         device=device,
@@ -86,7 +117,17 @@ def yolo_obb(
         patience=patience,
         mosaic=mosaic,
     )
-    click.echo(f"Training complete. Best model: {best_path}")
+
+    results_csv = run_dir / "_ultralytics" / "train" / "results.csv"
+    write_summary(
+        run_dir,
+        results_csv,
+        training_args=cli_args,
+        model_type=model_type,
+        tag=tag,
+        dataset_dir=Path(data_dir),
+    )
+    print_next_steps(run_dir, model_type, best_path)
 
 
 @train_group.command("seg")
@@ -97,10 +138,16 @@ def yolo_obb(
     help="Directory containing dataset.yaml file.",
 )
 @click.option(
-    "--output-dir",
+    "--config",
     required=True,
-    type=click.Path(),
-    help="Directory for model weights and metrics.",
+    type=click.Path(exists=True),
+    help="Project config YAML path.",
+)
+@click.option(
+    "--tag",
+    default=None,
+    type=str,
+    help="Human-readable tag for this run (e.g. 'round2-high-conf').",
 )
 @click.option("--epochs", default=100, type=int, help="Number of training epochs.")
 @click.option("--batch-size", default=16, type=int, help="Batch size.")
@@ -132,7 +179,8 @@ def yolo_obb(
 )
 def seg(
     data_dir: str,
-    output_dir: str,
+    config: str,
+    tag: str | None,
     epochs: int,
     batch_size: int,
     device: str | None,
@@ -146,13 +194,37 @@ def seg(
     """Train YOLO-seg instance segmentation model."""
     from aquapose.logging import setup_file_logging
 
-    setup_file_logging(Path(output_dir), "train-seg")
+    from .run_manager import (
+        create_run_dir,
+        print_next_steps,
+        snapshot_config,
+        write_summary,
+    )
+
+    model_type = "seg"
+    run_dir = create_run_dir(Path(config), model_type)
+    setup_file_logging(run_dir, "train-seg")
+
+    cli_args = {
+        "epochs": epochs,
+        "batch_size": batch_size,
+        "device": device,
+        "val_split": val_split,
+        "imgsz": imgsz,
+        "model": model,
+        "weights": str(weights) if weights else None,
+        "mosaic": mosaic,
+        "patience": patience,
+        "data_dir": data_dir,
+        "tag": tag,
+    }
+    snapshot_config(run_dir, cli_args, dataset_dir=Path(data_dir))
 
     from .yolo_seg import train_yolo_seg
 
     best_path = train_yolo_seg(
         data_dir=Path(data_dir),
-        output_dir=Path(output_dir),
+        output_dir=run_dir,
         epochs=epochs,
         batch_size=batch_size,
         device=device,
@@ -163,7 +235,17 @@ def seg(
         patience=patience,
         mosaic=mosaic,
     )
-    click.echo(f"Training complete. Best model: {best_path}")
+
+    results_csv = run_dir / "_ultralytics" / "train" / "results.csv"
+    write_summary(
+        run_dir,
+        results_csv,
+        training_args=cli_args,
+        model_type=model_type,
+        tag=tag,
+        dataset_dir=Path(data_dir),
+    )
+    print_next_steps(run_dir, model_type, best_path)
 
 
 @train_group.command("pose")
@@ -174,10 +256,16 @@ def seg(
     help="Directory containing dataset.yaml file.",
 )
 @click.option(
-    "--output-dir",
+    "--config",
     required=True,
-    type=click.Path(),
-    help="Directory for model weights and metrics.",
+    type=click.Path(exists=True),
+    help="Project config YAML path.",
+)
+@click.option(
+    "--tag",
+    default=None,
+    type=str,
+    help="Human-readable tag for this run (e.g. 'round2-high-conf').",
 )
 @click.option("--epochs", default=100, type=int, help="Number of training epochs.")
 @click.option("--batch-size", default=16, type=int, help="Batch size.")
@@ -209,7 +297,8 @@ def seg(
 )
 def pose(
     data_dir: str,
-    output_dir: str,
+    config: str,
+    tag: str | None,
     epochs: int,
     batch_size: int,
     device: str | None,
@@ -223,13 +312,37 @@ def pose(
     """Train YOLO-pose keypoint estimation model."""
     from aquapose.logging import setup_file_logging
 
-    setup_file_logging(Path(output_dir), "train-pose")
+    from .run_manager import (
+        create_run_dir,
+        print_next_steps,
+        snapshot_config,
+        write_summary,
+    )
+
+    model_type = "pose"
+    run_dir = create_run_dir(Path(config), model_type)
+    setup_file_logging(run_dir, "train-pose")
+
+    cli_args = {
+        "epochs": epochs,
+        "batch_size": batch_size,
+        "device": device,
+        "val_split": val_split,
+        "imgsz": imgsz,
+        "model": model,
+        "weights": str(weights) if weights else None,
+        "mosaic": mosaic,
+        "patience": patience,
+        "data_dir": data_dir,
+        "tag": tag,
+    }
+    snapshot_config(run_dir, cli_args, dataset_dir=Path(data_dir))
 
     from .yolo_pose import train_yolo_pose
 
     best_path = train_yolo_pose(
         data_dir=Path(data_dir),
-        output_dir=Path(output_dir),
+        output_dir=run_dir,
         epochs=epochs,
         batch_size=batch_size,
         device=device,
@@ -240,4 +353,14 @@ def pose(
         patience=patience,
         mosaic=mosaic,
     )
-    click.echo(f"Training complete. Best model: {best_path}")
+
+    results_csv = run_dir / "_ultralytics" / "train" / "results.csv"
+    write_summary(
+        run_dir,
+        results_csv,
+        training_args=cli_args,
+        model_type=model_type,
+        tag=tag,
+        dataset_dir=Path(data_dir),
+    )
+    print_next_steps(run_dir, model_type, best_path)

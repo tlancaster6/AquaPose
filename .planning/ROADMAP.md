@@ -162,7 +162,7 @@ Full details: `.planning/milestones/v3.4-ROADMAP.md`
 
 **Milestone Goal:** Use pipeline 3D reconstructions to generate training labels at scale, enabling iterative model retraining to improve detection and pose estimation quality.
 
-- [ ] **Phase 61: Z-Denoising** - Plane projection and temporal smoothing to clean z-noise from 3D reconstructions
+- [x] **Phase 61: Z-Denoising** - Plane projection and temporal smoothing to clean z-noise from 3D reconstructions (completed 2026-03-05)
 - [ ] **Phase 62: Prep Infrastructure** - CLI wiring for calibrate-keypoints and LUT generation extraction
 - [ ] **Phase 63: Pseudo-Label Generation (Source A)** - Reproject consensus 3D reconstructions into camera views as training labels
 - [ ] **Phase 64: Gap Detection and Fill (Source B)** - Identify and label detection gaps via inverse LUT visibility cross-referencing
@@ -181,7 +181,7 @@ Full details: `.planning/milestones/v3.4-ROADMAP.md`
   3. Signed off-plane residuals stored per body point (no hard bypass; real out-of-plane structure preserved in residuals for future Component C)
   4. Separate config toggles: `plane_projection.enabled` (reconstruction-time) and `plane_smoothing.enabled` / `plane_smoothing.sigma_frames` (post-processing). A can run without B; B requires A
   5. HDF5 writer and Midline3D type updated with plane normal, centroid, and off-plane residual fields
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 61-01-PLAN.md — Component A: plane fit, Midline3D extension, config, HDF5 writer
 - [ ] 61-02-PLAN.md — Component B: temporal smoothing CLI, eval metrics
@@ -259,7 +259,7 @@ Phases execute in numeric order: 61 -> 62 -> 63 -> 64 -> 65 -> 66
 | 46-50 | v3.2 | 11/11 | Complete | 2026-03-03 |
 | 51-55 | v3.3 | 11/11 | Complete | 2026-03-05 |
 | 56-60 | v3.4 | 8/8 | Complete | 2026-03-05 |
-| 61. Z-Denoising | v3.5 | 0/2 | Planning | - |
+| 61. Z-Denoising | 2/2 | Complete    | 2026-03-05 | - |
 | 62. Prep Infrastructure | v3.5 | 0/2 | Planning | - |
 | 63. Pseudo-Label Generation (Source A) | v3.5 | 0/? | Not started | - |
 | 64. Gap Detection and Fill (Source B) | v3.5 | 0/? | Not started | - |

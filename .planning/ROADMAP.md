@@ -149,7 +149,7 @@ Full details: `.planning/milestones/v3.3-ROADMAP.md`
 
 - [x] **Phase 56: Vectorized Association Scoring** — Replace per-pair ray-ray distance loop with NumPy broadcasting (completed 2026-03-05)
 - [x] **Phase 57: Vectorized DLT Reconstruction** — Replace per-body-point SVD loop with batched `torch.linalg.svd` (completed 2026-03-05)
-- [ ] **Phase 58: Frame I/O Optimization** — Add background-thread prefetch source to eliminate seek overhead and GPU idle gaps
+- [x] **Phase 58: Frame I/O Optimization** — Add background-thread prefetch source to eliminate seek overhead and GPU idle gaps (completed 2026-03-05)
 - [ ] **Phase 59: Batched YOLO Inference** — Batch detection and midline YOLO calls across cameras and crops per frame
 
 ## Phase Details
@@ -186,7 +186,7 @@ Plans:
   2. ChunkFrameSource is a drop-in replacement — all stage code is unaffected and `aquapose eval` produces identical results
   3. Frame identity is correct across all 12 cameras for every frame in a multi-chunk run (no seek inaccuracy or thread-safety corruption)
   4. Prefetch buffer depth is hardcoded at 2 frames (~144 MB for 12 cameras)
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
 - [ ] 58-01-PLAN.md — Implement background prefetch in ChunkFrameSource and fix DetectionStage missing-camera guard
 
@@ -216,7 +216,7 @@ Plans:
 | 51-55 | v3.3 | 11/11 | Complete | 2026-03-05 |
 | 56. Vectorized Association Scoring | v3.4 | Complete    | 2026-03-05 | - |
 | 57. Vectorized DLT Reconstruction | 1/1 | Complete    | 2026-03-05 | - |
-| 58. Frame I/O Optimization | v3.4 | 0/1 | Not started | - |
+| 58. Frame I/O Optimization | 1/1 | Complete   | 2026-03-05 | - |
 | 59. Batched YOLO Inference | v3.4 | 0/? | Not started | - |
 
 ### Phase 60: End-to-End Performance Validation

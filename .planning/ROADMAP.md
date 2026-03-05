@@ -250,7 +250,10 @@ Plans:
   1. Each training run outputs to a unique timestamped directory with a config snapshot and metric summary
   2. User can run `aquapose train compare` to generate a cross-run comparison table with both Ultralytics training metrics and aquapose eval pipeline metrics
   3. Comparison report tracks which pseudo-label round and confidence thresholds were used for each run
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 66-01-PLAN.md — Run manager module, CLI --config/--tag flags, provenance tracking
+- [ ] 66-02-PLAN.md — Compare command with terminal table, CSV export, source breakdown
 
 ## Progress
 
@@ -273,4 +276,4 @@ Phases execute in numeric order: 61 -> 62 -> 63 -> 64 -> 65 -> 66
 | 63. Pseudo-Label Generation (Source A) | 2/2 | Complete   | 2026-03-05 | - |
 | 64. Gap Detection and Fill (Source B) | 2/2 | Complete    | 2026-03-05 | - |
 | 65. Frame Selection and Dataset Assembly | 1/2 | In Progress|  | - |
-| 66. Training Run Management | v3.5 | 0/? | Not started | - |
+| 66. Training Run Management | v3.5 | 0/2 | Not started | - |

@@ -191,9 +191,9 @@ def test_chunk_prefetch_no_concurrent_iteration(tmp_path: Path) -> None:
     with vfs:
         chunk = ChunkFrameSource(vfs, start_frame=0, end_frame=10)
         it = iter(chunk)
-        next(it)  # Start first iteration
+        next(it)  # Start first iteration (triggers generator body)
         with pytest.raises(RuntimeError, match=r"[Cc]oncurrent|[Aa]lready"):
-            iter(chunk)  # Attempt second concurrent iteration
+            _start_concurrent_iter(chunk)
         # Exhaust or clean up
         chunk.__exit__(None, None, None)
 
@@ -243,6 +243,12 @@ def test_chunk_frame_source_satisfies_protocol(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _start_concurrent_iter(chunk: ChunkFrameSource) -> None:
+    """Start a second iteration on a ChunkFrameSource (triggers concurrency guard)."""
+    it2 = iter(chunk)
+    next(it2)
 
 
 def _make_synthetic_video(

@@ -80,6 +80,13 @@ class DetectionStage:
             for _frame_idx, frames in self._frame_source:
                 frame_dets: dict[str, list[Detection]] = {}
                 for cam_id in camera_ids:
+                    if cam_id not in frames:
+                        logger.warning(
+                            "Camera %s: frame missing, skipping detection",
+                            cam_id,
+                        )
+                        frame_dets[cam_id] = []
+                        continue
                     frame_dets[cam_id] = self._detector.detect(frames[cam_id])
 
                 detections_per_frame.append(frame_dets)

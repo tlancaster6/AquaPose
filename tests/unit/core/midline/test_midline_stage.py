@@ -184,6 +184,165 @@ def test_import_boundary_no_engine_imports() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Batched inference path
+# ---------------------------------------------------------------------------
+
+
+def test_batched_run_calls_process_batch(tmp_path: Path) -> None:
+    """MidlineStage.run() calls process_batch once per frame via batched path."""
+    import numpy as np
+
+    from aquapose.core.types.crop import AffineCrop
+    from aquapose.core.types.frame_source import FrameSource
+
+    det1 = Detection(bbox=(10, 10, 50, 50), mask=None, area=2500, confidence=0.9)
+    det2 = Detection(bbox=(60, 60, 30, 30), mask=None, area=900, confidence=0.8)
+
+    detections: list[dict[str, list[Detection]]] = [
+        {"cam1": [det1], "cam2": [det2]},
+    ]
+
+    # Build a mock frame source that yields one frame
+    dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    mock_frame_source = MagicMock(spec=FrameSource)
+    mock_frame_source.__enter__ = MagicMock(return_value=mock_frame_source)
+    mock_frame_source.__exit__ = MagicMock(return_value=False)
+    mock_frame_source.__iter__ = MagicMock(
+        return_value=iter([(0, {"cam1": dummy_frame, "cam2": dummy_frame})])
+    )
+
+    calib_path = tmp_path / "calibration.json"
+    calib_path.write_text("{}")
+
+    stage = MidlineStage(
+        frame_source=mock_frame_source,
+        calibration_path=calib_path,
+        device="cpu",
+    )
+
+    # Mock the backend's _extract_crop and process_batch
+    mock_crop = AffineCrop(
+        image=np.zeros((64, 128, 3), dtype=np.uint8),
+        M=np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float64),
+        crop_size=(128, 64),
+        frame_shape=(480, 640),
+    )
+    stage._backend._extract_crop = MagicMock(return_value=mock_crop)  # type: ignore[union-attr]
+
+    def _mock_process_batch(
+        crops: list[AffineCrop],
+        metadata: list[tuple[Detection, str, int]],
+    ) -> list[AnnotatedDetection]:
+        return [
+            AnnotatedDetection(
+                detection=det,
+                mask=None,
+                crop_region=None,
+                midline=None,
+                camera_id=cam_id,
+                frame_index=frame_idx,
+            )
+            for det, cam_id, frame_idx in metadata
+        ]
+
+    stage._backend.process_batch = _mock_process_batch  # type: ignore[union-attr]
+
+    ctx = PipelineContext()
+    ctx.detections = detections
+    ctx.camera_ids = ["cam1", "cam2"]
+
+    result = stage.run(ctx)
+
+    assert result is ctx
+    assert ctx.annotated_detections is not None
+    assert len(ctx.annotated_detections) == 1
+
+    frame_result = ctx.annotated_detections[0]
+    assert "cam1" in frame_result
+    assert "cam2" in frame_result
+    assert len(frame_result["cam1"]) == 1
+    assert len(frame_result["cam2"]) == 1
+
+    # Verify _extract_crop was called for each detection (2 total)
+    assert stage._backend._extract_crop.call_count == 2  # type: ignore[union-attr]
+
+
+def test_batched_run_redistributes_correctly(tmp_path: Path) -> None:
+    """Batched results are redistributed to correct camera/detection slots."""
+    import numpy as np
+
+    from aquapose.core.types.crop import AffineCrop
+    from aquapose.core.types.frame_source import FrameSource
+
+    det_a = Detection(bbox=(10, 10, 50, 50), mask=None, area=2500, confidence=0.9)
+    det_b = Detection(bbox=(60, 60, 30, 30), mask=None, area=900, confidence=0.8)
+    det_c = Detection(bbox=(120, 120, 40, 40), mask=None, area=1600, confidence=0.7)
+
+    # 2 dets on cam1, 1 det on cam2
+    detections: list[dict[str, list[Detection]]] = [
+        {"cam1": [det_a, det_b], "cam2": [det_c]},
+    ]
+
+    dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    mock_frame_source = MagicMock(spec=FrameSource)
+    mock_frame_source.__enter__ = MagicMock(return_value=mock_frame_source)
+    mock_frame_source.__exit__ = MagicMock(return_value=False)
+    mock_frame_source.__iter__ = MagicMock(
+        return_value=iter([(0, {"cam1": dummy_frame, "cam2": dummy_frame})])
+    )
+
+    calib_path = tmp_path / "calibration.json"
+    calib_path.write_text("{}")
+
+    stage = MidlineStage(
+        frame_source=mock_frame_source,
+        calibration_path=calib_path,
+        device="cpu",
+    )
+
+    mock_crop = AffineCrop(
+        image=np.zeros((64, 128, 3), dtype=np.uint8),
+        M=np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float64),
+        crop_size=(128, 64),
+        frame_shape=(480, 640),
+    )
+    stage._backend._extract_crop = MagicMock(return_value=mock_crop)  # type: ignore[union-attr]
+
+    def _mock_process_batch(
+        crops: list[AffineCrop],
+        metadata: list[tuple[Detection, str, int]],
+    ) -> list[AnnotatedDetection]:
+        return [
+            AnnotatedDetection(
+                detection=det,
+                mask=None,
+                crop_region=None,
+                midline=None,
+                camera_id=cam_id,
+                frame_index=frame_idx,
+            )
+            for det, cam_id, frame_idx in metadata
+        ]
+
+    stage._backend.process_batch = _mock_process_batch  # type: ignore[union-attr]
+
+    ctx = PipelineContext()
+    ctx.detections = detections
+    ctx.camera_ids = ["cam1", "cam2"]
+
+    result = stage.run(ctx)
+
+    frame_result = result.annotated_detections[0]
+    assert len(frame_result["cam1"]) == 2, "cam1 should have 2 annotated detections"
+    assert len(frame_result["cam2"]) == 1, "cam2 should have 1 annotated detection"
+
+    # Verify detection identity
+    assert frame_result["cam1"][0].detection is det_a
+    assert frame_result["cam1"][1].detection is det_b
+    assert frame_result["cam2"][0].detection is det_c
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

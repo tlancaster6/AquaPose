@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from aquapose.core.context import PipelineContext
+from aquapose.core.inference import BatchState, predict_with_oom_retry
 from aquapose.core.midline.backends import get_backend
 
 if TYPE_CHECKING:
@@ -99,11 +100,14 @@ class MidlineStage:
         lut_config: Any | None = None,
         midline_config: Any | None = None,
         crop_size: tuple[int, int] = (128, 64),
+        midline_batch_crops: int = 0,
     ) -> None:
         self._frame_source = frame_source
         self._calibration_path = Path(calibration_path)
         self._lut_config = lut_config
         self._midline_config = midline_config
+        self._batch_size = midline_batch_crops
+        self._batch_state = BatchState()
 
         self._backend_kind = backend
 
@@ -213,13 +217,114 @@ class MidlineStage:
                 else:
                     filtered_dets = frame_dets
 
-                annotated = self._backend.process_frame(  # type: ignore[union-attr]
-                    frame_idx=frame_idx,
-                    frame_dets=filtered_dets,
-                    frames=frames,
-                    camera_ids=camera_ids,  # type: ignore[arg-type]
-                )
+                # -- Batched inference path --
+                # 1. Collect phase (CPU): extract crops for all detections
+                from aquapose.core.midline.types import AnnotatedDetection
+
+                crops = []
+                metadata = []
+                cam_det_indices: list[tuple[str, int]] = []
+                failed_entries: list[tuple[int, AnnotatedDetection]] = []
+                position = 0
+
+                for cam_id in camera_ids:  # type: ignore[union-attr]
+                    cam_dets = filtered_dets.get(cam_id, [])
+                    frame = frames.get(cam_id)
+                    for det_i, det in enumerate(cam_dets):
+                        if frame is None:
+                            failed_entries.append(
+                                (
+                                    position,
+                                    AnnotatedDetection(
+                                        detection=det,
+                                        mask=None,
+                                        crop_region=None,
+                                        midline=None,
+                                        camera_id=cam_id,
+                                        frame_index=frame_idx,
+                                    ),
+                                )
+                            )
+                            position += 1
+                            continue
+                        try:
+                            crop = self._backend._extract_crop(det, frame)  # type: ignore[union-attr]
+                        except Exception:
+                            logger.debug(
+                                "MidlineStage: crop extraction failed for "
+                                "%s det %d frame %d",
+                                cam_id,
+                                det_i,
+                                frame_idx,
+                                exc_info=True,
+                            )
+                            failed_entries.append(
+                                (
+                                    position,
+                                    AnnotatedDetection(
+                                        detection=det,
+                                        mask=None,
+                                        crop_region=None,
+                                        midline=None,
+                                        camera_id=cam_id,
+                                        frame_index=frame_idx,
+                                    ),
+                                )
+                            )
+                            position += 1
+                            continue
+                        crops.append(crop)
+                        metadata.append((det, cam_id, frame_idx))
+                        cam_det_indices.append((cam_id, det_i))
+                        position += 1
+
+                # 2. Predict phase (GPU): batched inference with OOM retry
+                if crops:
+
+                    def _batch_predict(
+                        items: list[Any],
+                    ) -> list[AnnotatedDetection]:
+                        crops_chunk = [item[0] for item in items]
+                        meta_chunk = [item[1] for item in items]
+                        return self._backend.process_batch(crops_chunk, meta_chunk)  # type: ignore[union-attr]
+
+                    batch_results = predict_with_oom_retry(
+                        _batch_predict,
+                        list(zip(crops, metadata, strict=True)),
+                        self._batch_size,
+                        self._batch_state,
+                    )
+                else:
+                    batch_results = []
+
+                # 3. Redistribute phase: merge batch results and failed entries
+                all_results: list[AnnotatedDetection] = []
+                batch_iter = iter(batch_results)
+                fail_map = dict(failed_entries)
+                total = position  # total entries (crops + failures)
+                for i in range(total):
+                    if i in fail_map:
+                        all_results.append(fail_map[i])
+                    else:
+                        all_results.append(next(batch_iter))
+
+                # Map back to per-camera dict
+                annotated: dict[str, list[AnnotatedDetection]] = {
+                    cam_id: []
+                    for cam_id in camera_ids  # type: ignore[union-attr]
+                }
+                for ann in all_results:
+                    annotated[ann.camera_id].append(ann)
+
                 annotated_per_frame.append(annotated)
+
+        if self._batch_state.oom_occurred:
+            logger.info(
+                "Midline batch size was reduced to %d due to CUDA OOM. "
+                "Consider setting midline.midline_batch_crops=%d in config.",
+                self._batch_state.effective_batch_size,
+                self._batch_state.effective_batch_size,
+            )
 
         # Apply orientation resolution if LUTs and tracklet groups available.
         # Skip for pose_estimation backend: keypoints are anatomically ordered

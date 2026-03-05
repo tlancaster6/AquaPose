@@ -385,6 +385,7 @@ def build_stages(
     detection_stage = DetectionStage(
         frame_source=frame_source,
         detector_kind=config.detection.detector_kind,
+        detection_batch_frames=config.detection.detection_batch_frames,
         weights_path=config.detection.weights_path,
         device=config.device,
     )
@@ -401,6 +402,7 @@ def build_stages(
         lut_config=config.lut,
         midline_config=config.midline,
         crop_size=tuple(config.detection.crop_size),
+        midline_batch_crops=config.midline.midline_batch_crops,
     )
 
     return _truncate(

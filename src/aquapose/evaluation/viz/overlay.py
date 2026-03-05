@@ -13,8 +13,8 @@ import cv2
 import numpy as np
 import scipy.interpolate
 
+from aquapose.evaluation.viz._frames import synthetic_frame_iter
 from aquapose.evaluation.viz._loader import load_all_chunk_caches, read_config_yaml
-from aquapose.visualization.frames import synthetic_frame_iter
 
 if TYPE_CHECKING:
     from aquapose.calibration.projection import RefractiveProjectionModel
@@ -58,6 +58,85 @@ def _fish_color(fish_id: int) -> tuple[int, int, int]:
     return _PALETTE_BGR[fish_id % len(_PALETTE_BGR)]
 
 
+_N_SPLINE_EVAL: int = 50
+_T_VALS: np.ndarray = np.linspace(0.0, 1.0, _N_SPLINE_EVAL)
+
+
+def _eval_spline_pts(spline: object) -> np.ndarray | None:
+    """Evaluate a B-spline at ``_N_SPLINE_EVAL`` uniform points.
+
+    Args:
+        spline: Spline3D with control_points, knots, degree attributes.
+
+    Returns:
+        (N, 3) float64 array, or None on failure.
+    """
+    cp = getattr(spline, "control_points", None)
+    knots = getattr(spline, "knots", None)
+    degree = getattr(spline, "degree", None)
+    if cp is None or knots is None or degree is None:
+        return None
+    try:
+        bspl = scipy.interpolate.BSpline(
+            np.asarray(knots, dtype=np.float64),
+            np.asarray(cp, dtype=np.float64),
+            degree,
+        )
+        return bspl(_T_VALS)  # (N, 3)
+    except Exception:
+        return None
+
+
+def _batch_reproject(
+    splines_3d: list[np.ndarray],
+    model: RefractiveProjectionModel,
+) -> list[np.ndarray | None]:
+    """Project multiple spline point arrays through a camera model in one call.
+
+    Concatenates all 3D points into a single tensor, projects once, then
+    splits results back per-spline. Much faster than one project() call per
+    spline due to reduced GPU round-trips.
+
+    Args:
+        splines_3d: List of (N_i, 3) float64 arrays (one per spline).
+        model: Per-camera RefractiveProjectionModel.
+
+    Returns:
+        List of (M_i, 2) float32 arrays (valid pixels per spline), or None
+        entries for splines with fewer than 2 valid projections.
+    """
+    import torch
+
+    if not splines_3d:
+        return []
+
+    lengths = [len(pts) for pts in splines_3d]
+    combined = np.concatenate(splines_3d, axis=0)  # (sum(N_i), 3)
+    pts_tensor = torch.tensor(combined, dtype=torch.float32, device=model.C.device)
+
+    try:
+        pixels, valid = model.project(pts_tensor)
+        pixels_np = (
+            pixels.cpu().numpy() if hasattr(pixels, "cpu") else np.asarray(pixels)
+        )
+        valid_np = valid.cpu().numpy() if hasattr(valid, "cpu") else np.asarray(valid)
+    except Exception:
+        return [None] * len(splines_3d)
+
+    results: list[np.ndarray | None] = []
+    offset = 0
+    for length in lengths:
+        seg_pixels = pixels_np[offset : offset + length]
+        seg_valid = valid_np[offset : offset + length]
+        seg_pixels = seg_pixels[seg_valid]
+        if len(seg_pixels) < 2:
+            results.append(None)
+        else:
+            results.append(seg_pixels.astype(np.float32))
+        offset += length
+    return results
+
+
 def _reproject_3d_midline(
     spline: object,
     model: RefractiveProjectionModel,
@@ -71,39 +150,11 @@ def _reproject_3d_midline(
     Returns:
         (N, 2) float32 array of valid pixel coordinates, or None on failure.
     """
-    control_points = getattr(spline, "control_points", None)
-    if control_points is None:
+    pts_3d = _eval_spline_pts(spline)
+    if pts_3d is None:
         return None
-
-    cp = np.asarray(control_points, dtype=np.float64)
-    knots = getattr(spline, "knots", None)
-    degree = getattr(spline, "degree", None)
-    if knots is None or degree is None:
-        return None
-    try:
-        bspl = scipy.interpolate.BSpline(
-            np.asarray(knots, dtype=np.float64), cp, degree
-        )
-        t_vals = np.linspace(0.0, 1.0, 50)
-        pts_3d = bspl(t_vals)  # (50, 3)
-    except Exception:
-        return None
-
-    try:
-        import torch
-
-        pts_tensor = torch.tensor(pts_3d, dtype=torch.float32)
-        pixels, valid = model.project(pts_tensor)  # type: ignore[union-attr]
-        pixels_np = (
-            pixels.cpu().numpy() if hasattr(pixels, "cpu") else np.asarray(pixels)
-        )
-        valid_np = valid.cpu().numpy() if hasattr(valid, "cpu") else np.asarray(valid)
-        pixels_np = pixels_np[valid_np]
-        if len(pixels_np) < 2:
-            return None
-        return pixels_np.astype(np.float32)
-    except Exception:
-        return None
+    results = _batch_reproject([pts_3d], model)
+    return results[0]
 
 
 def _draw_midline(
@@ -452,18 +503,34 @@ def generate_overlay(
                                             confidence=conf,
                                         )
 
-                # Draw reprojected 3D midlines.
+                # Draw reprojected 3D midlines (batched per camera).
                 if frame_idx < len(all_midlines_3d):
                     frame_midlines = all_midlines_3d[frame_idx]
                     if isinstance(frame_midlines, dict):
+                        # Evaluate all splines once (CPU).
+                        fish_ids: list[int] = []
+                        spline_pts: list[np.ndarray] = []
                         for fish_id, spline in frame_midlines.items():
-                            color = _fish_color(fish_id)
+                            pts = _eval_spline_pts(spline)
+                            if pts is not None:
+                                fish_ids.append(fish_id)
+                                spline_pts.append(pts)
+
+                        if spline_pts:
+                            # One batched GPU call per camera.
                             for cam_id in camera_ids:
                                 if cam_id not in frames or cam_id not in models:
                                     continue
-                                pts_2d = _reproject_3d_midline(spline, models[cam_id])
-                                if pts_2d is not None:
-                                    _draw_midline(frames[cam_id], pts_2d, color)
+                                batch_results = _batch_reproject(
+                                    spline_pts, models[cam_id]
+                                )
+                                for fid, pts_2d in zip(
+                                    fish_ids, batch_results, strict=True
+                                ):
+                                    if pts_2d is not None:
+                                        _draw_midline(
+                                            frames[cam_id], pts_2d, _fish_color(fid)
+                                        )
 
                 # Scale frames.
                 if scale != 1.0 and out_w > 0 and out_h > 0:

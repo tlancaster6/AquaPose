@@ -360,12 +360,20 @@ def tune_cmd(
     is_flag=True,
     help="Generate per-camera trail videos and association mosaic.",
 )
+@click.option(
+    "--fade-trails",
+    "fade_trails",
+    is_flag=True,
+    default=False,
+    help="Enable per-segment alpha fading on trail lines (significantly slower).",
+)
 def viz(
     run_dir: str,
     output_dir: str | None,
     overlay: bool,
     animation: bool,
     trails: bool,
+    fade_trails: bool,
 ) -> None:
     """Generate visualizations from diagnostic run caches.
 
@@ -390,10 +398,10 @@ def viz(
     if not any(selected.values()):
         selected = {k: True for k in selected}
 
-    generators = {
-        "overlay": generate_overlay,
-        "animation": generate_animation,
-        "trails": generate_trails,
+    generators: dict[str, Any] = {
+        "overlay": lambda: generate_overlay(run_path, out_dir),
+        "animation": lambda: generate_animation(run_path, out_dir),
+        "trails": lambda: generate_trails(run_path, out_dir, fade_trails=fade_trails),
     }
 
     succeeded: list[str] = []
@@ -402,7 +410,7 @@ def viz(
         if not enabled:
             continue
         try:
-            result = generators[name](run_path, out_dir)
+            result = generators[name]()
             succeeded.append(f"  {name}: {result}")
         except Exception as exc:
             skipped.append((name, str(exc)))

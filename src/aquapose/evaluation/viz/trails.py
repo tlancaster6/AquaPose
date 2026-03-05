@@ -12,8 +12,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from aquapose.evaluation.viz._frames import synthetic_frame_iter
 from aquapose.evaluation.viz._loader import load_all_chunk_caches, read_config_yaml
-from aquapose.visualization.frames import synthetic_frame_iter
 
 logger = logging.getLogger(__name__)
 
@@ -137,8 +137,9 @@ def _draw_trail(
     fish_id: int,
     fish_color_map: dict[int, tuple[int, int, int]],
     trail_length: int = _TRAIL_LENGTH,
+    fade: bool = False,
 ) -> None:
-    """Draw a fading polyline trail and fish ID label on a frame.
+    """Draw a polyline trail and fish ID label on a frame.
 
     Args:
         frame: BGR image to draw on (modified in-place).
@@ -147,6 +148,8 @@ def _draw_trail(
         fish_id: Global fish identity (or -1 for ungrouped).
         fish_color_map: Mapping from fish_id to BGR color.
         trail_length: Number of past frames to include in the trail.
+        fade: If True, alpha-blend each segment individually (slow).
+            If False, draw opaque lines directly (fast).
     """
     base_color = fish_color_map.get(fish_id, _GRAY_BGR)
     start_idx = max(0, current_idx - trail_length)
@@ -157,15 +160,27 @@ def _draw_trail(
     if n_pts < 1:
         return
 
-    for seg_i in range(n_pts - 1):
-        alpha = 0.3 + 0.7 * (seg_i / max(n_pts - 1, 1))
-        status = trail_statuses[seg_i]
-        seg_color = base_color if status == "detected" else _coasted_color(base_color)
-        overlay = frame.copy()
-        pt1 = (int(trail_pts[seg_i][0]), int(trail_pts[seg_i][1]))
-        pt2 = (int(trail_pts[seg_i + 1][0]), int(trail_pts[seg_i + 1][1]))
-        cv2.line(overlay, pt1, pt2, seg_color, 2)
-        cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
+    if fade:
+        for seg_i in range(n_pts - 1):
+            alpha = 0.3 + 0.7 * (seg_i / max(n_pts - 1, 1))
+            status = trail_statuses[seg_i]
+            seg_color = (
+                base_color if status == "detected" else _coasted_color(base_color)
+            )
+            overlay = frame.copy()
+            pt1 = (int(trail_pts[seg_i][0]), int(trail_pts[seg_i][1]))
+            pt2 = (int(trail_pts[seg_i + 1][0]), int(trail_pts[seg_i + 1][1]))
+            cv2.line(overlay, pt1, pt2, seg_color, 2)
+            cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
+    else:
+        for seg_i in range(n_pts - 1):
+            status = trail_statuses[seg_i]
+            seg_color = (
+                base_color if status == "detected" else _coasted_color(base_color)
+            )
+            pt1 = (int(trail_pts[seg_i][0]), int(trail_pts[seg_i][1]))
+            pt2 = (int(trail_pts[seg_i + 1][0]), int(trail_pts[seg_i + 1][1]))
+            cv2.line(frame, pt1, pt2, seg_color, 2)
 
     head_u = int(trail_pts[-1][0])
     head_v = int(trail_pts[-1][1])
@@ -194,8 +209,9 @@ def _draw_trail_scaled(
     scale_x: float,
     scale_y: float,
     trail_length: int = _TRAIL_LENGTH,
+    fade: bool = False,
 ) -> None:
-    """Draw fading trail on a downsampled tile with pre-applied scale factors.
+    """Draw trail on a downsampled tile with pre-applied scale factors.
 
     Args:
         tile: BGR tile image to draw on (modified in-place).
@@ -206,6 +222,8 @@ def _draw_trail_scaled(
         scale_x: Horizontal scaling factor from original to tile.
         scale_y: Vertical scaling factor from original to tile.
         trail_length: Number of past frames to include in the trail.
+        fade: If True, alpha-blend each segment individually (slow).
+            If False, draw opaque lines directly (fast).
     """
     base_color = fish_color_map.get(fish_id, _GRAY_BGR)
     start_idx = max(0, current_idx - trail_length)
@@ -216,18 +234,39 @@ def _draw_trail_scaled(
     if n_pts < 1:
         return
 
-    for seg_i in range(n_pts - 1):
-        alpha = 0.3 + 0.7 * (seg_i / max(n_pts - 1, 1))
-        status = trail_statuses[seg_i]
-        seg_color = base_color if status == "detected" else _coasted_color(base_color)
-        overlay = tile.copy()
-        pt1 = (int(trail_pts[seg_i][0] * scale_x), int(trail_pts[seg_i][1] * scale_y))
-        pt2 = (
-            int(trail_pts[seg_i + 1][0] * scale_x),
-            int(trail_pts[seg_i + 1][1] * scale_y),
-        )
-        cv2.line(overlay, pt1, pt2, seg_color, 1)
-        cv2.addWeighted(overlay, alpha, tile, 1 - alpha, 0, tile)
+    if fade:
+        for seg_i in range(n_pts - 1):
+            alpha = 0.3 + 0.7 * (seg_i / max(n_pts - 1, 1))
+            status = trail_statuses[seg_i]
+            seg_color = (
+                base_color if status == "detected" else _coasted_color(base_color)
+            )
+            overlay = tile.copy()
+            pt1 = (
+                int(trail_pts[seg_i][0] * scale_x),
+                int(trail_pts[seg_i][1] * scale_y),
+            )
+            pt2 = (
+                int(trail_pts[seg_i + 1][0] * scale_x),
+                int(trail_pts[seg_i + 1][1] * scale_y),
+            )
+            cv2.line(overlay, pt1, pt2, seg_color, 1)
+            cv2.addWeighted(overlay, alpha, tile, 1 - alpha, 0, tile)
+    else:
+        for seg_i in range(n_pts - 1):
+            status = trail_statuses[seg_i]
+            seg_color = (
+                base_color if status == "detected" else _coasted_color(base_color)
+            )
+            pt1 = (
+                int(trail_pts[seg_i][0] * scale_x),
+                int(trail_pts[seg_i][1] * scale_y),
+            )
+            pt2 = (
+                int(trail_pts[seg_i + 1][0] * scale_x),
+                int(trail_pts[seg_i + 1][1] * scale_y),
+            )
+            cv2.line(tile, pt1, pt2, seg_color, 1)
 
     head_u = int(trail_pts[-1][0] * scale_x)
     head_v = int(trail_pts[-1][1] * scale_y)
@@ -292,6 +331,7 @@ def generate_trails(
     fps: float = 30.0,
     trail_length: int = _TRAIL_LENGTH,
     tile_scale: float = _TILE_SCALE,
+    fade_trails: bool = False,
 ) -> Path:
     """Generate per-camera trail videos and an association mosaic across all chunks.
 
@@ -308,6 +348,8 @@ def generate_trails(
         fps: Output video frame rate.
         trail_length: Number of past frames to include in each trail.
         tile_scale: Downsampling factor for mosaic tiles.
+        fade_trails: If True, alpha-blend each trail segment for a fade
+            effect (significantly slower due to per-segment frame copies).
 
     Returns:
         Path to the output directory (``{run_dir}/viz/`` or output_dir).
@@ -452,6 +494,7 @@ def generate_trails(
         fps=fps,
         trail_length=trail_length,
         detections=all_detections if all_detections else None,
+        fade=fade_trails,
     )
 
     # Generate association mosaic.
@@ -467,6 +510,7 @@ def generate_trails(
         tile_scale=tile_scale,
         trail_length=trail_length,
         detections=all_detections if all_detections else None,
+        fade=fade_trails,
     )
 
     if frame_source is not None:
@@ -542,6 +586,7 @@ def _write_per_camera_trails(
     fps: float,
     trail_length: int,
     detections: list | None = None,
+    fade: bool = False,
 ) -> None:
     """Write per-camera trail MP4 files.
 
@@ -557,6 +602,7 @@ def _write_per_camera_trails(
         fps: Output video frame rate.
         trail_length: Trail length in frames.
         detections: Per-frame per-camera detection lists (optional).
+        fade: If True, use per-segment alpha blending.
     """
     use_synthetic = frame_source is None and bool(frame_sizes)
 
@@ -598,6 +644,7 @@ def _write_per_camera_trails(
                             fish_id,
                             fish_color_map,
                             trail_length,
+                            fade=fade,
                         )
                     writer.write(frame)
         finally:
@@ -617,6 +664,7 @@ def _write_association_mosaic(
     tile_scale: float,
     trail_length: int,
     detections: list | None = None,
+    fade: bool = False,
 ) -> None:
     """Write the association mosaic MP4.
 
@@ -632,6 +680,7 @@ def _write_association_mosaic(
         tile_scale: Downsampling factor applied to each camera tile.
         trail_length: Trail length in frames.
         detections: Per-frame per-camera detection lists (optional).
+        fade: If True, use per-segment alpha blending.
     """
     use_synthetic = frame_source is None and bool(frame_sizes)
 
@@ -690,6 +739,7 @@ def _write_association_mosaic(
                             scale_x,
                             scale_y,
                             trail_length,
+                            fade=fade,
                         )
 
                     # Camera label.

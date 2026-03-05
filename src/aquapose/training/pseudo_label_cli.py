@@ -654,3 +654,196 @@ def _yaml_dump(data: dict) -> str:
     import yaml
 
     return yaml.dump(data, default_flow_style=False, sort_keys=False)
+
+
+@pseudo_label_group.command("assemble")
+@click.option(
+    "--run-dir",
+    "run_dirs",
+    multiple=True,
+    required=True,
+    type=click.Path(exists=True),
+    help="Pipeline run directory containing pseudo_labels/. Can be repeated.",
+)
+@click.option(
+    "--manual-dir",
+    default=None,
+    type=click.Path(exists=True),
+    help="YOLO-format manual annotation directory.",
+)
+@click.option(
+    "--output-dir",
+    required=True,
+    type=click.Path(),
+    help="Output directory for assembled dataset.",
+)
+@click.option(
+    "--model-type",
+    required=True,
+    type=click.Choice(["obb", "pose"]),
+    help="Which label type to assemble.",
+)
+@click.option(
+    "--consensus-threshold",
+    default=0.5,
+    type=float,
+    show_default=True,
+    help="Min confidence for consensus (Source A) labels.",
+)
+@click.option(
+    "--gap-threshold",
+    default=0.3,
+    type=float,
+    show_default=True,
+    help="Min confidence for gap (Source B) labels.",
+)
+@click.option(
+    "--exclude-gap-reason",
+    "exclude_gap_reasons",
+    multiple=True,
+    type=str,
+    help="Gap reasons to exclude (e.g. 'no-tracklet'). Can be repeated.",
+)
+@click.option(
+    "--manual-val-fraction",
+    default=0.2,
+    type=float,
+    show_default=True,
+    help="Fraction of manual data for validation.",
+)
+@click.option(
+    "--pseudo-val-fraction",
+    default=0.1,
+    type=float,
+    show_default=True,
+    help="Fraction of pseudo-labels held out for evaluation.",
+)
+@click.option(
+    "--temporal-step",
+    default=1,
+    type=int,
+    show_default=True,
+    help="Temporal subsampling step (1 = no subsampling).",
+)
+@click.option(
+    "--diversity-bins",
+    default=5,
+    type=int,
+    show_default=True,
+    help="Number of curvature bins for diversity sampling.",
+)
+@click.option(
+    "--diversity-max-per-bin",
+    default=None,
+    type=int,
+    help="Max frames per curvature bin (None = no limit).",
+)
+@click.option(
+    "--seed",
+    default=42,
+    type=int,
+    show_default=True,
+    help="Random seed.",
+)
+def assemble(
+    run_dirs: tuple[str, ...],
+    manual_dir: str | None,
+    output_dir: str,
+    model_type: str,
+    consensus_threshold: float,
+    gap_threshold: float,
+    exclude_gap_reasons: tuple[str, ...],
+    manual_val_fraction: float,
+    pseudo_val_fraction: float,
+    temporal_step: int,
+    diversity_bins: int,
+    diversity_max_per_bin: int | None,
+    seed: int,
+) -> None:
+    """Assemble a YOLO training dataset from manual annotations and pseudo-labels.
+
+    Pools labels from multiple pipeline runs with independent confidence
+    thresholds for consensus (Source A) and gap (Source B) labels. Creates
+    a ready-to-train YOLO dataset with manual validation split.
+    """
+    from aquapose.training.dataset_assembly import assemble_dataset
+
+    run_dir_paths = [Path(d) for d in run_dirs]
+    manual_dir_path = Path(manual_dir) if manual_dir is not None else None
+    output_path = Path(output_dir)
+
+    # Frame selection (optional): filter pseudo-labels by selected frames
+    # Only activate if temporal_step > 1 or diversity_max_per_bin is set
+    need_frame_selection = temporal_step > 1 or diversity_max_per_bin is not None
+
+    if need_frame_selection:
+        import importlib
+
+        from aquapose.training.frame_selection import (
+            diversity_sample,
+            filter_empty_frames,
+            temporal_subsample,
+        )
+
+        _eval_mod = importlib.import_module("aquapose.evaluation.runner")
+        load_run_context = _eval_mod.load_run_context
+
+        # Collect all midlines_3d across runs to build frame selection
+        click.echo("Loading diagnostic caches for frame selection...")
+        for rd in run_dir_paths:
+            context, _meta = load_run_context(rd)
+            if context is None or context.midlines_3d is None:
+                click.echo(
+                    f"  Warning: No midlines_3d in {rd}, skipping frame selection"
+                )
+                continue
+
+            midlines_3d = context.midlines_3d
+            all_frames = list(range(len(midlines_3d)))
+
+            # Step 1: filter empty
+            all_frames = filter_empty_frames(all_frames, midlines_3d)
+            # Step 2: temporal subsample
+            all_frames = temporal_subsample(all_frames, temporal_step)
+            # Step 3: diversity sample
+            all_frames = diversity_sample(
+                midlines_3d,
+                all_frames,
+                n_bins=diversity_bins,
+                max_per_bin=diversity_max_per_bin,
+                seed=seed,
+            )
+
+            click.echo(f"  {rd.name}: {len(all_frames)} frames selected")
+            # TODO: pass selected frames to assembly to filter pseudo-labels
+            # For now, frame selection is informational only -- the assembly
+            # module does not yet support frame-level filtering.
+
+    result = assemble_dataset(
+        output_dir=output_path,
+        manual_dir=manual_dir_path,
+        run_dirs=run_dir_paths,
+        model_type=model_type,
+        consensus_threshold=consensus_threshold,
+        gap_threshold=gap_threshold,
+        exclude_gap_reasons=list(exclude_gap_reasons),
+        manual_val_fraction=manual_val_fraction,
+        pseudo_val_fraction=pseudo_val_fraction,
+        seed=seed,
+    )
+
+    # Print summary
+    click.echo("\nDataset assembly complete.")
+    click.echo(f"  Output: {output_path}")
+    click.echo(f"  Manual train: {result['manual_train']}")
+    click.echo(f"  Manual val: {result['manual_val']}")
+    click.echo(f"  Consensus train: {result['consensus_train']}")
+    click.echo(f"  Consensus val (pseudo): {result['consensus_val']}")
+    click.echo(f"  Gap train: {result['gap_train']}")
+    click.echo(f"  Gap val (pseudo): {result['gap_val']}")
+    total_train = (
+        result["manual_train"] + result["consensus_train"] + result["gap_train"]
+    )
+    total_val = result["manual_val"]
+    click.echo(f"  Total train: {total_train}")
+    click.echo(f"  Total val (manual): {total_val}")

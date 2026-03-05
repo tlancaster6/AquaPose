@@ -8,6 +8,7 @@ from .common import (
     make_loader,
     save_best_and_last,
 )
+from .dataset_assembly import assemble_dataset
 from .datasets import CropDataset, apply_augmentation, stratified_split
 from .frame_selection import (
     compute_curvature,
@@ -41,6 +42,7 @@ __all__ = [
     "MetricsLogger",
     "affine_warp_crop",
     "apply_augmentation",
+    "assemble_dataset",
     "compute_confidence_score",
     "compute_curvature",
     "detect_gaps",

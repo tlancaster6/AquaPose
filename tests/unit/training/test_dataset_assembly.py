@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import yaml
+
 from aquapose.training.dataset_assembly import (
     assemble_dataset,
     collect_pseudo_labels,

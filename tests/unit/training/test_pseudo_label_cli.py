@@ -547,3 +547,70 @@ class TestGenerateCommand:
         assert "--min-cameras" in result.output
         assert "--crop-width" in result.output
         assert "--crop-height" in result.output
+
+
+class TestAssembleCommand:
+    """Tests for the `pseudo-label assemble` CLI command."""
+
+    def test_assemble_help_text(self) -> None:
+        """assemble --help shows expected options."""
+        runner = CliRunner()
+        result = runner.invoke(pseudo_label_group, ["assemble", "--help"])
+
+        assert result.exit_code == 0
+        assert "--run-dir" in result.output
+        assert "--manual-dir" in result.output
+        assert "--output-dir" in result.output
+        assert "--model-type" in result.output
+        assert "--consensus-threshold" in result.output
+        assert "--gap-threshold" in result.output
+        assert "--exclude-gap-reason" in result.output
+        assert "--seed" in result.output
+
+    def test_assemble_produces_output(self, tmp_path: Path) -> None:
+        """assemble creates YOLO dataset from synthetic pseudo-labels."""
+        # Set up synthetic run directory with consensus pseudo-labels
+        run_dir = tmp_path / "run_001"
+        img_dir = run_dir / "pseudo_labels" / "consensus" / "obb" / "images" / "train"
+        lbl_dir = run_dir / "pseudo_labels" / "consensus" / "obb" / "labels" / "train"
+        img_dir.mkdir(parents=True)
+        lbl_dir.mkdir(parents=True)
+
+        for i in range(3):
+            stem = f"00000{i}_cam0"
+            (img_dir / f"{stem}.jpg").write_bytes(b"\xff\xd8")
+            (lbl_dir / f"{stem}.txt").write_text("0 0.5 0.5 0.1 0.1\n")
+
+        confidence = {
+            f"00000{i}_cam0": {
+                "labels": [{"fish_id": 1, "confidence": 0.8, "raw_metrics": {}}]
+            }
+            for i in range(3)
+        }
+        conf_dir = run_dir / "pseudo_labels" / "consensus"
+        (conf_dir / "confidence.json").write_text(json.dumps(confidence))
+
+        output_dir = tmp_path / "assembled"
+        runner = CliRunner()
+        result = runner.invoke(
+            pseudo_label_group,
+            [
+                "assemble",
+                "--run-dir",
+                str(run_dir),
+                "--output-dir",
+                str(output_dir),
+                "--model-type",
+                "obb",
+                "--consensus-threshold",
+                "0.5",
+                "--pseudo-val-fraction",
+                "0.0",
+            ],
+        )
+
+        assert result.exit_code == 0, f"CLI failed: {result.output}"
+        assert "Dataset assembly complete" in result.output
+        assert (output_dir / "dataset.yaml").exists()
+        assert (output_dir / "images" / "train").is_dir()
+        assert len(list((output_dir / "images" / "train").glob("*.jpg"))) == 3

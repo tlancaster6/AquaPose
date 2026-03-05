@@ -14,15 +14,17 @@ logger = logging.getLogger(__name__)
 
 def collect_pseudo_labels(
     run_dirs: list[Path],
+    base_path: str,
     source: str,
-    model_type: str,
 ) -> list[dict]:
     """Discover pseudo-labels from run directories.
 
     Args:
         run_dirs: Pipeline run directories containing ``pseudo_labels/``.
-        source: Label source -- ``"consensus"`` or ``"gap"``.
-        model_type: Label type -- ``"obb"`` or ``"pose"``.
+        base_path: Relative path under ``pseudo_labels/`` to the label
+            directory, e.g. ``"obb"``, ``"pose/consensus"``, ``"pose/gap"``.
+        source: Label source tag for the result dict, e.g. ``"merged"``,
+            ``"consensus"``, ``"gap"``.
 
     Returns:
         List of dicts with keys: ``image_path``, ``label_path``, ``stem``,
@@ -32,7 +34,7 @@ def collect_pseudo_labels(
 
     for run_dir in run_dirs:
         run_id = run_dir.name
-        conf_path = run_dir / "pseudo_labels" / source / "confidence.json"
+        conf_path = run_dir / "pseudo_labels" / base_path / "confidence.json"
 
         if not conf_path.exists():
             logger.warning("No confidence.json at %s, skipping", conf_path)
@@ -40,8 +42,8 @@ def collect_pseudo_labels(
 
         confidence_data = json.loads(conf_path.read_text())
 
-        img_dir = run_dir / "pseudo_labels" / source / model_type / "images" / "train"
-        lbl_dir = run_dir / "pseudo_labels" / source / model_type / "labels" / "train"
+        img_dir = run_dir / "pseudo_labels" / base_path / "images" / "train"
+        lbl_dir = run_dir / "pseudo_labels" / base_path / "labels" / "train"
 
         for img_path in sorted(img_dir.glob("*.jpg")):
             stem = img_path.stem
@@ -226,33 +228,6 @@ def split_pseudo_val(
     return train, val
 
 
-def _filter_by_frames(
-    labels: list[dict],
-    selected_frames: dict[str, set[int]],
-) -> list[dict]:
-    """Filter labels to only include selected frame indices per run.
-
-    Args:
-        labels: Label dicts with ``stem`` and ``run_id`` keys.
-        selected_frames: Mapping of ``run_id`` to allowed frame indices.
-            Runs not present in the dict are kept unfiltered.
-
-    Returns:
-        Filtered list of label dicts.
-    """
-    result: list[dict] = []
-    for lbl in labels:
-        run_id = lbl["run_id"]
-        if run_id not in selected_frames:
-            # Run wasn't frame-selected, keep all its labels
-            result.append(lbl)
-            continue
-        frame_idx = int(lbl["stem"][:6])
-        if frame_idx in selected_frames[run_id]:
-            result.append(lbl)
-    return result
-
-
 def _extract_dominant_gap_reason(lbl: dict) -> str | None:
     """Extract the most common gap_reason from a label's metadata.
 
@@ -293,7 +268,6 @@ def assemble_dataset(
     manual_val_fraction: float,
     pseudo_val_fraction: float,
     seed: int,
-    selected_frames: dict[str, set[int]] | None = None,
     max_frames: int | None = None,
 ) -> dict:
     """Assemble a YOLO-format training dataset from manual + pseudo-labels.
@@ -301,6 +275,11 @@ def assemble_dataset(
     Pools manual annotations and pseudo-labels from multiple pipeline runs,
     applies confidence filtering and gap-reason exclusion, creates train/val
     splits, and writes YOLO-standard output.
+
+    For OBB model_type, reads from the merged ``obb/`` directory and applies
+    ``min(consensus_threshold, gap_threshold)`` as a single threshold. For
+    pose model_type, reads from ``pose/consensus/`` and ``pose/gap/``
+    separately with independent thresholds.
 
     Args:
         output_dir: Output directory for assembled dataset.
@@ -313,11 +292,6 @@ def assemble_dataset(
         manual_val_fraction: Fraction of manual data for validation.
         pseudo_val_fraction: Fraction of pseudo-labels held out.
         seed: Random seed.
-        selected_frames: Optional mapping of ``run_id`` to allowed frame
-            indices. When provided, only pseudo-labels whose frame index
-            (first 6 chars of stem parsed as int) is in the allowed set
-            for that run are included. Runs not in the dict are unfiltered.
-            When None, all pseudo-labels are included.
         max_frames: Hard cap on total pseudo-label images. When the
             filtered pool exceeds this, a uniform random subsample is
             taken. Manual annotations are not affected. None means no cap.
@@ -340,6 +314,8 @@ def assemble_dataset(
         "consensus_val": 0,
         "gap_train": 0,
         "gap_val": 0,
+        "pseudo_train": 0,
+        "pseudo_val": 0,
     }
 
     # --- Manual annotations ---
@@ -367,23 +343,27 @@ def assemble_dataset(
             _copy_if_exists(manual_lbl_dir / f"{stem}.txt", out_lbl_val / f"{stem}.txt")
             counts["manual_val"] += 1
 
-    # --- Consensus pseudo-labels ---
-    consensus_labels = collect_pseudo_labels(run_dirs, "consensus", model_type)
-    consensus_labels = filter_by_confidence(consensus_labels, consensus_threshold)
+    # --- Pseudo-labels ---
+    if model_type == "obb":
+        # Merged OBB: single directory, single threshold
+        obb_threshold = min(consensus_threshold, gap_threshold)
+        all_pseudo = collect_pseudo_labels(run_dirs, "obb", "merged")
+        all_pseudo = filter_by_confidence(all_pseudo, obb_threshold)
+        all_pseudo = filter_by_gap_reason(all_pseudo, exclude_gap_reasons)
+    else:
+        # Pose: separate consensus/gap directories with independent thresholds
+        consensus_labels = collect_pseudo_labels(
+            run_dirs, "pose/consensus", "consensus"
+        )
+        consensus_labels = filter_by_confidence(consensus_labels, consensus_threshold)
 
-    # --- Gap pseudo-labels ---
-    gap_labels = collect_pseudo_labels(run_dirs, "gap", model_type)
-    gap_labels = filter_by_confidence(gap_labels, gap_threshold)
-    gap_labels = filter_by_gap_reason(gap_labels, exclude_gap_reasons)
+        gap_labels = collect_pseudo_labels(run_dirs, "pose/gap", "gap")
+        gap_labels = filter_by_confidence(gap_labels, gap_threshold)
+        gap_labels = filter_by_gap_reason(gap_labels, exclude_gap_reasons)
 
-    # --- Frame-level filtering ---
-    if selected_frames is not None:
-        consensus_labels = _filter_by_frames(consensus_labels, selected_frames)
-        gap_labels = _filter_by_frames(gap_labels, selected_frames)
+        all_pseudo = consensus_labels + gap_labels
 
-    # --- Combine pseudo-labels and apply max_frames cap ---
-    all_pseudo = consensus_labels + gap_labels
-
+    # --- Apply max_frames cap ---
     if max_frames is not None and len(all_pseudo) > max_frames:
         import numpy as np
 
@@ -392,8 +372,7 @@ def assemble_dataset(
         indices.sort()
         all_pseudo = [all_pseudo[i] for i in indices]
         logger.info(
-            "Applied max_frames cap: %d -> %d pseudo-labels",
-            len(consensus_labels) + len(gap_labels),
+            "Applied max_frames cap: %d pseudo-labels",
             max_frames,
         )
 
@@ -406,16 +385,15 @@ def assemble_dataset(
         _copy_if_exists(lbl["label_path"], out_lbl_train / f"{prefixed_stem}.txt")
         if lbl["source"] == "consensus":
             counts["consensus_train"] += 1
-        else:
+        elif lbl["source"] == "gap":
             counts["gap_train"] += 1
+        else:
+            counts["pseudo_train"] += 1
 
     # --- Copy pseudo-label val (NOT into val/ -- pseudo val is separate) ---
-    # Pseudo-label val is for evaluation only, tracked via metadata sidecar
     pseudo_val_metadata: list[dict] = []
     for lbl in pseudo_val:
         prefixed_stem = f"{lbl['run_id']}_{lbl['stem']}"
-        # Pseudo-val images go into train (they're still training data)
-        # but are tracked in the sidecar for post-training analysis
         _copy_if_exists(lbl["image_path"], out_img_train / f"{prefixed_stem}.jpg")
         _copy_if_exists(lbl["label_path"], out_lbl_train / f"{prefixed_stem}.txt")
         pseudo_val_metadata.append(
@@ -429,8 +407,10 @@ def assemble_dataset(
         )
         if lbl["source"] == "consensus":
             counts["consensus_val"] += 1
-        else:
+        elif lbl["source"] == "gap":
             counts["gap_val"] += 1
+        else:
+            counts["pseudo_val"] += 1
 
     # --- Write dataset.yaml ---
     dataset_config = {

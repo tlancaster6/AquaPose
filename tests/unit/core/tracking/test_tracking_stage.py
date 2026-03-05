@@ -130,7 +130,7 @@ class TestSingleCameraSingleFish:
         assert result_ctx.tracks_2d is not None
 
 
-class TestCarryForward:
+class TestChunkHandoff:
     """ChunkHandoff preserves tracker state between chunks."""
 
     def test_carry_forward_preserves_track_ids(self) -> None:

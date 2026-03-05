@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-03-05)
 Phase: 64 (4 of 6 in v3.5 Pseudo-Labeling) -- COMPLETE
 Plan: 2/2 in current phase
 Status: All plans complete, pending verification
-Last activity: 2026-03-05 --- Phase 64 plans complete (gap detection + CLI refactor)
+Last activity: 2026-03-05 - Completed quick task 18: Fix pseudo-label pose output to use OBB-cropped images with crop-space keypoints
 
 Progress: [█████░░░░░] 50%
 
@@ -62,6 +62,12 @@ Recent decisions affecting current work:
 
 - Z-reconstruction noise (median z-range 1.77 cm, SNR 0.12-1.25) must be resolved before pseudo-labels are usable
 - Reference analysis run: ~/aquapose/projects/YH/runs/run_20260305_073212/
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
+| 18 | Fix pseudo-label pose output to use OBB-cropped images with crop-space keypoints | 2026-03-05 | 434b81b | Verified | [18-fix-pseudo-label-pose-output-to-use-obb-](./quick/18-fix-pseudo-label-pose-output-to-use-obb-/) |
 
 ## Session Continuity
 

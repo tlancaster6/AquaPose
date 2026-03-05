@@ -6,6 +6,7 @@ Validates:
 - Backend registry raises ValueError for unknown detector kinds
 - Import boundary (ENG-07): no engine/ runtime imports in core/detection/
 - Fail-fast on missing YOLO weights
+- Batched detection: detect_batch() called once per timestep (not detect() per camera)
 """
 
 from __future__ import annotations
@@ -230,6 +231,135 @@ def test_missing_weights_raises_at_construction(tmp_path: Path) -> None:
             detector_kind="yolo",
             weights_path=str(nonexistent_weights),
         )
+
+
+# ---------------------------------------------------------------------------
+# Batched detection
+# ---------------------------------------------------------------------------
+
+
+def test_batched_detection_calls_detect_batch_once(tmp_path: Path) -> None:
+    """run() calls detect_batch() once per timestep instead of detect() per camera."""
+    from aquapose.core.types.frame_source import FrameSource
+
+    fake_weights = tmp_path / "model.pt"
+    fake_weights.write_bytes(b"fake")
+
+    # Build a stub FrameSource that yields 2 timesteps with 3 cameras each
+    mock_frame_source = MagicMock(spec=FrameSource)
+    mock_frame_source.camera_ids = ["cam1", "cam2", "cam3"]
+
+    frames_t0 = {
+        "cam1": np.zeros((100, 100, 3), dtype=np.uint8),
+        "cam2": np.zeros((100, 100, 3), dtype=np.uint8),
+        "cam3": np.zeros((100, 100, 3), dtype=np.uint8),
+    }
+    frames_t1 = {
+        "cam1": np.zeros((100, 100, 3), dtype=np.uint8),
+        "cam2": np.zeros((100, 100, 3), dtype=np.uint8),
+        "cam3": np.zeros((100, 100, 3), dtype=np.uint8),
+    }
+    mock_frame_source.__iter__ = MagicMock(
+        return_value=iter([(0, frames_t0), (1, frames_t1)])
+    )
+    mock_frame_source.__enter__ = MagicMock(return_value=mock_frame_source)
+    mock_frame_source.__exit__ = MagicMock(return_value=False)
+
+    det = Detection(bbox=(10, 10, 50, 50), mask=None, area=2500, confidence=0.9)
+
+    with (
+        patch(
+            "aquapose.core.detection.backends.yolo.YOLOBackend.__init__",
+            return_value=None,
+        ),
+        patch(
+            "aquapose.core.detection.backends.yolo.Path.exists",
+            return_value=True,
+        ),
+    ):
+        stage = DetectionStage(
+            frame_source=mock_frame_source,
+            detector_kind="yolo",
+            weights_path=str(fake_weights),
+        )
+
+    # Mock the detect_batch method to return detections for each frame
+    mock_detect_batch = MagicMock(side_effect=lambda frames: [[det] for _ in frames])
+    stage._detector.detect_batch = mock_detect_batch  # type: ignore[attr-defined]
+    stage._detector.detect = MagicMock()  # should NOT be called
+
+    ctx = PipelineContext()
+    result = stage.run(ctx)
+
+    # detect_batch called once per timestep (2 timesteps)
+    assert mock_detect_batch.call_count == 2
+    # detect should never be called
+    stage._detector.detect.assert_not_called()
+
+    # Results are correct
+    assert result.frame_count == 2
+    assert len(result.detections) == 2
+    for frame_dets in result.detections:
+        assert set(frame_dets.keys()) == {"cam1", "cam2", "cam3"}
+        for cam_dets in frame_dets.values():
+            assert len(cam_dets) == 1
+            assert cam_dets[0].confidence == 0.9
+
+
+def test_batched_detection_handles_missing_cameras(tmp_path: Path) -> None:
+    """run() gracefully handles missing cameras with empty detection lists."""
+    from aquapose.core.types.frame_source import FrameSource
+
+    fake_weights = tmp_path / "model.pt"
+    fake_weights.write_bytes(b"fake")
+
+    mock_frame_source = MagicMock(spec=FrameSource)
+    mock_frame_source.camera_ids = ["cam1", "cam2", "cam3"]
+
+    # cam2 is missing from this timestep
+    frames_t0 = {
+        "cam1": np.zeros((100, 100, 3), dtype=np.uint8),
+        "cam3": np.zeros((100, 100, 3), dtype=np.uint8),
+    }
+    mock_frame_source.__iter__ = MagicMock(return_value=iter([(0, frames_t0)]))
+    mock_frame_source.__enter__ = MagicMock(return_value=mock_frame_source)
+    mock_frame_source.__exit__ = MagicMock(return_value=False)
+
+    det = Detection(bbox=(10, 10, 50, 50), mask=None, area=2500, confidence=0.9)
+
+    with (
+        patch(
+            "aquapose.core.detection.backends.yolo.YOLOBackend.__init__",
+            return_value=None,
+        ),
+        patch(
+            "aquapose.core.detection.backends.yolo.Path.exists",
+            return_value=True,
+        ),
+    ):
+        stage = DetectionStage(
+            frame_source=mock_frame_source,
+            detector_kind="yolo",
+            weights_path=str(fake_weights),
+        )
+
+    # detect_batch receives only 2 frames (cam1, cam3), returns 2 results
+    mock_detect_batch = MagicMock(side_effect=lambda frames: [[det] for _ in frames])
+    stage._detector.detect_batch = mock_detect_batch  # type: ignore[attr-defined]
+
+    ctx = PipelineContext()
+    result = stage.run(ctx)
+
+    # detect_batch called with 2 frames (not 3)
+    assert mock_detect_batch.call_count == 1
+    batch_call_frames = mock_detect_batch.call_args[0][0]
+    assert len(batch_call_frames) == 2
+
+    # Missing camera gets empty list
+    frame_dets = result.detections[0]
+    assert frame_dets["cam2"] == []
+    assert len(frame_dets["cam1"]) == 1
+    assert len(frame_dets["cam3"]) == 1
 
 
 # ---------------------------------------------------------------------------

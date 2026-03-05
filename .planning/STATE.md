@@ -68,6 +68,10 @@ Recent decisions affecting current work:
 
 8 pending todos — see .planning/todos/pending/ (review for relevance)
 
+### Roadmap Evolution
+
+- Phase 67 added: Elastic midline deformation augmentation for pose training data
+
 ### Blockers/Concerns
 
 - Z-reconstruction noise (median z-range 1.77 cm, SNR 0.12-1.25) must be resolved before pseudo-labels are usable
@@ -83,5 +87,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Completed quick task 19 (wire frame selection into assemble CLI)
-Resume file: None
+Stopped at: Phase 67 context gathered
+Resume file: .planning/phases/67-elastic-midline-deformation-augmentation-for-pose-training-data/67-CONTEXT.md

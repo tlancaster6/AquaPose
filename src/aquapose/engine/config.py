@@ -41,6 +41,8 @@ class DetectionConfig:
             body at standard frame resolutions. Stored as a list so that YAML
             round-trips cleanly (Python tuples serialize as ``!!python/tuple``
             which ``yaml.safe_load`` cannot parse).
+        detection_batch_frames: Maximum number of frames per YOLO detection
+            batch.  ``0`` means no limit (batch all frames in the chunk).
         extra: Catch-all dict for detector-specific kwargs not covered above.
 
     Note:
@@ -53,6 +55,7 @@ class DetectionConfig:
     detector_kind: str = "yolo"
     weights_path: str | None = None
     crop_size: list[int] = field(default_factory=lambda: [128, 64])
+    detection_batch_frames: int = 0
     extra: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -105,6 +108,8 @@ class MidlineConfig:
             visible in the ``"pose_estimation"`` backend. Default 0.3.
         min_observed_keypoints: Minimum number of visible keypoints required to
             fit the spline in the ``"pose_estimation"`` backend. Default 3.
+        midline_batch_crops: Maximum number of crops per YOLO midline batch.
+            ``0`` means no limit (batch all crops in the chunk).
     """
 
     confidence_threshold: float = 0.5
@@ -121,6 +126,7 @@ class MidlineConfig:
     keypoint_t_values: list[float] | None = None
     keypoint_confidence_floor: float = 0.3
     min_observed_keypoints: int = 3
+    midline_batch_crops: int = 0
 
     def __post_init__(self) -> None:
         _valid_backends = {"segmentation", "pose_estimation"}

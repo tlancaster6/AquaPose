@@ -593,3 +593,71 @@ class TestConfidenceWeighting:
         midline_set = _make_midline_set(n_body_points=15, include_confidence=True)
         result = dlt_backend.reconstruct_frame(frame_idx=0, midline_set=midline_set)
         assert 0 in result
+
+
+# ---------------------------------------------------------------------------
+# Task 1 TDD: _TriangulationResult dataclass and _triangulate_fish_vectorized
+# ---------------------------------------------------------------------------
+
+
+class TestTriangulationResultStructure:
+    """_TriangulationResult dataclass has correct fields and types."""
+
+    def test_triangulation_result_importable(self) -> None:
+        from aquapose.core.reconstruction.backends.dlt import (
+            _TriangulationResult,  # noqa: F401
+        )
+
+    def test_triangulate_fish_vectorized_result_structure(
+        self,
+        dlt_backend: DltBackend,  # type: ignore[name-defined]  # noqa: F821
+    ) -> None:
+        """_TriangulationResult has correct shapes and types."""
+        midline_set = _make_midline_set(n_body_points=15)
+        cam_midlines = midline_set[0]
+        vec_result = dlt_backend._triangulate_fish_vectorized(cam_midlines, water_z=0.0)
+
+        N = 15
+        C = 3  # cam0, cam1, cam2
+        assert vec_result.pts_3d.shape == (N, 3)
+        assert vec_result.valid_mask.shape == (N,)
+        assert vec_result.valid_mask.dtype == torch.bool
+        assert vec_result.inlier_masks.shape == (N, C)
+        assert vec_result.mean_residuals.shape == (N,)
+        assert len(vec_result.inlier_cam_ids) == N
+
+    def test_all_valid_for_clean_3cam_data(
+        self,
+        dlt_backend: DltBackend,  # type: ignore[name-defined]  # noqa: F821
+    ) -> None:
+        """All body points should be valid for well-formed 3-camera synthetic data."""
+        midline_set = _make_midline_set(n_body_points=15)
+        cam_midlines = midline_set[0]
+        vec_result = dlt_backend._triangulate_fish_vectorized(cam_midlines, water_z=0.0)
+        assert vec_result.valid_mask.all()
+
+    def test_nan_in_one_camera_does_not_invalidate_point(
+        self,
+        dlt_backend: DltBackend,  # type: ignore[name-defined]  # noqa: F821
+    ) -> None:
+        """NaN in cam0 for point 7 should still yield a valid result for point 7."""
+        midline_set = _make_midline_set(
+            nan_camera="cam0", nan_point_idx=7, n_body_points=15
+        )
+        cam_midlines = midline_set[0]
+        vec_result = dlt_backend._triangulate_fish_vectorized(cam_midlines, water_z=0.0)
+        assert vec_result.valid_mask[7].item() is True
+
+    def test_below_water_points_are_invalid(
+        self,
+        dlt_backend: DltBackend,  # type: ignore[name-defined]  # noqa: F821
+    ) -> None:
+        """Points above water surface (Z <= water_z) should be marked invalid."""
+        # Use a very high water_z so all triangulated points would be rejected
+        midline_set = _make_midline_set(n_body_points=15)
+        cam_midlines = midline_set[0]
+        # water_z=10.0 means all fish at z=0.5 would be "above water"
+        vec_result = dlt_backend._triangulate_fish_vectorized(
+            cam_midlines, water_z=10.0
+        )
+        assert not vec_result.valid_mask.any()

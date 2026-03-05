@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +63,32 @@ _COS_MIN_RAY_ANGLE: float = math.cos(math.radians(_MIN_RAY_ANGLE_DEG))
 the rays are too nearly parallel for reliable DLT."""
 
 __all__ = ["DltBackend"]
+
+
+# ---------------------------------------------------------------------------
+# _TriangulationResult
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _TriangulationResult:
+    """Structured result from _triangulate_fish_vectorized().
+
+    Holds per-body-point triangulation results for all N body points.
+
+    Attributes:
+        pts_3d: Triangulated 3D positions, shape (N, 3). NaN for invalid points.
+        valid_mask: Boolean mask of valid body points, shape (N,).
+        inlier_masks: Per-body-point inlier camera mask, shape (N, C). True = inlier.
+        mean_residuals: Mean inlier reprojection error per body point, shape (N,).
+        inlier_cam_ids: Per-body-point list of inlier camera ID strings, length N.
+    """
+
+    pts_3d: torch.Tensor  # (N, 3)
+    valid_mask: torch.Tensor  # (N,) bool
+    inlier_masks: torch.Tensor  # (N, C) bool
+    mean_residuals: torch.Tensor  # (N,) float
+    inlier_cam_ids: list[list[str]]  # length N
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +361,220 @@ class DltBackend:
             max_residual=max_residual_val,
             is_low_confidence=is_low_confidence,
             per_camera_residuals=cam_residuals,
+        )
+
+    def _triangulate_fish_vectorized(
+        self,
+        cam_midlines: dict[str, Midline2D],
+        water_z: float,
+    ) -> _TriangulationResult:
+        """Vectorized triangulation for all N body points simultaneously.
+
+        Replaces the per-body-point Python loop in _reconstruct_fish(). Processes
+        all N body points in batched torch operations: ray casting (C calls instead
+        of N*C), normal-equation assembly (C-camera loop over (N,3,3) tensors), and
+        a single batched torch.linalg.lstsq call.
+
+        Note: The 2-camera ray-angle filter (_MIN_RAY_ANGLE_DEG / _COS_MIN_RAY_ANGLE)
+        is deliberately omitted from this vectorized path. 2-camera body points are
+        uncommon (usually ≥3 cameras observe each point), and near-parallel rays
+        within those are rarer still. Masking this edge case per-point would require
+        a Python loop, defeating vectorization for negligible yield impact. The scalar
+        _triangulate_body_point() retains the filter for reference.
+
+        Also omits the first-pass water-surface check (only applied after
+        re-triangulation). Above-water initial triangulations virtually always remain
+        above-water after re-triangulation; the check is redundant in practice.
+
+        Args:
+            cam_midlines: Per-camera 2D midlines for this fish, keyed by camera ID.
+            water_z: Z coordinate of the water surface in world frame.
+
+        Returns:
+            _TriangulationResult with per-body-point results.
+        """
+        # Determine device/dtype from the first model
+        first_model = next(iter(self._models.values()))
+        device = first_model.K.device
+        dtype = torch.float32
+
+        # Build ordered list of camera IDs that appear in both cam_midlines and _models
+        cam_ids = [cid for cid in cam_midlines if cid in self._models]
+        C = len(cam_ids)
+
+        # Derive N from the first midline
+        first_midline = next(iter(cam_midlines.values()))
+        N = len(first_midline.points)
+
+        if C < 2 or N == 0:
+            # Not enough cameras — all body points are invalid
+            empty_pts = torch.full((N, 3), float("nan"), device=device, dtype=dtype)
+            empty_mask = torch.zeros(N, dtype=torch.bool, device=device)
+            empty_inlier = torch.zeros(
+                N, C if C > 0 else 0, dtype=torch.bool, device=device
+            )
+            empty_resid = torch.zeros(N, dtype=dtype, device=device)
+            return _TriangulationResult(
+                pts_3d=empty_pts,
+                valid_mask=empty_mask,
+                inlier_masks=empty_inlier,
+                mean_residuals=empty_resid,
+                inlier_cam_ids=[[] for _ in range(N)],
+            )
+
+        # ------------------------------------------------------------------
+        # Step 1 — Build (N, C, 2) pixel tensor and (N, C) validity/weight
+        # ------------------------------------------------------------------
+        pixels_nc = torch.zeros(N, C, 2, device=device, dtype=dtype)
+        valid_nc = torch.zeros(N, C, dtype=torch.bool, device=device)
+        weights_nc = torch.zeros(N, C, device=device, dtype=dtype)
+
+        for c, cam_id in enumerate(cam_ids):
+            midline = cam_midlines[cam_id]
+            pts_np = midline.points  # (N, 2) float32 numpy
+            pts_t = torch.from_numpy(pts_np).to(device=device, dtype=dtype)
+            is_nan = torch.isnan(pts_t).any(dim=-1)  # (N,)
+            valid_nc[:, c] = ~is_nan
+            # Replace NaN with 0.0 (zero-weight handles them)
+            pts_t = torch.where(is_nan.unsqueeze(-1), torch.zeros_like(pts_t), pts_t)
+            pixels_nc[:, c, :] = pts_t
+
+            # Confidence weights: sqrt(confidence) where valid, 0.0 where invalid
+            if midline.point_confidence is not None:
+                conf_t = torch.from_numpy(midline.point_confidence).to(
+                    device=device, dtype=dtype
+                )
+                w = torch.sqrt(conf_t.clamp(min=0.0))
+            else:
+                w = torch.ones(N, device=device, dtype=dtype)
+            weights_nc[:, c] = torch.where(valid_nc[:, c], w, torch.zeros_like(w))
+
+        # Pre-filter: body points with fewer than 2 valid cameras
+        valid_cam_count = valid_nc.sum(dim=1)  # (N,)
+        has_enough = valid_cam_count >= 2  # (N,)
+
+        # ------------------------------------------------------------------
+        # Step 2 — Cast rays: C calls, each processing N body points
+        # ------------------------------------------------------------------
+        origins_nc = torch.zeros(N, C, 3, device=device, dtype=dtype)
+        dirs_nc = torch.zeros(N, C, 3, device=device, dtype=dtype)
+        for c, cam_id in enumerate(cam_ids):
+            o, d = self._models[cam_id].cast_ray(pixels_nc[:, c, :])  # (N, 3) each
+            origins_nc[:, c, :] = o.to(device=device, dtype=dtype)
+            dirs_nc[:, c, :] = d.to(device=device, dtype=dtype)
+
+        # ------------------------------------------------------------------
+        # Step 3 — First-pass normal-equation assembly and lstsq solve
+        # ------------------------------------------------------------------
+        eye3 = torch.eye(3, device=device, dtype=dtype)
+        A = torch.zeros(N, 3, 3, device=device, dtype=dtype)
+        b = torch.zeros(N, 3, device=device, dtype=dtype)
+        for c in range(C):
+            d_c = dirs_nc[:, c, :]  # (N, 3)
+            o_c = origins_nc[:, c, :]  # (N, 3)
+            w_c = weights_nc[:, c]  # (N,)
+            ddt = torch.einsum("ni,nj->nij", d_c, d_c)  # (N, 3, 3)
+            M = eye3.unsqueeze(0) - ddt  # (N, 3, 3)
+            wM = w_c[:, None, None] * M  # (N, 3, 3)
+            A = A + wM
+            b = b + torch.einsum("nij,nj->ni", wM, o_c)
+
+        # Solve: pts_3d_pass1[n] = lstsq(A[n], b[n])
+        # Invalid points will have A≈0, but we mask them out afterward
+        pts_3d_pass1 = torch.linalg.lstsq(A, b.unsqueeze(-1)).solution.squeeze(
+            -1
+        )  # (N, 3)
+
+        # ------------------------------------------------------------------
+        # Step 4 — Per-camera reprojection residuals (C calls, not N*C)
+        # ------------------------------------------------------------------
+        residuals_nc = torch.full((N, C), float("inf"), device=device, dtype=dtype)
+        for c, cam_id in enumerate(cam_ids):
+            proj_px, proj_valid = self._models[cam_id].project(pts_3d_pass1)
+            proj_px = proj_px.to(device=device, dtype=dtype)
+            proj_valid = proj_valid.to(device=device)
+            obs_px = pixels_nc[:, c, :]  # (N, 2)
+            err = torch.linalg.norm(proj_px - obs_px, dim=-1)  # (N,)
+            keep = proj_valid & valid_nc[:, c]
+            residuals_nc[:, c] = torch.where(
+                keep,
+                err,
+                torch.tensor(float("inf"), device=device, dtype=dtype),
+            )
+
+        # ------------------------------------------------------------------
+        # Step 5 — Build inlier masks and pre-filter for second pass
+        # ------------------------------------------------------------------
+        inlier_nc = residuals_nc <= self._outlier_threshold  # (N, C)
+        inlier_count = inlier_nc.sum(dim=1)  # (N,)
+        has_enough_inliers = has_enough & (inlier_count >= 2)  # (N,)
+        weights_nc_inlier = weights_nc * inlier_nc.to(dtype=dtype)
+
+        # ------------------------------------------------------------------
+        # Step 6 — Second-pass lstsq with inlier weights
+        # ------------------------------------------------------------------
+        A2 = torch.zeros(N, 3, 3, device=device, dtype=dtype)
+        b2 = torch.zeros(N, 3, device=device, dtype=dtype)
+        for c in range(C):
+            d_c = dirs_nc[:, c, :]
+            o_c = origins_nc[:, c, :]
+            w_c = weights_nc_inlier[:, c]
+            ddt = torch.einsum("ni,nj->nij", d_c, d_c)
+            M = eye3.unsqueeze(0) - ddt
+            wM = w_c[:, None, None] * M
+            A2 = A2 + wM
+            b2 = b2 + torch.einsum("nij,nj->ni", wM, o_c)
+
+        pts_3d_pass2 = torch.linalg.lstsq(A2, b2.unsqueeze(-1)).solution.squeeze(
+            -1
+        )  # (N, 3)
+
+        # ------------------------------------------------------------------
+        # Step 7 — Water surface rejection (post re-triangulation only)
+        # ------------------------------------------------------------------
+        above_water = pts_3d_pass2[:, 2] <= water_z  # (N,)
+        valid_mask = has_enough_inliers & ~above_water  # (N,)
+
+        # ------------------------------------------------------------------
+        # Step 8 — Compute mean inlier residuals for pass-2 points
+        # ------------------------------------------------------------------
+        residuals2_nc = torch.full((N, C), float("inf"), device=device, dtype=dtype)
+        for c, cam_id in enumerate(cam_ids):
+            proj_px2, proj_valid2 = self._models[cam_id].project(pts_3d_pass2)
+            proj_px2 = proj_px2.to(device=device, dtype=dtype)
+            proj_valid2 = proj_valid2.to(device=device)
+            obs_px = pixels_nc[:, c, :]
+            err2 = torch.linalg.norm(proj_px2 - obs_px, dim=-1)
+            keep2 = proj_valid2 & inlier_nc[:, c]
+            residuals2_nc[:, c] = torch.where(
+                keep2,
+                err2,
+                torch.tensor(float("inf"), device=device, dtype=dtype),
+            )
+
+        # Mean over inlier cameras per body point (ignore inf)
+        finite_mask2 = residuals2_nc.isfinite()  # (N, C)
+        inlier_sum = (residuals2_nc * finite_mask2.to(dtype=dtype)).sum(dim=1)  # (N,)
+        inlier_cnt = finite_mask2.sum(dim=1).clamp(min=1).to(dtype=dtype)  # (N,)
+        mean_residuals = inlier_sum / inlier_cnt  # (N,)
+
+        # ------------------------------------------------------------------
+        # Step 9 — Build inlier_cam_ids from inlier_nc and cam_ids
+        # ------------------------------------------------------------------
+        inlier_cam_ids: list[list[str]] = [
+            [cam_ids[c] for c in range(C) if inlier_nc[n, c].item()] for n in range(N)
+        ]
+
+        # NaN-fill invalid points in pts_3d
+        pts_3d_out = pts_3d_pass2.clone()
+        pts_3d_out[~valid_mask] = float("nan")
+
+        return _TriangulationResult(
+            pts_3d=pts_3d_out,
+            valid_mask=valid_mask,
+            inlier_masks=inlier_nc,
+            mean_residuals=mean_residuals,
+            inlier_cam_ids=inlier_cam_ids,
         )
 
     def _triangulate_body_point(

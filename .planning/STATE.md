@@ -22,10 +22,10 @@ See: .planning/PROJECT.md (updated 2026-03-05)
 
 ## Current Position
 
-Phase: 62 (2 of 6 in v3.5 Pseudo-Labeling) -- COMPLETE
+Phase: 63 (3 of 6 in v3.5 Pseudo-Labeling) -- EXECUTING
 Plan: 2/2 in current phase
-Status: Phase complete
-Last activity: 2026-03-05 --- Phase 62 executed (2 plans, 2 commits)
+Status: All plans executed, pending verification
+Last activity: 2026-03-05 --- Phase 63 executed (2 plans, 2 commits)
 
 Progress: [██░░░░░░░░] 33%
 
@@ -51,6 +51,8 @@ Recent decisions affecting current work:
 - v3.5: Component C (dorsoventral arch recovery) deferred --- A+B sufficient for pseudo-label quality
 - v3.5 Phase 62: pyyaml load/dump for config round-trip (comments stripped, acceptable)
 - v3.5 Phase 62: _LutConfigFromDict avoids training->engine import boundary violation
+- v3.5 Phase 63: importlib.import_module for engine.config in pseudo_label_cli.py (AST boundary compliance)
+- v3.5 Phase 63: Confidence composite: 50% residual + 30% camera + 20% variance
 
 ### Pending Todos
 

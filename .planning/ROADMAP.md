@@ -164,7 +164,7 @@ Full details: `.planning/milestones/v3.4-ROADMAP.md`
 
 - [x] **Phase 61: Z-Denoising** - Plane projection and temporal smoothing to clean z-noise from 3D reconstructions (completed 2026-03-05)
 - [x] **Phase 62: Prep Infrastructure** - CLI wiring for calibrate-keypoints and LUT generation extraction (completed 2026-03-05)
-- [ ] **Phase 63: Pseudo-Label Generation (Source A)** - Reproject consensus 3D reconstructions into camera views as training labels
+- [x] **Phase 63: Pseudo-Label Generation (Source A)** - Reproject consensus 3D reconstructions into camera views as training labels (completed 2026-03-05)
 - [ ] **Phase 64: Gap Detection and Fill (Source B)** - Identify and label detection gaps via inverse LUT visibility cross-referencing
 - [ ] **Phase 65: Frame Selection and Dataset Assembly** - Temporal subsampling, pose-diversity sampling, and pooled dataset construction
 - [ ] **Phase 66: Training Run Management** - Run organization, cross-run comparison, and iterative retraining support
@@ -209,7 +209,7 @@ Plans:
   2. User can generate pose pseudo-labels with keypoints placed at calibrated anatomical positions along the 3D spline
   3. Each pseudo-label carries a confidence score derived from reconstruction quality metrics (residual, camera count, per-view residual)
   4. Labels are output in standard YOLO txt+yaml format with a confidence metadata sidecar
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 63-01-PLAN.md — Promote geometry functions, build core pseudo-label module (reprojection, confidence, label generation)
 - [ ] 63-02-PLAN.md — CLI command, diagnostic cache iteration, frame extraction, YOLO dataset output
@@ -264,7 +264,7 @@ Phases execute in numeric order: 61 -> 62 -> 63 -> 64 -> 65 -> 66
 | 56-60 | v3.4 | 8/8 | Complete | 2026-03-05 |
 | 61. Z-Denoising | 2/2 | Complete    | 2026-03-05 | - |
 | 62. Prep Infrastructure | v3.5 | 2/2 | Complete | 2026-03-05 |
-| 63. Pseudo-Label Generation (Source A) | v3.5 | 0/2 | Planned | - |
+| 63. Pseudo-Label Generation (Source A) | 2/2 | Complete   | 2026-03-05 | - |
 | 64. Gap Detection and Fill (Source B) | v3.5 | 0/? | Not started | - |
 | 65. Frame Selection and Dataset Assembly | v3.5 | 0/? | Not started | - |
 | 66. Training Run Management | v3.5 | 0/? | Not started | - |

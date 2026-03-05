@@ -6,7 +6,7 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from aquapose.core.context import PipelineContext, load_chunk_cache
 from aquapose.core.types.midline import Midline2D
@@ -198,7 +198,7 @@ def _merge_chunk_contexts(
     )
 
 
-def _offset_tracklet_frames(tracklet: object, offset: int) -> object:
+def _offset_tracklet_frames(tracklet: Any, offset: int) -> Any:
     """Return a copy of a Tracklet2D with frame indices shifted by offset.
 
     Args:
@@ -217,7 +217,7 @@ def _offset_tracklet_frames(tracklet: object, offset: int) -> object:
     return dataclasses.replace(tracklet, frames=new_frames)
 
 
-def _offset_group_frames(group: object, offset: int) -> object:
+def _offset_group_frames(group: Any, offset: int) -> Any:
     """Return a copy of a TrackletGroup with all tracklet frame indices shifted.
 
     Args:

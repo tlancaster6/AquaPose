@@ -1,28 +1,27 @@
 # AquaPose
 
-3D fish pose estimation via differentiable refractive rendering. AquaPose fits a parametric fish mesh to multi-view silhouettes from a 13-camera aquarium rig, producing dense 3D trajectories and midline kinematics for behavioral research on cichlids.
+3D fish pose estimation via refractive multi-view triangulation. AquaPose reconstructs fish 3D midlines from multi-view video using a 13-camera aquarium rig with refractive calibration, producing dense 3D trajectories and midline kinematics for behavioral research on cichlids.
 
-## Installation
+## Pipeline
 
-```bash
-pip install aquapose
-```
+AquaPose processes multi-view video through a 5-stage pipeline:
+
+1. **Detection** — YOLO-based fish detection (standard or oriented bounding boxes)
+2. **Tracking** — Per-camera 2D temporal tracking via OC-SORT
+3. **Association** — Cross-camera tracklet association using ray-ray geometry and Leiden clustering
+4. **Midline** — 2D midline extraction via YOLO-seg or YOLO-pose backends
+5. **Reconstruction** — DLT triangulation of 2D midlines into 3D B-spline midlines
+
+Long videos are processed in fixed-size temporal chunks with identity continuity across chunk boundaries.
 
 ## Quick Start
 
-```python
-from aquapose.calibration import load_calibration
-from aquapose.segmentation import segment_frame
-from aquapose.optimization import optimize_pose
+```bash
+# Initialize a project
+aquapose init-config my_project
 
-# Load multi-camera calibration (from AquaCal)
-cameras = load_calibration("calibration.json")
-
-# Segment fish in a multi-view frame
-masks = segment_frame(frame, cameras)
-
-# Reconstruct 3D pose via analysis-by-synthesis
-pose = optimize_pose(masks, cameras)
+# Run the pipeline
+aquapose run --config path/to/config.yaml
 ```
 
 ## Development

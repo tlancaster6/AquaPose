@@ -13,6 +13,7 @@ from aquapose.engine import load_config
 from aquapose.engine.orchestrator import ChunkOrchestrator
 from aquapose.training.cli import train_group
 from aquapose.training.prep import prep_group
+from aquapose.training.pseudo_label_cli import pseudo_label_group
 
 # ---------------------------------------------------------------------------
 # CLI definition
@@ -539,6 +540,12 @@ def smooth_planes(input_path: str, sigma_frames: int, dry_run: bool) -> None:
         if np.all(np.isnan(f_normals)):
             continue
 
+        # Sign-correct raw normals before smoothing so the rotation
+        # reference matches the smoother's internal sign convention.
+        for t in range(1, len(f_normals)):
+            if np.dot(f_normals[t], f_normals[t - 1]) < 0:
+                f_normals[t] = -f_normals[t]
+
         # Smooth
         f_smoothed = smooth_plane_normals(
             f_normals, f_degen, f_fish_ids, f_frame_idx, sigma_frames=sigma_frames
@@ -548,7 +555,7 @@ def smooth_planes(input_path: str, sigma_frames: int, dry_run: bool) -> None:
         for i in range(len(ts_frames)):
             fi = ts_frames[i]
             si = ts_slot[i]
-            raw_n = f_normals[i]
+            raw_n = f_normals[i]  # now sign-corrected
             sm_n = f_smoothed[i]
             cent = plane_centroids[fi, si]
             cp = control_points[fi, si]
@@ -601,6 +608,7 @@ def smooth_planes(input_path: str, sigma_frames: int, dry_run: bool) -> None:
 
 cli.add_command(train_group)
 cli.add_command(prep_group)
+cli.add_command(pseudo_label_group)
 
 
 def main() -> None:

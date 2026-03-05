@@ -17,6 +17,7 @@ from aquapose.core.association.refinement import (
 from aquapose.core.association.scoring import (
     AssociationConfigLike,
     ray_ray_closest_point,
+    ray_ray_closest_point_batch,
     score_all_pairs,
     score_tracklet_pair,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "cluster_tracklets",
     "merge_fragments",
     "ray_ray_closest_point",
+    "ray_ray_closest_point_batch",
     "refine_clusters",
     "score_all_pairs",
     "score_tracklet_pair",

@@ -477,6 +477,57 @@ class TestScoreTrackletPair:
             f"(score={score_far:.4f}) with soft kernel"
         )
 
+    def test_early_termination_t_shared_less_than_early_k(self) -> None:
+        """t_shared < early_k with divergent rays returns 0.0."""
+        frames = tuple(range(3))  # t_shared=3
+        ta = _make_tracklet("cam_a", 1, frames)
+        tb = _make_tracklet("cam_b", 1, frames)
+
+        lut_a = MockDivergentForwardLUT("cam_a")
+        lut_b = MockDivergentForwardLUT("cam_b")
+        forward_luts = {"cam_a": lut_a, "cam_b": lut_b}
+
+        config = MockAssociationConfig(early_k=5, t_min=3)
+
+        score = score_tracklet_pair(ta, tb, forward_luts, config)
+        assert score == 0.0
+
+    def test_early_termination_t_shared_equals_early_k(self) -> None:
+        """t_shared == early_k with divergent rays returns 0.0."""
+        frames = tuple(range(5))  # t_shared=5
+        ta = _make_tracklet("cam_a", 1, frames)
+        tb = _make_tracklet("cam_b", 1, frames)
+
+        lut_a = MockDivergentForwardLUT("cam_a")
+        lut_b = MockDivergentForwardLUT("cam_b")
+        forward_luts = {"cam_a": lut_a, "cam_b": lut_b}
+
+        config = MockAssociationConfig(early_k=5, t_min=3)
+
+        score = score_tracklet_pair(ta, tb, forward_luts, config)
+        assert score == 0.0
+
+    def test_two_phase_scoring_converging(self) -> None:
+        """t_shared > early_k with converging rays produces expected score."""
+        frames = tuple(range(20))  # t_shared=20, early_k=5
+        ta = _make_tracklet("cam_a", 1, frames)
+        tb = _make_tracklet("cam_b", 1, frames)
+
+        # Converging rays: A at origin along (1,0,1), B at (1,0,0) along (-1,0,1)
+        lut_a = MockForwardLUT(
+            "cam_a", np.array([0.0, 0.0, 0.0]), np.array([1.0, 0.0, 1.0])
+        )
+        lut_b = MockForwardLUT(
+            "cam_b", np.array([1.0, 0.0, 0.0]), np.array([-1.0, 0.0, 1.0])
+        )
+        forward_luts = {"cam_a": lut_a, "cam_b": lut_b}
+
+        config = MockAssociationConfig(early_k=5, t_min=3)
+
+        score = score_tracklet_pair(ta, tb, forward_luts, config)
+        # Same as test_perfect_match: f=1.0, w=20/100=0.2, score=0.2
+        assert score == pytest.approx(0.2)
+
 
 # ---------------------------------------------------------------------------
 # score_all_pairs tests

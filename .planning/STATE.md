@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v3.5
 milestone_name: Pseudo-Labeling
-status: complete
-last_updated: "2026-03-05T21:04:00.000Z"
+status: unknown
+last_updated: "2026-03-05T21:07:13.967Z"
 progress:
   total_phases: 6
   completed_phases: 6

@@ -98,6 +98,21 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ### Active
 
+## Current Milestone: v3.5 Pseudo-Labeling
+
+**Goal:** Use pipeline 3D reconstructions to generate training labels at scale, enabling iterative model retraining to improve detection and pose estimation quality.
+
+**Target features:**
+- `aquapose prep` CLI group (calibrate-keypoints wiring, LUT generation extraction)
+- Pseudo-label generation from diagnostic caches (OBB + pose formats)
+- Source A (consensus reprojections) and Source B (gap-fill) with confidence scoring
+- Gap detection via inverse LUT visibility cross-referenced with detections, tagged by failure reason
+- Frame selection with temporal subsampling + pose-diversity clustering
+- Dataset assembly (manual + Source A + Source B with threshold filtering)
+- Dual validation: fixed manual val set (round-level truth) + pseudo-label val split (source/reason breakdown)
+- Training run management with cross-run comparison (Ultralytics + aquapose eval metrics)
+- Iterative retraining loop infrastructure
+
 ### Out of Scope
 
 - Merge-and-split interaction handling — future milestone
@@ -126,7 +141,7 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - **Evaluation:** Per-chunk pickle caching (chunk_NNN/cache.pkl + manifest.json), five typed stage evaluators, `aquapose eval` (quality reports), `aquapose tune` (parameter sweeps with two-tier validation), `aquapose viz` (overlay, animation, trails from cached data)
 - **Training infrastructure:** `aquapose train {yolo-obb, seg, pose}` CLI subcommands with standard YOLO txt+yaml data format
 - **Core organization:** Shared types in `core/types/`, implementations in `core/<stage>/`, legacy top-level dirs eliminated
-- **Known limitation:** Z-reconstruction uncertainty 132x larger than XY due to top-down camera geometry; ~70% singleton rate in association (upstream detection/tracking bottleneck)
+- **Known limitation:** Z-reconstruction uncertainty 132x larger than XY due to top-down camera geometry; ~22% singleton rate in association (down from 86% after LUT coordinate space fix)
 - **Import boundary:** Automated AST-based checker enforced via pre-commit hook — core/ never imports engine/ at runtime
 
 ### Rig Geometry
@@ -218,4 +233,4 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | GPU non-determinism accepted for batched inference | 1-detection delta cascading through stages is inherent to batched vs serial GPU execution | ✓ Good — not an algorithmic regression |
 
 ---
-*Last updated: 2026-03-05 after v3.4 Performance Optimization milestone completion*
+*Last updated: 2026-03-05 after v3.5 Pseudo-Labeling milestone start*

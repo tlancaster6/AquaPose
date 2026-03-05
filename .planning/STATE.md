@@ -78,9 +78,10 @@ Recent decisions affecting current work:
 | # | Description | Date | Commit | Status | Directory |
 |---|-------------|------|--------|--------|-----------|
 | 18 | Fix pseudo-label pose output to use OBB-cropped images with crop-space keypoints | 2026-03-05 | 434b81b | Verified | [18-fix-pseudo-label-pose-output-to-use-obb-](./quick/18-fix-pseudo-label-pose-output-to-use-obb-/) |
+| 19 | Wire frame selection into pseudo-label assembly CLI | 2026-03-05 | 287a6a8 | Complete | [19-wire-frame-selection-into-pseudo-label-a](./quick/19-wire-frame-selection-into-pseudo-label-a/) |
 
 ## Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Completed 66-02-PLAN.md (v3.5 milestone complete)
+Stopped at: Completed quick task 19 (wire frame selection into assemble CLI)
 Resume file: None

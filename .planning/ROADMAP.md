@@ -209,7 +209,10 @@ Plans:
   2. User can generate pose pseudo-labels with keypoints placed at calibrated anatomical positions along the 3D spline
   3. Each pseudo-label carries a confidence score derived from reconstruction quality metrics (residual, camera count, per-view residual)
   4. Labels are output in standard YOLO txt+yaml format with a confidence metadata sidecar
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 63-01-PLAN.md — Promote geometry functions, build core pseudo-label module (reprojection, confidence, label generation)
+- [ ] 63-02-PLAN.md — CLI command, diagnostic cache iteration, frame extraction, YOLO dataset output
 
 ### Phase 64: Gap Detection and Fill (Source B)
 **Goal**: Users can identify where the model fails to detect visible fish and generate corrective training labels for those gaps
@@ -261,7 +264,7 @@ Phases execute in numeric order: 61 -> 62 -> 63 -> 64 -> 65 -> 66
 | 56-60 | v3.4 | 8/8 | Complete | 2026-03-05 |
 | 61. Z-Denoising | 2/2 | Complete    | 2026-03-05 | - |
 | 62. Prep Infrastructure | v3.5 | 2/2 | Complete | 2026-03-05 |
-| 63. Pseudo-Label Generation (Source A) | v3.5 | 0/? | Not started | - |
+| 63. Pseudo-Label Generation (Source A) | v3.5 | 0/2 | Planned | - |
 | 64. Gap Detection and Fill (Source B) | v3.5 | 0/? | Not started | - |
 | 65. Frame Selection and Dataset Assembly | v3.5 | 0/? | Not started | - |
 | 66. Training Run Management | v3.5 | 0/? | Not started | - |

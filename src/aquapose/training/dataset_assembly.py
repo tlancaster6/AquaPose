@@ -257,6 +257,35 @@ def _extract_dominant_gap_reason(lbl: dict) -> str | None:
     return Counter(reasons).most_common(1)[0][0]
 
 
+def _filter_by_frames(
+    labels: list[dict],
+    selected_frames: dict[str, set[int]],
+) -> list[dict]:
+    """Filter pseudo-labels by frame index for specific runs.
+
+    For each label, the frame index is parsed as ``int(label["stem"][:6])``.
+    Labels whose ``run_id`` is not in *selected_frames* pass through
+    unfiltered (per Phase 65 decision: runs not in the dict are kept).
+
+    Args:
+        labels: Label dicts with ``stem`` and ``run_id`` keys.
+        selected_frames: Mapping of ``run_id`` to allowed frame indices.
+
+    Returns:
+        Filtered list of label dicts.
+    """
+    result: list[dict] = []
+    for lbl in labels:
+        run_id = lbl["run_id"]
+        if run_id not in selected_frames:
+            result.append(lbl)
+            continue
+        frame_idx = int(lbl["stem"][:6])
+        if frame_idx in selected_frames[run_id]:
+            result.append(lbl)
+    return result
+
+
 def assemble_dataset(
     output_dir: Path,
     manual_dir: Path | None,
@@ -269,6 +298,7 @@ def assemble_dataset(
     pseudo_val_fraction: float,
     seed: int,
     max_frames: int | None = None,
+    selected_frames: dict[str, set[int]] | None = None,
 ) -> dict:
     """Assemble a YOLO-format training dataset from manual + pseudo-labels.
 
@@ -295,6 +325,11 @@ def assemble_dataset(
         max_frames: Hard cap on total pseudo-label images. When the
             filtered pool exceeds this, a uniform random subsample is
             taken. Manual annotations are not affected. None means no cap.
+        selected_frames: Mapping of ``run_id`` to allowed frame indices.
+            When provided, pseudo-labels are filtered by frame index
+            (parsed from first 6 chars of stem) after confidence/gap
+            filtering but before the *max_frames* cap. Runs not in the
+            dict are kept unfiltered. None disables frame filtering.
 
     Returns:
         Summary dict with counts per category.
@@ -362,6 +397,10 @@ def assemble_dataset(
         gap_labels = filter_by_gap_reason(gap_labels, exclude_gap_reasons)
 
         all_pseudo = consensus_labels + gap_labels
+
+    # --- Apply frame selection filter ---
+    if selected_frames is not None:
+        all_pseudo = _filter_by_frames(all_pseudo, selected_frames)
 
     # --- Apply max_frames cap ---
     if max_frames is not None and len(all_pseudo) > max_frames:

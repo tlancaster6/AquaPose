@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 
 from aquapose.training.dataset_assembly import (
+    _filter_by_frames,
     assemble_dataset,
     collect_pseudo_labels,
     filter_by_confidence,
@@ -362,6 +363,120 @@ class TestSplitPseudoVal:
         train, val = split_pseudo_val([], val_fraction=0.1, seed=42)
         assert train == []
         assert val == []
+
+
+class TestFilterByFrames:
+    """Tests for _filter_by_frames helper."""
+
+    def test_filters_by_frame_index(self) -> None:
+        """Keeps only labels whose frame index (first 6 chars) is in the set."""
+        labels = [
+            {"stem": "000001_cam0", "run_id": "run_001"},
+            {"stem": "000002_cam0", "run_id": "run_001"},
+            {"stem": "000003_cam0", "run_id": "run_001"},
+        ]
+        selected = {"run_001": {1, 3}}
+        result = _filter_by_frames(labels, selected)
+        stems = [r["stem"] for r in result]
+        assert stems == ["000001_cam0", "000003_cam0"]
+
+    def test_none_selected_frames_not_called(self) -> None:
+        """_filter_by_frames is a helper; None check is in assemble_dataset."""
+        # Just verify the function works with an empty dict
+        labels = [{"stem": "000001_cam0", "run_id": "run_001"}]
+        result = _filter_by_frames(labels, {})
+        # run_001 not in selected_frames dict -> kept unfiltered
+        assert len(result) == 1
+
+    def test_unspecified_run_kept_unfiltered(self) -> None:
+        """Labels from runs not in selected_frames are kept as-is."""
+        labels = [
+            {"stem": "000001_cam0", "run_id": "run_001"},
+            {"stem": "000002_cam0", "run_id": "run_002"},
+        ]
+        selected = {"run_001": {1}}  # Only run_001 is filtered
+        result = _filter_by_frames(labels, selected)
+        stems = [r["stem"] for r in result]
+        # run_001 frame 1 kept, run_002 unfiltered (kept)
+        assert stems == ["000001_cam0", "000002_cam0"]
+
+    def test_filters_specific_run_only(self) -> None:
+        """Filters one run while leaving another untouched."""
+        labels = [
+            {"stem": "000001_cam0", "run_id": "run_001"},
+            {"stem": "000002_cam0", "run_id": "run_001"},
+            {"stem": "000001_cam0", "run_id": "run_002"},
+            {"stem": "000002_cam0", "run_id": "run_002"},
+        ]
+        selected = {"run_001": {2}}  # Only frame 2 from run_001
+        result = _filter_by_frames(labels, selected)
+        # run_001: only frame 2 kept; run_002: all kept
+        assert len(result) == 3
+        run1_stems = [r["stem"] for r in result if r["run_id"] == "run_001"]
+        assert run1_stems == ["000002_cam0"]
+
+    def test_parses_frame_index_from_first_six_chars(self) -> None:
+        """Frame index is parsed as int(stem[:6])."""
+        labels = [
+            {"stem": "000042_cam3_001", "run_id": "run_001"},
+        ]
+        selected = {"run_001": {42}}
+        result = _filter_by_frames(labels, selected)
+        assert len(result) == 1
+
+
+class TestAssembleDatasetWithFrameSelection:
+    """Tests for assemble_dataset with selected_frames parameter."""
+
+    def test_selected_frames_filters_pseudo_labels(self, tmp_path: Path) -> None:
+        """assemble_dataset with selected_frames filters by frame index."""
+        output_dir = tmp_path / "assembled"
+        run_dir = tmp_path / "run_001"
+
+        # Stems: frame 10, 11, 12
+        pseudo_stems = ["000010_cam0", "000011_cam0", "000012_cam1"]
+        _make_obb_pseudo_label_dir(run_dir, pseudo_stems)
+
+        result = assemble_dataset(
+            output_dir=output_dir,
+            manual_dir=None,
+            run_dirs=[run_dir],
+            model_type="obb",
+            consensus_threshold=0.0,
+            gap_threshold=0.0,
+            exclude_gap_reasons=[],
+            manual_val_fraction=0.0,
+            pseudo_val_fraction=0.0,
+            seed=42,
+            selected_frames={"run_001": {10, 12}},
+        )
+
+        # Only frames 10 and 12 should pass
+        assert result["pseudo_train"] == 2
+
+    def test_selected_frames_none_includes_all(self, tmp_path: Path) -> None:
+        """assemble_dataset with selected_frames=None includes everything."""
+        output_dir = tmp_path / "assembled"
+        run_dir = tmp_path / "run_001"
+
+        pseudo_stems = ["000010_cam0", "000011_cam0", "000012_cam1"]
+        _make_obb_pseudo_label_dir(run_dir, pseudo_stems)
+
+        result = assemble_dataset(
+            output_dir=output_dir,
+            manual_dir=None,
+            run_dirs=[run_dir],
+            model_type="obb",
+            consensus_threshold=0.0,
+            gap_threshold=0.0,
+            exclude_gap_reasons=[],
+            manual_val_fraction=0.0,
+            pseudo_val_fraction=0.0,
+            seed=42,
+            selected_frames=None,
+        )
+
+        assert result["pseudo_train"] == 3
 
 
 class TestAssembleDataset:

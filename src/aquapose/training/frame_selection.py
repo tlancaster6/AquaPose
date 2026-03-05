@@ -130,7 +130,7 @@ def diversity_sample(
         curvatures.reshape(-1, 1),
         effective_bins,
         minit="points",
-        seed=rng,
+        seed=rng,  # pyright: ignore[reportCallIssue]
     )
 
     # Sample max_per_bin from each cluster

@@ -32,6 +32,14 @@ from .pseudo_labels import (
     generate_gap_fish_labels,
     reproject_spline_keypoints,
 )
+from .run_manager import (
+    create_run_dir,
+    extract_dataset_provenance,
+    parse_best_metrics,
+    print_next_steps,
+    snapshot_config,
+    write_summary,
+)
 from .yolo_obb import train_yolo_obb
 from .yolo_pose import train_yolo_pose
 from .yolo_seg import train_yolo_seg
@@ -45,8 +53,10 @@ __all__ = [
     "assemble_dataset",
     "compute_confidence_score",
     "compute_curvature",
+    "create_run_dir",
     "detect_gaps",
     "diversity_sample",
+    "extract_dataset_provenance",
     "extrapolate_edge_keypoints",
     "filter_empty_frames",
     "format_obb_annotation",
@@ -54,14 +64,18 @@ __all__ = [
     "generate_fish_labels",
     "generate_gap_fish_labels",
     "make_loader",
+    "parse_best_metrics",
     "pca_obb",
     "prep_group",
+    "print_next_steps",
     "reproject_spline_keypoints",
     "save_best_and_last",
+    "snapshot_config",
     "stratified_split",
     "temporal_subsample",
     "train_yolo_obb",
     "train_yolo_pose",
     "train_yolo_seg",
     "transform_keypoints",
+    "write_summary",
 ]

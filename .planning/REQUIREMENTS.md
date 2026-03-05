@@ -9,7 +9,7 @@ Requirements for performance optimization milestone. Each maps to roadmap phases
 
 ### Inference Batching
 
-- [ ] **BATCH-01**: Detection stage batches all camera frames per timestep into a single `predict()` call
+- [x] **BATCH-01**: Detection stage batches all camera frames per timestep into a single `predict()` call
 - [x] **BATCH-02**: Midline stage batches all crops per frame into a single `predict()` call
 - [x] **BATCH-03**: Batch sizes are configurable via pipeline config fields
 - [x] **BATCH-04**: Inference gracefully retries with halved batch size on CUDA OOM
@@ -60,7 +60,7 @@ None — this is a focused optimization milestone.
 | RECON-02 | Phase 57 | Complete |
 | FIO-01 | Phase 58 | Complete |
 | FIO-02 | Phase 58 | Complete |
-| BATCH-01 | Phase 59 | Pending |
+| BATCH-01 | Phase 59 | Complete |
 | BATCH-02 | Phase 59 | Complete |
 | BATCH-03 | Phase 59 | Complete |
 | BATCH-04 | Phase 59 | Complete |

@@ -215,7 +215,7 @@ Plans:
 | 46-50 | v3.2 | 11/11 | Complete | 2026-03-03 |
 | 51-55 | v3.3 | 11/11 | Complete | 2026-03-05 |
 | 56. Vectorized Association Scoring | v3.4 | Complete    | 2026-03-05 | - |
-| 57. Vectorized DLT Reconstruction | 1/1 | Complete   | 2026-03-05 | - |
+| 57. Vectorized DLT Reconstruction | 1/1 | Complete    | 2026-03-05 | - |
 | 58. Frame I/O Optimization | v3.4 | 0/1 | Not started | - |
 | 59. Batched YOLO Inference | v3.4 | 0/? | Not started | - |
 

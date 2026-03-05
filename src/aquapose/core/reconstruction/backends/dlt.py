@@ -245,17 +245,17 @@ class DltBackend:
         per_point_hw_px: list[float] = []
         per_point_depths: list[float] = []
 
-        for i in range(n_body_points):
-            result = self._triangulate_body_point(i, cam_midlines, water_z)
-            if result is None:
-                continue
+        tri_result = self._triangulate_fish_vectorized(cam_midlines, water_z)
 
-            pt3d, inlier_ids, mean_res = result
-            pt3d_np = pt3d.detach().cpu().numpy().astype(np.float64)
+        for i in range(n_body_points):
+            if not tri_result.valid_mask[i].item():
+                continue
+            pt3d_np = tri_result.pts_3d[i].detach().cpu().numpy().astype(np.float64)
+            inlier_ids = tri_result.inlier_cam_ids[i]
 
             valid_indices.append(i)
             pts_3d_list.append(pt3d_np)
-            per_point_residuals.append(mean_res)
+            per_point_residuals.append(float(tri_result.mean_residuals[i].item()))
             per_point_n_cams.append(len(inlier_ids))
             per_point_inlier_ids.append(inlier_ids)
 

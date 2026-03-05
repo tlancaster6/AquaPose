@@ -176,12 +176,15 @@ Full details: `.planning/milestones/v3.4-ROADMAP.md`
 **Depends on**: Nothing (first phase of v3.5)
 **Requirements**: RECON-01, RECON-02, RECON-03, RECON-04, RECON-05, RECON-06
 **Success Criteria** (what must be TRUE):
-  1. Median z-range along spine drops below ~1 cm (from current ~1.77 cm) on the reference dataset
-  2. Reprojection residuals increase by no more than ~0.5 px (do-no-harm sanity check; primary metrics are z-range and temporal stability)
-  3. Robust plane fit with signed off-plane residuals stored per body point (no hard bypass; real out-of-plane structure preserved in residuals)
-  4. Plane projection and temporal smoothing can be toggled off via config to fall back to raw triangulation
-  5. Frame-to-frame z-profile noise is visibly reduced (SNR > 1 for most fish)
-**Plans**: TBD
+  1. Component A (plane projection): IRLS-weighted SVD plane fit projects triangulated points before spline fitting; plane normal + centroid stored per fish per frame; reprojection residuals increase by no more than ~0.5 px (do-no-harm check)
+  2. Component B (temporal smoothing): plane normals smoothed per-fish within continuous track segments; control points rotated via stored normal/centroid; median z-range drops below ~1 cm; frame-to-frame z-profile RMS < 0.1 cm; SNR > 1 for most fish
+  3. Signed off-plane residuals stored per body point (no hard bypass; real out-of-plane structure preserved in residuals for future Component C)
+  4. Separate config toggles: `plane_projection.enabled` (reconstruction-time) and `plane_smoothing.enabled` / `plane_smoothing.sigma_frames` (post-processing). A can run without B; B requires A
+  5. HDF5 writer and Midline3D type updated with plane normal, centroid, and off-plane residual fields
+**Plans:** 2 plans
+Plans:
+- [ ] 61-01-PLAN.md — Component A: plane fit, Midline3D extension, config, HDF5 writer
+- [ ] 61-02-PLAN.md — Component B: temporal smoothing CLI, eval metrics
 
 ### Phase 62: Prep Infrastructure
 **Goal**: Users can prepare calibrated keypoint t-values and pre-generated LUTs before running pseudo-label generation
@@ -253,7 +256,7 @@ Phases execute in numeric order: 61 -> 62 -> 63 -> 64 -> 65 -> 66
 | 46-50 | v3.2 | 11/11 | Complete | 2026-03-03 |
 | 51-55 | v3.3 | 11/11 | Complete | 2026-03-05 |
 | 56-60 | v3.4 | 8/8 | Complete | 2026-03-05 |
-| 61. Z-Denoising | v3.5 | 0/? | Not started | - |
+| 61. Z-Denoising | v3.5 | 0/2 | Planning | - |
 | 62. Prep Infrastructure | v3.5 | 0/? | Not started | - |
 | 63. Pseudo-Label Generation (Source A) | v3.5 | 0/? | Not started | - |
 | 64. Gap Detection and Fill (Source B) | v3.5 | 0/? | Not started | - |

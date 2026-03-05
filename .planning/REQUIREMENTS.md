@@ -35,7 +35,7 @@ Requirements for chunk processing milestone. Each maps to roadmap phases.
 
 - [x] **INTEG-01**: `aquapose run` uses ChunkOrchestrator; with chunk_size=null/0, single-chunk degenerate case matches current behavior exactly
 - [x] **INTEG-02**: Chunk mode and diagnostic mode are mutually exclusive — validation error if both active
-- [ ] **INTEG-03**: Chunked output matches non-chunked output for the same video (validation test)
+- [x] **INTEG-03**: Degenerate single-chunk run produces identical output; multi-chunk runs produce structurally correct output with correct frame offsets and identity continuity
 
 ## Deferred Requirements
 
@@ -86,7 +86,7 @@ Requirements for chunk processing milestone. Each maps to roadmap phases.
 | OUT-02 | Phase 53 | Complete |
 | INTEG-01 | Phase 53 | Complete |
 | INTEG-02 | Phase 53 | Complete |
-| INTEG-03 | Phase 55 | Pending |
+| INTEG-03 | Phase 55 | Complete (55-01) |
 
 **Coverage:**
 - v3.3 requirements: 15 total

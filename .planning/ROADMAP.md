@@ -150,7 +150,7 @@ Full details: `.planning/milestones/v3.3-ROADMAP.md`
 - [x] **Phase 56: Vectorized Association Scoring** — Replace per-pair ray-ray distance loop with NumPy broadcasting (completed 2026-03-05)
 - [x] **Phase 57: Vectorized DLT Reconstruction** — Replace per-body-point SVD loop with batched `torch.linalg.svd` (completed 2026-03-05)
 - [x] **Phase 58: Frame I/O Optimization** — Add background-thread prefetch source to eliminate seek overhead and GPU idle gaps (completed 2026-03-05)
-- [ ] **Phase 59: Batched YOLO Inference** — Batch detection and midline YOLO calls across cameras and crops per frame
+- [x] **Phase 59: Batched YOLO Inference** — Batch detection and midline YOLO calls across cameras and crops per frame (completed 2026-03-05)
 
 ## Phase Details
 
@@ -200,7 +200,7 @@ Plans:
   3. `detection_batch_frames` and `midline_batch_crops` config fields exist and control batch sizes
   4. A CUDA OOM during `model.predict()` triggers an automatic retry with halved batch size rather than crashing the pipeline
   5. `aquapose eval` detection and midline metrics on a real YH chunk are identical to the pre-batching baseline
-**Plans:** 1/3 plans executed
+**Plans:** 3/3 plans complete
 Plans:
 - [ ] 59-01-PLAN.md — OOM retry utility and batch size config fields
 - [ ] 59-02-PLAN.md — Batched detection backends and stage refactor
@@ -221,7 +221,7 @@ Plans:
 | 56. Vectorized Association Scoring | v3.4 | Complete    | 2026-03-05 | - |
 | 57. Vectorized DLT Reconstruction | 1/1 | Complete    | 2026-03-05 | - |
 | 58. Frame I/O Optimization | 1/1 | Complete    | 2026-03-05 | - |
-| 59. Batched YOLO Inference | 1/3 | In Progress|  | - |
+| 59. Batched YOLO Inference | 3/3 | Complete   | 2026-03-05 | - |
 
 ### Phase 60: End-to-End Performance Validation
 

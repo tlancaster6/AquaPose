@@ -8,7 +8,7 @@ progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 7
-  completed_plans: 5
+  completed_plans: 7
 ---
 
 # Project State
@@ -23,30 +23,32 @@ See: .planning/PROJECT.md (updated 2026-03-05)
 ## Current Position
 
 Phase: 59 of 59 (Batched YOLO Inference)
-Plan: 01 of 03 complete
-Status: In progress
-Last activity: 2026-03-05 — Completed 59-01 (OOM retry utility + batch config fields)
+Plan: 03 of 03 complete
+Status: Complete
+Last activity: 2026-03-05 — Completed 59-03 (Batched midline inference)
 
-Progress: [########=-] 83%
+Progress: [##########] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2 (v3.4)
+- Total plans completed: 4 (v3.4)
 - Average duration: 4min
-- Total execution time: 8min
+- Total execution time: 18min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 58-frame-i-o-optimization | 1 | 6min | 6min |
-| 59-batched-yolo-inference | 1 | 2min | 2min |
+| 59-batched-yolo-inference | 3 | 12min | 4min |
 
 ## Accumulated Context
 | Phase 57 P01 | 279 | 2 tasks | 2 files |
 | Phase 58 P01 | 6min | 2 tasks | 4 files |
 | Phase 59 P01 | 2min | 2 tasks | 4 files |
+| Phase 59 P02 | 5min | 2 tasks | 5 files |
+| Phase 59 P03 | 5min | 2 tasks | 5 files |
 
 ### Decisions
 
@@ -58,6 +60,10 @@ See PROJECT.md Key Decisions table for full history.
 - [Phase 58]: Decode failure skips camera (warning) rather than killing the frame or raising
 - [Phase 59]: Mutable BatchState (not frozen) to persist batch size reductions across calls
 - [Phase 59]: batch_size=0 means no limit (send all inputs in one call) for config fields
+- [Phase 59]: Extract parsing into shared helpers (_parse_results, _parse_box_results) to avoid duplication between detect() and detect_batch()
+- [Phase 59]: Use r.orig_shape for frame dimensions in shared batch parser
+- [Phase 59]: Crop extraction (CPU) separated from batch predict (GPU) in MidlineStage for clean OOM retry boundary
+- [Phase 59]: Failed crop extractions produce null AnnotatedDetection at correct position, maintaining positional correspondence
 
 ### Profiling Data (v3.4 baseline)
 
@@ -86,5 +92,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Completed 59-01-PLAN.md (OOM retry utility + batch config fields)
+Stopped at: Completed 59-03-PLAN.md (Batched midline inference) — Phase 59 complete
 Resume file: None

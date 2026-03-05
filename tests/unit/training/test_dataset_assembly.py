@@ -401,7 +401,7 @@ class TestAssembleDataset:
         assert result["manual_train"] == 2
 
     def test_pseudo_val_metadata_sidecar(self, tmp_path: Path) -> None:
-        """Pseudo-label val metadata sidecar records source, confidence per image."""
+        """Pseudo-label val metadata sidecar records source, confidence, gap_reason."""
         output_dir = tmp_path / "assembled"
         run_dir = tmp_path / "run_001"
 
@@ -429,6 +429,9 @@ class TestAssembleDataset:
             assert "source" in entry
             assert "confidence" in entry
             assert "stem" in entry
+            assert "gap_reason" in entry
+            # Consensus labels should have gap_reason=None
+            assert entry["gap_reason"] is None
 
     def test_gap_threshold_independent(self, tmp_path: Path) -> None:
         """Gap labels are filtered at gap_threshold, not consensus_threshold."""
@@ -473,6 +476,125 @@ class TestAssembleDataset:
 
         assert result["consensus_train"] == 1
         assert result["gap_train"] == 1
+
+    def test_selected_frames_filters_pseudo_labels(self, tmp_path: Path) -> None:
+        """selected_frames filters pseudo-labels by frame index per run."""
+        output_dir = tmp_path / "assembled"
+        run1 = tmp_path / "run_001"
+        run2 = tmp_path / "run_002"
+
+        # Run 1: frames 0-4
+        stems_r1 = [f"{i:06d}_cam0" for i in range(5)]
+        _make_pseudo_label_dir(run1, "consensus", "obb", stems_r1)
+
+        # Run 2: frames 0-4
+        stems_r2 = [f"{i:06d}_cam0" for i in range(5)]
+        _make_pseudo_label_dir(run2, "consensus", "obb", stems_r2)
+
+        # Only allow frames {0, 2} for run_001, all frames for run_002
+        selected = {"run_001": {0, 2}}
+
+        result = assemble_dataset(
+            output_dir=output_dir,
+            manual_dir=None,
+            run_dirs=[run1, run2],
+            model_type="obb",
+            consensus_threshold=0.0,
+            gap_threshold=0.0,
+            exclude_gap_reasons=[],
+            manual_val_fraction=0.0,
+            pseudo_val_fraction=0.0,
+            seed=42,
+            selected_frames=selected,
+        )
+
+        # run_001: 2 frames (0, 2), run_002: 5 frames (not in selected_frames)
+        assert result["consensus_train"] == 7
+
+    def test_selected_frames_none_includes_all(self, tmp_path: Path) -> None:
+        """selected_frames=None includes all pseudo-labels (backward compatible)."""
+        output_dir = tmp_path / "assembled"
+        run_dir = tmp_path / "run_001"
+
+        stems = [f"{i:06d}_cam0" for i in range(5)]
+        _make_pseudo_label_dir(run_dir, "consensus", "obb", stems)
+
+        result = assemble_dataset(
+            output_dir=output_dir,
+            manual_dir=None,
+            run_dirs=[run_dir],
+            model_type="obb",
+            consensus_threshold=0.0,
+            gap_threshold=0.0,
+            exclude_gap_reasons=[],
+            manual_val_fraction=0.0,
+            pseudo_val_fraction=0.0,
+            seed=42,
+            selected_frames=None,
+        )
+
+        assert result["consensus_train"] == 5
+
+    def test_gap_reason_in_pseudo_val_metadata(self, tmp_path: Path) -> None:
+        """Gap-source pseudo-labels include gap_reason in sidecar metadata."""
+        output_dir = tmp_path / "assembled"
+        run_dir = tmp_path / "run_001"
+
+        # Create gap labels with gap_reason in confidence metadata
+        gap_conf = {
+            "000001_cam0": {
+                "labels": [
+                    {
+                        "fish_id": 1,
+                        "confidence": 0.8,
+                        "raw_metrics": {},
+                        "gap_reason": "no-detection",
+                    },
+                    {
+                        "fish_id": 2,
+                        "confidence": 0.7,
+                        "raw_metrics": {},
+                        "gap_reason": "no-detection",
+                    },
+                ]
+            },
+            "000002_cam0": {
+                "labels": [
+                    {
+                        "fish_id": 1,
+                        "confidence": 0.6,
+                        "raw_metrics": {},
+                        "gap_reason": "no-tracklet",
+                    },
+                ]
+            },
+        }
+        _make_pseudo_label_dir(
+            run_dir, "gap", "obb", ["000001_cam0", "000002_cam0"], gap_conf
+        )
+
+        assemble_dataset(
+            output_dir=output_dir,
+            manual_dir=None,
+            run_dirs=[run_dir],
+            model_type="obb",
+            consensus_threshold=0.0,
+            gap_threshold=0.0,
+            exclude_gap_reasons=[],
+            manual_val_fraction=0.0,
+            pseudo_val_fraction=1.0,  # All go to val for easy checking
+            seed=42,
+        )
+
+        sidecar_path = output_dir / "pseudo_val_metadata.json"
+        assert sidecar_path.exists()
+        sidecar = json.loads(sidecar_path.read_text())
+        assert len(sidecar) == 2
+
+        # Build lookup by stem suffix
+        by_stem = {e["stem"].split("_", 1)[1]: e for e in sidecar}
+        assert by_stem["000001_cam0"]["gap_reason"] == "no-detection"
+        assert by_stem["000002_cam0"]["gap_reason"] == "no-tracklet"
 
     def test_no_manual_dir(self, tmp_path: Path) -> None:
         """Assembly works without manual directory."""

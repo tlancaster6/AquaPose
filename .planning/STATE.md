@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.5
 milestone_name: Pseudo-Labeling
-status: unknown
-last_updated: "2026-03-05T19:57:40.458Z"
+status: in-progress
+last_updated: "2026-03-05T20:12:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 9
-  completed_plans: 8
+  total_plans: 10
+  completed_plans: 9
 ---
 
 # Project State
@@ -18,26 +18,26 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-05)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 64 complete; pending verification
+**Current focus:** Phase 65 frame selection and dataset assembly
 
 ## Current Position
 
-Phase: 64 (4 of 6 in v3.5 Pseudo-Labeling) -- COMPLETE
-Plan: 2/2 in current phase
-Status: All plans complete, pending verification
-Last activity: 2026-03-05 - Completed quick task 18: Fix pseudo-label pose output to use OBB-cropped images with crop-space keypoints
+Phase: 65 (5 of 6 in v3.5 Pseudo-Labeling) -- IN PROGRESS
+Plan: 1/2 in current phase
+Status: Plan 65-01 complete, 65-02 remaining
+Last activity: 2026-03-05 - Completed 65-01: Frame selection module
 
-Progress: [█████░░░░░] 50%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4 (v3.5)
-- Average duration: ~12 min
-- Total execution time: ~50 min
+- Total plans completed: 5 (v3.5)
+- Average duration: ~11 min
+- Total execution time: ~54 min
 
 **Recent Trend:**
-- Last 4 plans: 61-01, 61-02, 62-01, 62-02 all completed 2026-03-05
+- Last 5 plans: 61-01, 61-02, 62-01, 62-02, 65-01 all completed 2026-03-05
 - Trend: Stable
 
 ## Accumulated Context
@@ -53,6 +53,8 @@ Recent decisions affecting current work:
 - v3.5 Phase 62: _LutConfigFromDict avoids training->engine import boundary violation
 - v3.5 Phase 63: importlib.import_module for engine.config in pseudo_label_cli.py (AST boundary compliance)
 - v3.5 Phase 63: Confidence composite: 50% residual + 30% camera + 20% variance
+- v3.5 Phase 65: scipy kmeans2 for curvature-based diversity sampling (avoids sklearn dependency)
+- v3.5 Phase 65: Finite-difference curvature from tangent vectors (no scipy.interpolate needed)
 
 ### Pending Todos
 
@@ -72,5 +74,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Phase 64 complete; pending verification
+Stopped at: Completed 65-01-PLAN.md
 Resume file: None

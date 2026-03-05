@@ -8,6 +8,12 @@ from .common import (
     make_loader,
     save_best_and_last,
 )
+from .compare import (
+    discover_runs,
+    format_comparison_table,
+    load_run_summaries,
+    write_comparison_csv,
+)
 from .dataset_assembly import assemble_dataset
 from .datasets import CropDataset, apply_augmentation, stratified_split
 from .frame_selection import (
@@ -55,14 +61,17 @@ __all__ = [
     "compute_curvature",
     "create_run_dir",
     "detect_gaps",
+    "discover_runs",
     "diversity_sample",
     "extract_dataset_provenance",
     "extrapolate_edge_keypoints",
     "filter_empty_frames",
+    "format_comparison_table",
     "format_obb_annotation",
     "format_pose_annotation",
     "generate_fish_labels",
     "generate_gap_fish_labels",
+    "load_run_summaries",
     "make_loader",
     "parse_best_metrics",
     "pca_obb",
@@ -77,5 +86,6 @@ __all__ = [
     "train_yolo_pose",
     "train_yolo_seg",
     "transform_keypoints",
+    "write_comparison_csv",
     "write_summary",
 ]

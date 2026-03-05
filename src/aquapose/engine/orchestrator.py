@@ -271,6 +271,7 @@ class ChunkOrchestrator:
                         total_stages=len(stages),
                         extra_observers=self._extra_observers,
                         chunk_idx=chunk_idx,
+                        chunk_start=chunk_start,
                     )
                 except Exception:
                     observers = []

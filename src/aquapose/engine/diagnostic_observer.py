@@ -115,10 +115,24 @@ class DiagnosticObserver:
         self,
         output_dir: str | Path | None = None,
         chunk_idx: int = 0,
+        chunk_start: int = 0,
     ) -> None:
+        """Initialize the DiagnosticObserver.
+
+        Args:
+            output_dir: Directory where diagnostics are written. When None,
+                no files are written (in-memory-only mode).
+            chunk_idx: Zero-based chunk index used to name the cache directory
+                (``diagnostics/chunk_NNN/``). Default 0.
+            chunk_start: Global frame index of this chunk's first frame. Written
+                to ``manifest.json`` as ``start_frame`` for each chunk entry so
+                callers can map chunk data back to the full video timeline.
+                Default 0.
+        """
         self.stages: dict[str, StageSnapshot] = {}
         self._output_dir = Path(output_dir) if output_dir is not None else None
         self._chunk_idx = chunk_idx
+        self._chunk_start = chunk_start
         self._run_id: str = ""
         self._last_context: object = None
 
@@ -223,7 +237,7 @@ class DiagnosticObserver:
 
         chunk_entry = {
             "index": self._chunk_idx,
-            "start_frame": None,
+            "start_frame": self._chunk_start,
             "end_frame": frame_count,
             "stages_cached": list(self.stages.keys()),
         }

@@ -62,6 +62,13 @@ _COS_MIN_RAY_ANGLE: float = math.cos(math.radians(_MIN_RAY_ANGLE_DEG))
 """Cosine of the minimum ray angle threshold. When |cos(angle)| > this value
 the rays are too nearly parallel for reliable DLT."""
 
+_MAX_ENDPOINT_GAP: float = 0.2
+"""Maximum allowed gap at either endpoint of the valid body-point parameter range.
+
+If the first valid body point has u > _MAX_ENDPOINT_GAP or the last has
+u < 1.0 - _MAX_ENDPOINT_GAP, the reconstruction is rejected rather than
+relying on spline extrapolation into unsupported regions."""
+
 __all__ = ["DltBackend"]
 
 
@@ -286,6 +293,21 @@ class DltBackend:
         u_param = np.array(
             [i / (n_body_points - 1) for i in valid_indices], dtype=np.float64
         )
+
+        # Reject if valid body points don't cover the endpoints — spline
+        # extrapolation beyond the observed range is unreliable and can
+        # produce degenerate control points far outside the aquarium.
+        if u_param[0] > _MAX_ENDPOINT_GAP or u_param[-1] < 1.0 - _MAX_ENDPOINT_GAP:
+            logger.debug(
+                "Fish %d skipped: valid body points span [%.2f, %.2f], "
+                "extrapolation gap exceeds %.0f%% threshold",
+                fish_id,
+                u_param[0],
+                u_param[-1],
+                _MAX_ENDPOINT_GAP * 100,
+            )
+            return None
+
         pts_3d_arr = np.stack(pts_3d_list, axis=0)  # shape (M, 3)
 
         spline_result = fit_spline(
@@ -375,12 +397,17 @@ class DltBackend:
         of N*C), normal-equation assembly (C-camera loop over (N,3,3) tensors), and
         a single batched torch.linalg.lstsq call.
 
+        Outlier rejection is iterative: on each pass the single worst camera is
+        removed per body point, then that body point is re-triangulated.  This
+        prevents self-poisoning where one degenerate 2D midline corrupts the
+        initial triangulation enough to make ALL cameras appear as outliers.
+        The loop runs at most C-2 times and exits early when no outliers remain.
+
         Note: The 2-camera ray-angle filter (_MIN_RAY_ANGLE_DEG / _COS_MIN_RAY_ANGLE)
         is deliberately omitted from this vectorized path. 2-camera body points are
         uncommon (usually ≥3 cameras observe each point), and near-parallel rays
-        within those are rarer still. Masking this edge case per-point would require
-        a Python loop, defeating vectorization for negligible yield impact. The scalar
-        _triangulate_body_point() retains the filter for reference.
+        within those are rarer still. The scalar _triangulate_body_point() retains
+        the filter for reference.
 
         Also omits the first-pass water-surface check (only applied after
         re-triangulation). Above-water initial triangulations virtually always remain
@@ -486,48 +513,77 @@ class DltBackend:
         )  # (N, 3)
 
         # ------------------------------------------------------------------
-        # Step 4 — Per-camera reprojection residuals (C calls, not N*C)
+        # Steps 4-6 — Iterative outlier rejection
+        #
+        # Single-round rejection is vulnerable to self-poisoning: one camera
+        # with a degenerate 2D midline corrupts the initial triangulation,
+        # inflating residuals for ALL cameras and causing valid cameras to be
+        # rejected.  Iterative removal of the single worst camera per body
+        # point avoids this — after removing the bad camera, good cameras'
+        # residuals recover and they survive the threshold check.
         # ------------------------------------------------------------------
-        residuals_nc = torch.full((N, C), float("inf"), device=device, dtype=dtype)
-        for c, cam_id in enumerate(cam_ids):
-            proj_px, proj_valid = self._models[cam_id].project(pts_3d_pass1)
-            proj_px = proj_px.to(device=device, dtype=dtype)
-            proj_valid = proj_valid.to(device=device)
-            obs_px = pixels_nc[:, c, :]  # (N, 2)
-            err = torch.linalg.norm(proj_px - obs_px, dim=-1)  # (N,)
-            keep = proj_valid & valid_nc[:, c]
-            residuals_nc[:, c] = torch.where(
-                keep,
-                err,
-                torch.tensor(float("inf"), device=device, dtype=dtype),
-            )
+        active_nc = valid_nc.clone()  # (N, C) — cameras still active per point
+        pts_3d_current = pts_3d_pass1
+        max_reject_iters = max(C - 2, 0)
+        inf_val = torch.tensor(float("inf"), device=device, dtype=dtype)
 
-        # ------------------------------------------------------------------
-        # Step 5 — Build inlier masks and pre-filter for second pass
-        # ------------------------------------------------------------------
-        inlier_nc = residuals_nc <= self._outlier_threshold  # (N, C)
+        for _reject_iter in range(max_reject_iters):
+            # Compute per-camera residuals from current solution
+            iter_resid = torch.full((N, C), float("inf"), device=device, dtype=dtype)
+            for c, cam_id in enumerate(cam_ids):
+                proj_px, proj_valid = self._models[cam_id].project(pts_3d_current)
+                proj_px = proj_px.to(device=device, dtype=dtype)
+                proj_valid = proj_valid.to(device=device)
+                err = torch.linalg.norm(proj_px - pixels_nc[:, c, :], dim=-1)  # (N,)
+                keep = proj_valid & active_nc[:, c]
+                iter_resid[:, c] = torch.where(keep, err, inf_val)
+
+            # Find worst active camera per body point (ignore inactive)
+            masked_resid = torch.where(
+                active_nc,
+                iter_resid,
+                torch.full_like(iter_resid, -float("inf")),
+            )
+            max_resid, worst_cam = masked_resid.max(dim=1)  # (N,)
+            has_outlier = has_enough & (max_resid > self._outlier_threshold)
+
+            if not has_outlier.any():
+                break
+
+            # Only remove if body point retains >= 2 cameras afterward
+            active_count = active_nc.sum(dim=1)  # (N,)
+            can_remove = has_outlier & (active_count > 2)
+
+            if not can_remove.any():
+                break
+
+            # Deactivate worst camera for affected body points
+            remove_idx = can_remove.nonzero(as_tuple=True)[0]
+            active_nc[remove_idx, worst_cam[remove_idx]] = False
+
+            # Re-triangulate with updated camera set
+            w_active = weights_nc * active_nc.to(dtype=dtype)
+            A_iter = torch.zeros(N, 3, 3, device=device, dtype=dtype)
+            b_iter = torch.zeros(N, 3, device=device, dtype=dtype)
+            for c in range(C):
+                d_c = dirs_nc[:, c, :]
+                o_c = origins_nc[:, c, :]
+                w_c = w_active[:, c]
+                ddt = torch.einsum("ni,nj->nij", d_c, d_c)
+                M = eye3.unsqueeze(0) - ddt
+                wM = w_c[:, None, None] * M
+                A_iter = A_iter + wM
+                b_iter = b_iter + torch.einsum("nij,nj->ni", wM, o_c)
+
+            pts_3d_current = torch.linalg.lstsq(
+                A_iter, b_iter.unsqueeze(-1)
+            ).solution.squeeze(-1)
+
+        # Final inlier state from iterative rejection
+        inlier_nc = active_nc
         inlier_count = inlier_nc.sum(dim=1)  # (N,)
         has_enough_inliers = has_enough & (inlier_count >= 2)  # (N,)
-        weights_nc_inlier = weights_nc * inlier_nc.to(dtype=dtype)
-
-        # ------------------------------------------------------------------
-        # Step 6 — Second-pass lstsq with inlier weights
-        # ------------------------------------------------------------------
-        A2 = torch.zeros(N, 3, 3, device=device, dtype=dtype)
-        b2 = torch.zeros(N, 3, device=device, dtype=dtype)
-        for c in range(C):
-            d_c = dirs_nc[:, c, :]
-            o_c = origins_nc[:, c, :]
-            w_c = weights_nc_inlier[:, c]
-            ddt = torch.einsum("ni,nj->nij", d_c, d_c)
-            M = eye3.unsqueeze(0) - ddt
-            wM = w_c[:, None, None] * M
-            A2 = A2 + wM
-            b2 = b2 + torch.einsum("nij,nj->ni", wM, o_c)
-
-        pts_3d_pass2 = torch.linalg.lstsq(A2, b2.unsqueeze(-1)).solution.squeeze(
-            -1
-        )  # (N, 3)
+        pts_3d_pass2 = pts_3d_current
 
         # ------------------------------------------------------------------
         # Step 7 — Water surface rejection (post re-triangulation only)

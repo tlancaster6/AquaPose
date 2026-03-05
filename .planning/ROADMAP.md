@@ -10,6 +10,7 @@
 - ✅ **v3.1 Reconstruction** — Phases 40-45 (shipped 2026-03-03)
 - ✅ **v3.2 Evaluation Ecosystem** — Phases 46-50 (shipped 2026-03-03)
 - ✅ **v3.3 Chunk Mode** — Phases 51-55 (shipped 2026-03-05)
+- 🚧 **v3.4 Performance Optimization** — Phases 56-59 (in progress)
 
 ## Phases
 
@@ -142,6 +143,61 @@ Full details: `.planning/milestones/v3.3-ROADMAP.md`
 
 </details>
 
+### 🚧 v3.4 Performance Optimization (In Progress)
+
+**Milestone Goal:** Reduce per-chunk pipeline processing time by optimizing the four profiled bottlenecks — batched YOLO inference (~26% of wall time across detection + midline), frame I/O (~12%), vectorized DLT reconstruction (~9%), and vectorized association scoring (~5%). All changes are correctness-neutral and verified against the existing `aquapose eval` harness.
+
+- [ ] **Phase 56: Vectorized Association Scoring** — Replace per-pair ray-ray distance loop with NumPy broadcasting
+- [ ] **Phase 57: Vectorized DLT Reconstruction** — Replace per-body-point SVD loop with batched `torch.linalg.svd`
+- [ ] **Phase 58: Frame I/O Optimization** — Add background-thread prefetch source to eliminate seek overhead and GPU idle gaps
+- [ ] **Phase 59: Batched YOLO Inference** — Batch detection and midline YOLO calls across cameras and crops per frame
+
+## Phase Details
+
+### Phase 56: Vectorized Association Scoring
+**Goal**: Association pairwise scoring runs without per-pair Python loops, using batched NumPy operations that produce numerically identical results
+**Depends on**: Phase 55 (v3.3 complete)
+**Requirements**: ASSOC-01, ASSOC-02
+**Success Criteria** (what must be TRUE):
+  1. `score_tracklet_pair()` inner frame loop is replaced with batched NumPy ops using `ray_ray_closest_point_batch()`
+  2. `aquapose eval` association metrics on a real YH chunk are identical before and after the change
+  3. Early-termination semantics (score threshold short-circuit) are preserved — no spurious extra scoring after threshold hit
+**Plans**: TBD
+
+### Phase 57: Vectorized DLT Reconstruction
+**Goal**: DLT triangulation processes all body points simultaneously via batched SVD rather than iterating one point at a time
+**Depends on**: Phase 56
+**Requirements**: RECON-01, RECON-02
+**Success Criteria** (what must be TRUE):
+  1. `DltBackend._triangulate_body_point()` scalar loop is replaced by a vectorized `_triangulate_fish_vectorized()` operating over all body points in one `torch.linalg.svd` call
+  2. Inlier camera sets for each body point match the scalar baseline exactly on real YH chunk cache data
+  3. 3D point positions from the vectorized path are within 1e-4 m of the scalar baseline
+  4. `aquapose eval` reconstruction metrics on a real YH chunk are unchanged
+**Plans**: TBD
+
+### Phase 58: Frame I/O Optimization
+**Goal**: Frame decoding overlaps with GPU inference via a background-thread producer-consumer queue, eliminating seek overhead and GPU idle time between frames
+**Depends on**: Phase 57
+**Requirements**: FIO-01, FIO-02
+**Success Criteria** (what must be TRUE):
+  1. `BatchFrameSource` exists as a new class implementing the `FrameSource` protocol with a background decode thread and bounded prefetch queue
+  2. `BatchFrameSource` is a drop-in replacement for `ChunkFrameSource` — all stage code is unaffected and `aquapose eval` produces identical results
+  3. Frame identity is correct across all 12 cameras for every frame in a multi-chunk run (no seek inaccuracy or thread-safety corruption)
+  4. Prefetch buffer depth is configurable and defaults to a memory-safe value
+**Plans**: TBD
+
+### Phase 59: Batched YOLO Inference
+**Goal**: Detection and midline YOLO models receive batched inputs instead of one image at a time, increasing GPU utilization from ~30% toward its practical ceiling
+**Depends on**: Phase 58
+**Requirements**: BATCH-01, BATCH-02, BATCH-03, BATCH-04
+**Success Criteria** (what must be TRUE):
+  1. `DetectionStage.run()` collects all 12 camera frames for a timestep and calls `YOLOOBBBackend.detect_batch()` once per timestep instead of 12 times
+  2. `MidlineStage.run()` collects all crops across all cameras for a frame and calls the midline backend's `process_batch()` once, correctly redistributing results by `(cam_id, det_idx)`
+  3. `detection_batch_frames` and `midline_batch_crops` config fields exist and control batch sizes
+  4. A CUDA OOM during `model.predict()` triggers an automatic retry with halved batch size rather than crashing the pipeline
+  5. `aquapose eval` detection and midline metrics on a real YH chunk are identical to the pre-batching baseline
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -154,3 +210,7 @@ Full details: `.planning/milestones/v3.3-ROADMAP.md`
 | 40-45 | v3.1 | 13/13 | Complete | 2026-03-03 |
 | 46-50 | v3.2 | 11/11 | Complete | 2026-03-03 |
 | 51-55 | v3.3 | 11/11 | Complete | 2026-03-05 |
+| 56. Vectorized Association Scoring | v3.4 | 0/? | Not started | - |
+| 57. Vectorized DLT Reconstruction | v3.4 | 0/? | Not started | - |
+| 58. Frame I/O Optimization | v3.4 | 0/? | Not started | - |
+| 59. Batched YOLO Inference | v3.4 | 0/? | Not started | - |

@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.3
-milestone_name: Chunk Mode
-status: completed
-last_updated: "2026-03-05T02:00:00.000Z"
+milestone: v3.4
+milestone_name: Performance Optimization
+status: requirements
+last_updated: "2026-03-05T03:00:00.000Z"
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 11
-  completed_plans: 11
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
@@ -18,18 +18,27 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-05)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.3 Chunk Mode completed — planning next milestone
+**Current focus:** v3.4 Performance Optimization — defining requirements
 
 ## Current Position
 
-Milestone v3.3 Chunk Mode completed 2026-03-05.
-All 5 phases (51-55), 11 plans complete. 15/15 requirements satisfied.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-05 — Milestone v3.4 started
 
 ## Accumulated Context
 
 ### Decisions
 
 See PROJECT.md Key Decisions table for full history.
+
+### Profiling Data (v3.4 baseline)
+
+- Single chunk (200 frames × 12 cameras): ~916s wall time
+- py-spy flamegraph: 6,540 samples
+- GPU utilization: active 51% of time, avg 30% SM when active
+- Bottleneck breakdown: detection ~13%, midline ~13%, frame I/O ~12%, reconstruction ~9%, association ~5%
 
 ### Pending Todos
 
@@ -42,5 +51,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-05
-Stopped at: v3.3 milestone completed and archived
+Stopped at: Defining requirements for v3.4
 Resume file: None

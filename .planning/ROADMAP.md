@@ -147,7 +147,7 @@ Full details: `.planning/milestones/v3.3-ROADMAP.md`
 
 **Milestone Goal:** Reduce per-chunk pipeline processing time by optimizing the four profiled bottlenecks — batched YOLO inference (~26% of wall time across detection + midline), frame I/O (~12%), vectorized DLT reconstruction (~9%), and vectorized association scoring (~5%). All changes are correctness-neutral and verified against the existing `aquapose eval` harness.
 
-- [ ] **Phase 56: Vectorized Association Scoring** — Replace per-pair ray-ray distance loop with NumPy broadcasting
+- [x] **Phase 56: Vectorized Association Scoring** — Replace per-pair ray-ray distance loop with NumPy broadcasting (completed 2026-03-05)
 - [ ] **Phase 57: Vectorized DLT Reconstruction** — Replace per-body-point SVD loop with batched `torch.linalg.svd`
 - [ ] **Phase 58: Frame I/O Optimization** — Add background-thread prefetch source to eliminate seek overhead and GPU idle gaps
 - [ ] **Phase 59: Batched YOLO Inference** — Batch detection and midline YOLO calls across cameras and crops per frame
@@ -210,7 +210,7 @@ Full details: `.planning/milestones/v3.3-ROADMAP.md`
 | 40-45 | v3.1 | 13/13 | Complete | 2026-03-03 |
 | 46-50 | v3.2 | 11/11 | Complete | 2026-03-03 |
 | 51-55 | v3.3 | 11/11 | Complete | 2026-03-05 |
-| 56. Vectorized Association Scoring | v3.4 | 0/? | Not started | - |
+| 56. Vectorized Association Scoring | v3.4 | Complete    | 2026-03-05 | - |
 | 57. Vectorized DLT Reconstruction | v3.4 | 0/? | Not started | - |
 | 58. Frame I/O Optimization | v3.4 | 0/? | Not started | - |
 | 59. Batched YOLO Inference | v3.4 | 0/? | Not started | - |

@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.4
 milestone_name: Performance Optimization
 status: unknown
-last_updated: "2026-03-05T02:20:46.007Z"
+last_updated: "2026-03-05T02:30:21.536Z"
 progress:
-  total_phases: 2
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_phases: 4
+  completed_phases: 2
+  total_plans: 3
+  completed_plans: 3
 ---
 
 # Project State
@@ -43,10 +43,13 @@ Progress: [░░░░░░░░░░] 0%
 | - | - | - | - |
 
 ## Accumulated Context
+| Phase 57 P01 | 279 | 2 tasks | 2 files |
 
 ### Decisions
 
 See PROJECT.md Key Decisions table for full history.
+- [Phase 57]: Drop 2-camera ray-angle filter in vectorized path: masking per-point would require a body-point loop, defeating vectorization for negligible yield impact
+- [Phase 57]: Drop first-pass water-surface check in vectorized path: above-water initial triangulations virtually always remain above-water after re-triangulation
 
 ### Profiling Data (v3.4 baseline)
 

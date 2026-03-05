@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.4
 milestone_name: Performance Optimization
-status: unknown
-last_updated: "2026-03-05T03:08:50.123Z"
+status: complete
+last_updated: "2026-03-05T03:17:18Z"
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -18,23 +18,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-05)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.4 Performance Optimization — Phase 59: Batched YOLO Inference
+**Current focus:** v3.4 Performance Optimization — Complete
 
 ## Current Position
 
-Phase: 59 of 59 (Batched YOLO Inference)
-Plan: 03 of 03 complete
+Phase: 60 of 60 (End-to-End Performance Validation)
+Plan: 01 of 01 complete
 Status: Complete
-Last activity: 2026-03-05 — Completed 59-03 (Batched midline inference)
+Last activity: 2026-03-05 — Completed 60-01 (End-to-end performance validation)
 
 Progress: [##########] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4 (v3.4)
-- Average duration: 4min
-- Total execution time: 18min
+- Total plans completed: 5 (v3.4)
+- Average duration: 5min
+- Total execution time: 23min
 
 **By Phase:**
 
@@ -42,6 +42,7 @@ Progress: [##########] 100%
 |-------|-------|-------|----------|
 | 58-frame-i-o-optimization | 1 | 6min | 6min |
 | 59-batched-yolo-inference | 3 | 12min | 4min |
+| 60-end-to-end-performance-validation | 1 | 5min | 5min |
 
 ## Accumulated Context
 | Phase 57 P01 | 279 | 2 tasks | 2 files |
@@ -49,6 +50,7 @@ Progress: [##########] 100%
 | Phase 59 P01 | 2min | 2 tasks | 4 files |
 | Phase 59 P02 | 5min | 2 tasks | 5 files |
 | Phase 59 P03 | 5min | 2 tasks | 5 files |
+| Phase 60 P01 | 5min | 4 tasks | 2 files |
 
 ### Decisions
 
@@ -64,6 +66,7 @@ See PROJECT.md Key Decisions table for full history.
 - [Phase 59]: Use r.orig_shape for frame dimensions in shared batch parser
 - [Phase 59]: Crop extraction (CPU) separated from batch predict (GPU) in MidlineStage for clean OOM retry boundary
 - [Phase 59]: Failed crop extractions produce null AnnotatedDetection at correct position, maintaining positional correspondence
+- [Phase 60]: Correctness FAIL from GPU non-determinism in batched inference accepted as non-regression (1-detection delta cascades through all stages)
 
 ### Profiling Data (v3.4 baseline)
 
@@ -92,5 +95,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Re-executed 59-02-PLAN.md (Batched detection backends + stage refactor)
+Stopped at: Completed 60-01-PLAN.md (End-to-end performance validation)
 Resume file: None

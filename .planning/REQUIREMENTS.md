@@ -48,22 +48,22 @@ None — this is a focused optimization milestone.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BATCH-01 | — | Pending |
-| BATCH-02 | — | Pending |
-| BATCH-03 | — | Pending |
-| BATCH-04 | — | Pending |
-| FIO-01 | — | Pending |
-| FIO-02 | — | Pending |
-| RECON-01 | — | Pending |
-| RECON-02 | — | Pending |
-| ASSOC-01 | — | Pending |
-| ASSOC-02 | — | Pending |
+| ASSOC-01 | Phase 56 | Pending |
+| ASSOC-02 | Phase 56 | Pending |
+| RECON-01 | Phase 57 | Pending |
+| RECON-02 | Phase 57 | Pending |
+| FIO-01 | Phase 58 | Pending |
+| FIO-02 | Phase 58 | Pending |
+| BATCH-01 | Phase 59 | Pending |
+| BATCH-02 | Phase 59 | Pending |
+| BATCH-03 | Phase 59 | Pending |
+| BATCH-04 | Phase 59 | Pending |
 
 **Coverage:**
 - v3.4 requirements: 10 total
-- Mapped to phases: 0
-- Unmapped: 10 ⚠️
+- Mapped to phases: 10
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-05*
-*Last updated: 2026-03-05 after initial definition*
+*Last updated: 2026-03-05 after roadmap creation — all 10 requirements mapped to phases 56-59*

@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "AssociationConfigLike",
     "ray_ray_closest_point",
+    "ray_ray_closest_point_batch",
     "score_all_pairs",
     "score_tracklet_pair",
 ]
@@ -116,6 +117,64 @@ def ray_ray_closest_point(
     midpoint = (pt_a + pt_b) / 2.0
 
     return dist, midpoint
+
+
+def ray_ray_closest_point_batch(
+    origins_a: np.ndarray,
+    dirs_a: np.ndarray,
+    origins_b: np.ndarray,
+    dirs_b: np.ndarray,
+) -> np.ndarray:
+    """Compute closest-point distances for N ray pairs simultaneously.
+
+    Pure-NumPy vectorized version of ``ray_ray_closest_point()`` that
+    computes ray-ray closest-point distances for N ray pairs in a single
+    call using element-wise broadcasting.  Returns distances only (no
+    midpoints) since callers never use midpoints.
+
+    All inputs are cast to float64 internally to match the scalar path's
+    float64 arithmetic (which promotes via ``float(np.dot(...))``).
+
+    Args:
+        origins_a: Origins of rays A, shape ``(N, 3)``.
+        dirs_a: Unit directions of rays A, shape ``(N, 3)``.
+        origins_b: Origins of rays B, shape ``(N, 3)``.
+        dirs_b: Unit directions of rays B, shape ``(N, 3)``.
+
+    Returns:
+        Array of closest-approach distances, shape ``(N,)``, dtype float64.
+    """
+    origins_a = origins_a.astype(np.float64)
+    dirs_a = dirs_a.astype(np.float64)
+    origins_b = origins_b.astype(np.float64)
+    dirs_b = dirs_b.astype(np.float64)
+
+    w0 = origins_a - origins_b  # (N, 3)
+    a = (dirs_a * dirs_a).sum(axis=1)  # (N,)
+    b = (dirs_a * dirs_b).sum(axis=1)  # (N,)
+    c = (dirs_b * dirs_b).sum(axis=1)  # (N,)
+    d = (dirs_a * w0).sum(axis=1)  # (N,)
+    e = (dirs_b * w0).sum(axis=1)  # (N,)
+
+    denom = a * c - b * b  # (N,)
+    parallel_mask = np.abs(denom) < 1e-12  # (N,) bool
+
+    # Near-parallel fallback: t_a=0, s_b = e/c if abs(c) > 1e-12 else 0.0
+    safe_c = np.where(np.abs(c) > 1e-12, c, 1.0)
+    s_b_parallel = np.where(np.abs(c) > 1e-12, e / safe_c, 0.0)
+    pt_a_parallel = origins_a  # t_a = 0
+    pt_b_parallel = origins_b + s_b_parallel[:, None] * dirs_b
+    dist_parallel = np.linalg.norm(pt_a_parallel - pt_b_parallel, axis=1)  # (N,)
+
+    # General case: avoid division by zero with safe_denom
+    safe_denom = np.where(parallel_mask, 1.0, denom)
+    t_a = (b * e - c * d) / safe_denom
+    s_b = (a * e - b * d) / safe_denom
+    pt_a = origins_a + t_a[:, None] * dirs_a
+    pt_b = origins_b + s_b[:, None] * dirs_b
+    dist_general = np.linalg.norm(pt_a - pt_b, axis=1)  # (N,)
+
+    return np.where(parallel_mask, dist_parallel, dist_general)
 
 
 # ---------------------------------------------------------------------------

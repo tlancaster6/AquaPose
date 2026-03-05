@@ -10,6 +10,7 @@ import torch
 
 from aquapose.core.association.scoring import (
     ray_ray_closest_point,
+    ray_ray_closest_point_batch,
     score_all_pairs,
     score_tracklet_pair,
 )
@@ -177,6 +178,161 @@ class TestRayRayClosestPoint:
         # Parallel rays offset by 1 in y
         assert dist == pytest.approx(1.0, abs=1e-6)
         assert np.isfinite(midpoint).all()
+
+
+# ---------------------------------------------------------------------------
+# ray_ray_closest_point_batch tests
+# ---------------------------------------------------------------------------
+
+
+class TestRayRayClosestPointBatch:
+    """Tests for ray_ray_closest_point_batch vectorized geometry."""
+
+    @pytest.mark.parametrize("seed", [0, 1, 2, 42, 100])
+    def test_batch_identical_to_scalar(self, seed: int) -> None:
+        """Batch distances match scalar distances for random non-parallel rays."""
+        rng = np.random.default_rng(seed)
+        n = 20
+        origins_a = rng.standard_normal((n, 3))
+        dirs_a = rng.standard_normal((n, 3))
+        dirs_a /= np.linalg.norm(dirs_a, axis=1, keepdims=True)
+        origins_b = rng.standard_normal((n, 3))
+        dirs_b = rng.standard_normal((n, 3))
+        dirs_b /= np.linalg.norm(dirs_b, axis=1, keepdims=True)
+
+        batch_dists = ray_ray_closest_point_batch(origins_a, dirs_a, origins_b, dirs_b)
+        scalar_dists = np.array(
+            [
+                ray_ray_closest_point(origins_a[i], dirs_a[i], origins_b[i], dirs_b[i])[
+                    0
+                ]
+                for i in range(n)
+            ]
+        )
+
+        np.testing.assert_allclose(
+            batch_dists,
+            scalar_dists,
+            atol=1e-6,
+            err_msg=f"Batch and scalar disagree (seed={seed})",
+        )
+
+    def test_batch_parallel_rays(self) -> None:
+        """Near-parallel ray pairs produce same distance as scalar fallback."""
+        n = 5
+        origins_a = np.zeros((n, 3))
+        dirs_a = np.tile([1.0, 0.0, 0.0], (n, 1))
+        origins_b = np.zeros((n, 3))
+        origins_b[:, 1] = np.arange(1, n + 1, dtype=np.float64)  # offset in y
+        dirs_b = np.tile([1.0, 0.0, 0.0], (n, 1))  # same direction = parallel
+
+        batch_dists = ray_ray_closest_point_batch(origins_a, dirs_a, origins_b, dirs_b)
+        scalar_dists = np.array(
+            [
+                ray_ray_closest_point(origins_a[i], dirs_a[i], origins_b[i], dirs_b[i])[
+                    0
+                ]
+                for i in range(n)
+            ]
+        )
+
+        np.testing.assert_allclose(batch_dists, scalar_dists, atol=1e-6)
+
+    def test_batch_mixed_parallel_and_skew(self) -> None:
+        """Mix of parallel and non-parallel rays matches scalar element-wise."""
+        # Ray 0: parallel (same direction)
+        # Ray 1: skew (perpendicular)
+        # Ray 2: parallel (same direction, different offset)
+        # Ray 3: intersecting
+        origins_a = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+            ]
+        )
+        dirs_a = np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 1.0],
+            ]
+        )
+        dirs_a /= np.linalg.norm(dirs_a, axis=1, keepdims=True)
+
+        origins_b = np.array(
+            [
+                [0.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 3.0, 0.0],
+                [1.0, 0.0, 0.0],
+            ]
+        )
+        dirs_b = np.array(
+            [
+                [1.0, 0.0, 0.0],  # parallel to ray 0
+                [0.0, 0.0, 1.0],  # perpendicular to ray 1
+                [0.0, 0.0, 1.0],  # parallel to ray 2
+                [-1.0, 0.0, 1.0],  # converging with ray 3
+            ]
+        )
+        dirs_b /= np.linalg.norm(dirs_b, axis=1, keepdims=True)
+
+        batch_dists = ray_ray_closest_point_batch(origins_a, dirs_a, origins_b, dirs_b)
+        scalar_dists = np.array(
+            [
+                ray_ray_closest_point(origins_a[i], dirs_a[i], origins_b[i], dirs_b[i])[
+                    0
+                ]
+                for i in range(4)
+            ]
+        )
+
+        np.testing.assert_allclose(batch_dists, scalar_dists, atol=1e-6)
+
+    def test_batch_empty_input(self) -> None:
+        """N=0 arrays return an empty (0,) array without error."""
+        origins_a = np.empty((0, 3))
+        dirs_a = np.empty((0, 3))
+        origins_b = np.empty((0, 3))
+        dirs_b = np.empty((0, 3))
+
+        result = ray_ray_closest_point_batch(origins_a, dirs_a, origins_b, dirs_b)
+
+        assert result.shape == (0,)
+        assert result.dtype == np.float64
+
+    def test_batch_single_ray(self) -> None:
+        """N=1 matches scalar exactly."""
+        origin_a = np.array([[0.0, 0.0, 0.0]])
+        dir_a = np.array([[1.0, 0.0, 0.0]])
+        origin_b = np.array([[0.0, 1.0, 0.0]])
+        dir_b = np.array([[0.0, 0.0, 1.0]])
+
+        batch_dist = ray_ray_closest_point_batch(origin_a, dir_a, origin_b, dir_b)
+        scalar_dist, _ = ray_ray_closest_point(
+            origin_a[0], dir_a[0], origin_b[0], dir_b[0]
+        )
+
+        assert batch_dist.shape == (1,)
+        np.testing.assert_allclose(batch_dist[0], scalar_dist, atol=1e-6)
+
+    def test_batch_intersecting_rays(self) -> None:
+        """Known intersecting rays produce distance near zero."""
+        # Two rays intersecting at (0.5, 0, 0.5)
+        origins_a = np.array([[0.0, 0.0, 0.0]])
+        dirs_a = np.array([[1.0, 0.0, 1.0]])
+        dirs_a /= np.linalg.norm(dirs_a, axis=1, keepdims=True)
+        origins_b = np.array([[1.0, 0.0, 0.0]])
+        dirs_b = np.array([[-1.0, 0.0, 1.0]])
+        dirs_b /= np.linalg.norm(dirs_b, axis=1, keepdims=True)
+
+        result = ray_ray_closest_point_batch(origins_a, dirs_a, origins_b, dirs_b)
+
+        assert result.shape == (1,)
+        assert result[0] < 1e-6
 
 
 # ---------------------------------------------------------------------------

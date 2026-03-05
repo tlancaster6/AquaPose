@@ -7,6 +7,8 @@ DetectionStage, MidlineStage, and future chunk-windowed sources.
 from __future__ import annotations
 
 import logging
+import queue
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -28,6 +30,8 @@ if TYPE_CHECKING:
 __all__ = ["ChunkFrameSource", "FrameSource", "VideoFrameSource"]
 
 logger = logging.getLogger(__name__)
+
+_SENTINEL = object()
 
 
 @runtime_checkable
@@ -255,9 +259,9 @@ class ChunkFrameSource:
     frames as a zero-based local index space. The underlying source must
     already be open (context-managed) before iterating or reading.
 
-    The context manager is a no-op: the orchestrator opens the underlying
-    :class:`VideoFrameSource` once for the entire run and creates
-    :class:`ChunkFrameSource` views over it without re-opening/closing.
+    Iteration uses a background prefetch thread that reads frames sequentially
+    via ``cap.read()`` and feeds them through a bounded queue. This overlaps
+    frame I/O with GPU inference on the main thread.
 
     Args:
         source: An open :class:`VideoFrameSource` instance.
@@ -275,6 +279,12 @@ class ChunkFrameSource:
         self.start_frame = start_frame
         self.end_frame = end_frame
 
+        self._prefetch_queue: (
+            queue.Queue[tuple[int, dict[str, np.ndarray]] | object | Exception] | None
+        ) = None
+        self._prefetch_thread: threading.Thread | None = None
+        self._stop_event: threading.Event | None = None
+
     @property
     def camera_ids(self) -> list[str]:
         """Sorted list of camera identifiers (delegates to underlying source)."""
@@ -285,25 +295,146 @@ class ChunkFrameSource:
         return self.end_frame - self.start_frame
 
     def __enter__(self) -> ChunkFrameSource:
-        """No-op context manager — returns self."""
+        """No-op context manager -- returns self."""
         return self
 
     def __exit__(self, *exc: Any) -> None:
-        """No-op context manager exit — does nothing."""
+        """Clean up prefetch thread and queue if active."""
+        if self._stop_event is not None:
+            self._stop_event.set()
+
+        if self._prefetch_queue is not None:
+            # Drain the queue so the worker thread can unblock and exit
+            while True:
+                try:
+                    self._prefetch_queue.get_nowait()
+                except queue.Empty:
+                    break
+
+        if self._prefetch_thread is not None and self._prefetch_thread.is_alive():
+            self._prefetch_thread.join(timeout=5.0)
+            if self._prefetch_thread.is_alive():
+                logger.warning(
+                    "ChunkFrameSource: prefetch thread did not terminate "
+                    "within 5s timeout"
+                )
 
     def __iter__(self) -> Iterator[tuple[int, dict[str, np.ndarray]]]:
         """Yield ``(local_idx, {cam_id: frame})`` for each frame in the window.
 
-        Local indices run from 0 to ``len(self) - 1``, corresponding to
-        global frames ``start_frame`` through ``end_frame - 1``.
+        Uses a background thread to prefetch frames via sequential
+        ``cap.read()`` calls. Local indices run from 0 to ``len(self) - 1``.
+
+        Raises:
+            RuntimeError: If called concurrently (another iteration is active).
+
+        Note:
+            :meth:`read_frame` must NOT be called during active iteration as
+            it uses seek-based access that conflicts with sequential reads.
         """
-        for local_idx in range(self.end_frame - self.start_frame):
-            global_idx = self.start_frame + local_idx
-            frames = self._source.read_frame(global_idx)
-            yield local_idx, frames
+        if self._prefetch_thread is not None and self._prefetch_thread.is_alive():
+            raise RuntimeError(
+                "Concurrent iteration on ChunkFrameSource is not allowed"
+            )
+
+        self._ensure_captures_positioned()
+
+        self._prefetch_queue = queue.Queue(maxsize=2)
+        self._stop_event = threading.Event()
+        self._prefetch_thread = threading.Thread(
+            target=self._prefetch_worker, daemon=True
+        )
+        self._prefetch_thread.start()
+
+        try:
+            while True:
+                item = self._prefetch_queue.get()
+                if item is _SENTINEL:
+                    break
+                if isinstance(item, Exception):
+                    raise item
+                # item is (local_idx, frames_dict)
+                yield item  # type: ignore[misc]
+        finally:
+            self._stop_event.set()
+            # Drain remaining items so worker can unblock
+            while True:
+                try:
+                    self._prefetch_queue.get_nowait()
+                except queue.Empty:
+                    break
+            self._prefetch_thread.join(timeout=5.0)
+
+    def _prefetch_worker(self) -> None:
+        """Background worker: sequentially read frames and enqueue them."""
+        assert self._prefetch_queue is not None
+        assert self._stop_event is not None
+
+        try:
+            captures = self._source._captures
+            undist_maps = self._source._undist_maps
+            camera_ids = self._source._camera_ids
+
+            for local_idx in range(self.end_frame - self.start_frame):
+                if self._stop_event.is_set():
+                    return
+
+                frames: dict[str, np.ndarray] = {}
+                for cam_id in camera_ids:
+                    try:
+                        ret, frame = captures[cam_id].read()
+                    except Exception:
+                        # Unexpected error reading from this camera -- propagate
+                        raise
+                    if not ret:
+                        logger.warning(
+                            "Camera %s: decode failed at local_idx %d, skipping",
+                            cam_id,
+                            local_idx,
+                        )
+                        continue
+                    if cam_id in undist_maps:
+                        frame = undistort_image(frame, undist_maps[cam_id])
+                    frames[cam_id] = frame
+
+                # Enqueue with stop-event awareness
+                while not self._stop_event.is_set():
+                    try:
+                        self._prefetch_queue.put((local_idx, frames), timeout=0.5)
+                        break
+                    except queue.Full:
+                        continue
+                else:
+                    return
+
+            # Signal completion
+            self._prefetch_queue.put(_SENTINEL)
+        except Exception as exc:
+            # Propagate exception to main thread via queue
+            try:
+                self._prefetch_queue.put(exc, timeout=5.0)
+            except queue.Full:
+                logger.error("ChunkFrameSource: failed to propagate exception: %s", exc)
+
+    def _ensure_captures_positioned(self) -> None:
+        """Verify captures are at start_frame; seek if needed."""
+        for cam_id in self._source._camera_ids:
+            cap = self._source._captures[cam_id]
+            pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+            if pos != self.start_frame:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, self.start_frame)
+                new_pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+                if new_pos != self.start_frame:
+                    raise RuntimeError(
+                        f"Camera {cam_id}: failed to seek to frame "
+                        f"{self.start_frame} (at {new_pos})"
+                    )
 
     def read_frame(self, idx: int) -> dict[str, np.ndarray]:
         """Read a specific frame by chunk-local index.
+
+        Uses seek-based random access. Must NOT be called during active
+        iteration (the background thread uses sequential reads).
 
         Args:
             idx: Zero-based local frame index within this chunk window.

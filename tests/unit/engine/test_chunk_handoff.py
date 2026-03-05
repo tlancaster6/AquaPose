@@ -73,12 +73,43 @@ def test_pipeline_config_chunk_size_default_none():
 # ---------------------------------------------------------------------------
 
 
+class _MockCapture:
+    """Minimal cv2.VideoCapture stand-in that yields deterministic frames."""
+
+    def __init__(self, cam_id: str, n_frames: int) -> None:
+        self._cam_id = cam_id
+        self._n = n_frames
+        self._pos = 0
+
+    def read(self) -> tuple[bool, np.ndarray | None]:
+        if self._pos >= self._n:
+            return False, None
+        frame = np.full((4, 4, 3), self._pos, dtype=np.uint8)
+        self._pos += 1
+        return True, frame
+
+    def get(self, prop: int) -> float:
+        # CAP_PROP_POS_FRAMES
+        return float(self._pos)
+
+    def set(self, prop: int, value: float) -> bool:
+        self._pos = int(value)
+        return True
+
+    def release(self) -> None:
+        pass
+
+
 class _MockVideoFrameSource:
     """Minimal VideoFrameSource stand-in for testing ChunkFrameSource."""
 
-    def __init__(self, n_frames: int, camera_ids: list):
+    def __init__(self, n_frames: int, camera_ids: list) -> None:
         self._n = n_frames
         self._camera_ids = camera_ids
+        self._captures: dict[str, _MockCapture] = {
+            cam: _MockCapture(cam, n_frames) for cam in camera_ids
+        }
+        self._undist_maps: dict = {}
 
     @property
     def camera_ids(self) -> list:

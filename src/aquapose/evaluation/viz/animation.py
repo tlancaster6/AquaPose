@@ -12,6 +12,7 @@ import plotly.graph_objects as go
 import scipy.interpolate
 
 from aquapose.evaluation.viz._loader import load_all_chunk_caches
+from aquapose.io.midline_writer import read_midline3d_results
 
 logger = logging.getLogger(__name__)
 
@@ -121,15 +122,19 @@ def _build_figure(
 
     if all_coords:
         stacked = np.vstack(all_coords)
+        finite_mask = np.isfinite(stacked).all(axis=1)
+        stacked = stacked[finite_mask]
+    if all_coords and len(stacked) > 0:
         mins = stacked.min(axis=0)
         maxs = stacked.max(axis=0)
-        pad = 0.05 * (maxs - mins).max()
-        spans = (maxs - mins) + 2 * pad
-        max_span = spans.max()
+        raw_range = maxs - mins
+        pad = max(0.05 * raw_range.max(), 1e-6)
+        spans = raw_range + 2 * pad
+        max_span = max(spans.max(), 1e-6)
         aspect = {
-            "x": float(spans[0] / max_span),
-            "y": float(spans[1] / max_span),
-            "z": float(spans[2] / max_span),
+            "x": max(float(spans[0] / max_span), 0.01),
+            "y": max(float(spans[1] / max_span), 0.01),
+            "z": max(float(spans[2] / max_span), 0.01),
         }
         axis_range = {
             "x": [float(mins[0] - pad), float(maxs[0] + pad)],
@@ -210,15 +215,54 @@ def _build_figure(
     return fig
 
 
+class _H5Spline:
+    """Lightweight spline-like object for _eval_spline compatibility."""
+
+    __slots__ = ("control_points", "degree", "knots")
+
+    def __init__(
+        self, control_points: np.ndarray, knots: np.ndarray, degree: int
+    ) -> None:
+        self.control_points = control_points
+        self.knots = knots
+        self.degree = degree
+
+
+def _load_midlines_from_h5(h5_path: Path) -> list[dict[int, _H5Spline]]:
+    """Load per-frame midline dicts from an HDF5 file.
+
+    Args:
+        h5_path: Path to midlines.h5.
+
+    Returns:
+        List of per-frame dicts mapping fish_id to _H5Spline objects.
+    """
+    data = read_midline3d_results(h5_path)
+    fish_ids = data["fish_id"]  # (N, max_fish)
+    control_points = data["control_points"]  # (N, max_fish, 7, 3)
+    knots = np.asarray(data["SPLINE_KNOTS"], dtype=np.float64)
+    degree = int(data["SPLINE_K"])
+    n_frames, max_fish = fish_ids.shape
+
+    frames: list[dict[int, _H5Spline]] = []
+    for fi in range(n_frames):
+        frame_dict: dict[int, _H5Spline] = {}
+        for s in range(max_fish):
+            fid = int(fish_ids[fi, s])
+            if fid >= 0:
+                frame_dict[fid] = _H5Spline(control_points[fi, s], knots, degree)
+        frames.append(frame_dict)
+    return frames
+
+
 def generate_animation(
     run_dir: Path,
     output_dir: Path | None = None,
 ) -> Path:
     """Generate an interactive 3D midline animation HTML across all chunks.
 
-    Loads all chunk caches, merges midlines_3d data across chunks into a single
-    flat list, and builds a Plotly animation with a unified scrubber timeline.
-    Chunk boundaries are invisible to the viewer.
+    Prefers midlines.h5 (includes temporal smoothing if applied) over
+    diagnostic caches. Falls back to caches when no HDF5 is available.
 
     Fish colors are deterministic: palette[fish_id % palette_length].
 
@@ -230,25 +274,31 @@ def generate_animation(
         Path to the written ``animation_3d.html`` file.
 
     Raises:
-        RuntimeError: If no chunk caches are found in run_dir.
+        RuntimeError: If neither midlines.h5 nor chunk caches are found.
     """
-    contexts = load_all_chunk_caches(run_dir)
-    if not contexts:
-        raise RuntimeError(f"No chunk caches found in {run_dir}")
-
     out_dir = output_dir or run_dir / "viz"
     out_dir.mkdir(parents=True, exist_ok=True)
     output_path = out_dir / "animation_3d.html"
 
-    # Merge midlines_3d from all chunks.
-    all_midlines_3d: list[dict] = []
-    for ctx in contexts:
-        mid = getattr(ctx, "midlines_3d", None)
-        if mid is not None and isinstance(mid, list):
-            all_midlines_3d.extend(mid)
+    h5_path = run_dir / "midlines.h5"
+    if h5_path.exists():
+        sys.stderr.write("Loading midlines from HDF5...\n")
+        sys.stderr.flush()
+        all_midlines_3d = _load_midlines_from_h5(h5_path)
+    else:
+        contexts = load_all_chunk_caches(run_dir)
+        if not contexts:
+            raise RuntimeError(f"No midlines.h5 or chunk caches found in {run_dir}")
+
+        # Merge midlines_3d from all chunks.
+        all_midlines_3d = []
+        for ctx in contexts:
+            mid = getattr(ctx, "midlines_3d", None)
+            if mid is not None and isinstance(mid, list):
+                all_midlines_3d.extend(mid)
 
     if not all_midlines_3d:
-        raise RuntimeError("No midlines_3d data found in any chunk cache")
+        raise RuntimeError("No midlines_3d data found")
 
     # Collect all unique fish IDs.
     all_fish_ids: set[int] = set()

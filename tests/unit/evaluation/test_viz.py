@@ -299,7 +299,7 @@ class TestGenerateAnimation:
 
         run_dir = tmp_path / "empty_run"
         run_dir.mkdir()
-        with pytest.raises(RuntimeError, match="No chunk caches"):
+        with pytest.raises(RuntimeError, match=r"No midlines\.h5 or chunk caches"):
             generate_animation(run_dir)
 
     def test_raises_on_no_midlines_3d(self, tmp_path: Path) -> None:

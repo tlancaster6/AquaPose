@@ -102,11 +102,9 @@ class Midline3DWriter:
         _make("mean_residual", (max_fish,), "float32", -1.0)
         _make("max_residual", (max_fish,), "float32", -1.0)
         _make("is_low_confidence", (max_fish,), "bool", False)
-        # Plane metadata datasets (Component A: z-denoising)
-        _make("plane_normal", (max_fish, 3), "float32", np.nan)
-        _make("plane_centroid", (max_fish, 3), "float32", np.nan)
-        _make("off_plane_residuals", (max_fish, n_sample_points), "float32", np.nan)
-        _make("is_degenerate_plane", (max_fish,), "bool", False)
+        # Z-denoising metadata
+        _make("centroid_z", (max_fish,), "float32", np.nan)
+        _make("z_offsets", (max_fish, n_sample_points), "float32", np.nan)
 
         # Allocate in-memory buffer arrays (pre-allocated to chunk_frames size)
         self._buf_frame_index = np.zeros(chunk_frames, dtype=np.int64)
@@ -128,17 +126,12 @@ class Midline3DWriter:
             (chunk_frames, max_fish), -1.0, dtype=np.float32
         )
         self._buf_is_low_confidence = np.zeros((chunk_frames, max_fish), dtype=bool)
-        # Plane metadata buffers
-        self._buf_plane_normal = np.full(
-            (chunk_frames, max_fish, 3), np.nan, dtype=np.float32
+        self._buf_centroid_z = np.full(
+            (chunk_frames, max_fish), np.nan, dtype=np.float32
         )
-        self._buf_plane_centroid = np.full(
-            (chunk_frames, max_fish, 3), np.nan, dtype=np.float32
-        )
-        self._buf_off_plane_residuals = np.full(
+        self._buf_z_offsets = np.full(
             (chunk_frames, max_fish, n_sample_points), np.nan, dtype=np.float32
         )
-        self._buf_is_degenerate_plane = np.zeros((chunk_frames, max_fish), dtype=bool)
 
     def write_frame(self, frame_index: int, midlines: dict[int, Midline3D]) -> None:
         """Write one frame of Midline3D results to the buffer.
@@ -163,10 +156,8 @@ class Midline3DWriter:
         self._buf_mean_residual[i] = -1.0
         self._buf_max_residual[i] = -1.0
         self._buf_is_low_confidence[i] = False
-        self._buf_plane_normal[i] = np.nan
-        self._buf_plane_centroid[i] = np.nan
-        self._buf_off_plane_residuals[i] = np.nan
-        self._buf_is_degenerate_plane[i] = False
+        self._buf_centroid_z[i] = np.nan
+        self._buf_z_offsets[i] = np.nan
 
         # Sort midlines by fish_id for deterministic slot ordering
         sorted_items = sorted(midlines.items(), key=lambda kv: kv[0])
@@ -187,20 +178,12 @@ class Midline3DWriter:
             self._buf_mean_residual[i, slot] = float(midline.mean_residual)
             self._buf_max_residual[i, slot] = float(midline.max_residual)
             self._buf_is_low_confidence[i, slot] = bool(midline.is_low_confidence)
-            # Plane metadata (None when plane projection is disabled)
-            if midline.plane_normal is not None:
-                self._buf_plane_normal[i, slot] = midline.plane_normal.astype(
-                    np.float32
-                )
-            if midline.plane_centroid is not None:
-                self._buf_plane_centroid[i, slot] = midline.plane_centroid.astype(
-                    np.float32
-                )
-            if midline.off_plane_residuals is not None:
-                opr = midline.off_plane_residuals.astype(np.float32)
-                n_opr = min(len(opr), self._n_sample_points)
-                self._buf_off_plane_residuals[i, slot, :n_opr] = opr[:n_opr]
-            self._buf_is_degenerate_plane[i, slot] = bool(midline.is_degenerate_plane)
+            if midline.centroid_z is not None:
+                self._buf_centroid_z[i, slot] = float(midline.centroid_z)
+            if midline.z_offsets is not None:
+                zo = midline.z_offsets.astype(np.float32)
+                n_zo = min(len(zo), self._n_sample_points)
+                self._buf_z_offsets[i, slot, :n_zo] = zo[:n_zo]
 
         self._buffer_idx += 1
         if self._buffer_idx == self._chunk_frames:
@@ -229,10 +212,8 @@ class Midline3DWriter:
         _extend("mean_residual", self._buf_mean_residual)
         _extend("max_residual", self._buf_max_residual)
         _extend("is_low_confidence", self._buf_is_low_confidence)
-        _extend("plane_normal", self._buf_plane_normal)
-        _extend("plane_centroid", self._buf_plane_centroid)
-        _extend("off_plane_residuals", self._buf_off_plane_residuals)
-        _extend("is_degenerate_plane", self._buf_is_degenerate_plane)
+        _extend("centroid_z", self._buf_centroid_z)
+        _extend("z_offsets", self._buf_z_offsets)
 
         self._file.flush()
         self._buffer_idx = 0
@@ -275,10 +256,8 @@ def read_midline3d_results(path: str | Path) -> dict[str, Any]:
         - ``is_low_confidence``: shape ``(N, max_fish)``, bool
         - ``SPLINE_KNOTS``: shape ``(11,)``, float64
         - ``SPLINE_K``: int
-        - ``plane_normal``: shape ``(N, max_fish, 3)``, float32, or None
-        - ``plane_centroid``: shape ``(N, max_fish, 3)``, float32, or None
-        - ``off_plane_residuals``: shape ``(N, max_fish, n_sample_points)``, float32, or None
-        - ``is_degenerate_plane``: shape ``(N, max_fish)``, bool, or None
+        - ``centroid_z``: shape ``(N, max_fish)``, float32, or None
+        - ``z_offsets``: shape ``(N, max_fish, n_sample_points)``, float32, or None
     """
     with h5py.File(path, "r") as f:
         grp = cast(h5py.Group, f["midlines"])
@@ -297,13 +276,8 @@ def read_midline3d_results(path: str | Path) -> dict[str, Any]:
             "SPLINE_K": int(cast(int, grp.attrs["SPLINE_K"])),
         }
 
-        # Plane metadata (backward compatible: None if datasets missing)
-        for key in (
-            "plane_normal",
-            "plane_centroid",
-            "off_plane_residuals",
-            "is_degenerate_plane",
-        ):
+        # Z-denoising metadata (backward compatible: None if missing)
+        for key in ("centroid_z", "z_offsets"):
             if key in grp:
                 result[key] = cast(h5py.Dataset, grp[key])[()]
             else:

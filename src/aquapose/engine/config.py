@@ -249,37 +249,20 @@ class SyntheticConfig:
 
 
 @dataclass(frozen=True)
-class PlaneProjectionConfig:
-    """Config for the plane projection z-denoising step (Component A).
+class ZDenoisingConfig:
+    """Config for z-denoising during reconstruction.
 
-    When enabled, triangulated body points are projected onto a weighted
-    best-fit plane before spline fitting, removing z-axis noise.
+    When enabled, all triangulated body points are flattened to their
+    centroid z before spline fitting.  This eliminates z-axis noise that
+    the camera geometry cannot resolve.  The raw per-point z-offsets are
+    preserved in the output for potential future use.
 
     Attributes:
-        enabled: Whether to apply plane projection during reconstruction.
+        enabled: Whether to apply z-flattening during reconstruction.
             Default True.
     """
 
     enabled: bool = True
-
-
-@dataclass(frozen=True)
-class PlaneSmoothingConfig:
-    """Config for the temporal plane smoothing step (Component B).
-
-    Component B is a post-processing step that smooths plane normals
-    across time and rotates control points to match. It runs as a
-    separate CLI command (``aquapose smooth-planes``), not as part of
-    the reconstruction pipeline.
-
-    Attributes:
-        enabled: Whether temporal smoothing is enabled. Default True.
-        sigma_frames: Gaussian filter sigma in frames for normal
-            smoothing. Default 3.
-    """
-
-    enabled: bool = True
-    sigma_frames: int = 3
 
 
 @dataclass(frozen=True)
@@ -305,7 +288,7 @@ class ReconstructionConfig:
         n_sample_points: Number of sample points along each midline for
             triangulation output. Default 15. Propagated from top-level
             n_sample_points when not explicitly overridden.
-        plane_projection: Plane projection z-denoising config (Component A).
+        z_denoising: Z-denoising config (flatten body points to centroid z).
     """
 
     backend: str = "dlt"
@@ -314,9 +297,7 @@ class ReconstructionConfig:
     max_interp_gap: int = 5
     n_control_points: int = 7
     n_sample_points: int = 15
-    plane_projection: PlaneProjectionConfig = dataclasses.field(
-        default_factory=PlaneProjectionConfig
-    )
+    z_denoising: ZDenoisingConfig = dataclasses.field(default_factory=ZDenoisingConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -694,13 +675,11 @@ def load_config(
         rec_kwargs["n_sample_points"] = top_kwargs.get("n_sample_points", 15)
 
     # --- resolve nested sub-configs in reconstruction -----------------------
-    # plane_projection may arrive as a plain dict from YAML; convert to
+    # z_denoising may arrive as a plain dict from YAML; convert to
     # the frozen dataclass before constructing ReconstructionConfig.
-    if "plane_projection" in rec_kwargs and isinstance(
-        rec_kwargs["plane_projection"], dict
-    ):
-        rec_kwargs["plane_projection"] = PlaneProjectionConfig(
-            **_filter_fields(PlaneProjectionConfig, rec_kwargs["plane_projection"])
+    if "z_denoising" in rec_kwargs and isinstance(rec_kwargs["z_denoising"], dict):
+        rec_kwargs["z_denoising"] = ZDenoisingConfig(
+            **_filter_fields(ZDenoisingConfig, rec_kwargs["z_denoising"])
         )
 
     # --- construct & freeze -----------------------------------------------

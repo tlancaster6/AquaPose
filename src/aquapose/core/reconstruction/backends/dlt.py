@@ -24,10 +24,6 @@ import scipy.interpolate
 import torch
 
 from aquapose.calibration.projection import triangulate_rays
-from aquapose.core.reconstruction.plane_fit import (
-    fit_plane_weighted,
-    project_onto_plane,
-)
 from aquapose.core.reconstruction.utils import (
     SPLINE_K,
     build_spline_knots,
@@ -142,12 +138,12 @@ class DltBackend:
         low_confidence_fraction: float = DEFAULT_LOW_CONFIDENCE_FRACTION,
         *,
         models: dict[str, Any] | None = None,
-        plane_projection_enabled: bool = True,
+        z_flattening_enabled: bool = True,
     ) -> None:
         self._outlier_threshold = outlier_threshold
         self._n_control_points = n_control_points
         self._low_confidence_fraction = low_confidence_fraction
-        self._plane_projection_enabled = plane_projection_enabled
+        self._z_flattening_enabled = z_flattening_enabled
 
         if models is not None:
             self._models = models
@@ -167,7 +163,7 @@ class DltBackend:
         outlier_threshold: float = DEFAULT_OUTLIER_THRESHOLD,
         n_control_points: int = DEFAULT_N_CONTROL_POINTS,
         low_confidence_fraction: float = DEFAULT_LOW_CONFIDENCE_FRACTION,
-        plane_projection_enabled: bool = True,
+        z_flattening_enabled: bool = True,
     ) -> DltBackend:
         """Create a DltBackend from pre-built projection models.
 
@@ -181,8 +177,8 @@ class DltBackend:
             n_control_points: Number of B-spline control points per midline.
             low_confidence_fraction: Fraction of body points with <3 inlier
                 cameras above which is_low_confidence is set True.
-            plane_projection_enabled: Whether to project triangulated points
-                onto a best-fit plane before spline fitting.
+            z_flattening_enabled: Whether to flatten body points to centroid z
+                before spline fitting.
 
         Returns:
             Configured DltBackend instance.
@@ -192,7 +188,7 @@ class DltBackend:
             n_control_points=n_control_points,
             low_confidence_fraction=low_confidence_fraction,
             models=models,
-            plane_projection_enabled=plane_projection_enabled,
+            z_flattening_enabled=z_flattening_enabled,
         )
 
     def reconstruct_frame(
@@ -320,21 +316,14 @@ class DltBackend:
 
         pts_3d_arr = np.stack(pts_3d_list, axis=0)  # shape (M, 3)
 
-        # --- Plane projection (Component A: z-denoising) ---
-        plane_normal = None
-        plane_centroid = None
-        off_plane_residuals_valid = None
-        is_degenerate_plane = False
+        # --- Z-flattening: set all body points to centroid z ---
+        centroid_z: float | None = None
+        z_offsets_valid: np.ndarray | None = None
 
-        if self._plane_projection_enabled:
-            cam_count_weights = np.array(per_point_n_cams, dtype=np.float64)
-            plane_normal, plane_centroid, is_degenerate_plane = fit_plane_weighted(
-                pts_3d_arr, cam_count_weights
-            )
-            pts_projected, off_plane_residuals_valid = project_onto_plane(
-                pts_3d_arr, plane_normal, plane_centroid
-            )
-            pts_3d_arr = pts_projected  # Use projected points for spline fitting
+        if self._z_flattening_enabled:
+            centroid_z = float(pts_3d_arr[:, 2].mean())
+            z_offsets_valid = (pts_3d_arr[:, 2] - centroid_z).astype(np.float32)
+            pts_3d_arr[:, 2] = centroid_z
 
         spline_result = fit_spline(
             u_param,
@@ -396,13 +385,13 @@ class DltBackend:
             per_point_n_cams
         )
 
-        # Build off-plane residuals array: NaN for non-triangulated points,
-        # actual residuals for valid body points.
-        opr: np.ndarray | None = None
-        if self._plane_projection_enabled and off_plane_residuals_valid is not None:
-            opr = np.full(n_body_points, np.nan, dtype=np.float32)
+        # Build z_offsets array: NaN for non-triangulated points,
+        # actual offsets for valid body points.
+        z_off: np.ndarray | None = None
+        if self._z_flattening_enabled and z_offsets_valid is not None:
+            z_off = np.full(n_body_points, np.nan, dtype=np.float32)
             for vi, body_idx in enumerate(valid_indices):
-                opr[body_idx] = float(off_plane_residuals_valid[vi])
+                z_off[body_idx] = float(z_offsets_valid[vi])
 
         return Midline3D(
             fish_id=fish_id,
@@ -417,16 +406,8 @@ class DltBackend:
             max_residual=max_residual_val,
             is_low_confidence=is_low_confidence,
             per_camera_residuals=cam_residuals,
-            plane_normal=(
-                plane_normal.astype(np.float32) if plane_normal is not None else None
-            ),
-            plane_centroid=(
-                plane_centroid.astype(np.float32)
-                if plane_centroid is not None
-                else None
-            ),
-            off_plane_residuals=opr,
-            is_degenerate_plane=is_degenerate_plane,
+            centroid_z=centroid_z,
+            z_offsets=z_off,
         )
 
     def _triangulate_fish_vectorized(

@@ -28,8 +28,7 @@ def _make_midline3d(
     max_residual: float = 3.0,
     is_low_confidence: bool = False,
     *,
-    with_plane: bool = False,
-    is_degenerate_plane: bool = False,
+    with_z_denoising: bool = False,
 ) -> Midline3D:
     """Create a synthetic Midline3D for testing.
 
@@ -39,13 +38,11 @@ def _make_midline3d(
     control_points = rng.random((7, 3)).astype(np.float32)
     half_widths = rng.random(15).astype(np.float32) * 0.01
 
-    plane_normal = None
-    plane_centroid = None
-    off_plane_residuals = None
-    if with_plane:
-        plane_normal = np.array([0.0, 0.0, 1.0], dtype=np.float32)
-        plane_centroid = rng.random(3).astype(np.float32) * 0.5
-        off_plane_residuals = rng.standard_normal(15).astype(np.float32) * 0.001
+    centroid_z = None
+    z_offsets = None
+    if with_z_denoising:
+        centroid_z = float(control_points[:, 2].mean())
+        z_offsets = rng.standard_normal(15).astype(np.float32) * 0.001
 
     return Midline3D(
         fish_id=fish_id,
@@ -59,10 +56,8 @@ def _make_midline3d(
         mean_residual=mean_residual,
         max_residual=max_residual,
         is_low_confidence=is_low_confidence,
-        plane_normal=plane_normal,
-        plane_centroid=plane_centroid,
-        off_plane_residuals=off_plane_residuals,
-        is_degenerate_plane=is_degenerate_plane,
+        centroid_z=centroid_z,
+        z_offsets=z_offsets,
     )
 
 
@@ -275,41 +270,29 @@ def test_plane_metadata_round_trip(tmp_path: Path) -> None:
     out_path = tmp_path / "midlines.h5"
     max_fish = 4
 
-    m_with_plane = _make_midline3d(0, frame_index=0, with_plane=True)
-    m_degenerate = _make_midline3d(
-        1, frame_index=0, with_plane=True, is_degenerate_plane=True
-    )
-    m_no_plane = _make_midline3d(2, frame_index=0)  # No plane data
+    m_with_z = _make_midline3d(0, frame_index=0, with_z_denoising=True)
+    m_no_z = _make_midline3d(2, frame_index=0)  # No z-denoising data
 
     with Midline3DWriter(out_path, max_fish=max_fish) as w:
-        w.write_frame(0, {0: m_with_plane, 1: m_degenerate, 2: m_no_plane})
+        w.write_frame(0, {0: m_with_z, 2: m_no_z})
 
     result = read_midline3d_results(out_path)
 
-    # Fish 0: has plane metadata
-    assert result["plane_normal"] is not None
+    # Fish 0: has z-denoising metadata
+    assert result["centroid_z"] is not None
     np.testing.assert_allclose(
-        result["plane_normal"][0, 0], m_with_plane.plane_normal, atol=1e-6
+        result["centroid_z"][0, 0], m_with_z.centroid_z, atol=1e-6
     )
     np.testing.assert_allclose(
-        result["plane_centroid"][0, 0], m_with_plane.plane_centroid, atol=1e-6
-    )
-    np.testing.assert_allclose(
-        result["off_plane_residuals"][0, 0],
-        m_with_plane.off_plane_residuals,
+        result["z_offsets"][0, 0],
+        m_with_z.z_offsets,
         atol=1e-6,
     )
-    assert bool(result["is_degenerate_plane"][0, 0]) is False
 
-    # Fish 1: degenerate plane
-    assert bool(result["is_degenerate_plane"][0, 1]) is True
+    # Fish 2 (slot 1): no z-denoising data -- fill values (NaN)
+    assert np.isnan(result["centroid_z"][0, 1])
+    assert np.all(np.isnan(result["z_offsets"][0, 1]))
 
-    # Fish 2: no plane data -- fill values (NaN for float, False for bool)
-    assert np.all(np.isnan(result["plane_normal"][0, 2]))
-    assert np.all(np.isnan(result["plane_centroid"][0, 2]))
-    assert np.all(np.isnan(result["off_plane_residuals"][0, 2]))
-    assert bool(result["is_degenerate_plane"][0, 2]) is False
-
-    # Unfilled slot 3: all fill values
-    assert np.all(np.isnan(result["plane_normal"][0, 3]))
-    assert bool(result["is_degenerate_plane"][0, 3]) is False
+    # Unfilled slot 2: all fill values
+    assert np.isnan(result["centroid_z"][0, 2])
+    assert np.all(np.isnan(result["z_offsets"][0, 2]))

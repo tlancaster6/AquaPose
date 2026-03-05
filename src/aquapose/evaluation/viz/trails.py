@@ -628,6 +628,8 @@ def _write_per_camera_trails(
         try:
             with ctx_mgr as frame_iter:
                 for frame_idx, frames in frame_iter:
+                    if frame_idx >= total_frames:
+                        break
                     frame = frames.get(cam_id)
                     if frame is None:
                         continue
@@ -705,6 +707,8 @@ def _write_association_mosaic(
     try:
         with ctx_mgr as frame_iter:
             for frame_idx, frames in frame_iter:
+                if frame_idx >= total_frames:
+                    break
                 # Determine tile dimensions from first real frame.
                 if tile_w == 0:
                     for cam_id in camera_ids:

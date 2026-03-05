@@ -92,7 +92,15 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ### Active
 
-(No active milestone — use `/gsd:new-milestone` to start next)
+## Current Milestone: v3.4 Performance Optimization
+
+**Goal:** Reduce per-chunk pipeline processing time by optimizing the four profiled bottlenecks (inference batching, frame I/O, reconstruction, association), prioritized by impact-to-complexity ratio.
+
+**Target features:**
+- Batched YOLO inference for detection and midline stages (GPU utilization currently ~30%)
+- Optimized frame I/O (video decoding ~12% of wall time)
+- Vectorized DLT reconstruction across body points (~9% of wall time)
+- Vectorized association scoring (~5% of wall time)
 
 ### Out of Scope
 
@@ -202,4 +210,4 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Per-chunk single cache (not per-stage) | One cache.pkl per chunk containing full PipelineContext; simpler than per-stage files | ✓ Good — reduces file count, enables chunk-aware eval/tuning |
 
 ---
-*Last updated: 2026-03-05 after v3.3 Chunk Mode milestone*
+*Last updated: 2026-03-05 after v3.4 Performance Optimization milestone start*

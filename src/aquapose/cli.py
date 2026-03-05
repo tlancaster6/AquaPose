@@ -19,7 +19,7 @@ from aquapose.training.prep import prep_group
 # ---------------------------------------------------------------------------
 
 
-@click.group()
+@click.group(context_settings={"help_option_names": ["-h", "--help"]})
 def cli() -> None:
     """AquaPose -- 3D fish pose estimation via refractive multi-view triangulation."""
 
@@ -339,12 +339,7 @@ def tune_cmd(
     click.echo(format_config_diff(stage, result.winner_params, stage_config))
 
 
-@cli.group()
-def viz() -> None:
-    """Generate visualizations from diagnostic run caches."""
-
-
-@viz.command("overlay")
+@cli.command()
 @click.argument("run_dir", type=click.Path(exists=True, file_okay=False, dir_okay=True))
 @click.option(
     "--output-dir",
@@ -354,86 +349,63 @@ def viz() -> None:
     type=click.Path(file_okay=False, dir_okay=True),
     help="Custom output directory (default: {run_dir}/viz/).",
 )
-def viz_overlay(run_dir: str, output_dir: str | None) -> None:
-    """Generate a 2D reprojection overlay mosaic video."""
-    from aquapose.evaluation.viz import generate_overlay
-
-    out_dir = Path(output_dir) if output_dir is not None else None
-    try:
-        result = generate_overlay(Path(run_dir), out_dir)
-    except Exception as exc:
-        raise click.ClickException(str(exc)) from exc
-    click.echo(f"Overlay written to: {result}")
-
-
-@viz.command("animation")
-@click.argument("run_dir", type=click.Path(exists=True, file_okay=False, dir_okay=True))
 @click.option(
-    "--output-dir",
-    "-o",
-    "output_dir",
-    default=None,
-    type=click.Path(file_okay=False, dir_okay=True),
-    help="Custom output directory (default: {run_dir}/viz/).",
+    "--overlay", is_flag=True, help="Generate 2D reprojection overlay mosaic video."
 )
-def viz_animation(run_dir: str, output_dir: str | None) -> None:
-    """Generate an interactive 3D midline animation HTML."""
-    from aquapose.evaluation.viz import generate_animation
-
-    out_dir = Path(output_dir) if output_dir is not None else None
-    try:
-        result = generate_animation(Path(run_dir), out_dir)
-    except Exception as exc:
-        raise click.ClickException(str(exc)) from exc
-    click.echo(f"Animation written to: {result}")
-
-
-@viz.command("trails")
-@click.argument("run_dir", type=click.Path(exists=True, file_okay=False, dir_okay=True))
 @click.option(
-    "--output-dir",
-    "-o",
-    "output_dir",
-    default=None,
-    type=click.Path(file_okay=False, dir_okay=True),
-    help="Custom output directory (default: {run_dir}/viz/).",
+    "--animation", is_flag=True, help="Generate interactive 3D midline animation HTML."
 )
-def viz_trails(run_dir: str, output_dir: str | None) -> None:
-    """Generate per-camera trail videos and association mosaic."""
-    from aquapose.evaluation.viz import generate_trails
-
-    out_dir = Path(output_dir) if output_dir is not None else None
-    try:
-        result = generate_trails(Path(run_dir), out_dir)
-    except Exception as exc:
-        raise click.ClickException(str(exc)) from exc
-    click.echo(f"Trail videos written to: {result}")
-
-
-@viz.command("all")
-@click.argument("run_dir", type=click.Path(exists=True, file_okay=False, dir_okay=True))
 @click.option(
-    "--output-dir",
-    "-o",
-    "output_dir",
-    default=None,
-    type=click.Path(file_okay=False, dir_okay=True),
-    help="Custom output directory (default: {run_dir}/viz/).",
+    "--trails",
+    is_flag=True,
+    help="Generate per-camera trail videos and association mosaic.",
 )
-def viz_all(run_dir: str, output_dir: str | None) -> None:
-    """Attempt every visualization; skip gracefully on failure."""
-    from aquapose.evaluation.viz import generate_all
+def viz(
+    run_dir: str,
+    output_dir: str | None,
+    overlay: bool,
+    animation: bool,
+    trails: bool,
+) -> None:
+    """Generate visualizations from diagnostic run caches.
+
+    With no flags, generates all visualizations. Pass one or more flags to
+    select specific outputs.
+    """
+    from aquapose.evaluation.viz import (
+        generate_animation,
+        generate_overlay,
+        generate_trails,
+    )
 
     out_dir = Path(output_dir) if output_dir is not None else None
-    results = generate_all(Path(run_dir), out_dir)
+    run_path = Path(run_dir)
+
+    # No flags → all visualizations
+    selected = {
+        "overlay": overlay,
+        "animation": animation,
+        "trails": trails,
+    }
+    if not any(selected.values()):
+        selected = {k: True for k in selected}
+
+    generators = {
+        "overlay": generate_overlay,
+        "animation": generate_animation,
+        "trails": generate_trails,
+    }
 
     succeeded: list[str] = []
     skipped: list[tuple[str, str]] = []
-    for name, outcome in results.items():
-        if isinstance(outcome, Exception):
-            skipped.append((name, str(outcome)))
-        else:
-            succeeded.append(f"  {name}: {outcome}")
+    for name, enabled in selected.items():
+        if not enabled:
+            continue
+        try:
+            result = generators[name](run_path, out_dir)
+            succeeded.append(f"  {name}: {result}")
+        except Exception as exc:
+            skipped.append((name, str(exc)))
 
     if succeeded:
         click.echo("Succeeded:")

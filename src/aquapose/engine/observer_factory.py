@@ -36,6 +36,7 @@ def build_observers(
     total_stages: int,
     extra_observers: tuple[str, ...] = (),
     chunk_idx: int = 0,
+    chunk_start: int = 0,
 ) -> list[Observer]:
     """Assemble the observer list based on execution mode and additive flags.
 
@@ -63,6 +64,9 @@ def build_observers(
         chunk_idx: Zero-based chunk index forwarded to DiagnosticObserver so
             it writes caches to the correct ``diagnostics/chunk_NNN/`` subdirectory.
             Default 0 (single-chunk or non-diagnostic mode).
+        chunk_start: Global frame index of the first frame in this chunk,
+            forwarded to DiagnosticObserver so it writes the correct
+            ``start_frame`` value in ``manifest.json``. Default 0.
 
     Returns:
         List of configured Observer instances for the pipeline.
@@ -82,6 +86,7 @@ def build_observers(
             DiagnosticObserver(
                 output_dir=config.output_dir,
                 chunk_idx=chunk_idx,
+                chunk_start=chunk_start,
             )
         )
 
@@ -97,6 +102,7 @@ def build_observers(
                 DiagnosticObserver(
                     output_dir=config.output_dir,
                     chunk_idx=chunk_idx,
+                    chunk_start=chunk_start,
                 )
             )
         elif cls is ConsoleObserver:

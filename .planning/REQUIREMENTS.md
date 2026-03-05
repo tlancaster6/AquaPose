@@ -21,8 +21,8 @@ Requirements for performance optimization milestone. Each maps to roadmap phases
 
 ### Reconstruction
 
-- [ ] **RECON-01**: DLT first-pass triangulation vectorized across body points via batched SVD
-- [ ] **RECON-02**: Vectorized reconstruction produces numerically equivalent results to per-point loop
+- [x] **RECON-01**: DLT first-pass triangulation vectorized across body points via batched SVD
+- [x] **RECON-02**: Vectorized reconstruction produces numerically equivalent results to per-point loop
 
 ### Association
 
@@ -50,8 +50,8 @@ None — this is a focused optimization milestone.
 |-------------|-------|--------|
 | ASSOC-01 | Phase 56 | Pending |
 | ASSOC-02 | Phase 56 | Pending |
-| RECON-01 | Phase 57 | Pending |
-| RECON-02 | Phase 57 | Pending |
+| RECON-01 | Phase 57 | Complete |
+| RECON-02 | Phase 57 | Complete |
 | FIO-01 | Phase 58 | Pending |
 | FIO-02 | Phase 58 | Pending |
 | BATCH-01 | Phase 59 | Pending |

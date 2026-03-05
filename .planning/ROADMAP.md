@@ -173,7 +173,9 @@ Full details: `.planning/milestones/v3.3-ROADMAP.md`
   2. Inlier camera sets for each body point match the scalar baseline exactly on real YH chunk cache data
   3. 3D point positions from the vectorized path are within 1e-4 m of the scalar baseline
   4. `aquapose eval` reconstruction metrics on a real YH chunk are unchanged
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 57-01-PLAN.md — Implement vectorized triangulation and equivalence tests
 
 ### Phase 58: Frame I/O Optimization
 **Goal**: Frame decoding overlaps with GPU inference via a background-thread producer-consumer queue, eliminating seek overhead and GPU idle time between frames

@@ -1,9 +1,10 @@
 """Calibration data preparation CLI for AquaPose training.
 
 Provides the ``prep`` CLI group with subcommands for computing derived
-configuration values from annotation data. Currently supports:
+configuration values from annotation data. Supports:
 
 - ``calibrate-keypoints``: Compute keypoint t-values from COCO annotations.
+- ``generate-luts``: Pre-generate forward and inverse lookup tables.
 """
 
 from __future__ import annotations
@@ -16,6 +17,22 @@ import numpy as np
 import yaml
 
 __all__ = ["prep_group"]
+
+
+class _LutConfigFromDict:
+    """Minimal LUT config satisfying the ``LutConfigLike`` protocol.
+
+    Built from a plain dict (YAML ``lut`` section) to avoid importing
+    ``aquapose.engine.config`` (which would violate the training→engine
+    import boundary).
+    """
+
+    def __init__(self, d: dict) -> None:
+        self.tank_diameter: float = float(d.get("tank_diameter", 1.0))
+        self.tank_height: float = float(d.get("tank_height", 0.5))
+        self.voxel_resolution_m: float = float(d.get("voxel_resolution_m", 0.01))
+        self.margin_fraction: float = float(d.get("margin_fraction", 0.1))
+        self.forward_grid_step: int = int(d.get("forward_grid_step", 4))
 
 
 @click.group("prep")
@@ -145,3 +162,99 @@ def calibrate_keypoints(annotations: str, config: str, n_keypoints: int) -> None
     click.echo(f"Processed {n_processed} annotations.")
     click.echo(f"Computed t-values: {t_values_list}")
     click.echo(f"Updated config: {config_path}")
+
+
+@prep_group.command("generate-luts")
+@click.option(
+    "--config",
+    required=True,
+    type=click.Path(exists=True),
+    help="Path to pipeline config YAML.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help="Regenerate even if LUTs already exist.",
+)
+def generate_luts_cmd(config: str, force: bool) -> None:
+    """Pre-generate forward and inverse lookup tables for association.
+
+    Reads the pipeline config to determine calibration path and LUT
+    parameters, then generates and saves forward and inverse LUTs to
+    the luts/ directory next to the calibration file.
+
+    Args:
+        config: Path to pipeline config YAML.
+        force: If True, regenerate even when cached LUTs already exist.
+    """
+    from aquapose.calibration.loader import (
+        compute_undistortion_maps,
+        load_calibration_data,
+    )
+    from aquapose.calibration.luts import (
+        generate_forward_luts,
+        generate_inverse_lut,
+        load_forward_luts,
+        load_inverse_luts,
+        save_forward_luts,
+        save_inverse_luts,
+    )
+
+    config_path = Path(config)
+
+    with config_path.open() as fh:
+        raw = yaml.safe_load(fh) or {}
+
+    calibration_path = raw.get("calibration_path")
+    if not calibration_path:
+        raise click.ClickException(
+            "calibration_path is not set in the pipeline config."
+        )
+
+    # Resolve calibration_path relative to config file's parent
+    cal_path = Path(calibration_path)
+    if not cal_path.is_absolute():
+        cal_path = config_path.parent / cal_path
+    calibration_path_str = str(cal_path)
+
+    # Build LUT config from YAML (satisfies LutConfigLike protocol)
+    lut_raw = raw.get("lut", {})
+    lut_config = _LutConfigFromDict(lut_raw)
+
+    # Check for existing LUTs (skip unless --force)
+    if not force:
+        fwd = load_forward_luts(calibration_path_str, lut_config)
+        inv = load_inverse_luts(calibration_path_str, lut_config)
+        if fwd is not None and inv is not None:
+            lut_dir = cal_path.parent / "luts"
+            click.echo(f"LUTs already exist at {lut_dir}. Use --force to regenerate.")
+            return
+
+    if not cal_path.exists():
+        raise click.ClickException(f"Calibration file not found: {cal_path}")
+
+    # Load calibration and compute undistortion maps
+    calibration = load_calibration_data(calibration_path_str)
+    undistortion_maps = {
+        cam_id: compute_undistortion_maps(calibration.cameras[cam_id])
+        for cam_id in calibration.ring_cameras
+    }
+
+    # Generate forward LUTs
+    click.echo("Generating forward LUTs...")
+    forward_luts = generate_forward_luts(
+        calibration, lut_config, undistortion_maps=undistortion_maps
+    )
+    save_forward_luts(forward_luts, calibration_path_str, lut_config)
+    click.echo(f"Saved forward LUTs for {len(forward_luts)} cameras.")
+
+    # Generate inverse LUT
+    click.echo("Generating inverse LUT...")
+    inverse_lut = generate_inverse_lut(
+        calibration, lut_config, undistortion_maps=undistortion_maps
+    )
+    save_inverse_luts(inverse_lut, calibration_path_str, lut_config)
+
+    lut_dir = cal_path.parent / "luts"
+    click.echo(f"LUT generation complete. Saved to: {lut_dir}")

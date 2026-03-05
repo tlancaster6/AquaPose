@@ -22,6 +22,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from aquapose.calibration.luts import load_forward_luts, load_inverse_luts
 from aquapose.core.context import PipelineContext, Stage
 from aquapose.engine.config import PipelineConfig, serialize_config
 
@@ -359,6 +360,21 @@ def build_stages(
         # Target stage not in the list (e.g. "midline" in synthetic mode)
         return stages
 
+    def _check_luts_if_needed(stages: list) -> None:
+        """Raise early if association is in the stage list but LUTs are missing."""
+        has_association = any(isinstance(s, AssociationStage) for s in stages)
+        if has_association and config.calibration_path:
+            fwd = load_forward_luts(config.calibration_path, config.lut)
+            if fwd is None:
+                raise FileNotFoundError(
+                    "LUTs not found. Run: aquapose prep generate-luts --config <path>"
+                )
+            inv = load_inverse_luts(config.calibration_path, config.lut)
+            if inv is None:
+                raise FileNotFoundError(
+                    "LUTs not found. Run: aquapose prep generate-luts --config <path>"
+                )
+
     # --- Synthetic mode: SyntheticDataStage replaces Detection + Midline
     if config.mode == "synthetic":
         synthetic_stage = SyntheticDataStage(
@@ -367,7 +383,7 @@ def build_stages(
             n_points=config.n_sample_points,
         )
 
-        return _truncate(
+        stages = _truncate(
             [
                 synthetic_stage,
                 tracking_stage,
@@ -375,6 +391,8 @@ def build_stages(
                 reconstruction_stage,
             ]
         )
+        _check_luts_if_needed(stages)
+        return stages
 
     # --- Production (and all other) modes: full 5-stage pipeline
     if frame_source is None:
@@ -406,7 +424,7 @@ def build_stages(
         midline_batch_crops=config.midline.midline_batch_crops,
     )
 
-    return _truncate(
+    stages = _truncate(
         [
             detection_stage,
             tracking_stage,
@@ -415,3 +433,5 @@ def build_stages(
             reconstruction_stage,
         ]
     )
+    _check_luts_if_needed(stages)
+    return stages

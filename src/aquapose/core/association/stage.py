@@ -8,6 +8,7 @@ AssociationStubStage from Phase 22.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from aquapose.core.context import PipelineContext
@@ -23,6 +24,9 @@ class AssociationStage:
     Scores all cross-camera tracklet pairs using ray-ray geometry and
     clusters them into global fish identity groups via Leiden algorithm.
     Populates ``PipelineContext.tracklet_groups``.
+
+    LUTs must be pre-generated via ``aquapose prep generate-luts``.
+    This stage loads them from disk but does not generate them lazily.
 
     The config parameter is ``Any``-typed to avoid the circular
     engine -> core import (same pattern as TrackingStage in Phase 24).
@@ -44,14 +48,13 @@ class AssociationStage:
 
         Returns:
             Context with ``tracklet_groups`` populated.
+
+        Raises:
+            FileNotFoundError: If pre-generated LUTs are not found on disk.
         """
         from aquapose.calibration.luts import (
-            generate_forward_luts,
-            generate_inverse_lut,
             load_forward_luts,
             load_inverse_luts,
-            save_forward_luts,
-            save_inverse_luts,
         )
         from aquapose.core.association.clustering import (
             build_must_not_link,
@@ -69,40 +72,16 @@ class AssociationStage:
             context.tracklet_groups = []
             return context
 
-        # Load LUTs from cache, auto-generate on miss
+        # Load pre-generated LUTs (no lazy generation)
         forward_luts = load_forward_luts(calibration_path, self._config.lut)
         inverse_lut = load_inverse_luts(calibration_path, self._config.lut)
 
         if forward_luts is None or inverse_lut is None:
-            from aquapose.calibration.loader import (
-                compute_undistortion_maps,
-                load_calibration_data,
+            lut_dir = Path(calibration_path).parent / "luts"
+            raise FileNotFoundError(
+                f"LUTs not found at {lut_dir}. "
+                f"Run: aquapose prep generate-luts --config <path>"
             )
-
-            logger.info(
-                "LUTs not cached -- generating (first run may take a few minutes)"
-            )
-            calibration = load_calibration_data(calibration_path)
-
-            # Compute undistortion maps so LUTs are built in undistorted pixel
-            # space (K_new), matching the coordinate system of the tracklet
-            # centroids produced by VideoFrameSource (which undistorts frames).
-            undistortion_maps = {
-                cam_id: compute_undistortion_maps(calibration.cameras[cam_id])
-                for cam_id in calibration.ring_cameras
-            }
-
-            if forward_luts is None:
-                forward_luts = generate_forward_luts(
-                    calibration, self._config.lut, undistortion_maps=undistortion_maps
-                )
-                save_forward_luts(forward_luts, calibration_path, self._config.lut)
-
-            if inverse_lut is None:
-                inverse_lut = generate_inverse_lut(
-                    calibration, self._config.lut, undistortion_maps=undistortion_maps
-                )
-                save_inverse_luts(inverse_lut, calibration_path, self._config.lut)
 
         # Step 1: Score all pairs
         frame_count = len(detections) if detections else None

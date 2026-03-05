@@ -340,6 +340,7 @@ def build_stages(
         min_cameras=config.reconstruction.min_cameras,
         max_interp_gap=config.reconstruction.max_interp_gap,
         n_control_points=config.reconstruction.n_control_points,
+        plane_projection_enabled=config.reconstruction.plane_projection.enabled,
     )
 
     def _truncate(stages: list) -> list:

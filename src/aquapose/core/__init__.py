@@ -22,11 +22,13 @@ from aquapose.core.context import (
     load_stage_cache,
 )
 from aquapose.core.detection import DetectionStage
+from aquapose.core.inference import BatchState, predict_with_oom_retry
 from aquapose.core.midline import MidlineStage
 from aquapose.core.reconstruction import ReconstructionStage
 from aquapose.core.synthetic import SyntheticDataStage
 
 __all__ = [
+    "BatchState",
     "ChunkHandoff",
     "DetectionStage",
     "MidlineStage",
@@ -38,4 +40,5 @@ __all__ = [
     "context_fingerprint",
     "load_chunk_cache",
     "load_stage_cache",
+    "predict_with_oom_retry",
 ]

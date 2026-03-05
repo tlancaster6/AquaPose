@@ -68,6 +68,7 @@ def _make_yolo_mock(
 
     mock_result = MagicMock()
     mock_result.boxes = mock_boxes
+    mock_result.orig_shape = (480, 640)
     mock_model_instance.predict.return_value = [mock_result]
 
     return mock_yolo_cls

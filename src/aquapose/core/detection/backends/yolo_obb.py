@@ -83,10 +83,53 @@ class YOLOOBBBackend:
         results = self._model.predict(
             frame, conf=self._conf, iou=self._iou, verbose=False
         )
-        detections: list[Detection] = []
+        return self._parse_results(results)[0] if results else []
+
+    def detect_batch(self, frames: list[np.ndarray]) -> list[list[Detection]]:
+        """Detect fish in multiple frames using a single batched OBB prediction.
+
+        Runs YOLO-OBB inference on all *frames* in a single ``predict()`` call,
+        returning results in positional correspondence with input frames.
+
+        Args:
+            frames: List of BGR images as uint8 arrays of shape ``(H, W, 3)``.
+
+        Returns:
+            List of detection lists, one per input frame in positional order.
+        """
+        if not frames:
+            return []
+        results = self._model.predict(
+            frames,
+            conf=self._conf,
+            iou=self._iou,
+            verbose=False,
+            batch=len(frames),
+        )
+        return self._parse_results(results)
+
+    def _parse_results(
+        self,
+        results: list,
+    ) -> list[list[Detection]]:
+        """Parse ultralytics OBB results into Detection objects.
+
+        Each element in *results* corresponds to one input frame. The returned
+        list has the same length as *results*, with each element being a list
+        of :class:`Detection` objects for that frame.
+
+        Args:
+            results: Ultralytics Results list from ``model.predict()``.
+
+        Returns:
+            List of detection lists in positional correspondence with *results*.
+        """
+        all_detections: list[list[Detection]] = []
 
         for r in results:
+            frame_dets: list[Detection] = []
             if r.obb is None:
+                all_detections.append(frame_dets)
                 continue
 
             # xywhr shape: (N, 5) — cx, cy, w, h, angle_cw_rad
@@ -116,7 +159,7 @@ class YOLOOBBBackend:
                 conf = float(confs[i])
                 area = int(w * h)
 
-                detections.append(
+                frame_dets.append(
                     Detection(
                         bbox=bbox,
                         mask=None,
@@ -127,4 +170,6 @@ class YOLOOBBBackend:
                     )
                 )
 
-        return detections
+            all_detections.append(frame_dets)
+
+        return all_detections

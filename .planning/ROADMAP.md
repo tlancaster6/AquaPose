@@ -195,7 +195,10 @@ Plans:
   2. Pseudo-label generation fails fast with a clear error if keypoint t-values are not configured (no silent uniform fallback)
   3. User can run `aquapose prep generate-luts` to pre-generate forward and inverse LUTs from calibration data
   4. AssociationStage requires pre-generated LUTs as input and fails fast if missing (lazy generation removed)
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 62-01-PLAN.md — Rework calibrate-keypoints CLI, fail-fast enforcement, init-config reminders
+- [ ] 62-02-PLAN.md — Add generate-luts CLI, remove lazy LUT generation, early pipeline validation
 
 ### Phase 63: Pseudo-Label Generation (Source A)
 **Goal**: Users can generate high-confidence OBB and pose training labels from consensus 3D reconstructions
@@ -257,7 +260,7 @@ Phases execute in numeric order: 61 -> 62 -> 63 -> 64 -> 65 -> 66
 | 51-55 | v3.3 | 11/11 | Complete | 2026-03-05 |
 | 56-60 | v3.4 | 8/8 | Complete | 2026-03-05 |
 | 61. Z-Denoising | v3.5 | 0/2 | Planning | - |
-| 62. Prep Infrastructure | v3.5 | 0/? | Not started | - |
+| 62. Prep Infrastructure | v3.5 | 0/2 | Planning | - |
 | 63. Pseudo-Label Generation (Source A) | v3.5 | 0/? | Not started | - |
 | 64. Gap Detection and Fill (Source B) | v3.5 | 0/? | Not started | - |
 | 65. Frame Selection and Dataset Assembly | v3.5 | 0/? | Not started | - |

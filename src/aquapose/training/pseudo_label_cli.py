@@ -11,6 +11,12 @@ import click
 import cv2
 import numpy as np
 
+from aquapose.training.geometry import (
+    affine_warp_crop,
+    format_pose_annotation,
+    pca_obb,
+    transform_keypoints,
+)
 from aquapose.training.pseudo_labels import (
     detect_gaps,
     generate_fish_labels,
@@ -92,6 +98,20 @@ def pseudo_label_group() -> None:
     show_default=True,
     help="Minimum contributing cameras before gap detection activates.",
 )
+@click.option(
+    "--crop-width",
+    type=int,
+    default=128,
+    show_default=True,
+    help="Pose crop width in pixels.",
+)
+@click.option(
+    "--crop-height",
+    type=int,
+    default=64,
+    show_default=True,
+    help="Pose crop height in pixels.",
+)
 def generate(
     config_path: str,
     lateral_pad: float,
@@ -99,6 +119,8 @@ def generate(
     consensus: bool,
     gaps: bool,
     min_cameras: int,
+    crop_width: int,
+    crop_height: int,
 ) -> None:
     """Generate YOLO OBB and pose pseudo-labels from diagnostic caches.
 
@@ -290,6 +312,7 @@ def generate(
                                 "obb_lines": [],
                                 "pose_lines": [],
                                 "conf_entries": [],
+                                "fish_data": [],
                             }
 
                         cons_image_labels[cam_id]["obb_lines"].append(
@@ -303,6 +326,13 @@ def generate(
                                 "fish_id": int(fish_id),
                                 "confidence": result["confidence"],
                                 "raw_metrics": result["raw_metrics"],
+                            }
+                        )
+                        cons_image_labels[cam_id]["fish_data"].append(
+                            {
+                                "keypoints_2d": result["keypoints_2d"],
+                                "visibility": result["visibility"],
+                                "fish_id": int(fish_id),
                             }
                         )
 
@@ -354,6 +384,7 @@ def generate(
                                 "obb_lines": [],
                                 "pose_lines": [],
                                 "conf_entries": [],
+                                "fish_data": [],
                             }
 
                         gap_image_labels[cam_id]["obb_lines"].append(
@@ -369,6 +400,13 @@ def generate(
                                 "raw_metrics": gap_result["raw_metrics"],
                                 "gap_reason": reason,
                                 "n_source_cameras": midline.n_cameras,
+                            }
+                        )
+                        gap_image_labels[cam_id]["fish_data"].append(
+                            {
+                                "keypoints_2d": gap_result["keypoints_2d"],
+                                "visibility": gap_result["visibility"],
+                                "fish_id": int(fish_id),
                             }
                         )
 
@@ -393,14 +431,23 @@ def generate(
 
                 image_name = f"{frame_idx:06d}_{cam_id}"
 
+                # OBB: full-frame image + full-frame labels (unchanged)
                 cv2.imwrite(str(cons_obb_images / f"{image_name}.jpg"), frames[cam_id])
-                cv2.imwrite(str(cons_pose_images / f"{image_name}.jpg"), frames[cam_id])
-
                 (cons_obb_labels / f"{image_name}.txt").write_text(
                     "\n".join(labels["obb_lines"]) + "\n"
                 )
-                (cons_pose_labels / f"{image_name}.txt").write_text(
-                    "\n".join(labels["pose_lines"]) + "\n"
+
+                # Pose: per-fish OBB crops with crop-space keypoints
+                _write_pose_crops(
+                    frame=frames[cam_id],
+                    fish_data_list=labels["fish_data"],
+                    frame_idx=frame_idx,
+                    cam_id=cam_id,
+                    crop_w=crop_width,
+                    crop_h=crop_height,
+                    lateral_pad=lateral_pad,
+                    pose_images_dir=cons_pose_images,
+                    pose_labels_dir=cons_pose_labels,
                 )
 
                 cons_confidence[image_name] = {"labels": labels["conf_entries"]}
@@ -416,14 +463,23 @@ def generate(
 
                 image_name = f"{frame_idx:06d}_{cam_id}"
 
+                # OBB: full-frame image + full-frame labels (unchanged)
                 cv2.imwrite(str(gap_obb_images / f"{image_name}.jpg"), frames[cam_id])
-                cv2.imwrite(str(gap_pose_images / f"{image_name}.jpg"), frames[cam_id])
-
                 (gap_obb_labels / f"{image_name}.txt").write_text(
                     "\n".join(labels["obb_lines"]) + "\n"
                 )
-                (gap_pose_labels / f"{image_name}.txt").write_text(
-                    "\n".join(labels["pose_lines"]) + "\n"
+
+                # Pose: per-fish OBB crops with crop-space keypoints
+                _write_pose_crops(
+                    frame=frames[cam_id],
+                    fish_data_list=labels["fish_data"],
+                    frame_idx=frame_idx,
+                    cam_id=cam_id,
+                    crop_w=crop_width,
+                    crop_h=crop_height,
+                    lateral_pad=lateral_pad,
+                    pose_images_dir=gap_pose_images,
+                    pose_labels_dir=gap_pose_labels,
                 )
 
                 gap_confidence[image_name] = {"labels": labels["conf_entries"]}
@@ -468,6 +524,85 @@ def generate(
             f"  Gap: {gap_images_count} images, {gap_labels_count} labels, mean confidence {mean_conf:.3f}"
         )
     click.echo(f"  Output: {pseudo_dir}")
+
+
+def _write_pose_crops(
+    frame: np.ndarray,
+    fish_data_list: list[dict],
+    frame_idx: int,
+    cam_id: str,
+    crop_w: int,
+    crop_h: int,
+    lateral_pad: float,
+    pose_images_dir: Path,
+    pose_labels_dir: Path,
+    min_visible: int = 2,
+) -> None:
+    """Write per-fish OBB crop images and crop-space pose labels.
+
+    For each fish (the "primary"), computes the OBB from its keypoints,
+    warps the frame to crop space, then collects pose annotations for ALL
+    fish visible in that crop (multi-fish-per-crop logic matching
+    ``scripts/build_yolo_training_data.py``).
+
+    Args:
+        frame: Full-frame BGR image.
+        fish_data_list: List of dicts with ``keypoints_2d``, ``visibility``,
+            ``fish_id`` for each fish in this camera view.
+        frame_idx: Frame index (for filename).
+        cam_id: Camera identifier (for filename).
+        crop_w: Output crop width in pixels.
+        crop_h: Output crop height in pixels.
+        lateral_pad: OBB lateral padding in pixels.
+        pose_images_dir: Output directory for crop images.
+        pose_labels_dir: Output directory for crop label files.
+        min_visible: Minimum visible keypoints for a fish to appear in crop.
+    """
+    for fish_idx, primary in enumerate(fish_data_list):
+        kp_primary = primary["keypoints_2d"]
+        vis_primary = primary["visibility"]
+
+        # Compute OBB for the primary fish in image space
+        obb_corners = pca_obb(kp_primary, vis_primary, lateral_pad)
+
+        # Warp frame to crop
+        warped, affine_mat = affine_warp_crop(frame, obb_corners, crop_w, crop_h)
+
+        # Collect pose annotations for all fish visible in this crop
+        pose_rows: list[str] = []
+        for other in fish_data_list:
+            kp_crop, vis_crop = transform_keypoints(
+                other["keypoints_2d"],
+                other["visibility"],
+                affine_mat,
+                crop_w,
+                crop_h,
+            )
+            if int(vis_crop.sum()) < min_visible:
+                continue
+
+            # Compute PCA OBB on crop-space keypoints for the bbox
+            crop_obb = pca_obb(kp_crop, vis_crop, lateral_pad)
+            crop_obb[:, 0] = np.clip(crop_obb[:, 0], 0, crop_w - 1)
+            crop_obb[:, 1] = np.clip(crop_obb[:, 1], 0, crop_h - 1)
+            x_min, y_min = crop_obb.min(axis=0)
+            x_max, y_max = crop_obb.max(axis=0)
+            cx = (x_min + x_max) / 2.0 / crop_w
+            cy = (y_min + y_max) / 2.0 / crop_h
+            bw = (x_max - x_min) / crop_w
+            bh = (y_max - y_min) / crop_h
+
+            row = format_pose_annotation(
+                cx, cy, bw, bh, kp_crop, vis_crop, crop_w, crop_h
+            )
+            pose_rows.append(" ".join(str(v) for v in row))
+
+        if not pose_rows:
+            continue
+
+        crop_stem = f"{frame_idx:06d}_{cam_id}_{fish_idx:03d}"
+        cv2.imwrite(str(pose_images_dir / f"{crop_stem}.jpg"), warped)
+        (pose_labels_dir / f"{crop_stem}.txt").write_text("\n".join(pose_rows) + "\n")
 
 
 def _write_dataset_yamls(

@@ -290,16 +290,40 @@ class TestGenerateCommand:
         sidecar = json.loads((pseudo_dir / "consensus" / "confidence.json").read_text())
         assert len(sidecar) > 0
 
-        # Check label files exist
+        # Check OBB label files exist
         obb_labels = list(
             (pseudo_dir / "consensus" / "obb" / "labels" / "train").glob("*.txt")
         )
         assert len(obb_labels) > 0
 
-        # Check label content format
+        # Check OBB label content format
         label_content = obb_labels[0].read_text().strip()
         parts = label_content.split()
         assert len(parts) == 9  # cls + 4 corners x 2
+
+        # Check pose files have fish-index suffix pattern (crop-based)
+        pose_images = list(
+            (pseudo_dir / "consensus" / "pose" / "images" / "train").glob("*.jpg")
+        )
+        assert len(pose_images) > 0
+        # Filename pattern: {frame:06d}_{cam}_{fish:03d}.jpg
+        for img_path in pose_images:
+            stem = img_path.stem
+            parts_name = stem.split("_")
+            assert len(parts_name) >= 3, f"Expected fish-index suffix: {stem}"
+            # Last part should be zero-padded fish index (e.g. '000')
+            assert parts_name[-1].isdigit()
+
+        # Check pose label content has crop-normalized coordinates
+        pose_labels = list(
+            (pseudo_dir / "consensus" / "pose" / "labels" / "train").glob("*.txt")
+        )
+        assert len(pose_labels) > 0
+        pose_content = pose_labels[0].read_text().strip()
+        pose_values = [float(v) for v in pose_content.split()]
+        # bbox values (indices 1-4) should be in [0, 1]
+        for v in pose_values[1:5]:
+            assert 0.0 <= v <= 1.0
 
     def test_gaps_produces_output_structure(self, tmp_path: Path) -> None:
         """--gaps produces expected directory structure with gap labels."""
@@ -521,3 +545,5 @@ class TestGenerateCommand:
         assert "--consensus" in result.output
         assert "--gaps" in result.output
         assert "--min-cameras" in result.output
+        assert "--crop-width" in result.output
+        assert "--crop-height" in result.output

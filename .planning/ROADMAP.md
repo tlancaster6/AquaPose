@@ -237,7 +237,7 @@ Plans:
   2. Pose-diversity sampling selects frames that maximize coverage of body configurations (curved, straight, turning)
   3. User can assemble a training dataset pooling manual + Source A + Source B with independent confidence thresholds per source
   4. Assembled dataset includes a fixed manual validation set and a separate pseudo-label validation set broken down by source and gap reason
-**Plans:** 3 plans (2 complete + 1 gap closure)
+**Plans:** 3/3 plans complete
 Plans:
 - [x] 65-01-PLAN.md — Frame selection: temporal subsampling, empty-frame filtering, curvature diversity sampling
 - [x] 65-02-PLAN.md — Dataset assembly: pooling, confidence filtering, validation splits, CLI command
@@ -276,5 +276,5 @@ Phases execute in numeric order: 61 -> 62 -> 63 -> 64 -> 65 -> 66
 | 62. Prep Infrastructure | v3.5 | 2/2 | Complete | 2026-03-05 |
 | 63. Pseudo-Label Generation (Source A) | 2/2 | Complete   | 2026-03-05 | - |
 | 64. Gap Detection and Fill (Source B) | 2/2 | Complete    | 2026-03-05 | - |
-| 65. Frame Selection and Dataset Assembly | 2/2 | Complete   | 2026-03-05 | - |
+| 65. Frame Selection and Dataset Assembly | 3/3 | Complete   | 2026-03-05 | - |
 | 66. Training Run Management | v3.5 | 0/2 | Not started | - |

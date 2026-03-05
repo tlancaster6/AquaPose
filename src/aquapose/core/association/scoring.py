@@ -222,36 +222,38 @@ def score_tracklet_pair(
     lut_a = forward_luts[cam_a]
     lut_b = forward_luts[cam_b]
 
-    score_sum = 0.0
+    # Determine early-termination split point
+    early_k = config.early_k
+    if t_shared <= early_k:
+        # Single-phase: all frames fit within early window
+        early_frames = shared_frames
+        remaining_frames: list[int] = []
+    else:
+        # Two-phase: split at early_k boundary
+        early_frames = shared_frames[:early_k]
+        remaining_frames = shared_frames[early_k:]
 
-    for frame_idx_in_shared, frame in enumerate(shared_frames):
-        idx_a = frames_a[frame]
-        idx_b = frames_b[frame]
+    # --- Phase 1: score early frames ---
+    score_sum = _batch_score_frames(
+        early_frames, frames_a, frames_b, tracklet_a, tracklet_b, lut_a, lut_b, config
+    )
 
-        # Back-project centroids to rays
-        centroid_a = tracklet_a.centroids[idx_a]
-        centroid_b = tracklet_b.centroids[idx_b]
+    # Early termination: if no inliers after early_k frames, bail out
+    if t_shared >= early_k and score_sum == 0.0:
+        return 0.0
 
-        pix_a = torch.tensor([[centroid_a[0], centroid_a[1]]], dtype=torch.float32)
-        pix_b = torch.tensor([[centroid_b[0], centroid_b[1]]], dtype=torch.float32)
-
-        origins_a, dirs_a = lut_a.cast_ray(pix_a)
-        origins_b, dirs_b = lut_b.cast_ray(pix_b)
-
-        # Convert to numpy for ray_ray_closest_point
-        o_a = origins_a[0].cpu().numpy()
-        d_a = dirs_a[0].cpu().numpy()
-        o_b = origins_b[0].cpu().numpy()
-        d_b = dirs_b[0].cpu().numpy()
-
-        dist, _ = ray_ray_closest_point(o_a, d_a, o_b, d_b)
-
-        if dist < config.ray_distance_threshold:
-            score_sum += 1.0 - (dist / config.ray_distance_threshold)
-
-        # Early termination check
-        if frame_idx_in_shared == config.early_k - 1 and score_sum == 0.0:
-            return 0.0
+    # --- Phase 2: score remaining frames (if any) ---
+    if remaining_frames:
+        score_sum += _batch_score_frames(
+            remaining_frames,
+            frames_a,
+            frames_b,
+            tracklet_a,
+            tracklet_b,
+            lut_a,
+            lut_b,
+            config,
+        )
 
     # Soft inlier fraction
     f = score_sum / t_shared
@@ -265,6 +267,67 @@ def score_tracklet_pair(
     # Combined score
     score = f * w
     return score
+
+
+def _batch_score_frames(
+    batch_frames: list[int],
+    frames_a: dict[int, int],
+    frames_b: dict[int, int],
+    tracklet_a: Tracklet2D,
+    tracklet_b: Tracklet2D,
+    lut_a: ForwardLUT,
+    lut_b: ForwardLUT,
+    config: AssociationConfigLike,
+) -> float:
+    """Score a batch of shared frames using vectorized ray-ray distances.
+
+    Stacks centroids for all frames into a single ``cast_ray`` call per
+    camera, then uses ``ray_ray_closest_point_batch`` for vectorized
+    distance computation and a vectorized soft kernel.
+
+    Args:
+        batch_frames: Frame indices to score.
+        frames_a: Frame-to-index mapping for tracklet A.
+        frames_b: Frame-to-index mapping for tracklet B.
+        tracklet_a: First tracklet (from camera A).
+        tracklet_b: Second tracklet (from camera B).
+        lut_a: ForwardLUT for camera A.
+        lut_b: ForwardLUT for camera B.
+        config: Scoring configuration.
+
+    Returns:
+        Sum of soft-kernel contributions for the batch.
+    """
+    idx_a = [frames_a[f] for f in batch_frames]
+    idx_b = [frames_b[f] for f in batch_frames]
+
+    cents_a = np.array(
+        [tracklet_a.centroids[i] for i in idx_a], dtype=np.float64
+    )  # (N, 2)
+    cents_b = np.array(
+        [tracklet_b.centroids[i] for i in idx_b], dtype=np.float64
+    )  # (N, 2)
+
+    # Single cast_ray call per camera
+    pix_a = torch.tensor(cents_a, dtype=torch.float32)
+    pix_b = torch.tensor(cents_b, dtype=torch.float32)
+
+    origins_a, dirs_a = lut_a.cast_ray(pix_a)
+    origins_b, dirs_b = lut_b.cast_ray(pix_b)
+
+    # Convert once to numpy float64
+    oa = origins_a.cpu().numpy().astype(np.float64)
+    da = dirs_a.cpu().numpy().astype(np.float64)
+    ob = origins_b.cpu().numpy().astype(np.float64)
+    db = dirs_b.cpu().numpy().astype(np.float64)
+
+    # Vectorized ray-ray distances
+    dists = ray_ray_closest_point_batch(oa, da, ob, db)  # (N,)
+
+    # Vectorized soft kernel
+    inlier = dists < config.ray_distance_threshold
+    contributions = np.where(inlier, 1.0 - dists / config.ray_distance_threshold, 0.0)
+    return float(contributions.sum())
 
 
 # ---------------------------------------------------------------------------

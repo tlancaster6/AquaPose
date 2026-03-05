@@ -258,8 +258,13 @@ class TestStateRoundtrip:
             f"Expected track_id {track_id_batch1} to persist; got {[t.track_id for t in tracklets2]}"
         )
 
-    def test_state_roundtrip_preserves_frame_count(self) -> None:
-        """Tracklets after roundtrip include frames from both batches."""
+    def test_state_roundtrip_resets_builders(self) -> None:
+        """Tracklets after roundtrip contain only frames from the new batch.
+
+        Builders are cleared on from_state() so each chunk accumulates fresh
+        tracklet data.  Previous chunk data is discarded to avoid duplicate
+        frame entries when chunks use local frame indices.
+        """
         tracker1 = _make_tracker()
         batch1_frames = MIN_HITS + 2
 
@@ -278,10 +283,10 @@ class TestStateRoundtrip:
 
         tracklets2 = tracker2.get_tracklets()
         assert len(tracklets2) == 1
-        # Total frames = batch1 + batch2
+        # Only frames from batch2 — builders are reset across chunks
         total = len(tracklets2[0].frames)
-        assert total == batch1_frames + batch2_frames, (
-            f"Expected {batch1_frames + batch2_frames} total frames, got {total}"
+        assert total == batch2_frames, (
+            f"Expected {batch2_frames} frames (batch2 only), got {total}"
         )
 
 

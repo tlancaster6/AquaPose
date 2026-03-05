@@ -318,6 +318,14 @@ class OcSortTracker:
         instance._tracker = state["tracker"]
         instance._next_local_id = state["next_local_id"]
         instance._boxmot_id_to_local = dict(state["boxmot_id_to_local"])
-        instance._builders = dict(state["builders"])
+        # Clear builders so the new chunk accumulates fresh tracklet data.
+        # Preserving builders from the previous chunk would cause duplicate
+        # frame entries (both chunks use local frame indices 0..N-1).
+        # Re-create empty builders for tracks that still have ID mappings,
+        # so update() can append to them when those tracks are seen again.
+        instance._builders = {
+            local_id: _TrackletBuilder(camera_id=camera_id, track_id=local_id)
+            for local_id in state["boxmot_id_to_local"].values()
+        }
         instance._active_local_ids = set(state["active_local_ids"])
         return instance

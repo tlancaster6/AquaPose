@@ -86,7 +86,7 @@ Requirements for chunk processing milestone. Each maps to roadmap phases.
 | OUT-02 | Phase 53 | Complete |
 | INTEG-01 | Phase 53 | Complete |
 | INTEG-02 | Phase 53 | Complete |
-| INTEG-03 | Phase 53 | Pending |
+| INTEG-03 | Phase 55 | Pending |
 
 **Coverage:**
 - v3.3 requirements: 15 total

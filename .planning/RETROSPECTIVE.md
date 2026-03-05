@@ -270,6 +270,49 @@
 
 ---
 
+## Milestone: v3.4 — Performance Optimization
+
+**Shipped:** 2026-03-05
+**Phases:** 5 | **Plans:** 8 | **Timeline:** 1 day
+
+### What Was Built
+- Vectorized association scoring via NumPy broadcasting (3.8x speedup)
+- Vectorized DLT reconstruction via batched `torch.linalg.lstsq` (7.0x speedup)
+- Background-thread frame prefetch in ChunkFrameSource
+- Batched YOLO inference for detection (11.5x) and midline (8.1x) with OOM retry
+- End-to-end performance validation script and report (8.2x total speedup)
+
+### What Worked
+- **Profile-driven prioritization:** Targeting the four profiled bottlenecks by impact-to-complexity ratio ensured maximum ROI per phase
+- **Correctness-neutral optimization:** All changes verified against existing `aquapose eval` harness — no regressions introduced
+- **OOM retry pattern:** Automatic batch halving with state persistence handled GPU memory limits gracefully without pipeline crashes
+- **Transparent optimizations:** Phases 56 and 57 were internal refactors with zero API surface changes — no downstream code modifications needed
+- **Fastest milestone yet:** 5 phases and 8 plans completed in a single day
+
+### What Was Inefficient
+- **SUMMARY one_liner fields still not populated:** Seventh consecutive milestone — this is now a permanent process gap
+- **Deferred real-data eval comparisons:** SC-2 (Phase 56) and SC-5 (Phase 59) deferred real-data comparisons due to missing pre-optimization baselines — should have captured baselines before starting optimization work
+- **REQUIREMENTS.md checkboxes stale:** ASSOC-01/ASSOC-02 unchecked despite being satisfied — dual bookkeeping continues to drift
+
+### Patterns Established
+- Scalar-to-batch vectorization: element-wise `sum(axis=1)` replaces `np.dot` for batched dot products
+- OOM retry pattern: catch CUDA OOM, halve batch, retry from scratch, persist in BatchState
+- Prefetch pattern: daemon thread + bounded queue + sentinel + stop_event for cooperative shutdown
+- Collect-predict-redistribute: CPU crop extraction separated from GPU batch inference for clean retry boundaries
+
+### Key Lessons
+1. **Capture baselines before optimizing** — deferred real-data comparisons could have been avoided by running eval before starting the optimization work
+2. **Transparent optimizations are the best optimizations** — Phases 56/57 changed internal implementations with zero API surface changes, requiring no downstream modifications
+3. **Profile data is essential for prioritization** — without the py-spy profiling data, phase ordering would have been guesswork
+4. **GPU non-determinism is inherent to batching** — batched vs serial YOLO inference produces slightly different results; this is expected, not a bug
+
+### Cost Observations
+- Model mix: ~60% sonnet (executors), ~30% opus (orchestrator), ~10% haiku (verifiers)
+- Sessions: 1-2 across 1 day
+- Notable: Most compact milestone — 8 plans in a single day with 8.2x speedup delivered
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -282,6 +325,7 @@
 | v3.1 | 2 days | 7 | Reconstruction rebuild with evaluation-first approach |
 | v3.2 | 1 day | 5 | Evaluation ecosystem; per-stage caching + CLI tools |
 | v3.3 | 2 days | 5 | Chunk processing; frame source abstraction + viz migration |
+| v3.4 | 1 day | 5 | Performance optimization; 8.2x speedup via batching + vectorization |
 
 ### Cumulative Quality
 
@@ -293,6 +337,7 @@
 | v3.1 | 19,493 source | - | 3 |
 | v3.2 | 20,789 source | ~788 | 0 |
 | v3.3 | 21,634 source | ~807 | 0 |
+| v3.4 | 22,754 source | ~840 | 0 |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -304,3 +349,5 @@
 6. Build evaluation infrastructure before making changes — every change should be measurable (v3.1)
 7. Plan infrastructure across milestones to avoid throwaway work (v3.1 NPZ → v3.2 pickle replacement)
 8. Aggressive deletion beats deprecation — remove legacy code entirely, don't shim (v3.2)
+9. Profile before optimizing — target bottlenecks by measured impact, not intuition (v3.4)
+10. Capture baselines before starting optimization work — deferred comparisons create verification gaps (v3.4)

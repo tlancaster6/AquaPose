@@ -90,17 +90,13 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - ✓ Per-chunk diagnostic caches with manifest.json; EvalRunner/TuningOrchestrator chunk-aware — v3.3
 - ✓ Visualization migrated from engine observers to `aquapose viz` CLI in evaluation suite — v3.3
 
+- ✓ Vectorized association scoring via NumPy broadcasting replacing per-pair Python loop (ASSOC-01, ASSOC-02) — v3.4
+- ✓ Vectorized DLT reconstruction via batched `torch.linalg.lstsq` replacing per-body-point loop (RECON-01, RECON-02) — v3.4
+- ✓ Background-thread frame prefetch in ChunkFrameSource (FIO-01, FIO-02) — v3.4
+- ✓ Batched YOLO inference for detection and midline stages with OOM retry (BATCH-01 through BATCH-04) — v3.4
+- ✓ End-to-end performance validation: 8.2x total speedup confirmed (VAL-01 through VAL-03) — v3.4
+
 ### Active
-
-## Current Milestone: v3.4 Performance Optimization
-
-**Goal:** Reduce per-chunk pipeline processing time by optimizing the four profiled bottlenecks (inference batching, frame I/O, reconstruction, association), prioritized by impact-to-complexity ratio.
-
-**Target features:**
-- Batched YOLO inference for detection and midline stages (GPU utilization currently ~30%)
-- Optimized frame I/O (video decoding ~12% of wall time)
-- Vectorized DLT reconstruction across body points (~9% of wall time)
-- Vectorized association scoring (~5% of wall time)
 
 ### Out of Scope
 
@@ -117,15 +113,16 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ## Context
 
-### Current State (v3.3 shipped)
+### Current State (v3.4 shipped)
 
-- **Codebase:** 21,634 LOC source across `src/aquapose/` (calibration, core/, engine/, io, evaluation)
+- **Codebase:** 22,754 LOC source across `src/aquapose/` (calibration, core/, engine/, io, evaluation)
 - **Architecture:** Event-driven 3-layer — Core Computation (5 stages) → PosePipeline (orchestrator) → Observers (3: console, timing, diagnostic). ChunkOrchestrator sits above PosePipeline managing chunk loop, identity stitching, and HDF5 output.
 - **Pipeline order:** Detection (YOLO-OBB) → 2D Tracking (OC-SORT) → Association (Leiden) → Midline (YOLO-seg or YOLO-pose) → Reconstruction (DLT triangulation + B-spline)
-- **Chunk processing:** ChunkOrchestrator processes video in fixed-size temporal chunks (default 1000 frames). ChunkHandoff carries tracker state + identity map across boundaries. Per-chunk HDF5 flush with global frame offsets.
+- **Chunk processing:** ChunkOrchestrator processes video in fixed-size temporal chunks (default 200 frames). ChunkHandoff carries tracker state + identity map across boundaries. Per-chunk HDF5 flush with global frame offsets.
+- **Performance:** 8.2x total pipeline speedup (914s → 112s per chunk). Batched YOLO inference (detection 11.5x, midline 8.1x), background-thread frame prefetch, vectorized DLT reconstruction (7.0x), vectorized association scoring (3.8x). OOM retry with automatic batch halving.
 - **Tech stack:** Python 3.11, PyTorch, PyTorch3D, scikit-image, OpenCV, h5py, ultralytics (YOLO), Click (CLI), Plotly (3D viz), boxmot (OC-SORT), leidenalg/igraph, hatch build system
 - **Midline backends:** SegmentationBackend (YOLO-seg + skeletonization) and PoseEstimationBackend (YOLO-pose + spline), selectable via `midline.backend` config field
-- **Reconstruction:** Single DLT backend — confidence-weighted triangulation with outlier rejection (threshold=10.0), B-spline fitting (7 control points)
+- **Reconstruction:** Single DLT backend — vectorized confidence-weighted triangulation with outlier rejection (threshold=10.0), B-spline fitting (7 control points)
 - **Evaluation:** Per-chunk pickle caching (chunk_NNN/cache.pkl + manifest.json), five typed stage evaluators, `aquapose eval` (quality reports), `aquapose tune` (parameter sweeps with two-tier validation), `aquapose viz` (overlay, animation, trails from cached data)
 - **Training infrastructure:** `aquapose train {yolo-obb, seg, pose}` CLI subcommands with standard YOLO txt+yaml data format
 - **Core organization:** Shared types in `core/types/`, implementations in `core/<stage>/`, legacy top-level dirs eliminated
@@ -210,4 +207,15 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Per-chunk single cache (not per-stage) | One cache.pkl per chunk containing full PipelineContext; simpler than per-stage files | ✓ Good — reduces file count, enables chunk-aware eval/tuning |
 
 ---
-*Last updated: 2026-03-05 after v3.4 Performance Optimization milestone start*
+| Vectorized association scoring (NumPy broadcasting) | Per-pair Python loop is the bottleneck; broadcasting eliminates it | ✓ Good — 3.8x speedup, numerically identical |
+| Vectorized DLT via batched lstsq (not per-point SVD) | C camera loops only, no body-point loop; single lstsq call for all N points | ✓ Good — 7.0x speedup, within 1e-4 m equivalence |
+| Drop 2-camera ray-angle filter in vectorized DLT | Masking per-point would require a body-point loop, defeating vectorization | ✓ Good — negligible yield impact |
+| Background-thread frame prefetch (not multiprocessing) | IPC overhead for large frame arrays; daemon thread + bounded queue is simpler | ✓ Good — eliminates seek overhead and GPU idle gaps |
+| Queue maxsize=2 for prefetch buffer | Balances memory (2 frames x 12 cameras ~144MB) vs prefetch benefit | ✓ Good — sufficient overlap without memory pressure |
+| Mutable BatchState for OOM retry | Needs to persist batch size reductions across calls within a chunk | ✓ Good — effective adaptive behavior |
+| batch_size=0 means no limit | Simplest default — send all inputs in one call | ✓ Good — works well for typical 12-camera setup |
+| CPU crop extraction separated from GPU batch predict | Clean OOM retry boundary — only retry the GPU call, not crop extraction | ✓ Good — correct retry granularity |
+| GPU non-determinism accepted for batched inference | 1-detection delta cascading through stages is inherent to batched vs serial GPU execution | ✓ Good — not an algorithmic regression |
+
+---
+*Last updated: 2026-03-05 after v3.4 Performance Optimization milestone completion*

@@ -18,7 +18,9 @@ from .geometry import (
 from .prep import prep_group
 from .pseudo_labels import (
     compute_confidence_score,
+    detect_gaps,
     generate_fish_labels,
+    generate_gap_fish_labels,
     reproject_spline_keypoints,
 )
 from .yolo_obb import train_yolo_obb
@@ -31,10 +33,12 @@ __all__ = [
     "MetricsLogger",
     "apply_augmentation",
     "compute_confidence_score",
+    "detect_gaps",
     "extrapolate_edge_keypoints",
     "format_obb_annotation",
     "format_pose_annotation",
     "generate_fish_labels",
+    "generate_gap_fish_labels",
     "make_loader",
     "pca_obb",
     "prep_group",

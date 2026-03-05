@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -10,8 +10,11 @@ import torch
 
 from aquapose.core.types.reconstruction import Midline3D
 from aquapose.training.pseudo_labels import (
+    _passes_bounds_check,
     compute_confidence_score,
+    detect_gaps,
     generate_fish_labels,
+    generate_gap_fish_labels,
     reproject_spline_keypoints,
 )
 
@@ -293,3 +296,301 @@ class TestGenerateFishLabels:
         assert result is not None
         parts = result["pose_line"].split()
         assert len(parts) == 5 + 3 * n_kpts
+
+
+# ---------------------------------------------------------------------------
+# Helpers for gap detection / gap label tests
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_detection(x: float, y: float, w: float, h: float) -> MagicMock:
+    """Create a mock Detection with given bbox (x, y, w, h)."""
+    det = MagicMock()
+    det.bbox = (x, y, w, h)
+    return det
+
+
+def _make_mock_tracklet(
+    camera_id: str, frames: tuple, frame_status: tuple
+) -> MagicMock:
+    """Create a mock Tracklet2D."""
+    t = MagicMock()
+    t.camera_id = camera_id
+    t.frames = frames
+    t.frame_status = frame_status
+    return t
+
+
+class TestDetectGaps:
+    """Tests for detect_gaps."""
+
+    def test_returns_empty_when_per_camera_residuals_is_none(self) -> None:
+        """No residuals -> empty list."""
+        midline = _make_midline()
+        midline.per_camera_residuals = None
+        result = detect_gaps(midline, MagicMock(), {}, {}, {})
+        assert result == []
+
+    def test_returns_empty_when_contributing_below_min_cameras(self) -> None:
+        """Fewer than min_cameras contributing -> empty list."""
+        midline = _make_midline(per_camera_residuals={"cam0": 1.0, "cam1": 2.0})
+        midline.n_cameras = 2
+        result = detect_gaps(midline, MagicMock(), {}, {}, {}, min_cameras=3)
+        assert result == []
+
+    @patch("aquapose.training.pseudo_labels.ghost_point_lookup")
+    def test_identifies_gap_cameras(self, mock_gpl: MagicMock) -> None:
+        """Cameras visible via LUT but not in per_camera_residuals are gaps."""
+        midline = _make_midline(
+            n_cameras=3,
+            per_camera_residuals={"cam0": 1.0, "cam1": 2.0, "cam2": 1.5},
+        )
+        # LUT says cam0, cam1, cam2, cam3 can see this fish
+        mock_gpl.return_value = [
+            [
+                ("cam0", 100.0, 200.0),
+                ("cam1", 300.0, 400.0),
+                ("cam2", 500.0, 600.0),
+                ("cam3", 700.0, 800.0),
+            ]
+        ]
+        # Need a projection model for cam3 classification
+        mock_proj = _make_mock_projection()
+        proj_models = {"cam3": mock_proj}
+        # cam3 has no detection -> should be "no-detection"
+        result = detect_gaps(midline, MagicMock(), proj_models, {}, {}, min_cameras=3)
+        assert len(result) == 1
+        cam_ids = [c for c, _ in result]
+        assert "cam3" in cam_ids
+
+    @patch("aquapose.training.pseudo_labels.ghost_point_lookup")
+    def test_never_flags_contributing_cameras(self, mock_gpl: MagicMock) -> None:
+        """Contributing cameras should never appear as gaps."""
+        midline = _make_midline(
+            n_cameras=3,
+            per_camera_residuals={"cam0": 1.0, "cam1": 2.0, "cam2": 1.5},
+        )
+        mock_gpl.return_value = [
+            [("cam0", 100.0, 200.0), ("cam1", 300.0, 400.0), ("cam2", 500.0, 600.0)]
+        ]
+        result = detect_gaps(midline, MagicMock(), {}, {}, {}, min_cameras=3)
+        assert result == []
+
+
+class TestClassifyGap:
+    """Tests for _classify_gap (via detect_gaps integration)."""
+
+    @patch("aquapose.training.pseudo_labels.ghost_point_lookup")
+    def test_no_detection_when_no_bbox_contains_centroid(
+        self, mock_gpl: MagicMock
+    ) -> None:
+        """No detection bbox at projected centroid -> 'no-detection'."""
+        midline = _make_midline(
+            n_cameras=3,
+            per_camera_residuals={"cam0": 1.0, "cam1": 2.0, "cam2": 1.5},
+        )
+        mock_gpl.return_value = [
+            [("cam0", 0, 0), ("cam1", 0, 0), ("cam2", 0, 0), ("cam3", 0, 0)]
+        ]
+        mock_proj = _make_mock_projection(pixel_x=500.0, pixel_y=300.0)
+        proj_models = {"cam3": mock_proj}
+        # Detection at (0,0,100,100) does NOT contain (500, 300)
+        frame_dets = {"cam3": [_make_mock_detection(0, 0, 100, 100)]}
+        result = detect_gaps(midline, MagicMock(), proj_models, frame_dets, {})
+        assert ("cam3", "no-detection") in result
+
+    @patch("aquapose.training.pseudo_labels.ghost_point_lookup")
+    def test_no_tracklet_when_detection_but_no_tracklet(
+        self, mock_gpl: MagicMock
+    ) -> None:
+        """Detection exists but no tracklet -> 'no-tracklet'."""
+        midline = _make_midline(
+            n_cameras=3,
+            per_camera_residuals={"cam0": 1.0, "cam1": 2.0, "cam2": 1.5},
+        )
+        midline.frame_index = 5
+        mock_gpl.return_value = [
+            [("cam0", 0, 0), ("cam1", 0, 0), ("cam2", 0, 0), ("cam3", 0, 0)]
+        ]
+        # Projection returns (500, 300)
+        mock_proj = _make_mock_projection(pixel_x=500.0, pixel_y=300.0)
+        proj_models = {"cam3": mock_proj}
+        # Detection bbox (400, 200, 200, 200) contains (500, 300)
+        frame_dets = {"cam3": [_make_mock_detection(400, 200, 200, 200)]}
+        # No tracklets for cam3
+        frame_tracks = {}
+        result = detect_gaps(
+            midline, MagicMock(), proj_models, frame_dets, frame_tracks
+        )
+        assert ("cam3", "no-tracklet") in result
+
+    @patch("aquapose.training.pseudo_labels.ghost_point_lookup")
+    def test_failed_midline_when_detection_and_tracklet_exist(
+        self, mock_gpl: MagicMock
+    ) -> None:
+        """Detection + tracklet exist but camera didn't contribute -> 'failed-midline'."""
+        midline = _make_midline(
+            n_cameras=3,
+            per_camera_residuals={"cam0": 1.0, "cam1": 2.0, "cam2": 1.5},
+        )
+        midline.frame_index = 5
+        mock_gpl.return_value = [
+            [("cam0", 0, 0), ("cam1", 0, 0), ("cam2", 0, 0), ("cam3", 0, 0)]
+        ]
+        mock_proj = _make_mock_projection(pixel_x=500.0, pixel_y=300.0)
+        proj_models = {"cam3": mock_proj}
+        frame_dets = {"cam3": [_make_mock_detection(400, 200, 200, 200)]}
+        # Tracklet active and detected at frame 5
+        tracklet = _make_mock_tracklet(
+            "cam3", (3, 4, 5, 6), ("detected", "detected", "detected", "detected")
+        )
+        frame_tracks = {"cam3": [tracklet]}
+        result = detect_gaps(
+            midline, MagicMock(), proj_models, frame_dets, frame_tracks
+        )
+        assert ("cam3", "failed-midline") in result
+
+    @patch("aquapose.training.pseudo_labels.ghost_point_lookup")
+    def test_no_detection_when_projection_invalid(self, mock_gpl: MagicMock) -> None:
+        """Invalid projection -> 'no-detection'."""
+        midline = _make_midline(
+            n_cameras=3,
+            per_camera_residuals={"cam0": 1.0, "cam1": 2.0, "cam2": 1.5},
+        )
+        mock_gpl.return_value = [
+            [("cam0", 0, 0), ("cam1", 0, 0), ("cam2", 0, 0), ("cam3", 0, 0)]
+        ]
+        # Make projection return invalid
+        mock_proj = MagicMock()
+        mock_proj.project.return_value = (
+            torch.zeros(1, 2),
+            torch.tensor([False]),
+        )
+        proj_models = {"cam3": mock_proj}
+        result = detect_gaps(midline, MagicMock(), proj_models, {}, {})
+        assert ("cam3", "no-detection") in result
+
+
+class TestGenerateGapFishLabels:
+    """Tests for generate_gap_fish_labels."""
+
+    def test_returns_valid_dict_for_good_projection(self) -> None:
+        """Valid projection returns dict with obb_line, pose_line, confidence etc."""
+        midline = _make_midline(
+            per_camera_residuals={"cam0": 2.0, "cam1": 3.0},
+        )
+        proj = _make_mock_projection()
+        result = generate_gap_fish_labels(
+            midline,
+            proj,
+            img_w=1920,
+            img_h=1080,
+            keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0],
+            lateral_pad=40.0,
+        )
+        assert result is not None
+        expected_keys = {
+            "obb_line",
+            "pose_line",
+            "confidence",
+            "raw_metrics",
+            "keypoints_2d",
+            "visibility",
+        }
+        assert set(result.keys()) == expected_keys
+        assert 0.0 <= result["confidence"] <= 1.0
+
+    def test_returns_none_when_fewer_than_2_visible(self) -> None:
+        """Fewer than 2 visible keypoints -> None."""
+        midline = _make_midline()
+        # Make projection return only 1 valid point
+        mock_proj = MagicMock()
+
+        def mock_project(pts: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+            n = pts.shape[0]
+            pixels = torch.zeros(n, 2)
+            valid = torch.zeros(n, dtype=torch.bool)
+            valid[0] = True  # Only 1 valid
+            return pixels, valid
+
+        mock_proj.project.side_effect = mock_project
+        result = generate_gap_fish_labels(
+            midline,
+            mock_proj,
+            img_w=1920,
+            img_h=1080,
+            keypoint_t_values=[0.0, 0.5, 1.0],
+            lateral_pad=40.0,
+        )
+        assert result is None
+
+    def test_returns_none_when_bounds_check_fails(self) -> None:
+        """Bounds check failure -> None."""
+        midline = _make_midline()
+        # Make projection return pixels far outside image bounds
+        mock_proj = MagicMock()
+
+        def mock_project(pts: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+            n = pts.shape[0]
+            pixels = torch.full((n, 2), -5000.0)  # Way out of bounds
+            valid = torch.ones(n, dtype=torch.bool)
+            return pixels, valid
+
+        mock_proj.project.side_effect = mock_project
+        result = generate_gap_fish_labels(
+            midline,
+            mock_proj,
+            img_w=1920,
+            img_h=1080,
+            keypoint_t_values=[0.0, 0.5, 1.0],
+            lateral_pad=40.0,
+        )
+        assert result is None
+
+
+class TestPassesBoundsCheck:
+    """Tests for _passes_bounds_check."""
+
+    def test_returns_false_when_fewer_than_2_visible(self) -> None:
+        """Fewer than 2 visible keypoints -> False."""
+        kpts = np.array([[100, 200], [300, 400], [500, 600]], dtype=np.float64)
+        vis = np.array([True, False, False])
+        assert _passes_bounds_check(kpts, vis, 1920, 1080) is False
+
+    def test_returns_false_when_most_out_of_bounds(self) -> None:
+        """Less than 50% visible keypoints in bounds -> False."""
+        kpts = np.array(
+            [
+                [-100, -200],  # out
+                [-300, -400],  # out
+                [500, 600],  # in
+            ],
+            dtype=np.float64,
+        )
+        vis = np.array([True, True, True])
+        assert _passes_bounds_check(kpts, vis, 1920, 1080) is False
+
+    def test_returns_true_when_most_in_bounds(self) -> None:
+        """At least 50% visible keypoints in bounds -> True."""
+        kpts = np.array(
+            [
+                [100, 200],  # in
+                [300, 400],  # in
+                [-500, -600],  # out
+            ],
+            dtype=np.float64,
+        )
+        vis = np.array([True, True, True])
+        assert _passes_bounds_check(kpts, vis, 1920, 1080) is True
+
+    def test_boundary_exact_50_percent(self) -> None:
+        """Exactly 50% in bounds -> True (>=50%)."""
+        kpts = np.array(
+            [
+                [100, 200],  # in
+                [-100, -200],  # out
+            ],
+            dtype=np.float64,
+        )
+        vis = np.array([True, True])
+        assert _passes_bounds_check(kpts, vis, 1920, 1080) is True

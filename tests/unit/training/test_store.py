@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
+
 from aquapose.training.store import SampleStore
 
 
@@ -496,3 +498,266 @@ class TestDeleteFilesTolerance:
         """Delete files for nonexistent sample, no error raised."""
         # Should not raise
         store._delete_files("nonexistent-uuid")
+
+
+def _make_image(tmp_path: Path, name: str, salt: int) -> Path:
+    """Create a minimal JPEG with unique content via salt byte."""
+    img = tmp_path / f"{name}.jpg"
+    # Minimal JPEG header with a unique byte to vary content hash
+    img.write_bytes(
+        b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+        + bytes([salt & 0xFF])
+        + b"\xff\xd9"
+    )
+    return img
+
+
+def _make_label(tmp_path: Path, name: str) -> Path:
+    """Create a minimal YOLO label file."""
+    lbl = tmp_path / f"{name}.txt"
+    lbl.write_text("0 0.5 0.5 0.1 0.1\n")
+    return lbl
+
+
+class TestSaveDataset:
+    def test_save_dataset_stores_manifest(
+        self,
+        store: SampleStore,
+        sample_image: Path,
+        sample_label: Path,
+    ) -> None:
+        """Save dataset with name, query recipe, and sample IDs. Retrieve by name."""
+        sid, _ = store.import_sample(sample_image, sample_label, "manual")
+        recipe = {"source": "manual"}
+        store.save_dataset("ds1", recipe, [sid], split_seed=42)
+
+        ds = store.get_dataset("ds1")
+        assert ds is not None
+        assert ds["name"] == "ds1"
+        assert ds["query_recipe"] == recipe
+        assert ds["sample_ids"] == [sid]
+        assert ds["split_seed"] == 42
+
+    def test_save_dataset_overwrites_existing(
+        self,
+        store: SampleStore,
+        sample_image: Path,
+        sample_image2: Path,
+        sample_label: Path,
+        sample_label2: Path,
+    ) -> None:
+        """Save dataset with same name twice. Second call replaces first."""
+        sid1, _ = store.import_sample(sample_image, sample_label, "manual")
+        sid2, _ = store.import_sample(sample_image2, sample_label2, "manual")
+
+        store.save_dataset("ds1", {"v": 1}, [sid1], split_seed=1)
+        store.save_dataset("ds1", {"v": 2}, [sid2], split_seed=2)
+
+        ds = store.get_dataset("ds1")
+        assert ds["sample_ids"] == [sid2]
+        assert ds["query_recipe"] == {"v": 2}
+
+    def test_get_dataset_returns_none_for_missing(
+        self,
+        store: SampleStore,
+    ) -> None:
+        """Query nonexistent dataset returns None."""
+        store._connect()
+        assert store.get_dataset("nonexistent") is None
+
+    def test_list_datasets_returns_all(
+        self,
+        store: SampleStore,
+        sample_image: Path,
+        sample_label: Path,
+    ) -> None:
+        """Save two datasets, list returns both."""
+        sid, _ = store.import_sample(sample_image, sample_label, "manual")
+        store.save_dataset("ds_a", {}, [sid], split_seed=1)
+        store.save_dataset("ds_b", {}, [sid], split_seed=2)
+
+        datasets = store.list_datasets()
+        names = {d["name"] for d in datasets}
+        assert names == {"ds_a", "ds_b"}
+
+
+class TestAssemble:
+    def test_assemble_creates_symlinks(
+        self,
+        store: SampleStore,
+        tmp_path: Path,
+    ) -> None:
+        """Call assemble method, verify symlinks in YOLO directory structure."""
+        # Import 5 samples so we have enough for a split
+        sids = []
+        for i in range(5):
+            img = _make_image(tmp_path, f"img{i}", salt=i)
+            lbl = _make_label(tmp_path, f"lbl{i}")
+            sid, _ = store.import_sample(img, lbl, "manual")
+            sids.append(sid)
+
+        ds_path = store.assemble("test_ds", {}, val_fraction=0.2, seed=42)
+
+        # Directory structure exists
+        assert (ds_path / "images" / "train").is_dir()
+        assert (ds_path / "images" / "val").is_dir()
+        assert (ds_path / "labels" / "train").is_dir()
+        assert (ds_path / "labels" / "val").is_dir()
+        assert (ds_path / "dataset.yaml").exists()
+
+        # Symlinks created
+        train_imgs = list((ds_path / "images" / "train").iterdir())
+        val_imgs = list((ds_path / "images" / "val").iterdir())
+        assert len(train_imgs) + len(val_imgs) == 5
+        assert len(val_imgs) == 1  # 20% of 5 = 1
+
+        # All are symlinks
+        for f in train_imgs + val_imgs:
+            assert f.is_symlink()
+
+    def test_assemble_val_split_excludes_pseudo_by_default(
+        self,
+        store: SampleStore,
+        tmp_path: Path,
+    ) -> None:
+        """Import manual + pseudo, assemble default, val set has only manual."""
+        # 5 manual, 5 pseudo
+        for i in range(5):
+            img = _make_image(tmp_path, f"manual_{i}", salt=i)
+            lbl = _make_label(tmp_path, f"manual_lbl_{i}")
+            store.import_sample(img, lbl, "manual")
+        for i in range(5):
+            img = _make_image(tmp_path, f"pseudo_{i}", salt=100 + i)
+            lbl = _make_label(tmp_path, f"pseudo_lbl_{i}")
+            store.import_sample(img, lbl, "pseudo")
+
+        ds_path = store.assemble("split_test", {}, val_fraction=0.2, seed=42)
+
+        val_imgs = list((ds_path / "images" / "val").iterdir())
+        # val should be 20% of 5 manual = 1 sample (pseudo excluded from val)
+        assert len(val_imgs) == 1
+
+        # Verify val sample is from manual source (check that symlink target is in store)
+        train_imgs = list((ds_path / "images" / "train").iterdir())
+        assert len(train_imgs) == 9  # 4 manual-train + 5 pseudo
+
+    def test_assemble_val_split_include_pseudo_override(
+        self,
+        store: SampleStore,
+        tmp_path: Path,
+    ) -> None:
+        """Assemble with pseudo_in_val=True, verify pseudo samples can appear in val."""
+        for i in range(5):
+            img = _make_image(tmp_path, f"manual_{i}", salt=i)
+            lbl = _make_label(tmp_path, f"manual_lbl_{i}")
+            store.import_sample(img, lbl, "manual")
+        for i in range(5):
+            img = _make_image(tmp_path, f"pseudo_{i}", salt=100 + i)
+            lbl = _make_label(tmp_path, f"pseudo_lbl_{i}")
+            store.import_sample(img, lbl, "pseudo")
+
+        ds_path = store.assemble(
+            "override_test", {}, val_fraction=0.2, seed=42, pseudo_in_val=True
+        )
+
+        val_imgs = list((ds_path / "images" / "val").iterdir())
+        # 20% of 10 = 2
+        assert len(val_imgs) == 2
+
+    def test_assemble_creates_deterministic_split(
+        self,
+        store: SampleStore,
+        tmp_path: Path,
+    ) -> None:
+        """Assemble twice with same seed, verify identical train/val split."""
+        for i in range(10):
+            img = _make_image(tmp_path, f"det_{i}", salt=i)
+            lbl = _make_label(tmp_path, f"det_lbl_{i}")
+            store.import_sample(img, lbl, "manual")
+
+        ds1 = store.assemble("det1", {}, val_fraction=0.2, seed=99)
+        val1 = sorted(f.name for f in (ds1 / "images" / "val").iterdir())
+
+        ds2 = store.assemble("det2", {}, val_fraction=0.2, seed=99)
+        val2 = sorted(f.name for f in (ds2 / "images" / "val").iterdir())
+
+        assert val1 == val2
+
+    def test_assemble_with_min_confidence(
+        self,
+        store: SampleStore,
+        tmp_path: Path,
+    ) -> None:
+        """Assemble with min_confidence=0.5, verify low-confidence samples excluded."""
+        # 2 high confidence, 2 low confidence
+        for i in range(2):
+            img = _make_image(tmp_path, f"hi_{i}", salt=i)
+            lbl = _make_label(tmp_path, f"hi_lbl_{i}")
+            store.import_sample(img, lbl, "pseudo", metadata={"confidence": 0.9})
+        for i in range(2):
+            img = _make_image(tmp_path, f"lo_{i}", salt=50 + i)
+            lbl = _make_label(tmp_path, f"lo_lbl_{i}")
+            store.import_sample(img, lbl, "pseudo", metadata={"confidence": 0.2})
+
+        ds_path = store.assemble(
+            "conf_test", {"min_confidence": 0.5}, val_fraction=0.0, seed=42
+        )
+
+        train_imgs = list((ds_path / "images" / "train").iterdir())
+        assert len(train_imgs) == 2  # only high-confidence
+
+    def test_symlinks_are_relative(
+        self,
+        store: SampleStore,
+        tmp_path: Path,
+    ) -> None:
+        """Verify created symlinks use relative targets, not absolute."""
+        img = _make_image(tmp_path, "rel_img", salt=42)
+        lbl = _make_label(tmp_path, "rel_lbl")
+        store.import_sample(img, lbl, "manual")
+
+        ds_path = store.assemble("rel_test", {}, val_fraction=0.0, seed=42)
+
+        train_imgs = list((ds_path / "images" / "train").iterdir())
+        assert len(train_imgs) == 1
+        target = os.readlink(str(train_imgs[0]))
+        assert not os.path.isabs(target), (
+            f"Symlink target should be relative, got: {target}"
+        )
+
+
+class TestSummary:
+    def test_summary_returns_counts(
+        self,
+        store: SampleStore,
+        store_root: Path,
+        tmp_path: Path,
+        sample_image: Path,
+        sample_image2: Path,
+        sample_label: Path,
+        sample_label2: Path,
+    ) -> None:
+        """Import mixed samples, call summary, verify source breakdown and totals."""
+        store.import_sample(sample_image, sample_label, "manual")
+        store.import_sample(sample_image2, sample_label2, "pseudo")
+
+        # Add an augmented child
+        aug_img = store_root / "aug.jpg"
+        aug_lbl = store_root / "aug.txt"
+        aug_img.write_bytes(b"\xff\xd8\xff\xd9")
+        aug_lbl.write_text("0 0.5 0.5 0.1 0.1\n")
+        sid = store.query(source="manual")[0]["id"]
+        store.add_augmented(sid, aug_img, aug_lbl)
+
+        # Exclude one sample
+        pseudo_sid = store.query(source="pseudo")[0]["id"]
+        store.exclude([pseudo_sid])
+
+        summary = store.summary()
+        assert summary["total"] == 3  # 1 manual + 1 pseudo + 1 augmented
+        assert summary["by_source"]["manual"] == 1
+        assert summary["by_source"]["pseudo"] == 1
+        assert summary["augmented_count"] == 1
+        assert summary["excluded_count"] == 1
+        assert summary["dataset_count"] == 0
+        assert summary["model_count"] == 0

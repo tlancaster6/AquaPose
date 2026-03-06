@@ -28,17 +28,14 @@ from .compare import (
     write_comparison_csv,
 )
 from .data_cli import data_group
-from .dataset_assembly import assemble_dataset
 from .datasets import CropDataset, apply_augmentation, stratified_split
 from .elastic_deform import (
     deform_keypoints_c_curve,
     deform_keypoints_s_curve,
     generate_deformed_labels,
-    generate_preview_grid,
     generate_variants,
     parse_pose_label,
     tps_warp_image,
-    write_yolo_dataset,
 )
 from .frame_selection import (
     DiversitySampleResult,
@@ -86,7 +83,6 @@ __all__ = [
     "SampleStore",
     "affine_warp_crop",
     "apply_augmentation",
-    "assemble_dataset",
     "coco_to_yolo_pose",
     "compute_arc_length",
     "compute_confidence_score",
@@ -110,7 +106,6 @@ __all__ = [
     "generate_gap_fish_labels",
     "generate_obb_dataset",
     "generate_pose_dataset",
-    "generate_preview_grid",
     "generate_variants",
     "load_coco",
     "load_run_summaries",
@@ -136,6 +131,5 @@ __all__ = [
     "write_coco_keypoints",
     "write_comparison_csv",
     "write_summary",
-    "write_yolo_dataset",
     "yolo_pose_to_coco",
 ]

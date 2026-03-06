@@ -10,12 +10,12 @@ from click.testing import CliRunner
 from aquapose.cli import cli
 
 
-def test_train_help_lists_yolo_obb() -> None:
-    """aquapose train --help should list the yolo-obb subcommand."""
+def test_train_help_lists_obb() -> None:
+    """aquapose train --help should list the obb subcommand."""
     runner = CliRunner()
     result = runner.invoke(cli, ["train", "--help"])
     assert result.exit_code == 0, result.output
-    assert "yolo-obb" in result.output
+    assert "obb" in result.output
 
 
 def test_train_help_does_not_list_removed_commands() -> None:
@@ -26,10 +26,10 @@ def test_train_help_does_not_list_removed_commands() -> None:
     assert "unet" not in result.output
 
 
-def test_train_yolo_obb_help_shows_expected_flags() -> None:
-    """aquapose train yolo-obb --help should show all required flags."""
+def test_train_obb_help_shows_expected_flags() -> None:
+    """aquapose train obb --help should show all required flags."""
     runner = CliRunner()
-    result = runner.invoke(cli, ["train", "yolo-obb", "--help"])
+    result = runner.invoke(cli, ["train", "obb", "--help"])
     assert result.exit_code == 0, result.output
     expected_flags = [
         "--data-dir",

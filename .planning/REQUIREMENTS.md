@@ -69,32 +69,32 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| EVAL-01 | — | Pending |
-| EVAL-02 | — | Pending |
-| EVAL-03 | — | Pending |
-| EVAL-04 | — | Pending |
-| EVAL-05 | — | Pending |
-| EVAL-06 | — | Pending |
-| BOOT-01 | — | Pending |
-| BOOT-02 | — | Pending |
-| BOOT-03 | — | Pending |
-| BOOT-04 | — | Pending |
-| BOOT-05 | — | Pending |
-| ITER-01 | — | Pending |
-| ITER-02 | — | Pending |
-| ITER-03 | — | Pending |
-| ITER-04 | — | Pending |
-| ITER-05 | — | Pending |
-| ITER-06 | — | Pending |
-| FINAL-01 | — | Pending |
-| FINAL-02 | — | Pending |
-| FINAL-03 | — | Pending |
+| EVAL-01 | Phase 70 | Pending |
+| EVAL-02 | Phase 70 | Pending |
+| EVAL-03 | Phase 70 | Pending |
+| EVAL-04 | Phase 70 | Pending |
+| EVAL-05 | Phase 70 | Pending |
+| EVAL-06 | Phase 70 | Pending |
+| BOOT-01 | Phase 71 | Pending |
+| BOOT-02 | Phase 71 | Pending |
+| BOOT-03 | Phase 71 | Pending |
+| BOOT-04 | Phase 71 | Pending |
+| BOOT-05 | Phase 71 | Pending |
+| ITER-01 | Phase 72 | Pending |
+| ITER-02 | Phase 73 | Pending |
+| ITER-03 | Phase 73 | Pending |
+| ITER-04 | Phase 74 | Pending |
+| ITER-05 | Phase 75 | Pending |
+| ITER-06 | Phase 73 | Pending |
+| FINAL-01 | Phase 76 | Pending |
+| FINAL-02 | Phase 76 | Pending |
+| FINAL-03 | Phase 76 | Pending |
 
 **Coverage:**
 - v3.6 requirements: 20 total
-- Mapped to phases: 0
-- Unmapped: 20
+- Mapped to phases: 20
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-06*
-*Last updated: 2026-03-06 after initial definition*
+*Last updated: 2026-03-06 after roadmap creation*

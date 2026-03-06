@@ -12,6 +12,7 @@
 - ✅ **v3.3 Chunk Mode** — Phases 51-55 (shipped 2026-03-05)
 - ✅ **v3.4 Performance Optimization** — Phases 56-60 (shipped 2026-03-05)
 - ✅ **v3.5 Pseudo-Labeling** — Phases 61-69 (shipped 2026-03-06)
+- 🚧 **v3.6 Model Iteration & QA** — Phases 70-76 (in progress)
 
 ## Phases
 
@@ -176,7 +177,99 @@ Full details: `.planning/milestones/v3.5-ROADMAP.md`
 
 </details>
 
+### v3.6 Model Iteration & QA (In Progress)
+
+**Milestone Goal:** Run the pseudo-label retraining loop end-to-end, producing demonstrably better OBB detection and pose estimation models with full provenance tracking.
+
+- [ ] **Phase 70: Metrics & Comparison Infrastructure** - Extend evaluation with percentiles, per-keypoint breakdown, curvature-stratified quality, and track fragmentation
+- [ ] **Phase 71: Data Store Bootstrap** - Import manual annotations, train and register baseline models through store workflow
+- [ ] **Phase 72: Baseline Pipeline Run & Metrics** - Establish quantitative "before" snapshot on short iteration clip
+- [ ] **Phase 73: Round 1 Pseudo-Labels & Retraining** - Generate pseudo-labels, visually audit, train round 1 models with A/B curation comparison
+- [ ] **Phase 74: Round 1 Evaluation & Decision** - Compare round 1 pipeline metrics to baseline; decide whether to proceed to round 2
+- [ ] **Phase 75: Round 2 (Conditional)** - Second iteration if round 1 shows clear improvement with headroom remaining
+- [ ] **Phase 76: Final Validation** - Full 5-minute pipeline run with best models, showcase overlay videos, summary document
+
+## Phase Details
+
+### Phase 70: Metrics & Comparison Infrastructure
+**Goal**: All evaluation metrics extended and ready before the iteration loop starts, so every round is measured consistently
+**Depends on**: Nothing (independent of data store work)
+**Requirements**: EVAL-01, EVAL-02, EVAL-03, EVAL-04, EVAL-05, EVAL-06
+**Success Criteria** (what must be TRUE):
+  1. `aquapose eval` output includes reprojection error percentiles (p50, p90, p95), midline confidence percentiles (p10, p50, p90), and camera count percentiles (p50, p90)
+  2. `aquapose eval` output includes per-keypoint reprojection error breakdown (mean + p90 per body point index) recomputed from cached splines
+  3. `aquapose eval` output includes curvature-stratified reconstruction quality (reprojection error per curvature quantile bin with sample counts)
+  4. `aquapose eval` output includes 3D track fragmentation analysis (gap count, gap duration stats, continuity ratio)
+  5. All new metrics appear in both human-readable text and JSON output formats
+**Plans**: TBD
+
+### Phase 71: Data Store Bootstrap
+**Goal**: All existing manual annotations imported into the data store with baseline OBB and pose models trained, registered, and sanity-checked
+**Depends on**: Nothing (parallel with Phase 70)
+**Requirements**: BOOT-01, BOOT-02, BOOT-03, BOOT-04, BOOT-05
+**Success Criteria** (what must be TRUE):
+  1. `aquapose data convert` converts COCO-JSON annotations to both YOLO-OBB and YOLO-pose formats
+  2. Manual annotations are in the data store as `source=manual` with correct provenance, and `data status` shows the expected sample counts
+  3. Baseline OBB and pose models are trained from store-assembled datasets and registered with model lineage
+  4. Train/val split respects temporal holdout convention (no near-duplicate leakage between splits)
+  5. `aquapose data exclude --reason TAG` applies reason-tagged exclusions and `data status` shows breakdown by reason
+**Plans**: TBD
+
+### Phase 72: Baseline Pipeline Run & Metrics
+**Goal**: Quantitative "before" snapshot established on short iteration clip using baseline models from the store
+**Depends on**: Phase 70, Phase 71
+**Requirements**: ITER-01
+**Success Criteria** (what must be TRUE):
+  1. Pipeline completes a diagnostic-mode run on a short clip (~1 min) using store-registered baseline models
+  2. `aquapose eval` produces a full metric report including all Phase 70 extended metrics
+  3. Baseline metric numbers (singleton rate, reprojection error percentiles, track continuity, per-keypoint breakdown) are recorded as the benchmark for improvement
+**Plans**: TBD
+
+### Phase 73: Round 1 Pseudo-Labels & Retraining
+**Goal**: Pseudo-labels generated from baseline run, visually audited, imported into store, and round 1 models trained with A/B curation comparison quantified
+**Depends on**: Phase 72
+**Requirements**: ITER-02, ITER-03, ITER-06
+**Success Criteria** (what must be TRUE):
+  1. Pseudo-labels (OBB + pose) generated from baseline run caches are visually audited and imported into store as `source=pseudo, round=1`
+  2. Round 1 OBB and pose models are trained on manual + pseudo-label datasets (elastic augmentation on manual only) and registered with model lineage
+  3. A/B comparison completed: model trained with human-curated exclusions vs model trained with full uncurated pseudo-labels, with the curation value quantified via training metrics
+  4. `aquapose train compare` shows training metric comparison between baseline and round 1 models
+**Plans**: TBD
+
+### Phase 74: Round 1 Evaluation & Decision
+**Goal**: Round 1 models evaluated at pipeline level against baseline; informed decision on whether to proceed to round 2
+**Depends on**: Phase 73
+**Requirements**: ITER-04
+**Success Criteria** (what must be TRUE):
+  1. Pipeline re-run on same short clip with round 1 models produces comparable eval report
+  2. Round 0 vs round 1 metric comparison is documented (singleton rate, reprojection error, track continuity, per-keypoint breakdown)
+  3. Decision checkpoint completed: proceed to round 2, or skip to final validation, with rationale recorded
+**Plans**: TBD
+
+### Phase 75: Round 2 (Conditional)
+**Goal**: Second iteration of the pseudo-label loop executed if round 1 showed clear improvement with remaining headroom
+**Depends on**: Phase 74 (conditional on decision to proceed)
+**Requirements**: ITER-05
+**Success Criteria** (what must be TRUE):
+  1. Round 2 pseudo-labels generated from round 1 pipeline run and imported as `source=pseudo, round=2`
+  2. Round 2 models trained (with evaluation of whether elastic augmentation is still needed given pseudo-label curvature diversity)
+  3. Round 0 vs round 1 vs round 2 metric comparison documented with clear trend assessment
+**Plans**: TBD
+
+### Phase 76: Final Validation
+**Goal**: Best iteration models confirmed at full 5-minute scale with showcase outputs produced
+**Depends on**: Phase 74 or Phase 75 (whichever is the last completed iteration phase)
+**Requirements**: FINAL-01, FINAL-02, FINAL-03
+**Success Criteria** (what must be TRUE):
+  1. Full 5-minute pipeline run completes with best models and produces a complete `aquapose eval` report
+  2. Overlay videos generated for all 12 cameras from the final run
+  3. Summary document produced with metrics table (round 0 vs round 1 vs round 2 vs final), key observations, and known limitations
+**Plans**: TBD
+
 ## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 70 and 71 (parallel) -> 72 -> 73 -> 74 -> 75 (conditional) -> 76
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -190,3 +283,10 @@ Full details: `.planning/milestones/v3.5-ROADMAP.md`
 | 51-55 | v3.3 | 11/11 | Complete | 2026-03-05 |
 | 56-60 | v3.4 | 8/8 | Complete | 2026-03-05 |
 | 61-69 | v3.5 | 22/22 | Complete | 2026-03-06 |
+| 70. Metrics & Comparison Infrastructure | v3.6 | 0/TBD | Not started | - |
+| 71. Data Store Bootstrap | v3.6 | 0/TBD | Not started | - |
+| 72. Baseline Pipeline Run & Metrics | v3.6 | 0/TBD | Not started | - |
+| 73. Round 1 Pseudo-Labels & Retraining | v3.6 | 0/TBD | Not started | - |
+| 74. Round 1 Evaluation & Decision | v3.6 | 0/TBD | Not started | - |
+| 75. Round 2 (Conditional) | v3.6 | 0/TBD | Not started | - |
+| 76. Final Validation | v3.6 | 0/TBD | Not started | - |

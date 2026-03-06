@@ -5,7 +5,7 @@ milestone_name: Model Iteration & QA
 status: active
 last_updated: "2026-03-06"
 progress:
-  total_phases: 0
+  total_phases: 7
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -18,14 +18,29 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-06)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Defining requirements for v3.6
+**Current focus:** Phase 70 - Metrics & Comparison Infrastructure
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 70 of 76 (Metrics & Comparison Infrastructure)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-03-06 — Milestone v3.6 started
+Status: Ready to plan
+Last activity: 2026-03-06 — Roadmap created for v3.6
+
+Progress: [░░░░░░░░░░] 0%
+
+## Performance Metrics
+
+**Velocity:**
+- Total plans completed: 0
+- Average duration: —
+- Total execution time: 0 hours
+
+**By Phase:**
+
+| Phase | Plans | Total | Avg/Plan |
+|-------|-------|-------|----------|
+| - | - | - | - |
 
 ## Accumulated Context
 
@@ -40,4 +55,11 @@ v3.5 milestone decisions archived to milestones/v3.5-ROADMAP.md.
 
 ### Blockers/Concerns
 
-None active.
+- Phase 75 is conditional on Phase 74 decision checkpoint (may be skipped)
+- Algae domain shift between manual annotations (clean tank) and current conditions may cause false positives in pseudo-labels
+
+## Session Continuity
+
+Last session: 2026-03-06
+Stopped at: Roadmap created for v3.6
+Resume file: None

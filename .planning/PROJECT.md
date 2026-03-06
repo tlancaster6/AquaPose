@@ -96,22 +96,19 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - ✓ Batched YOLO inference for detection and midline stages with OOM retry (BATCH-01 through BATCH-04) — v3.4
 - ✓ End-to-end performance validation: 8.2x total speedup confirmed (VAL-01 through VAL-03) — v3.4
 
+- Z-denoising: centroid z-flattening + temporal Gaussian smoothing for clean 3D reconstructions (ZDenoisingConfig) -- v3.5
+- Prep infrastructure: `aquapose prep calibrate-keypoints` and `aquapose prep generate-luts` CLIs with fail-fast enforcement -- v3.5
+- Pseudo-label generation: Source A (consensus reprojection) and Source B (gap-fill) with confidence scoring in YOLO format -- v3.5
+- Gap detection: inverse LUT visibility cross-referencing with failure reason tagging (no-detection, no-tracklet, failed-midline) -- v3.5
+- Frame selection and dataset assembly: temporal subsampling, curvature-diversity sampling, pooled assembly with confidence thresholds -- v3.5
+- Training run management: timestamped run dirs, `aquapose train compare` with cross-run metrics and provenance tracking -- v3.5
+- Elastic midline deformation augmentation: TPS-based C-curve/S-curve generation reducing curvature bias (OKS slope -0.71 to -0.30) -- v3.5
+- SQLite sample store: content-hash dedup, provenance tracking, symlink-based dataset assembly, model lineage with config auto-update -- v3.5
+- Workflow-oriented CLI: project-aware path resolution (`--project`), run shorthand (latest, timestamp, negative index), deprecated command removal -- v3.5
+
 ### Active
 
-## Current Milestone: v3.5 Pseudo-Labeling
-
-**Goal:** Use pipeline 3D reconstructions to generate training labels at scale, enabling iterative model retraining to improve detection and pose estimation quality.
-
-**Target features:**
-- `aquapose prep` CLI group (calibrate-keypoints wiring, LUT generation extraction)
-- Pseudo-label generation from diagnostic caches (OBB + pose formats)
-- Source A (consensus reprojections) and Source B (gap-fill) with confidence scoring
-- Gap detection via inverse LUT visibility cross-referenced with detections, tagged by failure reason
-- Frame selection with temporal subsampling + pose-diversity clustering
-- Dataset assembly (manual + Source A + Source B with threshold filtering)
-- Dual validation: fixed manual val set (round-level truth) + pseudo-label val split (source/reason breakdown)
-- Training run management with cross-run comparison (Ultralytics + aquapose eval metrics)
-- Iterative retraining loop infrastructure
+(No active milestone -- use `/gsd:new-milestone` to start next)
 
 ### Out of Scope
 
@@ -128,21 +125,23 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ## Context
 
-### Current State (v3.4 shipped)
+### Current State (v3.5 shipped)
 
-- **Codebase:** 22,754 LOC source across `src/aquapose/` (calibration, core/, engine/, io, evaluation)
-- **Architecture:** Event-driven 3-layer — Core Computation (5 stages) → PosePipeline (orchestrator) → Observers (3: console, timing, diagnostic). ChunkOrchestrator sits above PosePipeline managing chunk loop, identity stitching, and HDF5 output.
-- **Pipeline order:** Detection (YOLO-OBB) → 2D Tracking (OC-SORT) → Association (Leiden) → Midline (YOLO-seg or YOLO-pose) → Reconstruction (DLT triangulation + B-spline)
+- **Codebase:** 28,033 LOC source across `src/aquapose/` (calibration, core/, engine/, io, evaluation, training, visualization)
+- **Architecture:** Event-driven 3-layer — Core Computation (5 stages) -> PosePipeline (orchestrator) -> Observers (3: console, timing, diagnostic). ChunkOrchestrator sits above PosePipeline managing chunk loop, identity stitching, and HDF5 output.
+- **Pipeline order:** Detection (YOLO-OBB) -> 2D Tracking (OC-SORT) -> Association (Leiden) -> Midline (YOLO-seg or YOLO-pose) -> Reconstruction (DLT triangulation + B-spline + z-denoising)
 - **Chunk processing:** ChunkOrchestrator processes video in fixed-size temporal chunks (default 200 frames). ChunkHandoff carries tracker state + identity map across boundaries. Per-chunk HDF5 flush with global frame offsets.
-- **Performance:** 8.2x total pipeline speedup (914s → 112s per chunk). Batched YOLO inference (detection 11.5x, midline 8.1x), background-thread frame prefetch, vectorized DLT reconstruction (7.0x), vectorized association scoring (3.8x). OOM retry with automatic batch halving.
+- **Performance:** 8.2x total pipeline speedup (914s -> 112s per chunk). Batched YOLO inference (detection 11.5x, midline 8.1x), background-thread frame prefetch, vectorized DLT reconstruction (7.0x), vectorized association scoring (3.8x). OOM retry with automatic batch halving.
 - **Tech stack:** Python 3.11, PyTorch, PyTorch3D, scikit-image, OpenCV, h5py, ultralytics (YOLO), Click (CLI), Plotly (3D viz), boxmot (OC-SORT), leidenalg/igraph, hatch build system
 - **Midline backends:** SegmentationBackend (YOLO-seg + skeletonization) and PoseEstimationBackend (YOLO-pose + spline), selectable via `midline.backend` config field
-- **Reconstruction:** Single DLT backend — vectorized confidence-weighted triangulation with outlier rejection (threshold=10.0), B-spline fitting (7 control points)
+- **Reconstruction:** Single DLT backend -- vectorized confidence-weighted triangulation with outlier rejection (threshold=10.0), B-spline fitting (7 control points), z-denoising via centroid z-flattening + temporal Gaussian smoothing
 - **Evaluation:** Per-chunk pickle caching (chunk_NNN/cache.pkl + manifest.json), five typed stage evaluators, `aquapose eval` (quality reports), `aquapose tune` (parameter sweeps with two-tier validation), `aquapose viz` (overlay, animation, trails from cached data)
-- **Training infrastructure:** `aquapose train {yolo-obb, seg, pose}` CLI subcommands with standard YOLO txt+yaml data format
+- **Pseudo-labeling:** Source A (consensus reprojection) + Source B (gap-fill) pseudo-labels with confidence scoring, elastic augmentation for curvature bias reduction
+- **Training infrastructure:** `aquapose train {obb, seg, pose}` CLI subcommands; SQLite sample store with content-hash dedup, symlink-based assembly, model lineage tracking
+- **CLI:** Workflow-oriented command groups (`run`, `eval`, `viz`, `tune`, `data`, `prep`, `pseudo-label`, `train`), project-aware path resolution (`--project`), run shorthand (latest, timestamp, negative index)
 - **Core organization:** Shared types in `core/types/`, implementations in `core/<stage>/`, legacy top-level dirs eliminated
 - **Known limitation:** Z-reconstruction uncertainty 132x larger than XY due to top-down camera geometry; ~22% singleton rate in association (down from 86% after LUT coordinate space fix)
-- **Import boundary:** Automated AST-based checker enforced via pre-commit hook — core/ never imports engine/ at runtime
+- **Import boundary:** Automated AST-based checker enforced via pre-commit hook -- core/ never imports engine/ at runtime
 
 ### Rig Geometry
 
@@ -232,5 +231,12 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | CPU crop extraction separated from GPU batch predict | Clean OOM retry boundary — only retry the GPU call, not crop extraction | ✓ Good — correct retry granularity |
 | GPU non-determinism accepted for batched inference | 1-detection delta cascading through stages is inherent to batched vs serial GPU execution | ✓ Good — not an algorithmic regression |
 
+| Centroid z-flattening over IRLS plane fit | Simpler approach; z-denoising goal achieved without full plane projection | ✓ Good -- z-noise cleaned for pseudo-label quality |
+| Confidence composite: 50% residual + 30% camera + 20% variance | Empirically balanced pseudo-label quality scoring | ✓ Good -- enables threshold-based filtering |
+| SQLite sample store over directory-based management | Content-hash dedup, provenance tracking, reproducible assembly via symlinks | ✓ Good -- eliminates ad-hoc directory management |
+| Elastic TPS deformation for curvature augmentation | C-curve/S-curve variants reduce straight-fish training bias | ✓ Good -- OKS slope improved -0.71 to -0.30 |
+| Workflow-oriented CLI over module-oriented | `--project` resolution replaces per-command `--config`; run shorthand | ✓ Good -- cleaner UX, less boilerplate |
+| Source priority upsert (manual > corrected > pseudo) | Higher-quality labels always win in dedup | ✓ Good -- correct precedence |
+
 ---
-*Last updated: 2026-03-05 after v3.5 Pseudo-Labeling milestone start*
+*Last updated: 2026-03-06 after v3.5 Pseudo-Labeling milestone*

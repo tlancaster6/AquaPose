@@ -11,7 +11,7 @@
 - ✅ **v3.2 Evaluation Ecosystem** — Phases 46-50 (shipped 2026-03-03)
 - ✅ **v3.3 Chunk Mode** — Phases 51-55 (shipped 2026-03-05)
 - ✅ **v3.4 Performance Optimization** — Phases 56-60 (shipped 2026-03-05)
-- **v3.5 Pseudo-Labeling** — Phases 61-66 (in progress)
+- ✅ **v3.5 Pseudo-Labeling** — Phases 61-69 (shipped 2026-03-06)
 
 ## Phases
 
@@ -158,144 +158,25 @@ Full details: `.planning/milestones/v3.4-ROADMAP.md`
 
 </details>
 
-### v3.5 Pseudo-Labeling (In Progress)
+<details>
+<summary>✅ v3.5 Pseudo-Labeling (Phases 61-69) — SHIPPED 2026-03-06</summary>
 
-**Milestone Goal:** Use pipeline 3D reconstructions to generate training labels at scale, enabling iterative model retraining to improve detection and pose estimation quality.
+- [x] Phase 61: Z-Denoising (2/2 plans) — completed 2026-03-05
+- [x] Phase 62: Prep Infrastructure (2/2 plans) — completed 2026-03-05
+- [x] Phase 63: Pseudo-Label Generation (2/2 plans) — completed 2026-03-05
+- [x] Phase 64: Gap Detection and Fill (2/2 plans) — completed 2026-03-05
+- [x] Phase 65: Frame Selection and Dataset Assembly (3/3 plans) — completed 2026-03-05
+- [x] Phase 66: Training Run Management (2/2 plans) — completed 2026-03-05
+- [x] Phase 67: Elastic Deformation Augmentation (2/2 plans) — completed 2026-03-06
+- [x] Phase 68: Training Data Storage (4/4 plans) — completed 2026-03-06
+- [x] Phase 69: CLI Workflow Cleanup (3/3 plans) — completed 2026-03-06
 
-- [x] **Phase 61: Z-Denoising** - Plane projection and temporal smoothing to clean z-noise from 3D reconstructions (completed 2026-03-05)
-- [x] **Phase 62: Prep Infrastructure** - CLI wiring for calibrate-keypoints and LUT generation extraction (completed 2026-03-05)
-- [x] **Phase 63: Pseudo-Label Generation (Source A)** - Reproject consensus 3D reconstructions into camera views as training labels (completed 2026-03-05)
-- [x] **Phase 64: Gap Detection and Fill (Source B)** - Identify and label detection gaps via inverse LUT visibility cross-referencing (completed 2026-03-05)
-- [x] **Phase 65: Frame Selection and Dataset Assembly** - Temporal subsampling, pose-diversity sampling, and pooled dataset construction (completed 2026-03-05)
-- [x] **Phase 66: Training Run Management** - Run organization, cross-run comparison, and iterative retraining support (completed 2026-03-05)
+**9 phases, 22 plans total**
+Full details: `.planning/milestones/v3.5-ROADMAP.md`
 
-## Phase Details
-
-### Phase 61: Z-Denoising
-**Goal**: 3D reconstructions have clean in-plane spines suitable for accurate reprojection into camera views
-**Depends on**: Nothing (first phase of v3.5)
-**Requirements**: RECON-01, RECON-02, RECON-03, RECON-04, RECON-05, RECON-06
-**Success Criteria** (what must be TRUE):
-  1. Component A (plane projection): IRLS-weighted SVD plane fit projects triangulated points before spline fitting; plane normal + centroid stored per fish per frame; reprojection residuals increase by no more than ~0.5 px (do-no-harm check)
-  2. Component B (temporal smoothing): plane normals smoothed per-fish within continuous track segments; control points rotated via stored normal/centroid; median z-range drops below ~1 cm; frame-to-frame z-profile RMS < 0.1 cm; SNR > 1 for most fish
-  3. Signed off-plane residuals stored per body point (no hard bypass; real out-of-plane structure preserved in residuals for future Component C)
-  4. Separate config toggles: `plane_projection.enabled` (reconstruction-time) and `plane_smoothing.enabled` / `plane_smoothing.sigma_frames` (post-processing). A can run without B; B requires A
-  5. HDF5 writer and Midline3D type updated with plane normal, centroid, and off-plane residual fields
-**Plans:** 2/2 plans complete
-Plans:
-- [ ] 61-01-PLAN.md — Component A: plane fit, Midline3D extension, config, HDF5 writer
-- [ ] 61-02-PLAN.md — Component B: temporal smoothing CLI, eval metrics
-
-### Phase 62: Prep Infrastructure
-**Goal**: Users can prepare calibrated keypoint t-values and pre-generated LUTs before running pseudo-label generation
-**Depends on**: Nothing (independent of Phase 61, but both must complete before Phase 63)
-**Requirements**: PREP-01, PREP-02, PREP-03, PREP-04
-**Success Criteria** (what must be TRUE):
-  1. User can run `aquapose prep calibrate-keypoints` and obtain anatomical t-values from manual annotations
-  2. Pseudo-label generation fails fast with a clear error if keypoint t-values are not configured (no silent uniform fallback)
-  3. User can run `aquapose prep generate-luts` to pre-generate forward and inverse LUTs from calibration data
-  4. AssociationStage requires pre-generated LUTs as input and fails fast if missing (lazy generation removed)
-**Plans:** 2 plans
-Plans:
-- [x] 62-01-PLAN.md — Rework calibrate-keypoints CLI, fail-fast enforcement, init-config reminders
-- [x] 62-02-PLAN.md — Add generate-luts CLI, remove lazy LUT generation, early pipeline validation
-
-### Phase 63: Pseudo-Label Generation (Source A)
-**Goal**: Users can generate high-confidence OBB and pose training labels from consensus 3D reconstructions
-**Depends on**: Phase 61 (clean splines), Phase 62 (keypoint t-values, LUTs available)
-**Requirements**: LABEL-01, LABEL-02, LABEL-03, LABEL-04
-**Success Criteria** (what must be TRUE):
-  1. User can generate OBB pseudo-labels from a pipeline run's diagnostic caches via CLI
-  2. User can generate pose pseudo-labels with keypoints placed at calibrated anatomical positions along the 3D spline
-  3. Each pseudo-label carries a confidence score derived from reconstruction quality metrics (residual, camera count, per-view residual)
-  4. Labels are output in standard YOLO txt+yaml format with a confidence metadata sidecar
-**Plans:** 2/2 plans complete
-Plans:
-- [ ] 63-01-PLAN.md — Promote geometry functions, build core pseudo-label module (reprojection, confidence, label generation)
-- [ ] 63-02-PLAN.md — CLI command, diagnostic cache iteration, frame extraction, YOLO dataset output
-
-### Phase 64: Gap Detection and Fill (Source B)
-**Goal**: Users can identify where the model fails to detect visible fish and generate corrective training labels for those gaps
-**Depends on**: Phase 63 (shares reprojection and label generation logic)
-**Requirements**: GAP-01, GAP-02, GAP-03, GAP-04
-**Success Criteria** (what must be TRUE):
-  1. System identifies cameras where a reconstructed fish should be visible (via inverse LUT) but was not detected
-  2. Each gap is tagged with a failure reason: no-detection, no-tracklet, or failed-midline
-  3. Gap-fill pseudo-labels are generated by reprojecting 3D reconstructions into the gap cameras
-  4. Source B labels are stored separately from Source A with distinct metadata, enforcing a configurable minimum camera floor (default 3)
-**Plans:** 2/2 plans complete
-Plans:
-- [ ] 64-01-PLAN.md — Core gap detection, classification, and gap-fill label generation functions
-- [ ] 64-02-PLAN.md — CLI refactoring with --consensus/--gaps flags and directory restructure
-
-### Phase 65: Frame Selection and Dataset Assembly
-**Goal**: Users can build a training dataset from manual annotations plus filtered pseudo-labels with controlled diversity and validation splits
-**Depends on**: Phase 63 (Source A labels), Phase 64 (Source B labels)
-**Requirements**: FRAME-01, FRAME-02, FRAME-03, DATA-01, DATA-02, DATA-03
-**Success Criteria** (what must be TRUE):
-  1. User can apply temporal subsampling (every Kth frame) and frames with zero reconstructions are automatically filtered
-  2. Pose-diversity sampling selects frames that maximize coverage of body configurations (curved, straight, turning)
-  3. User can assemble a training dataset pooling manual + Source A + Source B with independent confidence thresholds per source
-  4. Assembled dataset includes a fixed manual validation set and a separate pseudo-label validation set broken down by source and gap reason
-**Plans:** 3/3 plans complete
-Plans:
-- [x] 65-01-PLAN.md — Frame selection: temporal subsampling, empty-frame filtering, curvature diversity sampling
-- [x] 65-02-PLAN.md — Dataset assembly: pooling, confidence filtering, validation splits, CLI command
-- [x] 65-03-PLAN.md — Gap closure: wire frame selection into assembly, add gap_reason to sidecar
-
-### Phase 66: Training Run Management
-**Goal**: Users can track, compare, and iterate on training runs with full provenance of which pseudo-label round and thresholds produced each model
-**Depends on**: Phase 65 (assembled datasets to train on)
-**Requirements**: TRAIN-01, TRAIN-02, TRAIN-03
-**Success Criteria** (what must be TRUE):
-  1. Each training run outputs to a unique timestamped directory with a config snapshot and metric summary
-  2. User can run `aquapose train compare` to generate a cross-run comparison table with both Ultralytics training metrics and aquapose eval pipeline metrics
-  3. Comparison report tracks which pseudo-label round and confidence thresholds were used for each run
-**Plans:** 2/2 plans complete
-Plans:
-- [x] 66-01-PLAN.md — Run manager module, CLI --config/--tag flags, provenance tracking
-- [x] 66-02-PLAN.md — Compare command with terminal table, CSV export, source breakdown
-
-### Phase 67: Elastic midline deformation augmentation for pose training data
-
-**Goal:** Offline generation of synthetically curved variants of manually annotated pose training images to counteract straight-fish bias in the training set
-**Requirements**: AUG-01, AUG-02, AUG-03, AUG-04, AUG-05, AUG-06
-**Depends on:** Phase 66
-**Plans:** 2/2 plans complete
-
-Plans:
-- [x] 67-01-PLAN.md — Core elastic deformation module: C-curve/S-curve keypoint displacement, TPS warp, label generation (TDD)
-- [x] 67-02-PLAN.md — CLI command, YOLO output writer, preview grid generation
-
-### Phase 68: Improved training data storage and tracking
-
-**Goal:** Centralized SQLite-backed sample store replacing ad-hoc directory-based training data management, with content-hash dedup, provenance tracking, symlink-based dataset assembly, model lineage, and config auto-update
-**Requirements**: STORE-01, STORE-02, STORE-03, STORE-04, STORE-05, STORE-06, STORE-07
-**Depends on:** Phase 67
-**Plans:** 4/4 plans complete
-
-Plans:
-- [ ] 68-01-PLAN.md — SampleStore core: SQLite schema, CRUD operations, dedup, upsert, cascade delete (TDD)
-- [ ] 68-02-PLAN.md — Data CLI: import command with augment, convert command (replaces build_yolo_training_data.py)
-- [ ] 68-03-PLAN.md — Assembly and management: assemble with symlinks, list, exclude, remove commands
-- [ ] 68-04-PLAN.md — Model lineage: models table operations, config auto-update, train command wiring
-
-### Phase 69: CLI workflow cleanup
-
-**Goal:** Reorganize the AquaPose CLI from module-oriented structure into workflow-oriented structure with project-aware path resolution, run shorthand, and removal of redundant commands
-**Requirements**: CLI-01, CLI-02, CLI-03, CLI-04, CLI-05, CLI-06, CLI-07, CLI-08, CLI-09
-**Depends on:** Phase 68
-**Plans:** 3/3 plans complete
-
-Plans:
-- [ ] 69-01-PLAN.md — Project/run resolution utilities and init command rename
-- [ ] 69-02-PLAN.md — Migrate all commands to project/run resolution
-- [ ] 69-03-PLAN.md — Remove deprecated commands and dead code cleanup
+</details>
 
 ## Progress
-
-**Execution Order:**
-Phases execute in numeric order: 61 -> 62 -> 63 -> 64 -> 65 -> 66
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -308,12 +189,4 @@ Phases execute in numeric order: 61 -> 62 -> 63 -> 64 -> 65 -> 66
 | 46-50 | v3.2 | 11/11 | Complete | 2026-03-03 |
 | 51-55 | v3.3 | 11/11 | Complete | 2026-03-05 |
 | 56-60 | v3.4 | 8/8 | Complete | 2026-03-05 |
-| 61. Z-Denoising | 2/2 | Complete    | 2026-03-05 | - |
-| 62. Prep Infrastructure | v3.5 | 2/2 | Complete | 2026-03-05 |
-| 63. Pseudo-Label Generation (Source A) | 2/2 | Complete   | 2026-03-05 | - |
-| 64. Gap Detection and Fill (Source B) | 2/2 | Complete    | 2026-03-05 | - |
-| 65. Frame Selection and Dataset Assembly | 3/3 | Complete    | 2026-03-05 | - |
-| 66. Training Run Management | 2/2 | Complete    | 2026-03-05 | - |
-| 67. Elastic Deformation Augmentation | 2/2 | Complete    | 2026-03-06 | - |
-| 68. Training Data Storage | 4/4 | Complete    | 2026-03-06 | - |
-| 69. CLI Workflow Cleanup | 3/3 | Complete    | 2026-03-06 | - |
+| 61-69 | v3.5 | 22/22 | Complete | 2026-03-06 |

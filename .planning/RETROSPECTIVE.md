@@ -313,6 +313,55 @@
 
 ---
 
+## Milestone: v3.5 — Pseudo-Labeling
+
+**Shipped:** 2026-03-06
+**Phases:** 9 | **Plans:** 22 | **Timeline:** 2 days
+
+### What Was Built
+- Z-denoising pipeline: centroid z-flattening + temporal Gaussian smoothing for clean 3D reprojections
+- Pseudo-label generation: Source A (consensus reprojection) and Source B (gap-fill) with confidence scoring
+- Gap detection via inverse LUT visibility, tagged by failure reason (no-detection, no-tracklet, failed-midline)
+- Elastic midline deformation augmentation: TPS-based C-curve/S-curve variants reducing curvature bias
+- SQLite sample store: content-hash dedup, provenance tracking, symlink-based assembly, model lineage
+- Workflow-oriented CLI: project-aware resolution, run shorthand, deprecated command removal
+
+### What Worked
+- **Scope expansion handled cleanly:** Milestone grew from 6 phases (61-66) to 9 phases (61-69) by adding augmentation, sample store, and CLI cleanup — each addition was properly planned and executed without disrupting the original scope
+- **Quick tasks for cross-cutting fixes:** 4 quick tasks (18-21) fixed pseudo-label output format, frame selection wiring, COCO interchange, and metadata ingestion without full phase overhead
+- **TDD for complex modules:** SampleStore (Phase 68) was built test-first, catching edge cases in dedup, upsert, and cascade delete before integration
+- **Elastic augmentation A/B experiment:** Validated augmentation effectiveness (OKS slope -0.71 to -0.30) before committing to infrastructure
+- **CLI cleanup as final phase:** Reworking commands after all functionality was built avoided rework during the cleanup
+
+### What Was Inefficient
+- **SUMMARY one_liner fields still not populated:** Eighth consecutive milestone — confirmed as permanent process gap
+- **Early phases (61-63) lack VERIFICATION.md:** Verification workflow wasn't established until Phase 64 — 14 requirements marked unsatisfied/partial in audit
+- **Z-denoising implementation diverged from spec:** Requirements specified IRLS plane fit + plane normals; actual implementation used simpler centroid z-flattening — SUMMARYs describe the spec, not the implementation
+- **Frame selection functions orphaned:** `frame_selection.py` functions built in Phase 65 were orphaned when Phase 69 deleted `dataset_assembly.py` — the replacement path doesn't use them
+- **AUG requirements missing from traceability:** Phase 67 requirements (AUG-01..06) defined in ROADMAP but never added to REQUIREMENTS.md traceability table
+
+### Patterns Established
+- Source A/B pseudo-label separation: consensus reprojections vs gap-fill with distinct metadata and confidence thresholds
+- Confidence composite scoring: 50% residual + 30% camera count + 20% per-camera variance
+- Content-hash dedup in sample store: SHA-256 of image content, not path, for reliable deduplication
+- Source priority upsert: manual(2) > corrected(1) > pseudo(0) — higher-quality labels always win
+- Project-aware CLI: `--project` flag with CWD walk-up fallback for automatic project detection
+- Run shorthand resolution: `latest`, timestamp suffix, negative index, or full path
+
+### Key Lessons
+1. **Establish verification workflow before first phase** — missing VERIFICATION.md for Phases 61-63 created 14 audit gaps that could have been avoided
+2. **Keep SUMMARYs aligned with implementation, not spec** — Phase 61 SUMMARYs describe IRLS plane fit but implementation uses centroid z-flattening; misleading for future readers
+3. **Validate augmentation before building infrastructure** — the A/B experiment in Phase 67 confirmed value before committing; this should be standard for experimental features
+4. **Plan for scope growth** — milestones that add phases mid-execution work fine if each addition is properly scoped; don't resist scope growth when it's well-motivated
+5. **Delete dead code immediately** — orphaned frame_selection.py functions survived because Phase 69 didn't audit consumers; cleanup phases should check imports
+
+### Cost Observations
+- Model mix: ~60% sonnet (executors), ~30% opus (orchestrator), ~10% haiku (verifiers)
+- Sessions: ~6-8 across 2 days
+- Notable: Largest milestone by phase count (9 phases, 22 plans) completed in 2 days — scope expansion didn't slow velocity
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -326,6 +375,7 @@
 | v3.2 | 1 day | 5 | Evaluation ecosystem; per-stage caching + CLI tools |
 | v3.3 | 2 days | 5 | Chunk processing; frame source abstraction + viz migration |
 | v3.4 | 1 day | 5 | Performance optimization; 8.2x speedup via batching + vectorization |
+| v3.5 | 2 days | 9 | Pseudo-labeling infrastructure; sample store; CLI cleanup |
 
 ### Cumulative Quality
 
@@ -338,6 +388,7 @@
 | v3.2 | 20,789 source | ~788 | 0 |
 | v3.3 | 21,634 source | ~807 | 0 |
 | v3.4 | 22,754 source | ~840 | 0 |
+| v3.5 | 28,033 source | - | 4 |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -351,3 +402,5 @@
 8. Aggressive deletion beats deprecation — remove legacy code entirely, don't shim (v3.2)
 9. Profile before optimizing — target bottlenecks by measured impact, not intuition (v3.4)
 10. Capture baselines before starting optimization work — deferred comparisons create verification gaps (v3.4)
+11. Establish verification workflow before first phase — missing VERIFICATION.md creates audit gaps (v3.5)
+12. Validate experimental features with A/B experiments before building infrastructure (v3.5)

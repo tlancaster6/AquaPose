@@ -1,5 +1,24 @@
 # Milestones
 
+## v3.5 Pseudo-Labeling (Shipped: 2026-03-06)
+
+**Phases completed:** 9 phases (61-69), 22 plans
+**Timeline:** 2 days (2026-03-05 -> 2026-03-06)
+**Codebase:** 28,033 LOC source
+**Git range:** 136 commits, 135 files changed (+22,963 / -2,121)
+
+**Key accomplishments:**
+1. Z-denoising pipeline — centroid z-flattening + temporal Gaussian smoothing cleans z-noise from 3D reconstructions for accurate reprojection
+2. Pseudo-label generation — reproject consensus 3D reconstructions into camera views as OBB + pose training labels with confidence scoring
+3. Gap detection and fill — identify detection gaps via inverse LUT visibility and generate corrective labels tagged by failure reason
+4. Elastic midline deformation augmentation — TPS-based C-curve/S-curve synthetic training data generation reducing curvature bias (OKS slope -0.71 to -0.30)
+5. SQLite sample store — content-hash dedup, provenance tracking, symlink-based dataset assembly, model lineage with config auto-update
+6. Workflow-oriented CLI — project-aware path resolution, run shorthand, deprecated command removal, `aquapose {data, prep, pseudo-label}` groups
+
+**Delivered:** Complete pseudo-labeling infrastructure enabling iterative model retraining from pipeline 3D reconstructions. Source A (consensus reprojections) and Source B (gap-fill) pseudo-labels with confidence scoring, elastic augmentation for curvature bias reduction, SQLite-backed sample store with dedup and lineage tracking, and workflow-oriented CLI with project/run resolution.
+
+---
+
 ## v3.4 Performance Optimization (Shipped: 2026-03-05)
 
 **Phases completed:** 5 phases (56-60), 8 plans

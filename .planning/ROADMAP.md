@@ -256,6 +256,17 @@ Plans:
 - [ ] 66-01-PLAN.md — Run manager module, CLI --config/--tag flags, provenance tracking
 - [ ] 66-02-PLAN.md — Compare command with terminal table, CSV export, source breakdown
 
+### Phase 67: Elastic midline deformation augmentation for pose training data
+
+**Goal:** Offline generation of synthetically curved variants of manually annotated pose training images to counteract straight-fish bias in the training set
+**Requirements**: AUG-01, AUG-02, AUG-03, AUG-04, AUG-05, AUG-06
+**Depends on:** Phase 66
+**Plans:** 2 plans
+
+Plans:
+- [ ] 67-01-PLAN.md — Core elastic deformation module: C-curve/S-curve keypoint displacement, TPS warp, label generation (TDD)
+- [ ] 67-02-PLAN.md — CLI command, YOLO output writer, preview grid generation
+
 ## Progress
 
 **Execution Order:**
@@ -278,3 +289,4 @@ Phases execute in numeric order: 61 -> 62 -> 63 -> 64 -> 65 -> 66
 | 64. Gap Detection and Fill (Source B) | 2/2 | Complete    | 2026-03-05 | - |
 | 65. Frame Selection and Dataset Assembly | 3/3 | Complete    | 2026-03-05 | - |
 | 66. Training Run Management | 2/2 | Complete    | 2026-03-05 | - |
+| 67. Elastic Deformation Augmentation | 0/2 | Planned | - | - |

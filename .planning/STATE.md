@@ -51,7 +51,7 @@ v3.5 milestone decisions archived to milestones/v3.5-ROADMAP.md.
 
 ### Pending Todos
 
-8 pending todos -- see .planning/todos/pending/ (review for relevance)
+9 pending todos -- see .planning/todos/pending/ (review for relevance)
 
 ### Blockers/Concerns
 

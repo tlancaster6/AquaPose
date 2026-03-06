@@ -9,12 +9,12 @@ Requirements for v3.6 Model Iteration & QA. Each maps to roadmap phases.
 
 ### Evaluation Metrics
 
-- [ ] **EVAL-01**: `aquapose eval` reports reprojection error percentiles (p50, p90, p95) alongside existing mean/max
-- [ ] **EVAL-02**: `aquapose eval` reports midline confidence percentiles (p10, p50, p90) alongside existing mean/std
-- [ ] **EVAL-03**: `aquapose eval` reports camera count percentiles (p50, p90) summarizing association coverage
-- [ ] **EVAL-04**: `aquapose eval` reports per-keypoint reprojection error (mean + p90 per body point index) recomputed from cached splines
-- [ ] **EVAL-05**: `aquapose eval` reports curvature-stratified reconstruction quality (reprojection error per curvature quantile bin with sample counts)
-- [ ] **EVAL-06**: `aquapose eval` reports 3D track fragmentation (gap count, gap duration stats, continuity ratio)
+- [x] **EVAL-01**: `aquapose eval` reports reprojection error percentiles (p50, p90, p95) alongside existing mean/max
+- [x] **EVAL-02**: `aquapose eval` reports midline confidence percentiles (p10, p50, p90) alongside existing mean/std
+- [x] **EVAL-03**: `aquapose eval` reports camera count percentiles (p50, p90) summarizing association coverage
+- [x] **EVAL-04**: `aquapose eval` reports per-keypoint reprojection error (mean + p90 per body point index) recomputed from cached splines
+- [x] **EVAL-05**: `aquapose eval` reports curvature-stratified reconstruction quality (reprojection error per curvature quantile bin with sample counts)
+- [x] **EVAL-06**: `aquapose eval` reports 3D track fragmentation (gap count, gap duration stats, continuity ratio)
 
 ### Data Bootstrap
 
@@ -69,12 +69,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| EVAL-01 | Phase 70 | Pending |
-| EVAL-02 | Phase 70 | Pending |
-| EVAL-03 | Phase 70 | Pending |
-| EVAL-04 | Phase 70 | Pending |
-| EVAL-05 | Phase 70 | Pending |
-| EVAL-06 | Phase 70 | Pending |
+| EVAL-01 | Phase 70 | Complete |
+| EVAL-02 | Phase 70 | Complete |
+| EVAL-03 | Phase 70 | Complete |
+| EVAL-04 | Phase 70 | Complete |
+| EVAL-05 | Phase 70 | Complete |
+| EVAL-06 | Phase 70 | Complete |
 | BOOT-01 | Phase 71 | Pending |
 | BOOT-02 | Phase 71 | Pending |
 | BOOT-03 | Phase 71 | Pending |

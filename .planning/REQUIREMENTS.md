@@ -73,9 +73,9 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 - [x] **CLI-04**: Top-level commands (run, eval, viz, tune, smooth-z) resolve config from `--project` instead of `--config`
 - [x] **CLI-05**: eval, viz, tune, smooth-z accept RUN positional argument with shorthand resolution (latest, timestamp, negative index)
 - [x] **CLI-06**: All subgroup commands (train, data, prep, pseudo-label) resolve project from `--project` context, eliminating per-command `--config`
-- [ ] **CLI-07**: `train augment-elastic` CLI command removed (redundant with `data import --augment`)
-- [ ] **CLI-08**: `pseudo-label assemble` command removed and `dataset_assembly.py` module deleted (`data assemble` is the single assembly path)
-- [ ] **CLI-09**: `train yolo-obb` renamed to `train obb`
+- [x] **CLI-07**: `train augment-elastic` CLI command removed (redundant with `data import --augment`)
+- [x] **CLI-08**: `pseudo-label assemble` command removed and `dataset_assembly.py` module deleted (`data assemble` is the single assembly path)
+- [x] **CLI-09**: `train yolo-obb` renamed to `train obb`
 
 ## Future Requirements
 
@@ -145,9 +145,9 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 | CLI-04 | Phase 69 | Complete |
 | CLI-05 | Phase 69 | Complete |
 | CLI-06 | Phase 69 | Complete |
-| CLI-07 | Phase 69 | Pending |
-| CLI-08 | Phase 69 | Pending |
-| CLI-09 | Phase 69 | Pending |
+| CLI-07 | Phase 69 | Complete |
+| CLI-08 | Phase 69 | Complete |
+| CLI-09 | Phase 69 | Complete |
 
 **Coverage:**
 - v3.5 requirements: 43 total

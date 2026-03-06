@@ -6,9 +6,9 @@ status: unknown
 last_updated: "2026-03-06T19:59:38.117Z"
 progress:
   total_phases: 9
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 22
-  completed_plans: 21
+  completed_plans: 22
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-03-05)
 
 ## Current Position
 
-Phase: 69 (2 of 3 plans complete)
-Plan: 2/3 in current phase
-Status: Phase 69 in progress. Config-to-project migration done.
-Last activity: 2026-03-06 - Completed 69-02: CLI config-to-project migration
+Phase: 69 (3 of 3 plans complete)
+Plan: 3/3 in current phase
+Status: Phase 69 complete. All deprecated commands removed, dead code cleaned.
+Last activity: 2026-03-06 - Completed 69-03: Deprecated command and dead code removal
 
-Progress: [██████----] 67%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -78,6 +78,7 @@ Recent decisions affecting current work:
 - [Phase 69]: Lazy ctx.obj caching for project resolution
 - [Phase 69]: aquapose.cli_utils treated as shared utility for import boundary compliance
 - [Phase 69]: Pseudo-label inspect reworked from --data-dir to run-based auto-discovery
+- [Phase 69]: elastic_deform.py kept as library code; write_yolo_dataset and generate_preview_grid deleted (dead code)
 
 ### Pending Todos
 
@@ -109,5 +110,5 @@ None active. Z-reconstruction noise resolved via z-flattening and temporal z smo
 ## Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Completed 69-02-PLAN.md (CLI Config-to-Project Migration)
-Resume file: .planning/phases/69-cli-workflow-cleanup/69-02-SUMMARY.md
+Stopped at: Completed 69-03-PLAN.md (Deprecated Command and Dead Code Removal)
+Resume file: .planning/phases/69-cli-workflow-cleanup/69-03-SUMMARY.md

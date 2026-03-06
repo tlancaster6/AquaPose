@@ -181,7 +181,7 @@ Full details: `.planning/milestones/v3.5-ROADMAP.md`
 
 **Milestone Goal:** Run the pseudo-label retraining loop end-to-end, producing demonstrably better OBB detection and pose estimation models with full provenance tracking.
 
-- [ ] **Phase 70: Metrics & Comparison Infrastructure** - Extend evaluation with percentiles, per-keypoint breakdown, curvature-stratified quality, and track fragmentation
+- [x] **Phase 70: Metrics & Comparison Infrastructure** - Extend evaluation with percentiles, per-keypoint breakdown, curvature-stratified quality, and track fragmentation
 - [ ] **Phase 71: Data Store Bootstrap** - Import manual annotations, train and register baseline models through store workflow
 - [ ] **Phase 72: Baseline Pipeline Run & Metrics** - Establish quantitative "before" snapshot on short iteration clip
 - [ ] **Phase 73: Round 1 Pseudo-Labels & Retraining** - Generate pseudo-labels, visually audit, train round 1 models with A/B curation comparison
@@ -201,10 +201,10 @@ Full details: `.planning/milestones/v3.5-ROADMAP.md`
   3. `aquapose eval` output includes curvature-stratified reconstruction quality (reprojection error per curvature quantile bin with sample counts)
   4. `aquapose eval` output includes 3D track fragmentation analysis (gap count, gap duration stats, continuity ratio)
   5. All new metrics appear in both human-readable text and JSON output formats
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans executed
 Plans:
-- [ ] 70-01-PLAN.md — Percentile metrics (EVAL-01/02/03) and track fragmentation evaluator (EVAL-06)
-- [ ] 70-02-PLAN.md — Per-keypoint reprojection error (EVAL-04) and curvature-stratified quality (EVAL-05)
+- [x] 70-01-PLAN.md — Percentile metrics (EVAL-01/02/03) and track fragmentation evaluator (EVAL-06)
+- [x] 70-02-PLAN.md — Per-keypoint reprojection error (EVAL-04) and curvature-stratified quality (EVAL-05)
 
 ### Phase 71: Data Store Bootstrap
 **Goal**: All existing manual annotations imported into the data store with baseline OBB and pose models trained, registered, and sanity-checked
@@ -286,7 +286,7 @@ Phases execute in numeric order: 70 and 71 (parallel) -> 72 -> 73 -> 74 -> 75 (c
 | 51-55 | v3.3 | 11/11 | Complete | 2026-03-05 |
 | 56-60 | v3.4 | 8/8 | Complete | 2026-03-05 |
 | 61-69 | v3.5 | 22/22 | Complete | 2026-03-06 |
-| 70. Metrics & Comparison Infrastructure | 1/2 | In Progress|  | - |
+| 70. Metrics & Comparison Infrastructure | v3.6 | 2/2 | Complete | 2026-03-06 |
 | 71. Data Store Bootstrap | v3.6 | 0/TBD | Not started | - |
 | 72. Baseline Pipeline Run & Metrics | v3.6 | 0/TBD | Not started | - |
 | 73. Round 1 Pseudo-Labels & Retraining | v3.6 | 0/TBD | Not started | - |

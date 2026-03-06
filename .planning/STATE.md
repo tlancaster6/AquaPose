@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-03-05)
 Phase: 69 (3 of 3 plans complete)
 Plan: 3/3 in current phase
 Status: Phase 69 complete. All deprecated commands removed, dead code cleaned.
-Last activity: 2026-03-06 - Completed 69-03: Deprecated command and dead code removal
+Last activity: 2026-03-06 - Completed quick task 21: Implement pseudo-label metadata ingestion fix
 
 Progress: [██████████] 100%
 
@@ -104,7 +104,7 @@ None active. Z-reconstruction noise resolved via z-flattening and temporal z smo
 | 18 | Fix pseudo-label pose output to use OBB-cropped images with crop-space keypoints | 2026-03-05 | 434b81b | Verified | [18-fix-pseudo-label-pose-output-to-use-obb-](./quick/18-fix-pseudo-label-pose-output-to-use-obb-/) |
 | 19 | Wire frame selection into pseudo-label assembly CLI | 2026-03-05 | 287a6a8 | Complete | [19-wire-frame-selection-into-pseudo-label-a](./quick/19-wire-frame-selection-into-pseudo-label-a/) |
 | 20 | Implement COCO interchange format for pseudo-labels | 2026-03-06 | d2e1195 | Complete | [20-implement-coco-interchange-format-for-ps](./quick/20-implement-coco-interchange-format-for-ps/) |
-| 21 | Implement pseudo-label metadata ingestion | 2026-03-06 | 24bd82f | Complete | [21-implement-pseudo-label-metadata-ingestio](./quick/21-implement-pseudo-label-metadata-ingestio/) |
+| 21 | Implement pseudo-label metadata ingestion fix | 2026-03-06 | e2a36d7 | Complete | [21-implement-pseudo-label-metadata-ingestio](./quick/21-implement-pseudo-label-metadata-ingestio/) |
 | Phase 68 P02 | 8min | 1 tasks | 8 files |
 | Phase 68 P03 | 7min | 2 tasks | 4 files |
 | Phase 68 P04 | 6min | 2 tasks | 6 files |

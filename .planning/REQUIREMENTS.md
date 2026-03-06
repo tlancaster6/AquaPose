@@ -55,6 +55,16 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 - [x] **TRAIN-02**: User can run `aquapose train compare` to generate cross-run comparison (Ultralytics training metrics + aquapose eval pipeline metrics)
 - [x] **TRAIN-03**: Comparison tracks which pseudo-label round and confidence thresholds were used per run
 
+### Training Data Storage and Tracking (Phase 68)
+
+- [ ] **STORE-01**: SQLite sample store with content-hash deduplication and source priority upsert (manual > corrected > pseudo)
+- [ ] **STORE-02**: Provenance history tracking as JSON array per sample; augmentation lineage via parent_id with cascade delete on upsert
+- [ ] **STORE-03**: CLI import command (`aquapose data import`) ingests YOLO-format directories with --augment flag for elastic deformation at import time
+- [ ] **STORE-04**: CLI convert command (`aquapose data convert`) replaces `scripts/build_yolo_training_data.py`, converting COCO annotations to YOLO format
+- [ ] **STORE-05**: Dataset assembly via symlinks with query recipe + resolved UUID manifest for reproducibility
+- [ ] **STORE-06**: Data lifecycle CLI: list (summary), exclude (soft-delete with tag), remove --purge (hard-delete with cascade)
+- [ ] **STORE-07**: Model lineage tracking in store's models table; config.yaml auto-updated with new weights path after training
+
 ## Future Requirements
 
 ### Confidence-Based Loss Reweighting
@@ -110,12 +120,19 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 | TRAIN-01 | Phase 66 | Complete |
 | TRAIN-02 | Phase 66 | Complete |
 | TRAIN-03 | Phase 66 | Complete |
+| STORE-01 | Phase 68 | Pending |
+| STORE-02 | Phase 68 | Pending |
+| STORE-03 | Phase 68 | Pending |
+| STORE-04 | Phase 68 | Pending |
+| STORE-05 | Phase 68 | Pending |
+| STORE-06 | Phase 68 | Pending |
+| STORE-07 | Phase 68 | Pending |
 
 **Coverage:**
-- v3.5 requirements: 27 total
-- Mapped to phases: 27
+- v3.5 requirements: 34 total
+- Mapped to phases: 34
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-05*
-*Last updated: 2026-03-05 after z-denoising design review*
+*Last updated: 2026-03-06 after Phase 68 planning*

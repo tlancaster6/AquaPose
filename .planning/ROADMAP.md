@@ -267,6 +267,19 @@ Plans:
 - [x] 67-01-PLAN.md — Core elastic deformation module: C-curve/S-curve keypoint displacement, TPS warp, label generation (TDD)
 - [x] 67-02-PLAN.md — CLI command, YOLO output writer, preview grid generation
 
+### Phase 68: Improved training data storage and tracking
+
+**Goal:** Centralized SQLite-backed sample store replacing ad-hoc directory-based training data management, with content-hash dedup, provenance tracking, symlink-based dataset assembly, model lineage, and config auto-update
+**Requirements**: STORE-01, STORE-02, STORE-03, STORE-04, STORE-05, STORE-06, STORE-07
+**Depends on:** Phase 67
+**Plans:** 4 plans
+
+Plans:
+- [ ] 68-01-PLAN.md — SampleStore core: SQLite schema, CRUD operations, dedup, upsert, cascade delete (TDD)
+- [ ] 68-02-PLAN.md — Data CLI: import command with augment, convert command (replaces build_yolo_training_data.py)
+- [ ] 68-03-PLAN.md — Assembly and management: assemble with symlinks, list, exclude, remove commands
+- [ ] 68-04-PLAN.md — Model lineage: models table operations, config auto-update, train command wiring
+
 ## Progress
 
 **Execution Order:**
@@ -290,16 +303,7 @@ Phases execute in numeric order: 61 -> 62 -> 63 -> 64 -> 65 -> 66
 | 65. Frame Selection and Dataset Assembly | 3/3 | Complete    | 2026-03-05 | - |
 | 66. Training Run Management | 2/2 | Complete    | 2026-03-05 | - |
 | 67. Elastic Deformation Augmentation | 2/2 | Complete    | 2026-03-06 | - |
-
-### Phase 68: Improved training data storage and tracking
-
-**Goal:** [To be planned]
-**Requirements**: TBD
-**Depends on:** Phase 67
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (run /gsd:plan-phase 68 to break down)
+| 68. Training Data Storage | 0/4 | Planning | - | - |
 
 ### Phase 69: CLI workflow cleanup
 

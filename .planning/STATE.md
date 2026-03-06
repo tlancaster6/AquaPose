@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.5
 milestone_name: Pseudo-Labeling
 status: unknown
-last_updated: "2026-03-06T14:40:15.812Z"
+last_updated: "2026-03-06T17:33:11.554Z"
 progress:
-  total_phases: 7
+  total_phases: 9
   completed_phases: 7
-  total_plans: 15
-  completed_plans: 15
+  total_plans: 19
+  completed_plans: 16
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-05)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 66 training run management
+**Current focus:** Phase 68 improved training data storage and tracking
 
 ## Current Position
 
-Phase: 66 (6 of 6 in v3.5 Pseudo-Labeling)
-Plan: 2/2 in current phase
-Status: Phase 66 complete. All v3.5 Pseudo-Labeling plans complete.
-Last activity: 2026-03-06 - Completed quick task 20: Implement COCO interchange format for pseudo-label round-trip editing
+Phase: 68 (1 of 4 plans complete)
+Plan: 1/4 in current phase
+Status: Plan 68-01 complete. SampleStore implemented with TDD.
+Last activity: 2026-03-06 - Completed 68-01: SampleStore SQLite backend
 
-Progress: [██████████] 100%
+Progress: [██░░░░░░░░] 25%
 
 ## Performance Metrics
 
@@ -63,6 +63,9 @@ Recent decisions affecting current work:
 - v3.5 Phase 66: summary.json schema with run_id, metrics, provenance, training_config
 - v3.5 Phase 66: xfail marker for compare command test (anticipating Plan 66-02)
 - v3.5 Phase 66: click.style bold/green for best-value highlighting with click.unstyle for column width
+- Phase 68: JSON columns for tags/provenance/metadata with sqlite json_each for filtering
+- Phase 68: PRAGMA user_version for schema versioning with forward-compat check
+- Phase 68: Source priority manual(2) > corrected(1) > pseudo(0) for dedup upsert
 
 ### Pending Todos
 
@@ -90,5 +93,5 @@ None active. Z-reconstruction noise resolved via z-flattening and temporal z smo
 ## Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Completed quick task 20 (COCO interchange)
-Resume file: .planning/quick/20-implement-coco-interchange-format-for-ps/20-SUMMARY.md
+Stopped at: Completed 68-01-PLAN.md (SampleStore)
+Resume file: .planning/phases/68-improved-training-data-storage-and-tracking/68-01-SUMMARY.md

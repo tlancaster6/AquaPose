@@ -57,8 +57,8 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 
 ### Training Data Storage and Tracking (Phase 68)
 
-- [ ] **STORE-01**: SQLite sample store with content-hash deduplication and source priority upsert (manual > corrected > pseudo)
-- [ ] **STORE-02**: Provenance history tracking as JSON array per sample; augmentation lineage via parent_id with cascade delete on upsert
+- [x] **STORE-01**: SQLite sample store with content-hash deduplication and source priority upsert (manual > corrected > pseudo)
+- [x] **STORE-02**: Provenance history tracking as JSON array per sample; augmentation lineage via parent_id with cascade delete on upsert
 - [ ] **STORE-03**: CLI import command (`aquapose data import`) ingests YOLO-format directories with --augment flag for elastic deformation at import time
 - [ ] **STORE-04**: CLI convert command (`aquapose data convert`) replaces `scripts/build_yolo_training_data.py`, converting COCO annotations to YOLO format
 - [ ] **STORE-05**: Dataset assembly via symlinks with query recipe + resolved UUID manifest for reproducibility
@@ -120,8 +120,8 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 | TRAIN-01 | Phase 66 | Complete |
 | TRAIN-02 | Phase 66 | Complete |
 | TRAIN-03 | Phase 66 | Complete |
-| STORE-01 | Phase 68 | Pending |
-| STORE-02 | Phase 68 | Pending |
+| STORE-01 | Phase 68 | Complete |
+| STORE-02 | Phase 68 | Complete |
 | STORE-03 | Phase 68 | Pending |
 | STORE-04 | Phase 68 | Pending |
 | STORE-05 | Phase 68 | Pending |

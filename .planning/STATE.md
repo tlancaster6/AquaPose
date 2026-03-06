@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v3.5
 milestone_name: Pseudo-Labeling
 status: unknown
-last_updated: "2026-03-06T20:10:24.639Z"
+last_updated: "2026-03-06T20:59:03.618Z"
 progress:
   total_phases: 9
   completed_phases: 9
@@ -79,6 +79,8 @@ Recent decisions affecting current work:
 - [Phase 69]: aquapose.cli_utils treated as shared utility for import boundary compliance
 - [Phase 69]: Pseudo-label inspect reworked from --data-dir to run-based auto-discovery
 - [Phase 69]: elastic_deform.py kept as library code; write_yolo_dataset and generate_preview_grid deleted (dead code)
+- [Phase 21]: compute_curvature docstring generalized to (N, D) for 2D and 3D use
+- [Phase 21]: Sidecar metadata flattened from labels[0] at import (confidence, gap_reason, n_source_cameras, raw_metrics, source)
 
 ### Pending Todos
 
@@ -102,6 +104,7 @@ None active. Z-reconstruction noise resolved via z-flattening and temporal z smo
 | 18 | Fix pseudo-label pose output to use OBB-cropped images with crop-space keypoints | 2026-03-05 | 434b81b | Verified | [18-fix-pseudo-label-pose-output-to-use-obb-](./quick/18-fix-pseudo-label-pose-output-to-use-obb-/) |
 | 19 | Wire frame selection into pseudo-label assembly CLI | 2026-03-05 | 287a6a8 | Complete | [19-wire-frame-selection-into-pseudo-label-a](./quick/19-wire-frame-selection-into-pseudo-label-a/) |
 | 20 | Implement COCO interchange format for pseudo-labels | 2026-03-06 | d2e1195 | Complete | [20-implement-coco-interchange-format-for-ps](./quick/20-implement-coco-interchange-format-for-ps/) |
+| 21 | Implement pseudo-label metadata ingestion | 2026-03-06 | 24bd82f | Complete | [21-implement-pseudo-label-metadata-ingestio](./quick/21-implement-pseudo-label-metadata-ingestio/) |
 | Phase 68 P02 | 8min | 1 tasks | 8 files |
 | Phase 68 P03 | 7min | 2 tasks | 4 files |
 | Phase 68 P04 | 6min | 2 tasks | 6 files |

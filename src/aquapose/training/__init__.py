@@ -16,6 +16,13 @@ from .compare import (
 )
 from .dataset_assembly import assemble_dataset
 from .datasets import CropDataset, apply_augmentation, stratified_split
+from .elastic_deform import (
+    deform_keypoints_c_curve,
+    deform_keypoints_s_curve,
+    generate_deformed_labels,
+    generate_variants,
+    tps_warp_image,
+)
 from .frame_selection import (
     DiversitySampleResult,
     compute_curvature,
@@ -62,6 +69,8 @@ __all__ = [
     "compute_confidence_score",
     "compute_curvature",
     "create_run_dir",
+    "deform_keypoints_c_curve",
+    "deform_keypoints_s_curve",
     "detect_gaps",
     "discover_runs",
     "diversity_sample",
@@ -71,8 +80,10 @@ __all__ = [
     "format_comparison_table",
     "format_obb_annotation",
     "format_pose_annotation",
+    "generate_deformed_labels",
     "generate_fish_labels",
     "generate_gap_fish_labels",
+    "generate_variants",
     "load_run_summaries",
     "make_loader",
     "parse_best_metrics",
@@ -84,6 +95,7 @@ __all__ = [
     "snapshot_config",
     "stratified_split",
     "temporal_subsample",
+    "tps_warp_image",
     "train_yolo_obb",
     "train_yolo_pose",
     "train_yolo_seg",

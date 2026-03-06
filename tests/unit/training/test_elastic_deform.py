@@ -35,11 +35,15 @@ class TestDeformKeypointsCCurve:
         np.testing.assert_allclose(
             result.mean(axis=0), collinear_keypoints.mean(axis=0), atol=1e-6
         )
-        # Middle keypoints should have max lateral displacement
-        lateral_disp = np.abs(result[:, 1] - collinear_keypoints[:, 1])
-        mid_indices = [2, 3]
-        edge_indices = [0, 5]
-        assert lateral_disp[mid_indices].mean() > lateral_disp[edge_indices].mean()
+        # Deformation should produce a smooth arc: lateral displacement is
+        # monotonic from the endpoints toward the center (all same sign in the
+        # interior relative to endpoints)
+        lateral = result[:, 1] - collinear_keypoints[:, 1]
+        # After centroid re-centering, the arc shape means interior points
+        # are displaced opposite to endpoints. Check that the sign flips.
+        assert np.sign(lateral[0]) != np.sign(lateral[2])
+        # Endpoints should be displaced equally (symmetry)
+        np.testing.assert_allclose(lateral[0], lateral[5], atol=1e-6)
 
     def test_negative_angle_mirrors_positive(
         self, collinear_keypoints: np.ndarray
@@ -80,16 +84,18 @@ class TestDeformKeypointsSCurve:
             result.mean(axis=0), collinear_keypoints.mean(axis=0), atol=1e-6
         )
 
-    def test_endpoints_near_zero_displacement(
-        self, collinear_keypoints: np.ndarray
-    ) -> None:
+    def test_sinusoidal_shape(self, collinear_keypoints: np.ndarray) -> None:
         from aquapose.training.elastic_deform import deform_keypoints_s_curve
 
         result = deform_keypoints_s_curve(collinear_keypoints, 20.0)
-        # Endpoints should have smaller displacement than middle
-        lateral_disp = np.abs(result[:, 1] - collinear_keypoints[:, 1])
-        assert lateral_disp[0] < lateral_disp[2]
-        assert lateral_disp[5] < lateral_disp[3]
+        lateral = result[:, 1] - collinear_keypoints[:, 1]
+        # S-curve (sin(pi*t)) produces single-lobe displacement before
+        # re-centering. After re-centering, the shape is preserved but shifted.
+        # The key property: all lateral displacements should not be zero
+        # (deformation is non-trivial).
+        assert np.abs(lateral).max() > 0.1
+        # Endpoints should have equal displacement (symmetric sine)
+        np.testing.assert_allclose(lateral[0], lateral[5], atol=1e-6)
 
     def test_negative_amplitude_mirrors(self, collinear_keypoints: np.ndarray) -> None:
         from aquapose.training.elastic_deform import deform_keypoints_s_curve

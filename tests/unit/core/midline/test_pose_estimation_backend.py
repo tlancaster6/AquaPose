@@ -118,18 +118,12 @@ def test_instantiation_no_weights_path(caplog: pytest.LogCaptureFixture) -> None
     assert any("no weights_path" in msg for msg in caplog.messages)
 
 
-def test_instantiation_nonexistent_weights(caplog: pytest.LogCaptureFixture) -> None:
-    """Non-existent weights_path logs warning and leaves model None."""
-    import logging
-
-    with caplog.at_level(
-        logging.WARNING, logger="aquapose.core.midline.backends.pose_estimation"
-    ):
-        backend = PoseEstimationBackend(
+def test_instantiation_nonexistent_weights() -> None:
+    """Non-existent weights_path raises FileNotFoundError."""
+    with pytest.raises(FileNotFoundError, match="weights not found"):
+        PoseEstimationBackend(
             weights_path="/nonexistent/path/model.pt", keypoint_t_values=_DEFAULT_T
         )
-
-    assert backend._model is None
 
 
 def test_instantiation_default_kwargs() -> None:

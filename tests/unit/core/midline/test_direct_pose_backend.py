@@ -47,9 +47,12 @@ def test_pose_estimation_stub_accepts_minimal_args() -> None:
 
 
 def test_pose_estimation_stub_accepts_kwargs() -> None:
-    """PoseEstimationBackend accepts all explicit kwargs (API compatibility)."""
+    """PoseEstimationBackend accepts all explicit kwargs (API compatibility).
+
+    Uses weights_path=None since non-existent paths now raise FileNotFoundError.
+    """
     backend = PoseEstimationBackend(
-        weights_path="nonexistent.pth",
+        weights_path=None,
         device="cpu",
         n_points=15,
         n_keypoints=6,

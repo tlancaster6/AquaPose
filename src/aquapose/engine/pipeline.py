@@ -375,6 +375,18 @@ def build_stages(
                     "LUTs not found. Run: aquapose prep generate-luts --config <path>"
                 )
 
+    def _check_model_weights() -> None:
+        """Raise early if any configured model weights paths don't exist."""
+        paths: list[tuple[str, str | None]] = [
+            ("detection.weights_path", config.detection.weights_path),
+            ("midline.weights_path", config.midline.weights_path),
+        ]
+        for label, path in paths:
+            if path is not None and not Path(path).exists():
+                raise FileNotFoundError(f"Model weights not found for {label}: {path}")
+
+    _check_model_weights()
+
     # --- Synthetic mode: SyntheticDataStage replaces Detection + Midline
     if config.mode == "synthetic":
         synthetic_stage = SyntheticDataStage(

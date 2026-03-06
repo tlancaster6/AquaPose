@@ -147,18 +147,15 @@ class PoseEstimationBackend:
         if weights_path is not None:
             from pathlib import Path
 
-            if Path(weights_path).exists():
-                from ultralytics import YOLO
-
-                self._model: object | None = YOLO(str(weights_path))
-                logger.info("PoseEstimationBackend: loaded model from %s", weights_path)
-            else:
-                self._model = None
-                logger.warning(
-                    "PoseEstimationBackend: weights_path '%s' does not exist — "
-                    "all midlines will be None.",
-                    weights_path,
+            if not Path(weights_path).exists():
+                raise FileNotFoundError(
+                    f"PoseEstimationBackend weights not found: {weights_path}. "
+                    "Provide a valid path to a trained .pt weights file."
                 )
+            from ultralytics import YOLO
+
+            self._model: object | None = YOLO(str(weights_path))
+            logger.info("PoseEstimationBackend: loaded model from %s", weights_path)
         else:
             self._model = None
             logger.warning(

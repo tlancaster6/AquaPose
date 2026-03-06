@@ -108,16 +108,10 @@ def test_instantiation_no_weights_path(caplog: pytest.LogCaptureFixture) -> None
     assert any("no weights_path" in msg for msg in caplog.messages)
 
 
-def test_instantiation_nonexistent_weights(caplog: pytest.LogCaptureFixture) -> None:
-    """SegmentationBackend with a non-existent path logs warning and leaves model None."""
-    import logging
-
-    with caplog.at_level(
-        logging.WARNING, logger="aquapose.core.midline.backends.segmentation"
-    ):
-        backend = SegmentationBackend(weights_path="/nonexistent/path/model.pt")
-
-    assert backend._model is None
+def test_instantiation_nonexistent_weights() -> None:
+    """SegmentationBackend with a non-existent path raises FileNotFoundError."""
+    with pytest.raises(FileNotFoundError, match="weights not found"):
+        SegmentationBackend(weights_path="/nonexistent/path/model.pt")
 
 
 def test_instantiation_default_kwargs() -> None:

@@ -71,6 +71,7 @@ Recent decisions affecting current work:
 ### Roadmap Evolution
 
 - Phase 67 added: Elastic midline deformation augmentation for pose training data
+- Phase 68 added: CLI Workflow Cleanup
 
 ### Blockers/Concerns
 
@@ -83,9 +84,10 @@ Recent decisions affecting current work:
 |---|-------------|------|--------|--------|-----------|
 | 18 | Fix pseudo-label pose output to use OBB-cropped images with crop-space keypoints | 2026-03-05 | 434b81b | Verified | [18-fix-pseudo-label-pose-output-to-use-obb-](./quick/18-fix-pseudo-label-pose-output-to-use-obb-/) |
 | 19 | Wire frame selection into pseudo-label assembly CLI | 2026-03-05 | 287a6a8 | Complete | [19-wire-frame-selection-into-pseudo-label-a](./quick/19-wire-frame-selection-into-pseudo-label-a/) |
+| 20 | Implement COCO interchange format for pseudo-labels | 2026-03-06 | d2e1195 | Complete | [20-implement-coco-interchange-format-for-ps](./quick/20-implement-coco-interchange-format-for-ps/) |
 
 ## Session Continuity
 
-Last session: 2026-03-05
-Stopped at: Phase 67 context gathered
-Resume file: .planning/phases/67-elastic-midline-deformation-augmentation-for-pose-training-data/67-CONTEXT.md
+Last session: 2026-03-06
+Stopped at: Completed quick task 20 (COCO interchange)
+Resume file: .planning/quick/20-implement-coco-interchange-format-for-ps/20-SUMMARY.md

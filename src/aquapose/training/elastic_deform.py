@@ -278,7 +278,7 @@ def generate_variants(
     crop_w: int,
     crop_h: int,
     lateral_pad: float,
-    angle_range: tuple[float, float] = (10.0, 30.0),
+    angle_range: tuple[float, float] = (5.0, 15.0),
 ) -> list[dict]:
     """Generate 4 deformed variants of a fish image and keypoints.
 
@@ -377,7 +377,7 @@ def write_yolo_dataset(
     input_dir: Path,
     output_dir: Path,
     lateral_pad: float,
-    angle_range: tuple[float, float] = (10.0, 30.0),
+    angle_range: tuple[float, float] = (5.0, 15.0),
 ) -> None:
     """Generate a YOLO-format dataset with elastic deformation variants.
 
@@ -453,7 +453,7 @@ def generate_preview_grid(
     input_dir: Path,
     output_path: Path,
     lateral_pad: float,
-    angle_range: tuple[float, float] = (10.0, 30.0),
+    angle_range: tuple[float, float] = (5.0, 15.0),
     max_samples: int = 5,
 ) -> None:
     """Generate a preview grid showing original + 4 deformed variants.

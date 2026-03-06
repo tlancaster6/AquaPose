@@ -202,13 +202,13 @@ def compare(
 )
 @click.option(
     "--min-angle",
-    default=10.0,
+    default=5.0,
     type=float,
     help="Minimum deformation angle in degrees.",
 )
 @click.option(
     "--max-angle",
-    default=30.0,
+    default=15.0,
     type=float,
     help="Maximum deformation angle in degrees.",
 )

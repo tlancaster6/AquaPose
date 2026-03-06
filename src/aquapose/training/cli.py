@@ -6,6 +6,8 @@ from pathlib import Path
 
 import click
 
+from aquapose.cli_utils import get_config_path, get_project_dir
+
 
 @click.group("train")
 def train_group() -> None:
@@ -15,15 +17,9 @@ def train_group() -> None:
 @train_group.command("yolo-obb")
 @click.option(
     "--data-dir",
-    required=True,
+    default=None,
     type=click.Path(exists=True),
-    help="Directory containing dataset.yaml file.",
-)
-@click.option(
-    "--config",
-    required=True,
-    type=click.Path(exists=True),
-    help="Project config YAML path.",
+    help="Directory containing dataset.yaml file. Defaults to project training_data/obb/.",
 )
 @click.option(
     "--tag",
@@ -59,9 +55,10 @@ def train_group() -> None:
     type=float,
     help="Mosaic augmentation probability (0.0 to disable).",
 )
+@click.pass_context
 def yolo_obb(
-    data_dir: str,
-    config: str,
+    ctx: click.Context,
+    data_dir: str | None,
     tag: str | None,
     epochs: int,
     batch_size: int,
@@ -83,8 +80,14 @@ def yolo_obb(
         write_summary,
     )
 
+    config_path = get_config_path(ctx)
+    project_dir = get_project_dir(ctx)
+
+    if data_dir is None:
+        data_dir = str(project_dir / "training_data" / "obb")
+
     model_type = "obb"
-    run_dir = create_run_dir(Path(config), model_type)
+    run_dir = create_run_dir(config_path, model_type)
     setup_file_logging(run_dir, "train-yolo-obb")
 
     cli_args = {
@@ -132,7 +135,7 @@ def yolo_obb(
         from .run_manager import register_trained_model
 
         register_trained_model(
-            config_path=Path(config),
+            config_path=config_path,
             run_dir=run_dir,
             model_type=model_type,
             best_weights=best_path,
@@ -152,12 +155,6 @@ def yolo_obb(
 
 @train_group.command("compare")
 @click.option(
-    "--config",
-    required=True,
-    type=click.Path(exists=True),
-    help="Project config YAML path (to resolve training directory).",
-)
-@click.option(
     "--model-type",
     required=True,
     type=click.Choice(["obb", "seg", "pose"]),
@@ -171,8 +168,9 @@ def yolo_obb(
     help="Export comparison to CSV file.",
 )
 @click.argument("run_paths", nargs=-1, type=click.Path(exists=True))
+@click.pass_context
 def compare(
-    config: str,
+    ctx: click.Context,
     model_type: str,
     csv_path: str | None,
     run_paths: tuple[str, ...],
@@ -184,12 +182,11 @@ def compare(
         load_run_summaries,
         write_comparison_csv,
     )
-    from .run_manager import resolve_project_dir
 
     if run_paths:
         run_dirs = [Path(p) for p in run_paths]
     else:
-        project_dir = resolve_project_dir(Path(config))
+        project_dir = get_project_dir(ctx)
         run_dirs = discover_runs(project_dir / "training" / model_type)
 
     summaries = load_run_summaries(run_dirs)
@@ -265,15 +262,9 @@ def augment_elastic(
 @train_group.command("seg")
 @click.option(
     "--data-dir",
-    required=True,
+    default=None,
     type=click.Path(exists=True),
-    help="Directory containing dataset.yaml file.",
-)
-@click.option(
-    "--config",
-    required=True,
-    type=click.Path(exists=True),
-    help="Project config YAML path.",
+    help="Directory containing dataset.yaml file. Defaults to project training_data/seg/.",
 )
 @click.option(
     "--tag",
@@ -309,9 +300,10 @@ def augment_elastic(
     type=float,
     help="Mosaic augmentation probability (0.0 to disable).",
 )
+@click.pass_context
 def seg(
-    data_dir: str,
-    config: str,
+    ctx: click.Context,
+    data_dir: str | None,
     tag: str | None,
     epochs: int,
     batch_size: int,
@@ -333,8 +325,14 @@ def seg(
         write_summary,
     )
 
+    config_path = get_config_path(ctx)
+    project_dir = get_project_dir(ctx)
+
+    if data_dir is None:
+        data_dir = str(project_dir / "training_data" / "seg")
+
     model_type = "seg"
-    run_dir = create_run_dir(Path(config), model_type)
+    run_dir = create_run_dir(config_path, model_type)
     setup_file_logging(run_dir, "train-seg")
 
     cli_args = {
@@ -383,15 +381,9 @@ def seg(
 @train_group.command("pose")
 @click.option(
     "--data-dir",
-    required=True,
+    default=None,
     type=click.Path(exists=True),
-    help="Directory containing dataset.yaml file.",
-)
-@click.option(
-    "--config",
-    required=True,
-    type=click.Path(exists=True),
-    help="Project config YAML path.",
+    help="Directory containing dataset.yaml file. Defaults to project training_data/pose/.",
 )
 @click.option(
     "--tag",
@@ -427,9 +419,10 @@ def seg(
     type=float,
     help="Mosaic augmentation probability (0.0 to disable).",
 )
+@click.pass_context
 def pose(
-    data_dir: str,
-    config: str,
+    ctx: click.Context,
+    data_dir: str | None,
     tag: str | None,
     epochs: int,
     batch_size: int,
@@ -451,8 +444,14 @@ def pose(
         write_summary,
     )
 
+    config_path = get_config_path(ctx)
+    project_dir = get_project_dir(ctx)
+
+    if data_dir is None:
+        data_dir = str(project_dir / "training_data" / "pose")
+
     model_type = "pose"
-    run_dir = create_run_dir(Path(config), model_type)
+    run_dir = create_run_dir(config_path, model_type)
     setup_file_logging(run_dir, "train-pose")
 
     cli_args = {
@@ -500,7 +499,7 @@ def pose(
         from .run_manager import register_trained_model
 
         register_trained_model(
-            config_path=Path(config),
+            config_path=config_path,
             run_dir=run_dir,
             model_type=model_type,
             best_weights=best_path,

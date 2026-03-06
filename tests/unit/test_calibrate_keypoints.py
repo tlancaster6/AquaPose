@@ -9,7 +9,7 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from aquapose.training.prep import prep_group
+from aquapose.cli import cli
 
 
 @pytest.fixture
@@ -71,41 +71,58 @@ def coco_annotations(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def config_yaml(tmp_path: Path) -> Path:
-    """Create a minimal pipeline config YAML."""
-    data = {
-        "project_dir": str(tmp_path),
+def project_dir(tmp_path: Path) -> Path:
+    """Create a minimal project directory with config.yaml."""
+    proj = tmp_path / "test_project"
+    proj.mkdir()
+    config_data = {
+        "project_dir": str(proj),
         "video_dir": "videos",
         "calibration_path": "geometry/calibration.json",
         "detection": {"detector_kind": "yolo_obb"},
         "midline": {"backend": "pose_estimation"},
     }
-    path = tmp_path / "config.yaml"
-    path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
-    return path
+    (proj / "config.yaml").write_text(
+        yaml.dump(config_data, default_flow_style=False, sort_keys=False)
+    )
+    return proj
+
+
+@pytest.fixture
+def monkeypatch_project(monkeypatch: pytest.MonkeyPatch, project_dir: Path) -> Path:
+    """Patch resolve_project so --project test resolves to project_dir."""
+    monkeypatch.setattr(
+        "aquapose.cli_utils.resolve_project",
+        lambda name: project_dir,
+    )
+    return project_dir
 
 
 class TestCalibrateKeypointsConfig:
     """Test calibrate-keypoints --config flag and YAML in-place update."""
 
     def test_updates_config_yaml_in_place(
-        self, coco_annotations: Path, config_yaml: Path
+        self,
+        coco_annotations: Path,
+        monkeypatch_project: Path,
     ) -> None:
-        """calibrate-keypoints with --config writes keypoint_t_values into YAML."""
+        """calibrate-keypoints writes keypoint_t_values into YAML."""
         runner = CliRunner()
         result = runner.invoke(
-            prep_group,
+            cli,
             [
+                "--project",
+                "test",
+                "prep",
                 "calibrate-keypoints",
                 "--annotations",
                 str(coco_annotations),
-                "--config",
-                str(config_yaml),
             ],
         )
         assert result.exit_code == 0, result.output
 
         # Verify YAML was updated
+        config_yaml = monkeypatch_project / "config.yaml"
         updated = yaml.safe_load(config_yaml.read_text())
         assert "midline" in updated
         assert "keypoint_t_values" in updated["midline"]
@@ -120,31 +137,40 @@ class TestCalibrateKeypointsConfig:
         assert updated["midline"]["backend"] == "pose_estimation"
 
     def test_creates_midline_section_if_missing(
-        self, coco_annotations: Path, tmp_path: Path
+        self,
+        coco_annotations: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """calibrate-keypoints creates midline section if config lacks it."""
-        config_path = tmp_path / "minimal_config.yaml"
-        config_path.write_text(
+        proj = tmp_path / "minimal_project"
+        proj.mkdir()
+        (proj / "config.yaml").write_text(
             yaml.dump(
-                {"project_dir": str(tmp_path), "video_dir": "videos"},
+                {"project_dir": str(proj), "video_dir": "videos"},
                 default_flow_style=False,
             )
+        )
+        monkeypatch.setattr(
+            "aquapose.cli_utils.resolve_project",
+            lambda name: proj,
         )
 
         runner = CliRunner()
         result = runner.invoke(
-            prep_group,
+            cli,
             [
+                "--project",
+                "test",
+                "prep",
                 "calibrate-keypoints",
                 "--annotations",
                 str(coco_annotations),
-                "--config",
-                str(config_path),
             ],
         )
         assert result.exit_code == 0, result.output
 
-        updated = yaml.safe_load(config_path.read_text())
+        updated = yaml.safe_load((proj / "config.yaml").read_text())
         assert "midline" in updated
         assert "keypoint_t_values" in updated["midline"]
 
@@ -172,23 +198,27 @@ class TestCalibrateKeypointsYolo:
         return tmp_path / "labels"
 
     def test_yolo_labels_detected_and_parsed(
-        self, yolo_labels_dir: Path, config_yaml: Path
+        self,
+        yolo_labels_dir: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """Directory input auto-detects YOLO format and computes t-values."""
         runner = CliRunner()
         result = runner.invoke(
-            prep_group,
+            cli,
             [
+                "--project",
+                "test",
+                "prep",
                 "calibrate-keypoints",
                 "--annotations",
                 str(yolo_labels_dir),
-                "--config",
-                str(config_yaml),
             ],
         )
         assert result.exit_code == 0, result.output
         assert "YOLO" in result.output
 
+        config_yaml = monkeypatch_project / "config.yaml"
         updated = yaml.safe_load(config_yaml.read_text())
         t_values = updated["midline"]["keypoint_t_values"]
         assert len(t_values) == 6
@@ -196,36 +226,44 @@ class TestCalibrateKeypointsYolo:
         assert t_values[-1] == pytest.approx(1.0, abs=0.01)
 
     def test_yolo_processes_all_subdirs(
-        self, yolo_labels_dir: Path, config_yaml: Path
+        self,
+        yolo_labels_dir: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """YOLO mode recurses into train/ and val/ subdirectories."""
         runner = CliRunner()
         result = runner.invoke(
-            prep_group,
+            cli,
             [
+                "--project",
+                "test",
+                "prep",
                 "calibrate-keypoints",
                 "--annotations",
                 str(yolo_labels_dir),
-                "--config",
-                str(config_yaml),
             ],
         )
         assert result.exit_code == 0, result.output
         assert "Processed 3 annotations" in result.output
 
-    def test_yolo_empty_dir_fails(self, tmp_path: Path, config_yaml: Path) -> None:
+    def test_yolo_empty_dir_fails(
+        self,
+        tmp_path: Path,
+        monkeypatch_project: Path,
+    ) -> None:
         """YOLO mode with empty directory reports error."""
         empty_dir = tmp_path / "empty_labels"
         empty_dir.mkdir()
         runner = CliRunner()
         result = runner.invoke(
-            prep_group,
+            cli,
             [
+                "--project",
+                "test",
+                "prep",
                 "calibrate-keypoints",
                 "--annotations",
                 str(empty_dir),
-                "--config",
-                str(config_yaml),
             ],
         )
         assert result.exit_code != 0

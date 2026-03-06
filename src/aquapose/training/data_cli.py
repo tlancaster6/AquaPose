@@ -8,7 +8,8 @@ import tempfile
 from pathlib import Path
 
 import click
-import yaml
+
+from aquapose.cli_utils import get_project_dir
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +20,6 @@ def data_group() -> None:
 
 
 @data_group.command("import")
-@click.option(
-    "--config",
-    required=True,
-    type=click.Path(exists=True),
-    help="Project config YAML for path resolution.",
-)
 @click.option(
     "--store",
     required=True,
@@ -67,8 +62,9 @@ def data_group() -> None:
     default=None,
     help="JSON string of additional metadata to attach to all imported samples.",
 )
+@click.pass_context
 def import_cmd(
-    config: str,
+    ctx: click.Context,
     store: str,
     source: str,
     input_dir: str,
@@ -84,9 +80,8 @@ def import_cmd(
     from .elastic_deform import generate_variants, parse_pose_label
     from .store import SampleStore
 
-    # Resolve project dir from config
-    config_data = yaml.safe_load(Path(config).read_text())
-    project_dir = Path(config_data["project_dir"])
+    # Resolve project dir from context
+    project_dir = get_project_dir(ctx)
     store_db = project_dir / "training_data" / store / "store.db"
 
     # Parse extra metadata
@@ -365,28 +360,21 @@ def convert_cmd(
     click.echo("Conversion complete.")
 
 
-def _resolve_store(config: str, store: str) -> Path:
-    """Resolve the store DB path from config and store type.
+def _resolve_store_from_ctx(ctx: click.Context, store: str) -> Path:
+    """Resolve the store DB path from click context and store type.
 
     Args:
-        config: Path to project config YAML.
+        ctx: Click context with project resolution.
         store: Store type (``"obb"`` or ``"pose"``).
 
     Returns:
         Path to the store database file.
     """
-    config_data = yaml.safe_load(Path(config).read_text())
-    project_dir = Path(config_data["project_dir"])
+    project_dir = get_project_dir(ctx)
     return project_dir / "training_data" / store / "store.db"
 
 
 @data_group.command("assemble")
-@click.option(
-    "--config",
-    required=True,
-    type=click.Path(exists=True),
-    help="Project config YAML for path resolution.",
-)
 @click.option(
     "--store",
     required=True,
@@ -431,8 +419,9 @@ def _resolve_store(config: str, store: str) -> Path:
     is_flag=True,
     help="Allow pseudo-labels in validation split.",
 )
+@click.pass_context
 def assemble_cmd(
-    config: str,
+    ctx: click.Context,
     store: str,
     name: str,
     source: tuple[str, ...],
@@ -446,7 +435,7 @@ def assemble_cmd(
     """Assemble a training dataset with symlinks from store."""
     from .store import SampleStore
 
-    store_db = _resolve_store(config, store)
+    store_db = _resolve_store_from_ctx(ctx, store)
 
     # Build query dict from filter options
     query: dict = {}
@@ -477,18 +466,12 @@ def assemble_cmd(
 
 
 @data_group.command("status")
-@click.option(
-    "--config",
-    required=True,
-    type=click.Path(exists=True),
-    help="Project config YAML for path resolution.",
-)
-def status_cmd(config: str) -> None:
+@click.pass_context
+def status_cmd(ctx: click.Context) -> None:
     """Show cross-store summary of training data."""
     from .store import SampleStore
 
-    config_data = yaml.safe_load(Path(config).read_text())
-    project_dir = Path(config_data["project_dir"])
+    project_dir = get_project_dir(ctx)
 
     click.echo("Training Data Status")
     click.echo("=" * 40)
@@ -519,23 +502,18 @@ def status_cmd(config: str) -> None:
 
 @data_group.command("list")
 @click.option(
-    "--config",
-    required=True,
-    type=click.Path(exists=True),
-    help="Project config YAML for path resolution.",
-)
-@click.option(
     "--store",
     required=True,
     type=click.Choice(["obb", "pose"]),
     help="Which store to list.",
 )
 @click.option("--verbose", is_flag=True, help="Show individual samples.")
-def list_cmd(config: str, store: str, verbose: bool) -> None:
+@click.pass_context
+def list_cmd(ctx: click.Context, store: str, verbose: bool) -> None:
     """List store contents with summary statistics."""
     from .store import SampleStore
 
-    store_db = _resolve_store(config, store)
+    store_db = _resolve_store_from_ctx(ctx, store)
 
     with SampleStore(store_db) as sample_store:
         s = sample_store.summary()
@@ -568,12 +546,6 @@ def list_cmd(config: str, store: str, verbose: bool) -> None:
 
 @data_group.command("exclude")
 @click.option(
-    "--config",
-    required=True,
-    type=click.Path(exists=True),
-    help="Project config YAML for path resolution.",
-)
-@click.option(
     "--store",
     required=True,
     type=click.Choice(["obb", "pose"]),
@@ -583,13 +555,14 @@ def list_cmd(config: str, store: str, verbose: bool) -> None:
 @click.option(
     "--source", type=str, default=None, help="Exclude all samples from this source."
 )
+@click.pass_context
 def exclude_cmd(
-    config: str, store: str, ids: tuple[str, ...], source: str | None
+    ctx: click.Context, store: str, ids: tuple[str, ...], source: str | None
 ) -> None:
     """Soft-delete samples (reversible via include)."""
     from .store import SampleStore
 
-    store_db = _resolve_store(config, store)
+    store_db = _resolve_store_from_ctx(ctx, store)
 
     with SampleStore(store_db) as sample_store:
         if ids:
@@ -607,12 +580,6 @@ def exclude_cmd(
 
 @data_group.command("include")
 @click.option(
-    "--config",
-    required=True,
-    type=click.Path(exists=True),
-    help="Project config YAML for path resolution.",
-)
-@click.option(
     "--store",
     required=True,
     type=click.Choice(["obb", "pose"]),
@@ -625,13 +592,14 @@ def exclude_cmd(
     default=None,
     help="Include all excluded samples from this source.",
 )
+@click.pass_context
 def include_cmd(
-    config: str, store: str, ids: tuple[str, ...], source: str | None
+    ctx: click.Context, store: str, ids: tuple[str, ...], source: str | None
 ) -> None:
     """Reverse exclusion (remove 'excluded' tag)."""
     from .store import SampleStore
 
-    store_db = _resolve_store(config, store)
+    store_db = _resolve_store_from_ctx(ctx, store)
 
     with SampleStore(store_db) as sample_store:
         if ids:
@@ -649,12 +617,6 @@ def include_cmd(
 
 @data_group.command("remove")
 @click.option(
-    "--config",
-    required=True,
-    type=click.Path(exists=True),
-    help="Project config YAML for path resolution.",
-)
-@click.option(
     "--store",
     required=True,
     type=click.Choice(["obb", "pose"]),
@@ -665,8 +627,9 @@ def include_cmd(
     "--source", type=str, default=None, help="Remove all samples from this source."
 )
 @click.option("--purge", is_flag=True, help="Confirm permanent deletion.")
+@click.pass_context
 def remove_cmd(
-    config: str,
+    ctx: click.Context,
     store: str,
     ids: tuple[str, ...],
     source: str | None,
@@ -682,7 +645,7 @@ def remove_cmd(
         )
         return
 
-    store_db = _resolve_store(config, store)
+    store_db = _resolve_store_from_ctx(ctx, store)
 
     with SampleStore(store_db) as sample_store:
         if ids:

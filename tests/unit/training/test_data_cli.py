@@ -70,18 +70,24 @@ def pose_yolo_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def project_config(tmp_path: Path) -> Path:
-    """Create a minimal project config YAML."""
-    import yaml
+def project_dir(tmp_path: Path) -> Path:
+    """Create a minimal project directory with config.yaml."""
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "config.yaml").write_text(f"project_dir: {project}\n")
+    (project / "training_data" / "obb").mkdir(parents=True)
+    (project / "training_data" / "pose").mkdir(parents=True)
+    return project
 
-    project_dir = tmp_path / "project"
-    project_dir.mkdir()
-    config = {
-        "project_dir": str(project_dir),
-    }
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text(yaml.dump(config))
-    return config_path
+
+@pytest.fixture
+def monkeypatch_project(monkeypatch: pytest.MonkeyPatch, project_dir: Path) -> Path:
+    """Patch resolve_project so --project test resolves to project_dir."""
+    monkeypatch.setattr(
+        "aquapose.cli_utils.resolve_project",
+        lambda name: project_dir,
+    )
+    return project_dir
 
 
 @pytest.fixture
@@ -153,17 +159,17 @@ class TestDataImport:
         self,
         runner: CliRunner,
         yolo_dir: Path,
-        project_config: Path,
+        monkeypatch_project: Path,
         tmp_path: Path,
     ) -> None:
         """Import YOLO directory and verify samples appear in store."""
         result = runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "import",
-                "--config",
-                str(project_config),
                 "--store",
                 "obb",
                 "--source",
@@ -175,10 +181,7 @@ class TestDataImport:
         assert result.exit_code == 0, result.output
 
         # Verify samples in store
-        project_dir = Path(
-            __import__("yaml").safe_load(project_config.read_text())["project_dir"]
-        )
-        store_db = project_dir / "training_data" / "obb" / "store.db"
+        store_db = monkeypatch_project / "training_data" / "obb" / "store.db"
         assert store_db.exists()
 
         with SampleStore(store_db) as store:
@@ -188,16 +191,16 @@ class TestDataImport:
         self,
         runner: CliRunner,
         pose_yolo_dir: Path,
-        project_config: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """Import pose sample with --augment, verify augmented children exist."""
         result = runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "import",
-                "--config",
-                str(project_config),
                 "--store",
                 "pose",
                 "--source",
@@ -210,10 +213,7 @@ class TestDataImport:
         assert result.exit_code == 0, result.output
         assert "augmented" in result.output.lower()
 
-        project_dir = Path(
-            __import__("yaml").safe_load(project_config.read_text())["project_dir"]
-        )
-        store_db = project_dir / "training_data" / "pose" / "store.db"
+        store_db = monkeypatch_project / "training_data" / "pose" / "store.db"
 
         with SampleStore(store_db) as store:
             all_samples = store.query()
@@ -229,16 +229,16 @@ class TestDataImport:
         self,
         runner: CliRunner,
         yolo_dir: Path,
-        project_config: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """Import with --augment --store obb prints skip message."""
         result = runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "import",
-                "--config",
-                str(project_config),
                 "--store",
                 "obb",
                 "--source",
@@ -255,10 +255,7 @@ class TestDataImport:
         )
 
         # No augmented children
-        project_dir = Path(
-            __import__("yaml").safe_load(project_config.read_text())["project_dir"]
-        )
-        store_db = project_dir / "training_data" / "obb" / "store.db"
+        store_db = monkeypatch_project / "training_data" / "obb" / "store.db"
         with SampleStore(store_db) as store:
             assert store.count() == 3  # only originals
 
@@ -266,17 +263,17 @@ class TestDataImport:
         self,
         runner: CliRunner,
         yolo_dir: Path,
-        project_config: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """Import shows imported/upserted/skipped counts."""
         # First import
         runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "import",
-                "--config",
-                str(project_config),
                 "--store",
                 "obb",
                 "--source",
@@ -290,10 +287,10 @@ class TestDataImport:
         result = runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "import",
-                "--config",
-                str(project_config),
                 "--store",
                 "obb",
                 "--source",
@@ -310,16 +307,16 @@ class TestDataImport:
         self,
         runner: CliRunner,
         yolo_dir: Path,
-        project_config: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """Import with --batch-id, verify import_batch_id in sample."""
         result = runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "import",
-                "--config",
-                str(project_config),
                 "--store",
                 "obb",
                 "--source",
@@ -332,10 +329,7 @@ class TestDataImport:
         )
         assert result.exit_code == 0, result.output
 
-        project_dir = Path(
-            __import__("yaml").safe_load(project_config.read_text())["project_dir"]
-        )
-        store_db = project_dir / "training_data" / "obb" / "store.db"
+        store_db = monkeypatch_project / "training_data" / "obb" / "store.db"
         with SampleStore(store_db) as store:
             samples = store.query()
             assert all(s["import_batch_id"] == "batch_001" for s in samples)
@@ -344,17 +338,17 @@ class TestDataImport:
         self,
         runner: CliRunner,
         yolo_dir: Path,
-        project_config: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """Import with --metadata-json, verify metadata stored."""
         metadata = json.dumps({"confidence": 0.85, "run_id": "run_123"})
         result = runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "import",
-                "--config",
-                str(project_config),
                 "--store",
                 "obb",
                 "--source",
@@ -367,10 +361,7 @@ class TestDataImport:
         )
         assert result.exit_code == 0, result.output
 
-        project_dir = Path(
-            __import__("yaml").safe_load(project_config.read_text())["project_dir"]
-        )
-        store_db = project_dir / "training_data" / "obb" / "store.db"
+        store_db = monkeypatch_project / "training_data" / "obb" / "store.db"
         with SampleStore(store_db) as store:
             samples = store.query()
             for s in samples:
@@ -382,17 +373,17 @@ class TestDataImport:
         self,
         runner: CliRunner,
         pose_yolo_dir: Path,
-        project_config: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """Re-importing after augment warns about cascade-deleted augmented variants."""
         # First import with augment
         runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "import",
-                "--config",
-                str(project_config),
                 "--store",
                 "pose",
                 "--source",
@@ -407,10 +398,10 @@ class TestDataImport:
         result = runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "import",
-                "--config",
-                str(project_config),
                 "--store",
                 "pose",
                 "--source",
@@ -494,7 +485,6 @@ class TestDataConvert:
 
 def _import_samples(
     runner: CliRunner,
-    project_config: Path,
     yolo_dir: Path,
     store: str,
     source: str,
@@ -503,10 +493,10 @@ def _import_samples(
     runner.invoke(
         cli,
         [
+            "--project",
+            "test",
             "data",
             "import",
-            "--config",
-            str(project_config),
             "--store",
             store,
             "--source",
@@ -515,13 +505,6 @@ def _import_samples(
             str(yolo_dir),
         ],
     )
-
-
-def _get_project_dir(project_config: Path) -> Path:
-    """Resolve project_dir from config yaml."""
-    import yaml
-
-    return Path(yaml.safe_load(project_config.read_text())["project_dir"])
 
 
 @pytest.fixture
@@ -565,18 +548,18 @@ class TestDataAssemble:
         self,
         runner: CliRunner,
         yolo_dir: Path,
-        project_config: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """Import samples, run assemble, verify YOLO directory with symlinks exists."""
-        _import_samples(runner, project_config, yolo_dir, "obb", "manual")
+        _import_samples(runner, yolo_dir, "obb", "manual")
 
         result = runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "assemble",
-                "--config",
-                str(project_config),
                 "--store",
                 "obb",
                 "--name",
@@ -585,8 +568,7 @@ class TestDataAssemble:
         )
         assert result.exit_code == 0, result.output
 
-        project_dir = _get_project_dir(project_config)
-        ds_dir = project_dir / "training_data" / "obb" / "datasets" / "test_ds"
+        ds_dir = monkeypatch_project / "training_data" / "obb" / "datasets" / "test_ds"
         assert ds_dir.exists()
         assert (ds_dir / "images" / "train").is_dir()
         assert (ds_dir / "dataset.yaml").exists()
@@ -596,19 +578,19 @@ class TestDataAssemble:
         runner: CliRunner,
         yolo_dir: Path,
         yolo_dir_large: Path,
-        project_config: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """Assemble with --source pseudo, verify only pseudo samples included."""
-        _import_samples(runner, project_config, yolo_dir, "obb", "manual")
-        _import_samples(runner, project_config, yolo_dir_large, "obb", "pseudo")
+        _import_samples(runner, yolo_dir, "obb", "manual")
+        _import_samples(runner, yolo_dir_large, "obb", "pseudo")
 
         result = runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "assemble",
-                "--config",
-                str(project_config),
                 "--store",
                 "obb",
                 "--name",
@@ -621,15 +603,16 @@ class TestDataAssemble:
         )
         assert result.exit_code == 0, result.output
 
-        project_dir = _get_project_dir(project_config)
-        ds_dir = project_dir / "training_data" / "obb" / "datasets" / "pseudo_only"
+        ds_dir = (
+            monkeypatch_project / "training_data" / "obb" / "datasets" / "pseudo_only"
+        )
         train_imgs = list((ds_dir / "images" / "train").iterdir())
         assert len(train_imgs) == 10  # only pseudo samples
 
     def test_assemble_with_min_confidence(
         self,
         runner: CliRunner,
-        project_config: Path,
+        monkeypatch_project: Path,
         tmp_path: Path,
     ) -> None:
         """Assemble with --min-confidence 0.5, verify low-confidence excluded."""
@@ -649,10 +632,10 @@ class TestDataAssemble:
         runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "import",
-                "--config",
-                str(project_config),
                 "--store",
                 "obb",
                 "--source",
@@ -679,10 +662,10 @@ class TestDataAssemble:
         runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "import",
-                "--config",
-                str(project_config),
                 "--store",
                 "obb",
                 "--source",
@@ -697,10 +680,10 @@ class TestDataAssemble:
         result = runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "assemble",
-                "--config",
-                str(project_config),
                 "--store",
                 "obb",
                 "--name",
@@ -713,8 +696,7 @@ class TestDataAssemble:
         )
         assert result.exit_code == 0, result.output
 
-        project_dir = _get_project_dir(project_config)
-        ds_dir = project_dir / "training_data" / "obb" / "datasets" / "conf_ds"
+        ds_dir = monkeypatch_project / "training_data" / "obb" / "datasets" / "conf_ds"
         train_imgs = list((ds_dir / "images" / "train").iterdir())
         assert len(train_imgs) == 4  # only high-confidence
 
@@ -726,15 +708,15 @@ class TestDataStatus:
         self,
         runner: CliRunner,
         yolo_dir: Path,
-        project_config: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """Import into both stores, verify status output."""
-        _import_samples(runner, project_config, yolo_dir, "obb", "manual")
-        _import_samples(runner, project_config, yolo_dir, "pose", "pseudo")
+        _import_samples(runner, yolo_dir, "obb", "manual")
+        _import_samples(runner, yolo_dir, "pose", "pseudo")
 
         result = runner.invoke(
             cli,
-            ["data", "status", "--config", str(project_config)],
+            ["--project", "test", "data", "status"],
         )
         assert result.exit_code == 0, result.output
         assert "obb" in result.output.lower()
@@ -744,12 +726,12 @@ class TestDataStatus:
     def test_status_handles_missing_store(
         self,
         runner: CliRunner,
-        project_config: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """Run status when no store exists, verify graceful handling."""
         result = runner.invoke(
             cli,
-            ["data", "status", "--config", str(project_config)],
+            ["--project", "test", "data", "status"],
         )
         assert result.exit_code == 0, result.output
         assert "no data" in result.output.lower()
@@ -762,14 +744,14 @@ class TestDataList:
         self,
         runner: CliRunner,
         yolo_dir: Path,
-        project_config: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """Import samples, run list, verify output contains source counts."""
-        _import_samples(runner, project_config, yolo_dir, "obb", "manual")
+        _import_samples(runner, yolo_dir, "obb", "manual")
 
         result = runner.invoke(
             cli,
-            ["data", "list", "--config", str(project_config), "--store", "obb"],
+            ["--project", "test", "data", "list", "--store", "obb"],
         )
         assert result.exit_code == 0, result.output
         assert "manual" in result.output.lower()
@@ -783,13 +765,12 @@ class TestDataExcludeInclude:
         self,
         runner: CliRunner,
         yolo_dir: Path,
-        project_config: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """Import, run exclude with sample IDs, verify excluded tag added."""
-        _import_samples(runner, project_config, yolo_dir, "obb", "manual")
+        _import_samples(runner, yolo_dir, "obb", "manual")
 
-        project_dir = _get_project_dir(project_config)
-        store_db = project_dir / "training_data" / "obb" / "store.db"
+        store_db = monkeypatch_project / "training_data" / "obb" / "store.db"
         with SampleStore(store_db) as store:
             samples = store.query()
             sid = samples[0]["id"]
@@ -797,10 +778,10 @@ class TestDataExcludeInclude:
         result = runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "exclude",
-                "--config",
-                str(project_config),
                 "--store",
                 "obb",
                 "--ids",
@@ -818,13 +799,12 @@ class TestDataExcludeInclude:
         self,
         runner: CliRunner,
         yolo_dir: Path,
-        project_config: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """Exclude then include, verify excluded tag removed."""
-        _import_samples(runner, project_config, yolo_dir, "obb", "manual")
+        _import_samples(runner, yolo_dir, "obb", "manual")
 
-        project_dir = _get_project_dir(project_config)
-        store_db = project_dir / "training_data" / "obb" / "store.db"
+        store_db = monkeypatch_project / "training_data" / "obb" / "store.db"
         with SampleStore(store_db) as store:
             samples = store.query()
             sid = samples[0]["id"]
@@ -832,10 +812,10 @@ class TestDataExcludeInclude:
         runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "exclude",
-                "--config",
-                str(project_config),
                 "--store",
                 "obb",
                 "--ids",
@@ -846,10 +826,10 @@ class TestDataExcludeInclude:
         result = runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "include",
-                "--config",
-                str(project_config),
                 "--store",
                 "obb",
                 "--ids",
@@ -867,18 +847,18 @@ class TestDataExcludeInclude:
         self,
         runner: CliRunner,
         yolo_dir: Path,
-        project_config: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """Run exclude with --source filter instead of explicit IDs."""
-        _import_samples(runner, project_config, yolo_dir, "obb", "manual")
+        _import_samples(runner, yolo_dir, "obb", "manual")
 
         result = runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "exclude",
-                "--config",
-                str(project_config),
                 "--store",
                 "obb",
                 "--source",
@@ -887,8 +867,7 @@ class TestDataExcludeInclude:
         )
         assert result.exit_code == 0, result.output
 
-        project_dir = _get_project_dir(project_config)
-        store_db = project_dir / "training_data" / "obb" / "store.db"
+        store_db = monkeypatch_project / "training_data" / "obb" / "store.db"
         with SampleStore(store_db) as store:
             # All should be excluded
             visible = store.query()
@@ -902,13 +881,12 @@ class TestDataRemove:
         self,
         runner: CliRunner,
         yolo_dir: Path,
-        project_config: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """Import, run remove --purge, verify files and DB rows gone."""
-        _import_samples(runner, project_config, yolo_dir, "obb", "manual")
+        _import_samples(runner, yolo_dir, "obb", "manual")
 
-        project_dir = _get_project_dir(project_config)
-        store_db = project_dir / "training_data" / "obb" / "store.db"
+        store_db = monkeypatch_project / "training_data" / "obb" / "store.db"
         with SampleStore(store_db) as store:
             samples = store.query()
             sid = samples[0]["id"]
@@ -916,10 +894,10 @@ class TestDataRemove:
         result = runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "data",
                 "remove",
-                "--config",
-                str(project_config),
                 "--store",
                 "obb",
                 "--ids",

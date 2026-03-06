@@ -11,9 +11,9 @@ import torch
 import yaml
 from click.testing import CliRunner
 
+from aquapose.cli import cli
 from aquapose.core.context import PipelineContext
 from aquapose.core.types.reconstruction import Midline3D
-from aquapose.training.pseudo_label_cli import pseudo_label_group
 
 
 def _make_midline(
@@ -88,13 +88,13 @@ def _mock_projection_project(points: torch.Tensor) -> tuple[torch.Tensor, torch.
 
 
 def _make_frozen_config(
-    tmp_path: Path, *, keypoint_t_values: list[float] | None = None
+    run_dir: Path, *, keypoint_t_values: list[float] | None = None
 ) -> Path:
-    """Create a minimal frozen config YAML in tmp_path."""
+    """Create a minimal frozen config YAML in run_dir."""
     config_data = {
-        "video_dir": str(tmp_path / "videos"),
-        "calibration_path": str(tmp_path / "calib.json"),
-        "output_dir": str(tmp_path),
+        "video_dir": str(run_dir / "videos"),
+        "calibration_path": str(run_dir / "calib.json"),
+        "output_dir": str(run_dir),
         "n_animals": 3,
         "midline": {
             "backend": "pose_estimation",
@@ -109,7 +109,7 @@ def _make_frozen_config(
             "forward_grid_step": 4,
         },
     }
-    config_path = tmp_path / "config.yaml"
+    config_path = run_dir / "config.yaml"
     config_path.write_text(yaml.dump(config_data))
     return config_path
 
@@ -174,26 +174,68 @@ def _setup_standard_mocks(
     return mock_proj
 
 
+def _setup_run_dir(tmp_path: Path, *, keypoint_t_values: list[float] | None) -> Path:
+    """Create a run directory with frozen config and return its path."""
+    run_dir = tmp_path / "runs" / "run_20260306_120000"
+    run_dir.mkdir(parents=True)
+    _make_frozen_config(run_dir, keypoint_t_values=keypoint_t_values)
+    (run_dir / "videos").mkdir(exist_ok=True)
+    return run_dir
+
+
+def _setup_project_with_run(
+    tmp_path: Path,
+    monkeypatch: MagicMock,
+    *,
+    keypoint_t_values: list[float] | None,
+) -> tuple[Path, Path]:
+    """Create a project dir with a run, patch resolve_project, return (project, run)."""
+    proj = tmp_path / "test_project"
+    proj.mkdir()
+    (proj / "config.yaml").write_text("project_dir: .\n")
+    runs_dir = proj / "runs"
+    runs_dir.mkdir()
+
+    run_dir = runs_dir / "run_20260306_120000"
+    run_dir.mkdir()
+    _make_frozen_config(run_dir, keypoint_t_values=keypoint_t_values)
+    (run_dir / "videos").mkdir(exist_ok=True)
+
+    monkeypatch.setattr(
+        "aquapose.cli_utils.resolve_project",
+        lambda name: proj,
+    )
+    return proj, run_dir
+
+
 class TestGenerateCommand:
     """Tests for the `pseudo-label generate` CLI command."""
 
-    def test_fails_when_keypoint_t_values_is_none(self, tmp_path: Path) -> None:
+    def test_fails_when_keypoint_t_values_is_none(
+        self, tmp_path: Path, monkeypatch: MagicMock
+    ) -> None:
         """Command fails with clear error when keypoint_t_values is None."""
-        config_path = _make_frozen_config(tmp_path, keypoint_t_values=None)
+        _proj, _run_dir = _setup_project_with_run(
+            tmp_path, monkeypatch, keypoint_t_values=None
+        )
 
         runner = CliRunner()
         result = runner.invoke(
-            pseudo_label_group,
-            ["generate", "--config", str(config_path)],
+            cli,
+            ["--project", "test", "pseudo-label", "generate"],
         )
 
         assert result.exit_code != 0
         assert "keypoint_t_values" in result.output
 
-    def test_fails_when_no_diagnostic_caches(self, tmp_path: Path) -> None:
+    def test_fails_when_no_diagnostic_caches(
+        self, tmp_path: Path, monkeypatch: MagicMock
+    ) -> None:
         """Command fails when no diagnostic caches found."""
-        config_path = _make_frozen_config(
-            tmp_path, keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0]
+        _proj, _run_dir = _setup_project_with_run(
+            tmp_path,
+            monkeypatch,
+            keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0],
         )
 
         with patch("aquapose.evaluation.runner.load_run_context") as mock_load:
@@ -201,19 +243,22 @@ class TestGenerateCommand:
 
             runner = CliRunner()
             result = runner.invoke(
-                pseudo_label_group,
-                ["generate", "--config", str(config_path)],
+                cli,
+                ["--project", "test", "pseudo-label", "generate"],
             )
 
         assert result.exit_code != 0
         assert "No diagnostic caches" in result.output
 
-    def test_generates_merged_obb_and_separate_pose(self, tmp_path: Path) -> None:
+    def test_generates_merged_obb_and_separate_pose(
+        self, tmp_path: Path, monkeypatch: MagicMock
+    ) -> None:
         """Default run produces merged OBB dir and separate pose dirs."""
-        config_path = _make_frozen_config(
-            tmp_path, keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0]
+        _proj, run_dir = _setup_project_with_run(
+            tmp_path,
+            monkeypatch,
+            keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0],
         )
-        (tmp_path / "videos").mkdir()
 
         context = _make_context_with_detections_and_tracks(n_frames=2)
 
@@ -257,13 +302,13 @@ class TestGenerateCommand:
 
             runner = CliRunner()
             result = runner.invoke(
-                pseudo_label_group,
-                ["generate", "--config", str(config_path)],
+                cli,
+                ["--project", "test", "pseudo-label", "generate"],
             )
 
         assert result.exit_code == 0, f"CLI failed: {result.output}"
 
-        pseudo_dir = tmp_path / "pseudo_labels"
+        pseudo_dir = run_dir / "pseudo_labels"
 
         # Check merged OBB directory structure
         assert (pseudo_dir / "obb" / "images" / "train").is_dir()
@@ -318,12 +363,13 @@ class TestGenerateCommand:
             assert len(parts_name) >= 3, f"Expected fish-index suffix: {stem}"
             assert parts_name[-1].isdigit()
 
-    def test_generates_with_gaps(self, tmp_path: Path) -> None:
+    def test_generates_with_gaps(self, tmp_path: Path, monkeypatch: MagicMock) -> None:
         """Default run (gaps enabled) produces gap pose labels."""
-        config_path = _make_frozen_config(
-            tmp_path, keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0]
+        _proj, run_dir = _setup_project_with_run(
+            tmp_path,
+            monkeypatch,
+            keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0],
         )
-        (tmp_path / "videos").mkdir()
 
         context = _make_context_with_detections_and_tracks(n_frames=2)
 
@@ -367,13 +413,13 @@ class TestGenerateCommand:
 
             runner = CliRunner()
             result = runner.invoke(
-                pseudo_label_group,
-                ["generate", "--config", str(config_path)],
+                cli,
+                ["--project", "test", "pseudo-label", "generate"],
             )
 
         assert result.exit_code == 0, f"CLI failed: {result.output}"
 
-        pseudo_dir = tmp_path / "pseudo_labels"
+        pseudo_dir = run_dir / "pseudo_labels"
 
         # Gap pose directory should exist
         assert (pseudo_dir / "pose" / "gap" / "images" / "train").is_dir()
@@ -381,12 +427,15 @@ class TestGenerateCommand:
         assert (pseudo_dir / "pose" / "gap" / "dataset.yaml").exists()
         assert (pseudo_dir / "pose" / "gap" / "confidence.json").exists()
 
-    def test_obb_sidecar_contains_source_field(self, tmp_path: Path) -> None:
+    def test_obb_sidecar_contains_source_field(
+        self, tmp_path: Path, monkeypatch: MagicMock
+    ) -> None:
         """Merged OBB confidence sidecar has source and gap fields per fish."""
-        config_path = _make_frozen_config(
-            tmp_path, keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0]
+        _proj, run_dir = _setup_project_with_run(
+            tmp_path,
+            monkeypatch,
+            keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0],
         )
-        (tmp_path / "videos").mkdir()
 
         context = _make_context_with_detections_and_tracks(n_frames=1)
 
@@ -430,13 +479,13 @@ class TestGenerateCommand:
 
             runner = CliRunner()
             result = runner.invoke(
-                pseudo_label_group,
-                ["generate", "--config", str(config_path)],
+                cli,
+                ["--project", "test", "pseudo-label", "generate"],
             )
 
         assert result.exit_code == 0, f"CLI failed: {result.output}"
 
-        pseudo_dir = tmp_path / "pseudo_labels"
+        pseudo_dir = run_dir / "pseudo_labels"
         sidecar = json.loads((pseudo_dir / "obb" / "confidence.json").read_text())
 
         assert len(sidecar) > 0
@@ -450,12 +499,15 @@ class TestGenerateCommand:
                     assert "gap_reason" in label_entry
                     assert "n_source_cameras" in label_entry
 
-    def test_skip_gaps_omits_gap_labels(self, tmp_path: Path) -> None:
+    def test_skip_gaps_omits_gap_labels(
+        self, tmp_path: Path, monkeypatch: MagicMock
+    ) -> None:
         """--skip-gaps produces only consensus OBB and pose, no gap output."""
-        config_path = _make_frozen_config(
-            tmp_path, keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0]
+        _proj, run_dir = _setup_project_with_run(
+            tmp_path,
+            monkeypatch,
+            keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0],
         )
-        (tmp_path / "videos").mkdir()
 
         context = _make_context(n_frames=2)
 
@@ -482,13 +534,13 @@ class TestGenerateCommand:
 
             runner = CliRunner()
             result = runner.invoke(
-                pseudo_label_group,
-                ["generate", "--skip-gaps", "--config", str(config_path)],
+                cli,
+                ["--project", "test", "pseudo-label", "generate", "--skip-gaps"],
             )
 
         assert result.exit_code == 0, f"CLI failed: {result.output}"
 
-        pseudo_dir = tmp_path / "pseudo_labels"
+        pseudo_dir = run_dir / "pseudo_labels"
 
         # OBB and consensus pose should exist
         assert (pseudo_dir / "obb" / "images" / "train").is_dir()
@@ -497,12 +549,15 @@ class TestGenerateCommand:
         # Gap pose should NOT exist
         assert not (pseudo_dir / "pose" / "gap" / "images" / "train").exists()
 
-    def test_completeness_filter_skips_incomplete(self, tmp_path: Path) -> None:
+    def test_completeness_filter_skips_incomplete(
+        self, tmp_path: Path, monkeypatch: MagicMock
+    ) -> None:
         """OBB image is skipped when not all tracked fish have labels."""
-        config_path = _make_frozen_config(
-            tmp_path, keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0]
+        _proj, run_dir = _setup_project_with_run(
+            tmp_path,
+            monkeypatch,
+            keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0],
         )
-        (tmp_path / "videos").mkdir()
 
         # 2 tracked fish, but only fish_id=1 reaches reconstruction
         context = _make_context(n_frames=1)
@@ -544,13 +599,13 @@ class TestGenerateCommand:
 
             runner = CliRunner()
             result = runner.invoke(
-                pseudo_label_group,
-                ["generate", "--skip-gaps", "--config", str(config_path)],
+                cli,
+                ["--project", "test", "pseudo-label", "generate", "--skip-gaps"],
             )
 
         assert result.exit_code == 0, f"CLI failed: {result.output}"
 
-        pseudo_dir = tmp_path / "pseudo_labels"
+        pseudo_dir = run_dir / "pseudo_labels"
 
         # OBB images should be skipped (1 label < 2 tracked)
         obb_images = list((pseudo_dir / "obb" / "images" / "train").glob("*.jpg"))
@@ -559,12 +614,15 @@ class TestGenerateCommand:
         # Verify "skipped (incomplete)" appears in output
         assert "skipped (incomplete)" in result.output
 
-    def test_completeness_filter_passes_complete(self, tmp_path: Path) -> None:
+    def test_completeness_filter_passes_complete(
+        self, tmp_path: Path, monkeypatch: MagicMock
+    ) -> None:
         """OBB image is written when all tracked fish have labels."""
-        config_path = _make_frozen_config(
-            tmp_path, keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0]
+        _proj, run_dir = _setup_project_with_run(
+            tmp_path,
+            monkeypatch,
+            keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0],
         )
-        (tmp_path / "videos").mkdir()
 
         # 1 tracked fish, 1 reconstructed fish -> complete
         context = _make_context(n_frames=1)
@@ -601,29 +659,29 @@ class TestGenerateCommand:
 
             runner = CliRunner()
             result = runner.invoke(
-                pseudo_label_group,
-                ["generate", "--skip-gaps", "--config", str(config_path)],
+                cli,
+                ["--project", "test", "pseudo-label", "generate", "--skip-gaps"],
             )
 
         assert result.exit_code == 0, f"CLI failed: {result.output}"
 
-        pseudo_dir = tmp_path / "pseudo_labels"
+        pseudo_dir = run_dir / "pseudo_labels"
         obb_images = list((pseudo_dir / "obb" / "images" / "train").glob("*.jpg"))
         assert len(obb_images) > 0
 
     def test_help_text(self) -> None:
         """generate --help shows expected options."""
         runner = CliRunner()
-        result = runner.invoke(pseudo_label_group, ["generate", "--help"])
+        result = runner.invoke(cli, ["pseudo-label", "generate", "--help"])
 
         assert result.exit_code == 0
-        assert "--config" in result.output
         assert "--lateral-pad" in result.output
         assert "--max-camera-residual" in result.output
         assert "--skip-gaps" in result.output
         assert "--min-cameras" in result.output
         assert "--crop-width" in result.output
         assert "--crop-height" in result.output
+        assert "--config" not in result.output
 
 
 class TestAssembleCommand:
@@ -632,7 +690,7 @@ class TestAssembleCommand:
     def test_assemble_help_text(self) -> None:
         """assemble --help shows expected options."""
         runner = CliRunner()
-        result = runner.invoke(pseudo_label_group, ["assemble", "--help"])
+        result = runner.invoke(cli, ["pseudo-label", "assemble", "--help"])
 
         assert result.exit_code == 0
         assert "--run-dir" in result.output
@@ -650,6 +708,8 @@ class TestAssembleCommand:
 
     def test_assemble_produces_output(self, tmp_path: Path) -> None:
         """assemble creates YOLO dataset from synthetic pseudo-labels."""
+        from aquapose.training.pseudo_label_cli import pseudo_label_group
+
         # Set up synthetic run directory with merged OBB pseudo-labels
         run_dir = tmp_path / "run_001"
         img_dir = run_dir / "pseudo_labels" / "obb" / "images" / "train"

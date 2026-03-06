@@ -33,7 +33,6 @@ def test_train_yolo_obb_help_shows_expected_flags() -> None:
     assert result.exit_code == 0, result.output
     expected_flags = [
         "--data-dir",
-        "--config",
         "--tag",
         "--epochs",
         "--device",
@@ -46,6 +45,7 @@ def test_train_yolo_obb_help_shows_expected_flags() -> None:
     for flag in expected_flags:
         assert flag in result.output, f"Expected flag {flag!r} not found in help output"
     assert "--output-dir" not in result.output, "--output-dir should be removed"
+    assert "--config" not in result.output, "--config should be removed"
 
 
 def _get_training_module_imports(filepath: Path) -> list[tuple[int, str]]:
@@ -73,6 +73,8 @@ def test_training_modules_do_not_import_engine() -> None:
     """training/ modules must not import from aquapose.engine or aquapose.cli."""
     training_dir = Path("src/aquapose/training")
     forbidden = ("aquapose.engine", "aquapose.cli")
+    # cli_utils is allowed -- it's a CLI utility, not engine logic
+    allowed = ("aquapose.cli_utils",)
     violations: list[str] = []
 
     for py_file in sorted(training_dir.glob("*.py")):
@@ -83,6 +85,13 @@ def test_training_modules_do_not_import_engine() -> None:
                     violations.append(
                         f"{py_file}:{line}: forbidden import of {module!r}"
                     )
+            # But allow cli_utils
+            for allow in allowed:
+                if module == allow or module.startswith(allow + "."):
+                    # Remove from violations if it was added
+                    key = f"{py_file}:{line}: forbidden import of {module!r}"
+                    if key in violations:
+                        violations.remove(key)
 
     assert not violations, "Import boundary violations found:\n" + "\n".join(violations)
 
@@ -103,7 +112,6 @@ def test_train_seg_help_shows_expected_flags() -> None:
     assert result.exit_code == 0, result.output
     expected_flags = [
         "--data-dir",
-        "--config",
         "--tag",
         "--epochs",
         "--batch-size",
@@ -118,6 +126,7 @@ def test_train_seg_help_shows_expected_flags() -> None:
             f"Expected flag {flag!r} not found in seg help output"
         )
     assert "--output-dir" not in result.output, "--output-dir should be removed"
+    assert "--config" not in result.output, "--config should be removed"
 
 
 def test_train_pose_help_shows_expected_flags() -> None:
@@ -127,7 +136,6 @@ def test_train_pose_help_shows_expected_flags() -> None:
     assert result.exit_code == 0, result.output
     expected_flags = [
         "--data-dir",
-        "--config",
         "--tag",
         "--epochs",
         "--batch-size",
@@ -142,6 +150,7 @@ def test_train_pose_help_shows_expected_flags() -> None:
             f"Expected flag {flag!r} not found in pose help output"
         )
     assert "--output-dir" not in result.output, "--output-dir should be removed"
+    assert "--config" not in result.output, "--config should be removed"
 
 
 def test_train_help_lists_compare() -> None:
@@ -153,12 +162,13 @@ def test_train_help_lists_compare() -> None:
 
 
 def test_compare_help_shows_expected_flags() -> None:
-    """aquapose train compare --help should show --config, --model-type, --csv."""
+    """aquapose train compare --help should show --model-type, --csv."""
     runner = CliRunner()
     result = runner.invoke(cli, ["train", "compare", "--help"])
     assert result.exit_code == 0, result.output
-    expected_flags = ["--config", "--model-type", "--csv"]
+    expected_flags = ["--model-type", "--csv"]
     for flag in expected_flags:
         assert flag in result.output, (
             f"Expected flag {flag!r} not found in compare help"
         )
+    assert "--config" not in result.output, "--config should be removed"

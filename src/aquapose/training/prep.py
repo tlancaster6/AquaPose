@@ -16,6 +16,8 @@ import click
 import numpy as np
 import yaml
 
+from aquapose.cli_utils import get_config_path
+
 __all__ = ["prep_group"]
 
 
@@ -23,7 +25,7 @@ class _LutConfigFromDict:
     """Minimal LUT config satisfying the ``LutConfigLike`` protocol.
 
     Built from a plain dict (YAML ``lut`` section) to avoid importing
-    ``aquapose.engine.config`` (which would violate the training→engine
+    ``aquapose.engine.config`` (which would violate the training->engine
     import boundary).
     """
 
@@ -162,18 +164,13 @@ def _compute_t_values(
     help="Path to COCO JSON file or directory of YOLO label txt files.",
 )
 @click.option(
-    "--config",
-    required=True,
-    type=click.Path(exists=True),
-    help="Path to pipeline config YAML. Updates keypoint_t_values in place.",
-)
-@click.option(
     "--n-keypoints",
     default=6,
     type=int,
     help="Number of anatomical keypoints.",
 )
-def calibrate_keypoints(annotations: str, config: str, n_keypoints: int) -> None:
+@click.pass_context
+def calibrate_keypoints(ctx: click.Context, annotations: str, n_keypoints: int) -> None:
     """Compute keypoint t-values from keypoint annotations.
 
     Auto-detects annotation format: if ``--annotations`` points to a JSON
@@ -188,12 +185,12 @@ def calibrate_keypoints(annotations: str, config: str, n_keypoints: int) -> None
     ``midline.keypoint_t_values`` to the computed values.
 
     Args:
+        ctx: Click context for project resolution.
         annotations: Path to COCO JSON file or directory of YOLO label txts.
-        config: Path to pipeline config YAML to update in place.
         n_keypoints: Number of anatomical keypoints expected per annotation.
     """
     annotations_path = Path(annotations)
-    config_path = Path(config)
+    config_path = get_config_path(ctx)
 
     if annotations_path.is_dir():
         click.echo(f"Detected YOLO label directory: {annotations_path}")
@@ -233,18 +230,13 @@ def calibrate_keypoints(annotations: str, config: str, n_keypoints: int) -> None
 
 @prep_group.command("generate-luts")
 @click.option(
-    "--config",
-    required=True,
-    type=click.Path(exists=True),
-    help="Path to pipeline config YAML.",
-)
-@click.option(
     "--force",
     is_flag=True,
     default=False,
     help="Regenerate even if LUTs already exist.",
 )
-def generate_luts_cmd(config: str, force: bool) -> None:
+@click.pass_context
+def generate_luts_cmd(ctx: click.Context, force: bool) -> None:
     """Pre-generate forward and inverse lookup tables for association.
 
     Reads the pipeline config to determine calibration path and LUT
@@ -252,7 +244,7 @@ def generate_luts_cmd(config: str, force: bool) -> None:
     the luts/ directory next to the calibration file.
 
     Args:
-        config: Path to pipeline config YAML.
+        ctx: Click context for project resolution.
         force: If True, regenerate even when cached LUTs already exist.
     """
     from aquapose.calibration.loader import (
@@ -268,7 +260,7 @@ def generate_luts_cmd(config: str, force: bool) -> None:
         save_inverse_luts,
     )
 
-    config_path = Path(config)
+    config_path = get_config_path(ctx)
 
     with config_path.open() as fh:
         raw = yaml.safe_load(fh) or {}

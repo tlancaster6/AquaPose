@@ -8,11 +8,35 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from aquapose.training.prep import prep_group
+from aquapose.cli import cli
 
 
 class TestGenerateLutsCli:
     """Tests for the generate-luts CLI command."""
+
+    @pytest.fixture
+    def project_dir(self, tmp_path: Path) -> Path:
+        """Create a project dir with config.yaml containing calibration_path."""
+        proj = tmp_path / "test_project"
+        proj.mkdir()
+        # Create calibration file so path resolution works
+        cal_dir = proj / "geometry"
+        cal_dir.mkdir()
+        (cal_dir / "calibration.json").write_text("{}")
+        config_text = f"calibration_path: {cal_dir / 'calibration.json'}\n"
+        (proj / "config.yaml").write_text(config_text)
+        return proj
+
+    @pytest.fixture
+    def monkeypatch_project(
+        self, monkeypatch: pytest.MonkeyPatch, project_dir: Path
+    ) -> Path:
+        """Patch resolve_project for --project test."""
+        monkeypatch.setattr(
+            "aquapose.cli_utils.resolve_project",
+            lambda name: project_dir,
+        )
+        return project_dir
 
     @patch("aquapose.calibration.luts.save_inverse_luts")
     @patch("aquapose.calibration.luts.save_forward_luts")
@@ -32,17 +56,9 @@ class TestGenerateLutsCli:
         mock_gen_inv: MagicMock,
         mock_save_fwd: MagicMock,
         mock_save_inv: MagicMock,
-        tmp_path: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """generate-luts loads config and calls LUT generation functions."""
-        # Create calibration file so path resolution works
-        cal_dir = tmp_path / "geometry"
-        cal_dir.mkdir()
-        (cal_dir / "calibration.json").write_text("{}")
-
-        config_path = tmp_path / "config.yaml"
-        config_path.write_text(f"calibration_path: {cal_dir / 'calibration.json'}\n")
-
         mock_cal = MagicMock()
         mock_cal.ring_cameras = ["cam1", "cam2"]
         mock_cal.cameras = {
@@ -57,8 +73,8 @@ class TestGenerateLutsCli:
 
         runner = CliRunner()
         result = runner.invoke(
-            prep_group,
-            ["generate-luts", "--config", str(config_path)],
+            cli,
+            ["--project", "test", "prep", "generate-luts"],
         )
         assert result.exit_code == 0, result.output
         mock_gen_fwd.assert_called_once()
@@ -72,20 +88,17 @@ class TestGenerateLutsCli:
         self,
         mock_load_fwd: MagicMock,
         mock_load_inv: MagicMock,
-        tmp_path: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """generate-luts skips when LUTs already exist on disk."""
-        config_path = tmp_path / "config.yaml"
-        config_path.write_text("calibration_path: geometry/calibration.json\n")
-
         # LUTs already exist
         mock_load_fwd.return_value = {"cam1": MagicMock()}
         mock_load_inv.return_value = MagicMock()
 
         runner = CliRunner()
         result = runner.invoke(
-            prep_group,
-            ["generate-luts", "--config", str(config_path)],
+            cli,
+            ["--project", "test", "prep", "generate-luts"],
         )
         assert result.exit_code == 0, result.output
         assert "already exist" in result.output
@@ -104,16 +117,9 @@ class TestGenerateLutsCli:
         mock_gen_inv: MagicMock,
         mock_save_fwd: MagicMock,
         mock_save_inv: MagicMock,
-        tmp_path: Path,
+        monkeypatch_project: Path,
     ) -> None:
         """generate-luts --force regenerates even when LUTs exist."""
-        cal_dir = tmp_path / "geometry"
-        cal_dir.mkdir()
-        (cal_dir / "calibration.json").write_text("{}")
-
-        config_path = tmp_path / "config.yaml"
-        config_path.write_text(f"calibration_path: {cal_dir / 'calibration.json'}\n")
-
         mock_cal = MagicMock()
         mock_cal.ring_cameras = ["cam1"]
         mock_cal.cameras = {"cam1": MagicMock()}
@@ -124,8 +130,8 @@ class TestGenerateLutsCli:
 
         runner = CliRunner()
         result = runner.invoke(
-            prep_group,
-            ["generate-luts", "--config", str(config_path), "--force"],
+            cli,
+            ["--project", "test", "prep", "generate-luts", "--force"],
         )
         assert result.exit_code == 0, result.output
         mock_gen_fwd.assert_called_once()

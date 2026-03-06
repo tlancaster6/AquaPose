@@ -61,8 +61,8 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 - [x] **STORE-02**: Provenance history tracking as JSON array per sample; augmentation lineage via parent_id with cascade delete on upsert
 - [x] **STORE-03**: CLI import command (`aquapose data import`) ingests YOLO-format directories with --augment flag for elastic deformation at import time
 - [x] **STORE-04**: CLI convert command (`aquapose data convert`) replaces `scripts/build_yolo_training_data.py`, converting COCO annotations to YOLO format
-- [ ] **STORE-05**: Dataset assembly via symlinks with query recipe + resolved UUID manifest for reproducibility
-- [ ] **STORE-06**: Data lifecycle CLI: list (summary), exclude (soft-delete with tag), remove --purge (hard-delete with cascade)
+- [x] **STORE-05**: Dataset assembly via symlinks with query recipe + resolved UUID manifest for reproducibility
+- [x] **STORE-06**: Data lifecycle CLI: list (summary), exclude (soft-delete with tag), remove --purge (hard-delete with cascade)
 - [ ] **STORE-07**: Model lineage tracking in store's models table; config.yaml auto-updated with new weights path after training
 
 ## Future Requirements
@@ -124,8 +124,8 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 | STORE-02 | Phase 68 | Complete |
 | STORE-03 | Phase 68 | Complete |
 | STORE-04 | Phase 68 | Complete |
-| STORE-05 | Phase 68 | Pending |
-| STORE-06 | Phase 68 | Pending |
+| STORE-05 | Phase 68 | Complete |
+| STORE-06 | Phase 68 | Complete |
 | STORE-07 | Phase 68 | Pending |
 
 **Coverage:**

@@ -19,6 +19,8 @@ from aquapose.evaluation.stages.reconstruction import (
 from aquapose.evaluation.stages.reconstruction import (
     ReconstructionMetrics,
     ZDenoisingMetrics,
+    compute_curvature_stratified,
+    compute_per_point_error,
     compute_z_denoising_metrics,
     evaluate_reconstruction,
 )
@@ -34,6 +36,8 @@ __all__ = [
     "ReconstructionMetrics",
     "TrackingMetrics",
     "ZDenoisingMetrics",
+    "compute_curvature_stratified",
+    "compute_per_point_error",
     "compute_z_denoising_metrics",
     "evaluate_association",
     "evaluate_detection",

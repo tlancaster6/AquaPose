@@ -148,13 +148,45 @@ def tps_warp_image(
     import cv2
     from scipy.interpolate import RBFInterpolator
 
+    # Build flanking control points on both sides of each keypoint along the
+    # local midline normal.  This ensures the TPS moves the full fish cross-
+    # section uniformly instead of tapering displacement off-midline → blur.
+    flank_dist = 25.0  # half fish body width, pixels
+    n_kp = len(src_points)
+    src_list = [src_points]
+    dst_list = [dst_points]
+    for i in range(n_kp):
+        # Local normal: perpendicular to segment connecting neighbours
+        if n_kp == 1:
+            normal = np.array([0.0, 1.0])
+        else:
+            if i == 0:
+                seg = src_points[1] - src_points[0]
+            elif i == n_kp - 1:
+                seg = src_points[-1] - src_points[-2]
+            else:
+                seg = src_points[i + 1] - src_points[i - 1]
+            seg_len = np.linalg.norm(seg)
+            if seg_len < 1e-12:
+                normal = np.array([0.0, 1.0])
+            else:
+                normal = np.array([-seg[1], seg[0]]) / seg_len
+
+        for sign in (+1.0, -1.0):
+            offset = sign * flank_dist * normal
+            src_list.append((src_points[i] + offset).reshape(1, 2))
+            dst_list.append((dst_points[i] + offset).reshape(1, 2))
+
     # Add corner anchors (identity mapping for border stability)
     corners = np.array(
         [[0, 0], [crop_w - 1, 0], [crop_w - 1, crop_h - 1], [0, crop_h - 1]],
         dtype=np.float64,
     )
-    all_src = np.vstack([src_points, corners])
-    all_dst = np.vstack([dst_points, corners])
+    src_list.append(corners)
+    dst_list.append(corners)
+
+    all_src = np.vstack(src_list)
+    all_dst = np.vstack(dst_list)
 
     # Build backward mapping: for each output pixel, find where it comes from
     # in the input. We fit RBF from dst -> src (backward warp).

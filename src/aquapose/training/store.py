@@ -5,11 +5,15 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import random
 import shutil
 import sqlite3
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+
+import yaml
 
 from .store_schema import SCHEMA_SQL, SCHEMA_VERSION, SOURCE_PRIORITY
 
@@ -522,6 +526,208 @@ class SampleStore:
                 path.unlink(missing_ok=True)
             except OSError:
                 logger.warning("Could not delete %s", path)
+
+    def save_dataset(
+        self,
+        name: str,
+        query_recipe: dict,
+        sample_ids: list[str],
+        split_seed: int,
+    ) -> None:
+        """Persist a dataset manifest in the database.
+
+        Args:
+            name: Dataset name (unique key).
+            query_recipe: Dict describing the query used to select samples.
+            sample_ids: List of sample UUIDs included in the dataset.
+            split_seed: Random seed used for the train/val split.
+        """
+        conn = self._connect()
+        now = datetime.now(tz=UTC).isoformat()
+        conn.execute(
+            """INSERT OR REPLACE INTO datasets (name, query_recipe, sample_ids, split_seed, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (
+                name,
+                json.dumps(query_recipe),
+                json.dumps(sample_ids),
+                split_seed,
+                now,
+            ),
+        )
+        conn.commit()
+
+    def get_dataset(self, name: str) -> dict | None:
+        """Retrieve a dataset manifest by name.
+
+        Args:
+            name: Dataset name.
+
+        Returns:
+            Dict with parsed JSON fields, or None if not found.
+        """
+        conn = self._connect()
+        row = conn.execute("SELECT * FROM datasets WHERE name = ?", (name,)).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result["query_recipe"] = json.loads(result["query_recipe"])
+        result["sample_ids"] = json.loads(result["sample_ids"])
+        return result
+
+    def list_datasets(self) -> list[dict]:
+        """List all persisted dataset manifests.
+
+        Returns:
+            List of dataset dicts with parsed JSON fields.
+        """
+        conn = self._connect()
+        rows = conn.execute("SELECT * FROM datasets ORDER BY created_at").fetchall()
+        results = []
+        for row in rows:
+            d = dict(row)
+            d["query_recipe"] = json.loads(d["query_recipe"])
+            d["sample_ids"] = json.loads(d["sample_ids"])
+            results.append(d)
+        return results
+
+    def assemble(
+        self,
+        name: str,
+        query: dict,
+        val_fraction: float = 0.2,
+        seed: int = 42,
+        pseudo_in_val: bool = False,
+    ) -> Path:
+        """Assemble a training dataset with symlinks in YOLO directory structure.
+
+        Queries the store, splits into train/val, creates relative symlinks,
+        writes ``dataset.yaml``, and persists the manifest.
+
+        Args:
+            name: Dataset name (becomes subdirectory under ``datasets/``).
+            query: Keyword arguments passed to :meth:`query`.
+            val_fraction: Fraction of val-eligible samples for validation.
+            seed: Random seed for deterministic splitting.
+            pseudo_in_val: If False (default), pseudo-label samples are
+                excluded from the validation set.
+
+        Returns:
+            Path to the assembled dataset directory.
+        """
+        samples = self.query(**query)
+
+        # Split into val-eligible and train-only
+        if pseudo_in_val:
+            val_eligible = list(samples)
+            train_only: list[dict] = []
+        else:
+            val_eligible = [
+                s for s in samples if s["source"] in ("manual", "corrected")
+            ]
+            train_only = [
+                s for s in samples if s["source"] not in ("manual", "corrected")
+            ]
+
+        # Seeded shuffle for deterministic split
+        rng = random.Random(seed)
+        rng.shuffle(val_eligible)
+
+        n_val = int(len(val_eligible) * val_fraction)
+        val_samples = val_eligible[:n_val]
+        train_samples = val_eligible[n_val:] + train_only
+
+        # Create dataset directory (clean if exists)
+        ds_dir = self.root / "datasets" / name
+        if ds_dir.exists():
+            shutil.rmtree(ds_dir)
+
+        for split in ("train", "val"):
+            (ds_dir / "images" / split).mkdir(parents=True)
+            (ds_dir / "labels" / split).mkdir(parents=True)
+
+        # Create relative symlinks
+        for split_name, split_samples in [
+            ("train", train_samples),
+            ("val", val_samples),
+        ]:
+            for sample in split_samples:
+                img_src = self.root / sample["image_path"]
+                lbl_src = self.root / sample["label_path"]
+
+                img_link = ds_dir / "images" / split_name / img_src.name
+                lbl_link = ds_dir / "labels" / split_name / lbl_src.name
+
+                img_rel = os.path.relpath(img_src, img_link.parent)
+                lbl_rel = os.path.relpath(lbl_src, lbl_link.parent)
+
+                img_link.symlink_to(img_rel)
+                lbl_link.symlink_to(lbl_rel)
+
+        # Write dataset.yaml
+        dataset_yaml = {
+            "path": str(ds_dir),
+            "train": "images/train",
+            "val": "images/val",
+            "names": {0: "fish"},
+            "nc": 1,
+        }
+        (ds_dir / "dataset.yaml").write_text(
+            yaml.dump(dataset_yaml, default_flow_style=False)
+        )
+
+        # Persist manifest
+        all_ids = [s["id"] for s in train_samples + val_samples]
+        self.save_dataset(name, query, all_ids, split_seed=seed)
+
+        return ds_dir
+
+    def summary(self) -> dict:
+        """Return summary statistics for the store.
+
+        Returns:
+            Dict with keys: ``total``, ``by_source``, ``augmented_count``,
+            ``excluded_count``, ``dataset_count``, ``model_count``.
+        """
+        conn = self._connect()
+
+        total = conn.execute("SELECT COUNT(*) as cnt FROM samples").fetchone()["cnt"]
+
+        # By source breakdown
+        rows = conn.execute(
+            "SELECT source, COUNT(*) as cnt FROM samples GROUP BY source"
+        ).fetchall()
+        by_source = {row["source"]: row["cnt"] for row in rows}
+
+        # Augmented count
+        augmented = conn.execute(
+            "SELECT COUNT(*) as cnt FROM samples WHERE parent_id IS NOT NULL"
+        ).fetchone()["cnt"]
+
+        # Excluded count
+        excluded = conn.execute(
+            "SELECT COUNT(*) as cnt FROM samples WHERE "
+            "EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value = 'excluded')"
+        ).fetchone()["cnt"]
+
+        # Dataset count
+        ds_count = conn.execute("SELECT COUNT(*) as cnt FROM datasets").fetchone()[
+            "cnt"
+        ]
+
+        # Model count
+        model_count = conn.execute("SELECT COUNT(*) as cnt FROM models").fetchone()[
+            "cnt"
+        ]
+
+        return {
+            "total": total,
+            "by_source": by_source,
+            "augmented_count": augmented,
+            "excluded_count": excluded,
+            "dataset_count": ds_count,
+            "model_count": model_count,
+        }
 
     def _append_provenance(
         self,

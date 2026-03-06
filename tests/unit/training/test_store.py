@@ -755,7 +755,9 @@ class TestSummary:
 
         summary = store.summary()
         assert summary["total"] == 3  # 1 manual + 1 pseudo + 1 augmented
-        assert summary["by_source"]["manual"] == 1
+        assert (
+            summary["by_source"]["manual"] == 2
+        )  # parent + augmented child inherits source
         assert summary["by_source"]["pseudo"] == 1
         assert summary["augmented_count"] == 1
         assert summary["excluded_count"] == 1

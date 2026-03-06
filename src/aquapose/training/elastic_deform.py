@@ -426,3 +426,153 @@ def write_yolo_dataset(
     }
     with open(output_dir / "dataset.yaml", "w") as f:
         yaml.dump(dataset_yaml, f, default_flow_style=False)
+
+
+def generate_preview_grid(
+    input_dir: Path,
+    output_path: Path,
+    lateral_pad: float,
+    angle_range: tuple[float, float] = (10.0, 30.0),
+    max_samples: int = 5,
+) -> None:
+    """Generate a preview grid showing original + 4 deformed variants.
+
+    Creates a grid image with rows = samples and columns = [original, C+, C-,
+    S+, S-]. Each cell shows the image with keypoints overlaid as colored
+    circles connected by a polyline.
+
+    Args:
+        input_dir: YOLO-format source directory with ``images/train/`` and
+            ``labels/train/``.
+        output_path: Output path for the preview grid PNG.
+        lateral_pad: OBB lateral padding in pixels.
+        angle_range: ``(min_angle, max_angle)`` in degrees.
+        max_samples: Maximum number of sample images to include.
+    """
+    import cv2
+
+    img_dir = input_dir / "images" / "train"
+    lbl_dir = input_dir / "labels" / "train"
+
+    img_paths = sorted(img_dir.glob("*.jpg"))[:max_samples]
+    if not img_paths:
+        return
+
+    cell_w = 160
+    col_labels = ["Original", "C+", "C-", "S+", "S-"]
+    n_cols = len(col_labels)
+    header_h = 25
+    kp_colors = [
+        (0, 0, 255),
+        (0, 128, 255),
+        (0, 255, 255),
+        (0, 255, 0),
+        (255, 128, 0),
+        (255, 0, 0),
+    ]
+
+    rows: list[list[np.ndarray]] = []
+
+    for img_path in img_paths:
+        stem = img_path.stem
+        lbl_path = lbl_dir / f"{stem}.txt"
+        if not lbl_path.exists():
+            continue
+
+        image = cv2.imread(str(img_path))
+        if image is None:
+            continue
+        crop_h, crop_w = image.shape[:2]
+        coords, visible = parse_pose_label(lbl_path, crop_w, crop_h)
+
+        # Generate variants
+        variants = generate_variants(
+            image, coords, visible, crop_w, crop_h, lateral_pad, angle_range
+        )
+
+        # Build row of cells: [original, c_pos, c_neg, s_pos, s_neg]
+        row_cells: list[np.ndarray] = []
+
+        # Original cell
+        orig_cell = _draw_keypoints_on_image(image, coords, visible, kp_colors)
+        row_cells.append(orig_cell)
+
+        # Variant cells in order: c_pos, c_neg, s_pos, s_neg
+        tag_order = ["c_pos", "c_neg", "s_pos", "s_neg"]
+        tag_to_variant = {v["variant_tag"]: v for v in variants}
+        for tag in tag_order:
+            v = tag_to_variant[tag]
+            cell = _draw_keypoints_on_image(
+                v["image"], v["coords"], v["visible"], kp_colors
+            )
+            row_cells.append(cell)
+
+        rows.append(row_cells)
+
+    if not rows:
+        return
+
+    # Compute cell height from aspect ratio of first image
+    first_img = cv2.imread(str(img_paths[0]))
+    if first_img is None:
+        return
+    aspect = first_img.shape[0] / first_img.shape[1]
+    cell_h = int(cell_w * aspect)
+
+    # Build grid
+    grid_w = n_cols * cell_w
+    grid_h = header_h + len(rows) * cell_h
+    grid = np.ones((grid_h, grid_w, 3), dtype=np.uint8) * 240  # light gray bg
+
+    # Draw column headers
+    for i, label in enumerate(col_labels):
+        x = i * cell_w + 10
+        cv2.putText(grid, label, (x, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 1)
+
+    # Draw cells
+    for r, row_cells in enumerate(rows):
+        for c, cell in enumerate(row_cells):
+            resized = cv2.resize(cell, (cell_w, cell_h))
+            y0 = header_h + r * cell_h
+            x0 = c * cell_w
+            grid[y0 : y0 + cell_h, x0 : x0 + cell_w] = resized
+
+    cv2.imwrite(str(output_path), grid)
+
+
+def _draw_keypoints_on_image(
+    image: np.ndarray,
+    coords: np.ndarray,
+    visible: np.ndarray,
+    colors: list[tuple[int, int, int]],
+) -> np.ndarray:
+    """Draw keypoints and connecting polyline on an image copy.
+
+    Args:
+        image: BGR image array.
+        coords: Keypoints of shape ``(N, 2)`` in pixel coordinates.
+        visible: Visibility array of shape ``(N,)``.
+        colors: List of BGR color tuples, one per keypoint.
+
+    Returns:
+        Copy of the image with keypoints drawn.
+    """
+    import cv2
+
+    canvas = image.copy()
+    vis_pts = coords[visible].astype(np.int32)
+
+    # Draw polyline connecting visible keypoints
+    if len(vis_pts) >= 2:
+        cv2.polylines(
+            canvas, [vis_pts], isClosed=False, color=(255, 255, 255), thickness=1
+        )
+
+    # Draw circles at each visible keypoint
+    for i in range(len(coords)):
+        if visible[i]:
+            pt = (int(coords[i, 0]), int(coords[i, 1]))
+            color = colors[i % len(colors)]
+            cv2.circle(canvas, pt, 3, color, -1)
+
+    return canvas

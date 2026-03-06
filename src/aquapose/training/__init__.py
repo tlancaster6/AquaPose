@@ -20,8 +20,11 @@ from .elastic_deform import (
     deform_keypoints_c_curve,
     deform_keypoints_s_curve,
     generate_deformed_labels,
+    generate_preview_grid,
     generate_variants,
+    parse_pose_label,
     tps_warp_image,
+    write_yolo_dataset,
 )
 from .frame_selection import (
     DiversitySampleResult,
@@ -83,10 +86,12 @@ __all__ = [
     "generate_deformed_labels",
     "generate_fish_labels",
     "generate_gap_fish_labels",
+    "generate_preview_grid",
     "generate_variants",
     "load_run_summaries",
     "make_loader",
     "parse_best_metrics",
+    "parse_pose_label",
     "pca_obb",
     "prep_group",
     "print_next_steps",
@@ -102,4 +107,5 @@ __all__ = [
     "transform_keypoints",
     "write_comparison_csv",
     "write_summary",
+    "write_yolo_dataset",
 ]

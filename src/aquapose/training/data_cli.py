@@ -89,6 +89,13 @@ def import_cmd(
 
     input_path = Path(input_dir)
 
+    # Auto-detect confidence.json sidecar in input directory
+    sidecar_data: dict = {}
+    sidecar_path = input_path / "confidence.json"
+    if sidecar_path.exists():
+        sidecar_data = json.loads(sidecar_path.read_text())
+        click.echo(f"Found confidence.json sidecar ({len(sidecar_data)} entries)")
+
     # Scan for image files
     image_files = sorted(
         list(input_path.glob("images/**/*.jpg"))
@@ -141,11 +148,58 @@ def import_cmd(
             if existing is not None:
                 pre_children = _count_children(existing["id"])
 
+            # Build per-sample metadata: sidecar + curvature + static overlay
+            sample_meta: dict = {}
+
+            # Sidecar metadata (keyed by image stem)
+            sidecar_entry = sidecar_data.get(img_path.stem, {})
+            if sidecar_entry:
+                labels_list = sidecar_entry.get("labels", [])
+                if labels_list:
+                    first_label = labels_list[0]
+                    for key in (
+                        "confidence",
+                        "gap_reason",
+                        "n_source_cameras",
+                        "raw_metrics",
+                        "source",
+                    ):
+                        if key in first_label:
+                            sample_meta[key] = first_label[key]
+
+            # 2D curvature computation (pose store only)
+            if store == "pose" and label_path.exists():
+                label_text = label_path.read_text().strip()
+                if label_text:
+                    from .pseudo_labels import compute_curvature
+
+                    # Parse first pose label line to extract keypoints
+                    first_line = label_text.split("\n")[0].split()
+                    # YOLO pose format: cls cx cy w h x1 y1 v1 x2 y2 v2 ...
+                    kp_tokens = first_line[5:]
+                    if len(kp_tokens) >= 6:  # at least 2 keypoints
+                        pts = []
+                        for ki in range(0, len(kp_tokens), 3):
+                            if ki + 2 < len(kp_tokens):
+                                vis = float(kp_tokens[ki + 2])
+                                if vis > 0:
+                                    pts.append(
+                                        [float(kp_tokens[ki]), float(kp_tokens[ki + 1])]
+                                    )
+                        if len(pts) >= 3:  # need at least 3 points for curvature
+                            import numpy as np
+
+                            sample_meta["curvature"] = compute_curvature(np.array(pts))
+
+            # Static metadata from --metadata-json overrides sidecar
+            if metadata:
+                sample_meta.update(metadata)
+
             sample_id, action = sample_store.import_sample(
                 image_path=img_path,
                 label_path=label_path,
                 source=source,
-                metadata=metadata,
+                metadata=sample_meta or None,
                 import_batch_id=batch_id,
             )
             counts[action] += 1

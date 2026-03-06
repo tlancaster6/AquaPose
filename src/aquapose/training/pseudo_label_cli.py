@@ -19,6 +19,7 @@ from aquapose.training.geometry import (
     transform_keypoints,
 )
 from aquapose.training.pseudo_labels import (
+    compute_curvature,
     detect_gaps,
     generate_fish_labels,
     generate_gap_fish_labels,
@@ -356,6 +357,9 @@ def generate(
                                 "confidence": result["confidence"],
                                 "raw_metrics": result["raw_metrics"],
                                 "source": "consensus",
+                                "curvature_3d": compute_curvature(
+                                    midline.control_points
+                                ),
                             }
                         )
 
@@ -428,6 +432,9 @@ def generate(
                                 "source": "gap",
                                 "gap_reason": reason,
                                 "n_source_cameras": midline.n_cameras,
+                                "curvature_3d": compute_curvature(
+                                    midline.control_points
+                                ),
                             }
                         )
 

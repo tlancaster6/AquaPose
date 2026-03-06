@@ -61,5 +61,5 @@ v3.5 milestone decisions archived to milestones/v3.5-ROADMAP.md.
 ## Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Roadmap created for v3.6
+Stopped at: Completed quick task 22: update GUIDEBOOK.md
 Resume file: None

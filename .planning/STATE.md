@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.5
 milestone_name: Pseudo-Labeling
 status: unknown
-last_updated: "2026-03-06T18:04:41.926Z"
+last_updated: "2026-03-06T19:41:10.970Z"
 progress:
   total_phases: 9
   completed_phases: 8
-  total_plans: 19
-  completed_plans: 19
+  total_plans: 22
+  completed_plans: 20
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-05)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 68 improved training data storage and tracking
+**Current focus:** Phase 69 CLI workflow cleanup
 
 ## Current Position
 
-Phase: 68 (4 of 4 plans complete)
-Plan: 4/4 in current phase
-Status: Phase 68 complete. All training data storage and tracking plans done.
-Last activity: 2026-03-06 - Completed 68-04: Model lineage tracking
+Phase: 69 (1 of 3 plans complete)
+Plan: 1/3 in current phase
+Status: Phase 69 in progress. CLI foundation utilities done.
+Last activity: 2026-03-06 - Completed 69-01: CLI foundation utilities
 
-Progress: [██████████] 100%
+Progress: [███-------] 33%
 
 ## Performance Metrics
 
@@ -74,6 +74,8 @@ Recent decisions affecting current work:
 - [Phase 68]: Pseudo-labels excluded from val split by default (manual+corrected only in val)
 - [Phase 68]: dataset_name from dir basename for model lineage (store-managed or external)
 - [Phase 68]: Graceful degradation: model registration failure does not fail training
+- [Phase 69]: CWD walk-up stops at home dir for project detection
+- [Phase 69]: Lazy ctx.obj caching for project resolution
 
 ### Pending Todos
 
@@ -104,5 +106,5 @@ None active. Z-reconstruction noise resolved via z-flattening and temporal z smo
 ## Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Completed 68-04-PLAN.md (Model Lineage Tracking)
-Resume file: .planning/phases/68-improved-training-data-storage-and-tracking/68-04-SUMMARY.md
+Stopped at: Completed 69-01-PLAN.md (CLI Foundation Utilities)
+Resume file: .planning/phases/69-cli-workflow-cleanup/69-01-SUMMARY.md

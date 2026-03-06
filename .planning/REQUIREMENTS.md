@@ -67,9 +67,9 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 
 ### CLI Workflow Cleanup (Phase 69)
 
-- [ ] **CLI-01**: `resolve_project(name)` resolves `~/aquapose/projects/{name}/` by name; `resolve_project(None)` walks CWD upward looking for `config.yaml`
-- [ ] **CLI-02**: `resolve_run(ref, project_dir)` resolves run shorthand: timestamp suffix, `latest` keyword, negative index, or full path; None defaults to latest
-- [ ] **CLI-03**: `aquapose init <name>` creates project scaffold with training_data/obb/ and training_data/pose/ directories (renamed from `init-config`)
+- [x] **CLI-01**: `resolve_project(name)` resolves `~/aquapose/projects/{name}/` by name; `resolve_project(None)` walks CWD upward looking for `config.yaml`
+- [x] **CLI-02**: `resolve_run(ref, project_dir)` resolves run shorthand: timestamp suffix, `latest` keyword, negative index, or full path; None defaults to latest
+- [x] **CLI-03**: `aquapose init <name>` creates project scaffold with training_data/obb/ and training_data/pose/ directories (renamed from `init-config`)
 - [ ] **CLI-04**: Top-level commands (run, eval, viz, tune, smooth-z) resolve config from `--project` instead of `--config`
 - [ ] **CLI-05**: eval, viz, tune, smooth-z accept RUN positional argument with shorthand resolution (latest, timestamp, negative index)
 - [ ] **CLI-06**: All subgroup commands (train, data, prep, pseudo-label) resolve project from `--project` context, eliminating per-command `--config`
@@ -139,9 +139,9 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 | STORE-05 | Phase 68 | Complete |
 | STORE-06 | Phase 68 | Complete |
 | STORE-07 | Phase 68 | Complete |
-| CLI-01 | Phase 69 | Pending |
-| CLI-02 | Phase 69 | Pending |
-| CLI-03 | Phase 69 | Pending |
+| CLI-01 | Phase 69 | Complete |
+| CLI-02 | Phase 69 | Complete |
+| CLI-03 | Phase 69 | Complete |
 | CLI-04 | Phase 69 | Pending |
 | CLI-05 | Phase 69 | Pending |
 | CLI-06 | Phase 69 | Pending |

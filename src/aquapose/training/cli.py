@@ -127,6 +127,26 @@ def yolo_obb(
         tag=tag,
         dataset_dir=Path(data_dir),
     )
+
+    try:
+        from .run_manager import register_trained_model
+
+        register_trained_model(
+            config_path=Path(config),
+            run_dir=run_dir,
+            model_type=model_type,
+            best_weights=best_path,
+            dataset_dir=Path(data_dir),
+            tag=tag,
+        )
+    except Exception as exc:
+        click.echo(
+            click.style(
+                f"Warning: Model registration failed: {exc}",
+                fg="yellow",
+            )
+        )
+
     print_next_steps(run_dir, model_type, best_path)
 
 
@@ -475,4 +495,24 @@ def pose(
         tag=tag,
         dataset_dir=Path(data_dir),
     )
+
+    try:
+        from .run_manager import register_trained_model
+
+        register_trained_model(
+            config_path=Path(config),
+            run_dir=run_dir,
+            model_type=model_type,
+            best_weights=best_path,
+            dataset_dir=Path(data_dir),
+            tag=tag,
+        )
+    except Exception as exc:
+        click.echo(
+            click.style(
+                f"Warning: Model registration failed: {exc}",
+                fg="yellow",
+            )
+        )
+
     print_next_steps(run_dir, model_type, best_path)

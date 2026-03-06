@@ -325,6 +325,7 @@ def print_next_steps(run_dir: Path, model_type: str, best_weights: Path) -> None
     click.echo(click.style("Training complete!", bold=True))
     click.echo(f"  Run directory: {run_dir}")
     click.echo(f"  Best weights:  {best_weights}")
+    click.echo(f"  Model registered as: {run_dir.name}")
     click.echo("")
     click.echo("Next steps:")
     config_path = run_dir.parent.parent.parent / "config.yaml"

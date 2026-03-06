@@ -257,6 +257,13 @@ def format_eval_report(result: EvalRunnerResult) -> str:
             f"  Reconstruction:  mean reproj {r.mean_reprojection_error:.2f} px"
         )
         has_summary = True
+    if result.fragmentation is not None:
+        f = result.fragmentation
+        lines.append(
+            f"  Fragmentation:   {f.mean_continuity_ratio:.1%} continuity,"
+            f" {f.total_gaps} gaps"
+        )
+        has_summary = True
 
     if has_summary:
         lines.append("")
@@ -309,6 +316,10 @@ def format_eval_report(result: EvalRunnerResult) -> str:
         lines.append("  camera_distribution:")
         for n_cams, count in sorted(a.camera_distribution.items()):
             lines.append(f"    {n_cams} camera(s):{count:>{_W_VALUE}}")
+        if a.p50_camera_count is not None:
+            lines.append(_row("p50_camera_count", a.p50_camera_count))
+        if a.p90_camera_count is not None:
+            lines.append(_row("p90_camera_count", a.p90_camera_count))
         lines.append("")
 
     if result.midline is not None:
@@ -317,6 +328,12 @@ def format_eval_report(result: EvalRunnerResult) -> str:
         lines.append(_row("total_midlines", m.total_midlines))
         lines.append(_row("mean_confidence", m.mean_confidence))
         lines.append(_row("std_confidence", m.std_confidence))
+        if m.p10_confidence is not None:
+            lines.append(_row("p10_confidence", m.p10_confidence))
+        if m.p50_confidence is not None:
+            lines.append(_row("p50_confidence", m.p50_confidence))
+        if m.p90_confidence is not None:
+            lines.append(_row("p90_confidence", m.p90_confidence))
         lines.append(_row("completeness", m.completeness))
         lines.append(_row("temporal_smoothness", m.temporal_smoothness))
         lines.append("")
@@ -329,6 +346,12 @@ def format_eval_report(result: EvalRunnerResult) -> str:
         lines.append("  " + "-" * 30)
         lines.append(_row("mean_reprojection_error", r.mean_reprojection_error))
         lines.append(_row("max_reprojection_error", r.max_reprojection_error))
+        if r.p50_reprojection_error is not None:
+            lines.append(_row("p50_reprojection_error", r.p50_reprojection_error))
+        if r.p90_reprojection_error is not None:
+            lines.append(_row("p90_reprojection_error", r.p90_reprojection_error))
+        if r.p95_reprojection_error is not None:
+            lines.append(_row("p95_reprojection_error", r.p95_reprojection_error))
         lines.append(_row("fish_reconstructed", r.fish_reconstructed))
         lines.append(_row("fish_available", r.fish_available))
         lines.append(_row("inlier_ratio", r.inlier_ratio))
@@ -344,6 +367,27 @@ def format_eval_report(result: EvalRunnerResult) -> str:
             lines.append("  Tier 2: Leave-One-Out Stability")
             lines.append("  " + "-" * 30)
             lines.append(_row("tier2_stability (m)", r.tier2_stability))
+        lines.append("")
+
+    if result.fragmentation is not None:
+        lines.extend(_header("Track Fragmentation"))
+        f = result.fragmentation
+        lines.append("")
+        lines.append("  Frame-Level Gaps")
+        lines.append("  " + "-" * 30)
+        lines.append(_row("total_gaps", f.total_gaps))
+        lines.append(_row("mean_gap_duration", f.mean_gap_duration))
+        lines.append(_row("max_gap_duration", f.max_gap_duration))
+        lines.append(_row("mean_continuity_ratio", f.mean_continuity_ratio))
+        lines.append("")
+        lines.append("  Track-Level Statistics")
+        lines.append("  " + "-" * 30)
+        lines.append(_row("unique_fish_ids", f.unique_fish_ids))
+        lines.append(_row("expected_fish", f.expected_fish))
+        lines.append(_row("track_births", f.track_births))
+        lines.append(_row("track_deaths", f.track_deaths))
+        lines.append(_row("mean_track_lifespan", f.mean_track_lifespan))
+        lines.append(_row("median_track_lifespan", f.median_track_lifespan))
         lines.append("")
 
     return "\n".join(lines)

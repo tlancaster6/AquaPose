@@ -8,6 +8,7 @@ import numpy as np
 
 from aquapose.evaluation.stages.association import AssociationMetrics
 from aquapose.evaluation.stages.detection import DetectionMetrics
+from aquapose.evaluation.stages.fragmentation import FragmentationMetrics
 from aquapose.evaluation.stages.midline import MidlineMetrics
 from aquapose.evaluation.stages.reconstruction import ReconstructionMetrics
 from aquapose.evaluation.stages.tracking import TrackingMetrics
@@ -46,6 +47,8 @@ def _make_association_metrics() -> AssociationMetrics:
         camera_distribution={1: 10, 2: 30},
         total_fish_observations=40,
         frames_evaluated=5,
+        p50_camera_count=2.0,
+        p90_camera_count=2.0,
     )
 
 
@@ -56,6 +59,9 @@ def _make_midline_metrics() -> MidlineMetrics:
         completeness=0.98,
         temporal_smoothness=1.5,
         total_midlines=80,
+        p10_confidence=0.72,
+        p50_confidence=0.94,
+        p90_confidence=0.99,
     )
 
 
@@ -76,6 +82,25 @@ def _make_reconstruction_metrics() -> ReconstructionMetrics:
             0: {"mean_px": 2.4, "max_px": 7.5},
             1: {"mean_px": 2.6, "max_px": 8.0},
         },
+        p50_reprojection_error=2.45,
+        p90_reprojection_error=5.2,
+        p95_reprojection_error=6.8,
+    )
+
+
+def _make_fragmentation_metrics() -> FragmentationMetrics:
+    return FragmentationMetrics(
+        total_gaps=3,
+        mean_gap_duration=2.0,
+        max_gap_duration=4,
+        mean_continuity_ratio=0.85,
+        per_fish_continuity={0: 0.9, 1: 0.8},
+        unique_fish_ids=2,
+        expected_fish=2,
+        track_births=0,
+        track_deaths=0,
+        mean_track_lifespan=50.0,
+        median_track_lifespan=50.0,
     )
 
 
@@ -95,6 +120,7 @@ def _make_full_result():
         reconstruction=_make_reconstruction_metrics(),
         frames_evaluated=5,
         frames_available=10,
+        fragmentation=_make_fragmentation_metrics(),
     )
 
 
@@ -320,3 +346,123 @@ def test_format_eval_json_empty_result() -> None:
     assert parsed["run_id"] == "run_empty_001"
     assert parsed["stages"] == {}
     assert parsed["stages_present"] == []
+
+
+# ---------------------------------------------------------------------------
+# Tests: percentiles in format_eval_report
+# ---------------------------------------------------------------------------
+
+
+def test_format_eval_report_shows_reprojection_percentiles() -> None:
+    """format_eval_report shows p50/p90/p95 reprojection error in reconstruction section."""
+    from aquapose.evaluation.output import format_eval_report
+
+    result = _make_full_result()
+    report = format_eval_report(result)
+    assert "p50_reprojection_error" in report
+    assert "p90_reprojection_error" in report
+    assert "p95_reprojection_error" in report
+
+
+def test_format_eval_report_shows_confidence_percentiles() -> None:
+    """format_eval_report shows p10/p50/p90 confidence in midline section."""
+    from aquapose.evaluation.output import format_eval_report
+
+    result = _make_full_result()
+    report = format_eval_report(result)
+    assert "p10_confidence" in report
+    assert "p50_confidence" in report
+    assert "p90_confidence" in report
+
+
+def test_format_eval_report_shows_camera_count_percentiles() -> None:
+    """format_eval_report shows p50/p90 camera count in association section."""
+    from aquapose.evaluation.output import format_eval_report
+
+    result = _make_full_result()
+    report = format_eval_report(result)
+    assert "p50_camera_count" in report
+    assert "p90_camera_count" in report
+
+
+# ---------------------------------------------------------------------------
+# Tests: fragmentation in format_eval_report
+# ---------------------------------------------------------------------------
+
+
+def test_format_eval_report_shows_fragmentation_section() -> None:
+    """format_eval_report shows Track Fragmentation section with sub-sections."""
+    from aquapose.evaluation.output import format_eval_report
+
+    result = _make_full_result()
+    report = format_eval_report(result)
+    assert "Track Fragmentation" in report
+    assert "Frame-Level Gaps" in report
+    assert "Track-Level Statistics" in report
+    assert "total_gaps" in report
+    assert "mean_continuity_ratio" in report
+    assert "track_births" in report
+    assert "track_deaths" in report
+
+
+def test_format_eval_report_fragmentation_summary_line() -> None:
+    """format_eval_report summary includes fragmentation line."""
+    from aquapose.evaluation.output import format_eval_report
+
+    result = _make_full_result()
+    report = format_eval_report(result)
+    assert "Fragmentation:" in report
+    assert "continuity" in report
+
+
+# ---------------------------------------------------------------------------
+# Tests: fragmentation in format_eval_json
+# ---------------------------------------------------------------------------
+
+
+def test_format_eval_json_includes_fragmentation() -> None:
+    """format_eval_json includes fragmentation in stages dict."""
+    from aquapose.evaluation.output import format_eval_json
+
+    result = _make_full_result()
+    parsed = json.loads(format_eval_json(result))
+    assert "fragmentation" in parsed["stages"]
+    frag = parsed["stages"]["fragmentation"]
+    assert "total_gaps" in frag
+    assert "mean_continuity_ratio" in frag
+    assert "per_fish_continuity" in frag
+
+
+def test_format_eval_json_includes_percentiles() -> None:
+    """format_eval_json includes percentile fields in stage dicts."""
+    from aquapose.evaluation.output import format_eval_json
+
+    result = _make_full_result()
+    parsed = json.loads(format_eval_json(result))
+    recon = parsed["stages"]["reconstruction"]
+    assert "p50_reprojection_error" in recon
+    assert "p90_reprojection_error" in recon
+    assert "p95_reprojection_error" in recon
+    midline = parsed["stages"]["midline"]
+    assert "p10_confidence" in midline
+    assoc = parsed["stages"]["association"]
+    assert "p50_camera_count" in assoc
+
+
+def test_eval_runner_result_to_dict_backward_compat() -> None:
+    """EvalRunnerResult.to_dict works without fragmentation field."""
+    from aquapose.evaluation.runner import EvalRunnerResult
+
+    result = EvalRunnerResult(
+        run_id="test",
+        stages_present=frozenset(),
+        detection=None,
+        tracking=None,
+        association=None,
+        midline=None,
+        reconstruction=None,
+        frames_evaluated=0,
+        frames_available=0,
+    )
+    d = result.to_dict()
+    assert "fragmentation" not in d["stages"]

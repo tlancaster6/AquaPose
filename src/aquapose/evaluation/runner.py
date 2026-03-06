@@ -15,11 +15,13 @@ from aquapose.evaluation.metrics import select_frames
 from aquapose.evaluation.stages import (
     AssociationMetrics,
     DetectionMetrics,
+    FragmentationMetrics,
     MidlineMetrics,
     ReconstructionMetrics,
     TrackingMetrics,
     evaluate_association,
     evaluate_detection,
+    evaluate_fragmentation,
     evaluate_midline,
     evaluate_reconstruction,
     evaluate_tracking,
@@ -263,6 +265,7 @@ class EvalRunnerResult:
     reconstruction: ReconstructionMetrics | None
     frames_evaluated: int
     frames_available: int
+    fragmentation: FragmentationMetrics | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return a fully JSON-serializable nested dict representation.
@@ -284,6 +287,8 @@ class EvalRunnerResult:
             stages["midline"] = self.midline.to_dict()
         if self.reconstruction is not None:
             stages["reconstruction"] = self.reconstruction.to_dict()
+        if self.fragmentation is not None:
+            stages["fragmentation"] = self.fragmentation.to_dict()
 
         return {
             "run_id": self.run_id,
@@ -382,6 +387,7 @@ class EvalRunner:
         association_metrics: AssociationMetrics | None = None
         midline_metrics: MidlineMetrics | None = None
         reconstruction_metrics: ReconstructionMetrics | None = None
+        fragmentation_metrics: FragmentationMetrics | None = None
 
         if "detection" in stages_present:
             frames = ctx.detections or []
@@ -430,6 +436,15 @@ class EvalRunner:
                 frame_results, fish_available
             )
 
+            # Fragmentation analysis from 3D midline data
+            n_animals_frag = 0
+            if "association" in stages_present:
+                try:
+                    n_animals_frag = self._read_n_animals()
+                except FileNotFoundError:
+                    n_animals_frag = 0
+            fragmentation_metrics = evaluate_fragmentation(midlines_3d, n_animals_frag)
+
         return EvalRunnerResult(
             run_id=run_id,
             stages_present=frozenset(stages_present),
@@ -440,6 +455,7 @@ class EvalRunner:
             reconstruction=reconstruction_metrics,
             frames_evaluated=frames_evaluated,
             frames_available=frame_count,
+            fragmentation=fragmentation_metrics,
         )
 
     def _read_n_animals(self) -> int:

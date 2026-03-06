@@ -1,199 +1,172 @@
-# Feature Research
+# Feature Landscape
 
-**Domain:** Performance optimization of a multi-camera YOLO inference pipeline (AquaPose v3.4)
-**Researched:** 2026-03-05
-**Confidence:** HIGH — codebase was read directly; Ultralytics batch inference API was verified against official docs; PyTorch batched linalg is documented; threading patterns are well-established.
-
----
-
-## Context: What Already Exists and Must Be Preserved
-
-| Existing Component | What It Does | Constraint |
-|-------------------|--------------|------------|
-| `DetectionStage.run()` | Iterates frames, calls `detector.detect(frame)` per camera per frame | Must preserve Result type: `list[dict[str, list[Detection]]]` |
-| `YOLOOBBBackend.detect(frame)` | Calls `model.predict(frame, ...)` for a single image | Hot path — currently 1 image per GPU call |
-| `MidlineStage.run()` | Iterates frames, calls `backend.process_frame(...)` per frame | Must preserve Result type: `list[dict[str, list[AnnotatedDetection]]]` |
-| `PoseEstimationBackend._process_detection()` | Extracts crop, calls `model.predict(crop, ...)` for a single crop | Hot path — currently 1 crop per GPU call |
-| `DltBackend._reconstruct_fish()` | Loops over `n_body_points` (15), triangulating one point at a time | Per-point Python loop calling `_triangulate_body_point()` per point |
-| `DltBackend._triangulate_body_point()` | Casts rays, stacks tensors, calls `triangulate_rays()` / `weighted_triangulate_rays()` | Called 15x per fish per frame — loop overhead adds up |
-| `score_tracklet_pair()` | Loops over shared frames; per-frame numpy ops; single pair at a time | Python loop inside; called O(tracklets^2) times |
-| `score_all_pairs()` | Double loop over camera pairs, tracklet-A × tracklet-B | Outer Python loop; inner calls `score_tracklet_pair()` |
-| `VideoFrameSource.__iter__()` | Sequential `cap.read()` per camera per frame; undistorts synchronously | CPU-bound decode blocks main thread; no overlap with GPU |
-| `ChunkFrameSource.__iter__()` | Calls `source.read_frame(global_idx)` which seeks and reads each camera | Seek-per-frame is expensive; no prefetching |
+**Domain:** Model iteration evaluation and QA for multi-view fish pose estimation (AquaPose v3.6)
+**Researched:** 2026-03-06
+**Confidence:** HIGH -- features derived from direct codebase analysis, milestone seed requirements, and domain knowledge of multi-view pose estimation pipelines.
 
 ---
 
-## Feature Landscape
+## Context: What Already Exists
 
-### Table Stakes (Users Expect These)
+| Existing Component | What It Does | Relevance to v3.6 |
+|-------------------|--------------|-------------------|
+| `ReconstructionMetrics` | mean/max reprojection error, per-camera/per-fish breakdown, inlier ratio, low-confidence flag rate, tier2 stability | Needs percentile extension and per-keypoint breakdown |
+| `AssociationMetrics` | fish yield ratio, singleton rate, camera distribution histogram | Needs camera count percentile summaries |
+| `MidlineMetrics` | mean/std confidence, completeness, temporal smoothness | Needs confidence percentile extension |
+| `TrackingMetrics` | track count, length stats (median/mean/min/max), coast frequency | Already captures 2D tracking fragmentation; 3D track fragmentation is a separate concern |
+| `EvalRunner` | Loads merged chunk contexts, calls per-stage evaluators, produces `EvalRunnerResult` | Extension point for new analysis functions |
+| `format_eval_report` / `format_eval_json` | ASCII and JSON output for `aquapose eval` | Must be extended to render new metrics |
+| `Midline3D` | per_camera_residuals (mean per camera), mean_residual, max_residual, control_points, knots | Has per-camera residuals but NOT per-body-point residuals -- per-keypoint breakdown requires new data |
+| `_TriangulationResult` (internal) | per-body-point `mean_residuals` shape (N,) and `inlier_cam_ids` | Per-keypoint data exists internally but is NOT surfaced into Midline3D |
+| `SampleStore` (SQLite) | content-hash dedup, source priority upsert, provenance tracking, symlink assembly, model lineage | Bootstrap workflow feeds data through this store |
+| `coco_convert.py` | COCO-JSON to YOLO-OBB and YOLO-pose format conversion | Exists but may need `data convert` CLI subcommand wiring |
+| `data_cli.py` | `data import`, `data assemble` subcommands | Needs `data convert` subcommand to wire coco_convert |
+| `train compare` | Cross-run comparison table (mAP50, mAP50-95, Prec, Recall) | Sufficient for training metric comparison |
+| `pseudo_labels.py` / `pseudo_label_cli.py` | Source A/B pseudo-label generation with confidence scoring | Already built; v3.6 executes the loop |
+| `elastic_deform.py` | TPS-based C-curve/S-curve augmentation | Already built; used during training |
+| `ZDenoisingMetrics` | z-range, z-profile RMS, per-fish SNR | Already covers z-quality assessment |
 
-Features a researcher expects from a "performance optimization" milestone. Missing these means the milestone has not delivered on its stated goal.
+---
 
-| Feature | Why Expected | Complexity | Expected Speedup | Notes |
-|---------|--------------|------------|-----------------|-------|
-| Batched YOLO detection inference | 12-camera rig calling predict() 12× per frame is the obvious GPU bottleneck; batch inference is the canonical first fix for unbatched YOLO pipelines | MEDIUM | 2–5× detection throughput (GPU util goes from ~30% to ~80%+) | Ultralytics `model.predict([img1, img2, ...])` accepts a list of numpy arrays — confirmed in official docs. Batch of 12 images per frame call replaces 12 single-image calls. DetectionStage collects all 12 camera frames, calls predict once, redistributes Results list by camera index. Breaking change to `YOLOOBBBackend.detect()` signature — needs `detect_batch(frames)` variant or signature change to accept list. |
-| Batched YOLO midline inference (crop batching) | Same root cause as detection: each fish crop is a separate GPU call. A frame with 9 fish visible across 12 cameras generates ~108 predict() calls — all unbatched | HIGH | 3–8× midline throughput | Crops from all cameras for one frame (or multiple frames) are stacked into a single `model.predict([crop1, crop2, ...])` call. Complexity is HIGHER than detection batch because crops are variable-count (fish may be missing in some cameras), and the Results list must be redistributed back to (cam_id, detection_index) pairs. Affine crop extraction is still per-detection (CPU) — only the GPU predict() call is batched. |
-| Vectorized DLT triangulation across all body points | Currently 15 sequential Python-loop iterations per fish per frame, each constructing and solving a small linear system. With 9 fish and ~12 cameras, this is 1,620+ small solve calls per frame. Vectorized solves over all body points at once is the standard fix. | MEDIUM | 5–15× DLT reconstruction (est. 9% of wall time → <1%) | The DLT system per body point is `A @ x = 0` with A of shape (2*n_cams, 4). Stacking all 15 body points gives a batched A of shape (15, 2*n_cams, 4). `torch.linalg.svd` and `torch.linalg.lstsq` both support batched inputs natively (batch dim = first dim). Outlier rejection still requires per-point residual computation but can also be vectorized with batched `project()`. The two-pass structure (triangulate all → reject → re-triangulate inliers) complicates batching of the second pass because inlier sets differ per point — this is manageable with masking. |
-| Frame I/O overlap with GPU inference | VideoFrameSource decodes synchronously on the main thread, blocking GPU between frames. This is the standard producer-consumer problem. A prefetch thread reading the next frame batch while GPU processes the current one eliminates this dead time. | MEDIUM | Eliminate ~12% I/O wall-time overhead; actual net speedup depends on how much GPU was idle waiting for frames | Standard pattern: background thread fills a `queue.Queue(maxsize=N)` with pre-decoded frame dicts; main inference thread consumes from the queue. OpenCV `cap.read()` releases the GIL so the background thread genuinely runs concurrently. Constraint: GPU inference must happen on main thread (ultralytics requirement confirmed). The prefetch thread only does decode + undistort (CPU work). |
+## Table Stakes
 
-### Differentiators (Nice to Have, Real Value)
+Features users expect from a "model iteration and QA" milestone. Missing these means the iteration loop cannot be properly evaluated.
 
-Features that go beyond the baseline four bottlenecks and could provide additional speedup, but are not required to declare the milestone successful.
+| Feature | Why Expected | Complexity | Dependencies |
+|---------|--------------|------------|-------------|
+| **Reprojection error percentiles (p50, p90, p95)** | Mean/max alone hide distributional shape. A mean of 3px with p95 of 20px is very different from a mean of 3px with p95 of 5px. Percentiles are the standard way to report error distributions in pose estimation. | LOW | Extends `ReconstructionMetrics`, uses existing `per_camera_residuals` data in `Midline3D` |
+| **Midline confidence percentiles (p10, p50, p90)** | Same distributional reasoning. Low p10 reveals a tail of low-confidence predictions that mean/std obscure. | LOW | Extends `MidlineMetrics`, uses existing `point_confidence` arrays |
+| **Camera count percentiles for association** | The camera_distribution histogram is hard to scan quickly. p50 and p90 of cameras-per-observation summarize "typical coverage" and "best coverage" in two numbers. | LOW | Extends `AssociationMetrics`, computed from existing `camera_distribution` dict |
+| **Per-keypoint reprojection error breakdown** | Head vs tail error profiles reveal systematic model failures. If tail keypoints consistently have 3x the error of head keypoints, the pose model needs targeted improvement. This is standard practice in keypoint-based pose evaluation (COCO OKS reports per-keypoint). | MEDIUM | Requires surfacing `_TriangulationResult.mean_residuals` (per-body-point) into `Midline3D`. Currently discarded after spline fitting. New field: `per_point_residuals: np.ndarray | None` on `Midline3D`. |
+| **COCO-JSON to store bootstrap workflow** | The iteration loop cannot start without importing manual annotations into the store. This is the entry point for the entire cycle. Existing `coco_convert.py` functions exist but lack a CLI subcommand. | MEDIUM | Wires `coco_convert.py` into `data convert` CLI subcommand. Needs OBB and pose output paths, then `data import` ingests them. |
+| **Baseline model training and registration** | After importing manual annotations, the user must train a baseline model and register it in the store. This establishes "round 0" provenance. The `train` and `data` CLIs exist but the end-to-end workflow needs validation. | LOW | Uses existing `aquapose train {obb, pose}` + store model registration. May need minor CLI ergonomics fixes. |
+| **Round-over-round eval comparison** | The whole point of iteration is measuring improvement. The user needs to compare `aquapose eval` results across rounds side-by-side. At minimum: a table showing round 0 vs round 1 (vs round 2) metrics. | MEDIUM | New analysis function or CLI option. Could be as simple as `aquapose eval --compare run_A run_B` producing a diff table. Uses existing `EvalRunnerResult.to_dict()` for both runs. |
 
-| Feature | Value Proposition | Complexity | Expected Speedup | Notes |
-|---------|-------------------|------------|-----------------|-------|
-| Vectorized pairwise association scoring (score_all_pairs) | Association scoring is ~5% of wall time. The inner loop over shared frames per pair does LUT lookups and ray-ray distance, all numpy. Vectorizing the shared-frame loop into a matrix operation eliminates per-frame Python overhead. | HIGH | 2–4× association scoring speed; net effect small (5% of total → ~1–2%) | The ray-ray distance formula is analytic and vectorizable: given matrices of origins O (T, 3) and directions D (T, 3) for both cameras, the full shared-frame batch can be solved in one numpy broadcasting call. Difficulty: early termination (stop after `early_k` frames with zero score) is inherently sequential — must decide whether to drop it or approximate with threshold on first-K-frames score. Removing early termination simplifies vectorization at the cost of slightly more compute for clearly-zero pairs. This is a judgment call. |
-| Parallel per-camera video decode (ProcessPoolExecutor) | Each camera file is an independent decode. With 12 cameras, 12 cap.read() calls could theoretically run in parallel. | HIGH | Unclear — cv2.VideoCapture is not fork-safe; multiprocessing adds IPC overhead for large frame arrays. May not improve over threaded prefetch. | LOW priority. The threading prefetch approach (table stakes #4) already parallelizes decode with inference. True parallel decode via subprocesses is complex and IPC-expensive. Do not implement unless profiling post-threading-prefetch shows decode is still a bottleneck. |
-| Batch frame processing across multiple frames in detection stage | Instead of collecting 12 cameras × 1 frame per predict() call, collect 12 cameras × N frames (e.g., N=4) per call, making the batch size 48. | MEDIUM | Marginal — memory bandwidth bound beyond batch ~16. Pipeline's chunk processing already amortizes scheduling overhead. | LOW priority. Batch size of 12 (one full frame across all cameras) is likely sufficient to saturate GPU. Larger batches add latency (must buffer N frames before calling predict) and complicate downstream result redistribution. Profile first. |
+---
 
-### Anti-Features (Do Not Build)
+## Differentiators
 
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| TensorRT / ONNX export for YOLO models | Promises 2–4× inference speedup over PyTorch | Custom YOLO training workflow with Ultralytics must remain compatible with `aquapose train`. TensorRT export requires separate `.engine` file management, breaks the single-weights-path config decision, and Ultralytics export is version-sensitive. Speedup benefit is real but the maintenance cost and workflow disruption are not justified when batching alone likely delivers comparable gains. | Achieve GPU efficiency through batching first; revisit TensorRT if profiling post-batching still shows GPU as bottleneck. |
-| Multiprocessing pipeline parallelism (stage overlap) | Run detection and tracking in parallel for different frames | The 5-stage pipeline is strictly sequential per chunk (each stage writes context consumed by the next). Stage-level parallelism requires either per-frame streaming (breaking the current batch-per-chunk model) or complex double-buffering. Architectural risk is high; not justified when the bottleneck is within-stage GPU utilization, not between-stage latency. | Fix within-stage efficiency first. If E2E time is still unsatisfactory after the four table-stakes optimizations, reconsider. |
-| Async/await (asyncio) for video I/O | Modern async I/O promises cleaner code than threading | cv2.VideoCapture is not async-compatible. Ultralytics inference is synchronous. Asyncio provides no benefit for CPU-bound C extension work. Threading with a Queue is the correct primitive here. | Use `threading.Thread` + `queue.Queue` for producer-consumer overlap. |
-| Replacing OpenCV VideoCapture with PyAV or decord | Faster GPU-accelerated decoders | GPU-accelerated decode (NVDEC via PyAV or decord) would help only if decode is the bottleneck after threading. Currently decode time is ~12% — large but manageable with threading. New decode library adds a dependency, changes frame format, and may affect undistortion pipeline. | Profile after threading prefetch. Add GPU-decode library only if profiling reveals decode is still dominant. |
-| Numba JIT compilation for triangulation | JIT compile the inner loop for speed | The triangulation bottleneck is not per-iteration Python overhead — it is the sequential structure (15 separate small matrix solves). PyTorch batched SVD is the correct fix, not JIT. Numba introduces a compilation step, type restrictions, and debugging complexity. | Use `torch.linalg.svd` with a batch dimension of n_body_points. |
-| Caching triangulation results across frames | Avoid re-triangulating stationary fish | Fish are moving continuously at 30fps. Body points change each frame. No valid reuse opportunity without approximate matching that would introduce correctness risk. | Not applicable. |
+Features that add real value but are not strictly required to declare the milestone successful. They make the iteration loop more informative and the results more convincing.
+
+| Feature | Value Proposition | Complexity | Dependencies |
+|---------|-------------------|------------|-------------|
+| **Curvature-stratified reconstruction quality** | The elastic augmentation experiment (v3.5) showed curvature bias in OKS. The same bias likely manifests in 3D reconstruction error: curved fish may have higher reprojection error because the pose model produces worse keypoints for them. Binning reconstructions by 3D spline curvature and reporting error per bin directly measures whether the iteration loop is fixing the curvature bias. | MEDIUM | Compute curvature from `Midline3D.control_points` (evaluate 2nd derivative of B-spline). Bin into quantiles (e.g., quartiles). Report mean/p90 reprojection error per bin. New analysis function, not part of core evaluator. |
+| **3D track fragmentation analysis** | After association and reconstruction, "how continuous are the 3D trajectories?" matters for downstream behavioral analysis. Fragmentation = gaps where a fish was visible in >=3 cameras but was not reconstructed (failed association, failed midline, or failed triangulation). High fragmentation means the models or pipeline params need work. | HIGH | Requires cross-referencing: (1) per-frame camera visibility from tracklet_groups, (2) per-frame reconstruction presence from midlines_3d. Must compute: gap count, gap duration distribution, continuity ratio (frames reconstructed / frames with >= 3 camera visibility). New analysis function. |
+| **Detection false positive rate estimation** | Algae false positives are the primary detection problem. Estimating FP rate without ground truth requires a proxy: detections that never get associated into multi-view groups (singletons that are not near any fish in other cameras) are likely false positives. | MEDIUM | Analyze singleton observations in association output. Cross-reference with detection confidence. Report estimated FP rate as (low-confidence singletons) / total detections. Heuristic, not ground truth, but actionable. |
+| **Per-round provenance summary** | When the iteration loop is complete, a summary showing "round 0: N manual samples, round 1: N manual + M pseudo, round 2: ..." with model lineage makes the result reproducible and publishable. | LOW | Query SQLite store for datasets and models. Format as summary table. Could be `aquapose data summary` subcommand. |
+| **Overlay video side-by-side comparison** | The seed doc calls for "side-by-side comparison: baseline overlay vs final overlay on same time segment." This is the visual proof that models improved. | MEDIUM | Stitch two overlay videos horizontally with matching frame numbers. Uses existing `aquapose viz overlay` for each run, then ffmpeg or OpenCV to compose. |
+
+---
+
+## Anti-Features
+
+Features to explicitly NOT build in v3.6.
+
+| Anti-Feature | Why It Might Be Requested | Why Avoid | What to Do Instead |
+|--------------|--------------------------|-----------|-------------------|
+| **Automated iteration loop** | "Just run `aquapose iterate --rounds 3` and walk away" | The milestone explicitly uses "guided manual execution" with decision checkpoints between rounds. Automating removes the human judgment about whether to proceed, adjust confidence thresholds, or investigate failures. The loop is only 1-2 rounds -- automation overhead exceeds benefit. | Keep the step-by-step CLI workflow. Document the sequence clearly. |
+| **Ground-truth evaluation against manual annotations** | Standard ML practice: hold out annotated frames and measure precision/recall | Only ~50 annotated full-frame images exist. Holding out enough for statistically meaningful evaluation would starve training. Pipeline-level metrics (reprojection error, singleton rate, track continuity) are the primary quality signal. | Use pipeline metrics as the evaluation signal. Defer ground-truth eval to v3.7 when more annotations exist. |
+| **Active learning for frame selection** | "Select the frames where the model is most uncertain for the next round of annotation" | The pseudo-label confidence scoring already identifies uncertain regions. Active learning adds model-in-the-loop complexity (uncertainty estimation, acquisition function) for marginal gain over confidence-threshold filtering. The manual annotation budget is fixed at ~50 images -- not enough to warrant active learning infrastructure. | Use pseudo-label confidence thresholds and curvature-diversity sampling (already built). |
+| **Segmentation model iteration** | "While we're iterating OBB and pose, do seg too" | Cross-camera orientation problem is unresolved for segmentation (explicitly out of scope in seed doc). Including seg would block the milestone on an unsolved upstream problem. | Defer to future milestone after orientation problem is addressed. |
+| **Hyperparameter search for training** | "Grid search over learning rate, augmentation params, etc." | Ultralytics defaults are well-tuned. The bottleneck is data quality and quantity, not hyperparameters. One round of training with defaults + elastic augmentation is the right first step. Hyperparameter search adds complexity without addressing the actual bottleneck. | Use Ultralytics defaults. Adjust only if training metrics plateau unexpectedly. |
+| **Real-time eval dashboard** | "Plotly/Streamlit dashboard showing metrics updating live during training" | Training runs are 1-2 hours. The existing `train compare` table and `aquapose eval` text report are sufficient for this cadence. A dashboard is engineering effort that does not improve decision quality for 1-2 iteration rounds. | Use `aquapose eval` text/JSON output and `train compare` tables. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-[Batched YOLO detection inference]
-    └──modifies──> YOLOOBBBackend: detect() → detect_batch(frames: list[np.ndarray])
-    └──modifies──> DetectionStage.run(): collect frames, call detect_batch, redistribute Results
-    └──no dependency on──> [Frame I/O overlap] (independent)
+[COCO-JSON to store bootstrap] (Phase 71 prerequisite)
+    |-- data convert CLI subcommand (wires coco_convert.py)
+    |-- data import (existing)
+    |-- data assemble (existing)
+    |-- aquapose train (existing)
+    v
+[Baseline model training & registration] (Phase 71)
+    |
+    v
+[Baseline pipeline run] (Phase 72)
+    |-- aquapose run (existing)
+    |-- aquapose eval with extended metrics (Phase 70)
+    |-- aquapose viz overlay (existing)
+    v
+[Pseudo-label generation] (Phase 73)
+    |-- pseudo-label generate (existing)
+    |-- data import with source=pseudo (existing)
+    |-- data assemble with mixed sources (existing)
+    v
+[Round 1 training & eval] (Phase 73-74)
+    |-- train compare (existing)
+    |-- aquapose eval --compare (NEW: round-over-round comparison)
+    v
+[Final validation] (Phase 76)
+    |-- overlay video side-by-side (DIFFERENTIATOR)
+    |-- per-round provenance summary (DIFFERENTIATOR)
 
-[Batched YOLO midline inference]
-    └──modifies──> PoseEstimationBackend: _process_detection() → process_frame_batch()
-    └──modifies──> MidlineStage.run(): collect crops across cameras, call batch predict, redistribute
-    └──depends on knowledge of──> [Batched YOLO detection inference] (same API pattern)
-    └──independent of──> [Frame I/O overlap]
 
-[Vectorized DLT triangulation]
-    └──modifies──> DltBackend._reconstruct_fish(): replace 15-iteration loop with batched SVD
-    └──modifies──> DltBackend._triangulate_body_point(): replaced by vectorized equivalent
-    └──requires──> torch.linalg.svd batched input support (confirmed in PyTorch docs)
-    └──independent of──> inference batching features
-
-[Frame I/O overlap with GPU inference]
-    └──modifies──> VideoFrameSource or ChunkFrameSource: add background decode thread + Queue
-    └──or──> new PrefetchingFrameSource wrapper satisfying FrameSource protocol
-    └──independent of──> inference batching features
-    └──independent of──> DLT vectorization
-
-[Vectorized pairwise association scoring] (differentiator)
-    └──modifies──> score_tracklet_pair(): replace per-frame loop with batched numpy ops
-    └──modifies──> score_all_pairs(): optionally parallelize pair scoring
-    └──independent of all other features
-    └──lowest priority: only 5% of wall time
+[Extended metrics] (Phase 70 -- independent, should be done first)
+    |-- Reprojection error percentiles -----> extends ReconstructionMetrics
+    |-- Midline confidence percentiles -----> extends MidlineMetrics
+    |-- Camera count percentiles -----------> extends AssociationMetrics
+    |-- Per-keypoint reprojection error ----> requires Midline3D field addition
+    |                                         requires DltBackend to surface per-point residuals
+    |-- Curvature-stratified quality -------> requires 3D spline curvature computation
+    |                                         (standalone analysis function)
+    |-- 3D track fragmentation -------------> requires cross-referencing tracklet_groups
+                                              and midlines_3d (standalone analysis function)
 ```
 
 ### Dependency Notes
 
-- **Batched detection and batched midline share the same API pattern** but are independent changes. Detection batch is simpler (all inputs are full frames, fixed per-frame count = n_cameras). Midline batch is harder (variable crop count per frame, per-detection affine transforms must still run sequentially on CPU before the batched GPU call).
+- **Per-keypoint reprojection error is the only metric that requires a core type change.** The `_TriangulationResult.mean_residuals` array (per-body-point) is computed inside `DltBackend` but discarded when building `Midline3D`. Surfacing it requires adding a `per_point_residuals: np.ndarray | None` field to `Midline3D` and populating it from `_TriangulationResult`. This is a small change but touches core types, so it should be done carefully.
 
-- **Vectorized DLT has a two-pass structure constraint.** The first triangulation (all cameras) can be fully batched (shape: `[n_body_points, 2*n_cams, 4]`). The second triangulation (inlier cameras only) cannot use a uniform batch because inlier sets differ per body point. Use padded masked tensors or fall back to a masked loop for the second pass. The first pass alone (eliminating 15 separate small solves) is the majority of the gain.
+- **All other metric extensions operate on data already present** in `Midline3D`, `MidlineSet`, and `PipelineContext`. They are pure additions to evaluator functions and metric dataclasses.
 
-- **Frame I/O prefetch must keep GPU on the main thread.** Ultralytics inference is not thread-safe for GPU execution. Only decode + undistort moves to the background thread. The main thread does inference and consumes from the queue.
+- **The bootstrap workflow (Phase 71) is the critical-path dependency** for the iteration loop. Without it, no round 0 models exist in the store, and the loop cannot start. Phase 70 metrics can be developed in parallel with Phase 71 since they operate on existing cached data.
 
-- **Prefetching changes the iteration contract for ChunkFrameSource.** The current sequential `read_frame(global_idx)` seek pattern is the most expensive possible access pattern for prefetching. The prefetch thread should decode sequentially (no seeking) ahead of the main thread's consumption.
-
----
-
-## MVP Definition
-
-### Launch With (v3.4 — all four are required for milestone success)
-
-- [ ] **Batched YOLO detection inference** — collect all n_cameras frames per frame-tick, call `model.predict([frame_1, ..., frame_12])` once, redistribute Results by index. Requires `detect_batch()` variant in `YOLOOBBBackend`. Expected speedup: 2–5× detection throughput.
-
-- [ ] **Batched YOLO midline inference (crop batching)** — collect all crops across all cameras for a frame (or frame-window), call `model.predict([crop_1, ..., crop_N])` once, redistribute keypoints back to (cam_id, detection_index). Expected speedup: 3–8× midline throughput.
-
-- [ ] **Vectorized DLT triangulation** — replace per-body-point loop in `_reconstruct_fish()` with batched `torch.linalg.svd` or `torch.linalg.lstsq` over all body points simultaneously. Minimum viable: vectorize the first-pass triangulation (all cameras); second-pass inlier re-triangulation can remain looped or be masked. Expected speedup: 5–15× reconstruction throughput.
-
-- [ ] **Frame I/O overlap with GPU inference** — background thread prefetches decoded frames into a bounded queue. Main inference thread consumes. Eliminates the ~12% wall-time gap where GPU is idle waiting for the next decoded frame batch.
-
-### Add After Validation (v3.4.x)
-
-- [ ] **Vectorized pairwise association scoring** — vectorize the per-frame loop in `score_tracklet_pair()` using batched numpy ops. Add only if profiling post-v3.4 shows association is a meaningful share of remaining wall time.
-
-### Future Consideration (v3.5+)
-
-- [ ] Per-frame streaming pipeline with stage-level parallelism (requires pipeline architecture change — out of scope)
-- [ ] TensorRT / ONNX export (revisit if batching delivers insufficient speedup)
-- [ ] GPU-accelerated video decode via decord or PyAV (revisit if decode remains dominant after threading)
+- **Round-over-round comparison** is needed by Phase 74 (Round 1 Evaluation) but could be as simple as running `aquapose eval` twice and diffing the JSON outputs manually. A dedicated comparison command is a quality-of-life improvement, not a hard blocker.
 
 ---
 
-## Feature Prioritization Matrix
+## MVP Recommendation
 
-| Feature | User Value | Implementation Cost | Priority | Estimated Wall-Time Reduction |
-|---------|------------|---------------------|----------|-------------------------------|
-| Batched YOLO detection inference | HIGH | MEDIUM | P1 | Large (detection is dominant bottleneck at ~74% GPU-bound time) |
-| Batched YOLO midline inference | HIGH | HIGH | P1 | Large (midline uses same model.predict path, same bottleneck) |
-| Vectorized DLT triangulation | HIGH | MEDIUM | P1 | Medium (reconstruction ~9% of wall time, 5–15× speedup within that) |
-| Frame I/O overlap | HIGH | MEDIUM | P1 | Medium-small (~12% of wall time, most eliminated) |
-| Vectorized association scoring | MEDIUM | HIGH | P2 | Small (~5% of wall time, 2–4× within that) |
-| TensorRT / ONNX export | LOW | HIGH | P3 | Potentially large but high risk/complexity |
-| GPU-accelerated video decode | LOW | HIGH | P3 | Small after threading overlap |
-| Parallel-frame decode (multiprocessing) | LOW | HIGH | P3 | Unclear, likely negative ROI |
+### Phase 70 (Metrics) -- build first, enables consistent measurement across all rounds:
 
-**Priority key:**
-- P1: Required for v3.4 milestone declaration
-- P2: Add if profiling post-P1 shows residual bottleneck
-- P3: Future milestone, revisit only after profiling confirms need
+1. **Reprojection error percentiles** -- LOW complexity, HIGH value. Add p50/p90/p95 to `ReconstructionMetrics`. Two lines of numpy.
+2. **Midline confidence percentiles** -- LOW complexity, MEDIUM value. Add p10/p50/p90 to `MidlineMetrics`.
+3. **Camera count percentiles** -- LOW complexity, MEDIUM value. Add p50/p90 to `AssociationMetrics`.
+4. **Per-keypoint reprojection error** -- MEDIUM complexity, HIGH value. Surface `per_point_residuals` from DltBackend into Midline3D. Add per-keypoint mean/p90 to `ReconstructionMetrics` or a new analysis section.
 
----
+### Phase 71 (Bootstrap) -- build second, unlocks the iteration loop:
 
-## Implementation Complexity Notes
+5. **`data convert` CLI subcommand** -- MEDIUM complexity, CRITICAL for loop start. Wires existing `coco_convert.py` functions.
+6. **End-to-end bootstrap validation** -- LOW complexity. Run the convert-import-assemble-train-register sequence and verify it works.
 
-### Batched YOLO Detection (MEDIUM complexity)
-The Ultralytics API accepts `model.predict(list_of_numpy_arrays)` — confirmed in official docs. The primary complexity is in redistribution: `model.predict([f1, f2, ..., f12])` returns a list of 12 `Results` objects in the same order as inputs. The existing `detect()` method processes one frame and returns `list[Detection]`. A new `detect_batch(frames: dict[str, np.ndarray]) -> dict[str, list[Detection]]` method collects camera_ids, builds an ordered list of frames, calls predict once, and reconstructs the per-camera dict from the Results list. `DetectionStage.run()` changes to call `detect_batch` instead of `detect` per camera.
+### Defer to after Phase 74 evaluation (include only if time permits):
 
-### Batched YOLO Midline (HIGH complexity)
-The crop-batching approach requires: (1) extract affine crops for all detections across all cameras for the current frame (CPU, sequential, unchanged); (2) collect all crops into a single list with a parallel index mapping `[(cam_id, det_idx), ...]`; (3) call `model.predict(crops_list)` once; (4) redistribute Results back to `(cam_id, det_idx)` pairs using the index map. The keypoint extraction and spline interpolation post-predict remain unchanged and sequential. The higher complexity vs. detection batching comes from variable crop count per frame (some cameras may have 0–9 crops) and the need to maintain the (cam_id, det_idx) index.
+7. **Curvature-stratified reconstruction quality** -- MEDIUM complexity, HIGH diagnostic value for confirming augmentation benefit at the 3D level.
+8. **3D track fragmentation** -- HIGH complexity, MEDIUM value. Important for downstream behavioral analysis but not critical for the iteration loop decision (singleton rate and reprojection error already capture most of the signal).
+9. **Round-over-round eval comparison command** -- MEDIUM complexity, quality-of-life. Can be done manually with JSON diff until this is built.
 
-### Vectorized DLT (MEDIUM complexity)
-The key mathematical structure: for body point `i`, the current code builds a system `A_i @ x_i ≈ 0` where `A_i` has shape `(2*n_cams, 4)`. Stacking gives `A` of shape `(n_body_points, 2*n_cams, 4)`. `torch.linalg.svd(A)` returns `V` of shape `(n_body_points, 4, 4)`; the solution for each point is `V[:, :, -1]` (last column = smallest singular value). The outlier rejection second pass is harder to vectorize uniformly because inlier sets differ per point. Acceptable approach: vectorize first pass fully (eliminates ~half the compute); for second pass, use a masked approach or a short loop only over points that had outliers in the first pass (typically a minority).
+### Defer to future milestone:
 
-### Frame I/O Prefetch (MEDIUM complexity)
-Standard producer-consumer pattern. Create a `PrefetchingFrameSource` wrapper that satisfies the `FrameSource` protocol. On `__enter__`, start a `threading.Thread` that sequentially decodes frames and pushes `(frame_idx, frames_dict)` to a `queue.Queue(maxsize=4)` (4-frame buffer). Main thread consumes from the queue in `__iter__`. The thread sets a sentinel value when exhausted. Key constraint: the existing `ChunkFrameSource.__iter__()` uses `source.read_frame(global_idx)` with seeks — the prefetch thread should use sequential `cap.read()` (no seeks) for maximum efficiency. This may require the prefetch thread to operate on the underlying `VideoFrameSource` directly rather than through `ChunkFrameSource`.
-
-### Vectorized Association Scoring (HIGH complexity, LOW priority)
-The `score_tracklet_pair()` function iterates over `shared_frames` and computes a LUT lookup + ray-ray distance per frame. Vectorizing requires: (1) collecting all shared-frame centroid tensors into matrices `O_a (T, 3)`, `D_a (T, 3)`, `O_b (T, 3)`, `D_b (T, 3)`; (2) computing ray-ray distances as a batched numpy op — the analytic formula `ray_ray_closest_point` is vectorizable with broadcasting; (3) aggregating scores. The early-termination heuristic (bail after `early_k` frames with zero score) is incompatible with full vectorization — it would need to be dropped or replaced with a first-K-frames pre-filter. Given that association is only ~5% of wall time, the complexity/benefit ratio is poor. Do not implement in v3.4.
-
----
-
-## Correctness Preservation Requirements
-
-All optimizations are correctness-neutral: the mathematical result must be numerically identical (or within floating-point tolerance) to the pre-optimization baseline. This is enforced by the existing golden-data verification framework and `aquapose eval`.
-
-| Optimization | Correctness Risk | Mitigation |
-|--------------|-----------------|------------|
-| Batched detection | LOW — same predict call, just batched | Verify per-camera Results ordering matches input ordering |
-| Batched midline | LOW — same predict call, variable crop count | Verify (cam_id, det_idx) index round-trip |
-| Vectorized DLT | MEDIUM — batched SVD numerically equivalent, but outlier rejection second pass needs care | Compare Tier1 reprojection metrics before/after using `aquapose eval` |
-| Frame I/O prefetch | LOW — same frames, different delivery timing | Verify frame_idx ordering is preserved; assert on frame content in unit tests |
+10. **Detection false positive rate estimation** -- interesting but heuristic. The overlay videos provide visual FP assessment that is more trustworthy.
+11. **Overlay video side-by-side** -- nice for presentation but can be done with ffmpeg manually.
 
 ---
 
 ## Sources
 
-- `/home/tlancaster6/Projects/AquaPose/.planning/PROJECT.md` — v3.4 milestone definition and profiling targets (HIGH confidence — primary source)
-- Direct codebase inspection: `YOLOOBBBackend`, `DetectionStage`, `MidlineStage`, `PoseEstimationBackend`, `DltBackend`, `score_all_pairs`, `VideoFrameSource`, `ChunkFrameSource` (HIGH confidence)
-- [Ultralytics Predict Docs](https://docs.ultralytics.com/modes/predict/) — confirmed batch inference API accepts list of numpy arrays (HIGH confidence)
-- [Ultralytics YOLO11 Batch Inference Blog](https://www.ultralytics.com/blog/using-ultralytics-yolo11-to-run-batch-inferences) — batch arg behavior, default size=1 (MEDIUM confidence)
-- [YOLOv8 Batch Inference Speed Analysis](https://dev-kit.io/blog/machine-learning/yolov8-batch-inference-speed-and-efficiency) — throughput scaling characteristics (MEDIUM confidence)
-- [torch.linalg.svd PyTorch Docs](https://docs.pytorch.org/docs/stable/generated/torch.linalg.svd.html) — confirmed batched SVD support (HIGH confidence)
-- [torch.linalg.lstsq PyTorch Docs](https://docs.pytorch.org/docs/stable/generated/torch.linalg.lstsq.html) — confirmed batched least-squares, CUDA limitation (gels driver = full-rank only) (HIGH confidence)
-- [OpenCV multithreading with VideoCapture](https://nrsyed.com/2018/07/05/multithreading-with-opencv-python-to-improve-video-processing-performance/) — threading pattern, GIL behavior for cap.read() (MEDIUM confidence)
-- [PyTorch DataLoader prefetch tactics](https://medium.com/@Modexa/8-pytorch-dataloader-tactics-to-max-out-your-gpu-22270f6f3fa8) — pin_memory, non-blocking transfer, producer-consumer patterns (MEDIUM confidence)
-- [NumPy pairwise vectorization](https://towardsdatascience.com/how-to-vectorize-pairwise-dis-similarity-metrics-5d522715fb4e/) — broadcasting patterns for distance matrices (MEDIUM confidence)
+- Direct codebase inspection of `evaluation/stages/*.py`, `evaluation/runner.py`, `evaluation/output.py`, `evaluation/metrics.py` (HIGH confidence)
+- Direct inspection of `core/reconstruction/backends/dlt.py` -- confirmed `_TriangulationResult` contains per-body-point residuals that are not surfaced (HIGH confidence)
+- Direct inspection of `core/types/reconstruction.py` -- confirmed `Midline3D` schema and available fields (HIGH confidence)
+- Direct inspection of `training/store_schema.py`, `training/data_cli.py`, `training/coco_convert.py`, `training/compare.py` (HIGH confidence)
+- `.planning/milestones/v3.6-SEED.md` -- milestone scope, phase structure, validation approach (HIGH confidence)
+- `.planning/PROJECT.md` -- existing capabilities inventory (HIGH confidence)
+- COCO keypoint evaluation protocol (per-keypoint OKS) as domain standard for per-keypoint breakdown (MEDIUM confidence -- training data, not verified against current docs)
+- Standard practice in multi-view pose estimation: percentile error reporting, curvature-stratified analysis, track fragmentation metrics (MEDIUM confidence -- domain knowledge)
 
 ---
 
-*Feature research for: AquaPose v3.4 Performance Optimization*
-*Researched: 2026-03-05*
+*Feature research for: AquaPose v3.6 Model Iteration & QA*
+*Researched: 2026-03-06*

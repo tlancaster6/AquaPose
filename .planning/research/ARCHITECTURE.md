@@ -1,470 +1,345 @@
-# Architecture Research
+# Architecture Patterns
 
-**Domain:** Performance optimization of multi-camera 3D pose estimation pipeline
-**Researched:** 2026-03-04
-**Confidence:** HIGH (based on direct codebase analysis)
+**Domain:** Evaluation metrics extension, analysis infrastructure, and model iteration QA for 3D fish pose estimation pipeline
+**Researched:** 2026-03-06
+**Confidence:** HIGH (based on direct codebase inspection of all evaluation and core type modules)
 
-## Existing Architecture Overview
+## Existing Evaluation Architecture
 
-The AquaPose pipeline has a strict 3-layer architecture with a fourth coordination layer above it:
+The evaluation system has three layers:
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                        ChunkOrchestrator                             │
-│  Owns: chunk loop, ChunkHandoff, identity stitching, HDF5 output    │
-├──────────────────────────────────────────────────────────────────────┤
-│                         PosePipeline                                  │
-│  Owns: stage ordering, EventBus, lifecycle events, stage timing      │
-│  ┌────────────┐  ┌─────────────┐  ┌──────────────┐  ┌───────────┐  │
-│  │ Detection  │→ │  Tracking   │→ │ Association  │→ │ Midline   │  │
-│  │  Stage 1   │  │   Stage 2   │  │   Stage 3    │  │  Stage 4  │  │
-│  └────────────┘  └─────────────┘  └──────────────┘  └─────┬─────┘  │
-│                                                             ↓        │
-│                                         ┌──────────────────────────┐ │
-│                                         │   Reconstruction Stage 5 │ │
-│                                         └──────────────────────────┘ │
-├──────────────────────────────────────────────────────────────────────┤
-│                          Core Computation                             │
-│  ┌────────────────────────────────────────────────────────────────┐  │
-│  │  Backends: YOLOOBBBackend, SegmentationBackend,               │  │
-│  │           PoseEstimationBackend, DltBackend                   │  │
-│  │  Scoring: score_all_pairs(), score_tracklet_pair()            │  │
-│  │  Types: Detection, Midline2D, Midline3D, Tracklet2D, etc.    │  │
-│  └────────────────────────────────────────────────────────────────┘  │
-├──────────────────────────────────────────────────────────────────────┤
-│                    FrameSource / VideoFrameSource                     │
-│  Owns: OpenCV video I/O, undistortion, chunk windowing              │
-└──────────────────────────────────────────────────────────────────────┘
+CLI: `aquapose eval`
+    |
+    v
+EvalRunner (evaluation/runner.py)
+    |-- load_run_context(): discovers chunk_NNN/cache.pkl, merges into single PipelineContext
+    |-- run(): unpacks PipelineContext fields, calls per-stage evaluators
+    |-- returns EvalRunnerResult (frozen dataclass, 5 optional stage metrics)
+    |
+    +---> evaluate_detection(frames)           -> DetectionMetrics
+    +---> evaluate_tracking(tracklets)         -> TrackingMetrics
+    +---> evaluate_association(midline_sets, n) -> AssociationMetrics
+    +---> evaluate_midline(frames)             -> MidlineMetrics
+    +---> evaluate_reconstruction(results, n)  -> ReconstructionMetrics
+    |
+    v
+Output formatters (evaluation/output.py)
+    |-- format_eval_report(result) -> ASCII text
+    |-- format_eval_json(result)   -> JSON string
 ```
 
-### Component Responsibilities
+### Key Design Properties
 
-| Component | Responsibility | Key Interface |
-|-----------|---------------|---------------|
-| ChunkOrchestrator | Chunk loop, identity stitching, HDF5 flush | Creates PosePipeline per chunk |
-| PosePipeline | Stage ordering, event emission, timing | `run(initial_context) -> PipelineContext` |
-| DetectionStage | Read frames, run per-frame per-camera YOLO-OBB | `run(context) -> context` |
-| TrackingStage | Per-camera OC-SORT across frames | `run(context, carry) -> (context, carry)` |
-| AssociationStage | Cross-camera Leiden clustering via ray-ray scores | `run(context) -> context` |
-| MidlineStage | Crop-extract + YOLO-seg/pose per detection | `run(context) -> context` |
-| ReconstructionStage | DLT triangulation + B-spline per fish per frame | `run(context) -> context` |
-| YOLOOBBBackend | Single-frame OBB detection | `detect(frame) -> list[Detection]` |
-| SegmentationBackend | Single-frame multi-detection seg | `process_frame(frame_idx, frame_dets, frames, camera_ids) -> dict[str, list[AnnotatedDetection]]` |
-| PoseEstimationBackend | Single-frame multi-detection pose | `process_frame(frame_idx, frame_dets, frames, camera_ids) -> dict[str, list[AnnotatedDetection]]` |
-| DltBackend | Single-frame multi-fish DLT triangulation | `reconstruct_frame(frame_idx, midline_set) -> dict[int, Midline3D]` |
-| VideoFrameSource | Sequential frame I/O, undistortion | `__iter__() -> (frame_idx, {cam_id: np.ndarray})` |
-| ChunkFrameSource | Windowed view of VideoFrameSource | `__iter__()` delegates to `read_frame()` — random-access seek per frame, no prefetch |
+1. **Stage evaluators are pure functions** -- they take typed data extracted from `PipelineContext` fields and return frozen metric dataclasses. They never import from `engine/`.
 
-## Four Optimization Targets: Integration Analysis
+2. **Frozen dataclasses with `to_dict()`** -- every metric type has a `to_dict()` method returning JSON-serializable dicts. New fields must follow this pattern.
 
-### Target 1: Batched YOLO Inference (~70% of wall time, GPU util ~30%)
+3. **Frame sampling** -- `EvalRunner.run(n_frames)` uses `select_frames()` to uniformly sample frames before passing data to evaluators. New analysis functions must respect this sampling.
 
-**Where the work happens:**
+4. **MidlineSet assembly** -- `EvalRunner._build_midline_sets()` reconstructs per-frame `MidlineSet` (fish_id -> camera_id -> Midline2D) from `tracklet_groups` + `annotated_detections` via centroid matching. This is the bridge between association identity and midline data.
 
-Detection — `YOLOOBBBackend.detect(frame)` called once per camera per frame in `DetectionStage.run()`:
+### Cached Data Available in PipelineContext
+
+| Field | Type | Producer Stage | Available Data Per Element |
+|-------|------|---------------|--------------------------|
+| `detections` | `list[dict[str, list[Detection]]]` | Detection | bbox, confidence, camera_id |
+| `tracks_2d` | `dict[str, list[Tracklet2D]]` | Tracking | frames, centroids, frame_status ("detected"/"coasted") |
+| `tracklet_groups` | `list[TrackletGroup]` | Association | fish_id, per-camera tracklets, consensus_centroids |
+| `annotated_detections` | `list[dict[str, list[AnnotatedDetection]]]` | Midline | detection + Midline2D (points, half_widths, point_confidence) |
+| `midlines_3d` | `list[dict[int, Midline3D]]` | Reconstruction | control_points, knots, mean_residual, max_residual, per_camera_residuals, n_cameras, centroid_z, z_offsets |
+
+### What Midline3D Stores vs. What It Does NOT
+
+**Stored:** `mean_residual` (scalar), `max_residual` (scalar), `per_camera_residuals` (per-camera mean across all body points), `control_points` + `knots` (B-spline), `n_cameras` (minimum across body points).
+
+**NOT stored:** Per-body-point residuals, per-body-point camera counts, per-body-point camera IDs. These are computed during reconstruction in `DltBackend._reconstruct_fish()` but discarded after spline fitting.
+
+## Recommended Architecture for v3.6 New Features
+
+### Principle: Extend Evaluators for Simple Aggregates, Add Analysis Module for Cross-Stage Computations
+
+Two categories of work:
+
+**Category A -- Evaluator extensions** (add fields + percentile computation to existing evaluator functions):
+- Reprojection error percentiles (p50/p90/p95) in `ReconstructionMetrics`
+- Midline confidence percentiles (p10/p50/p90) in `MidlineMetrics`
+- Camera count percentiles (p50/p90) in `AssociationMetrics`
+
+**Category B -- New analysis functions** (cross-field or multi-step computations requiring data from multiple context fields):
+- Per-keypoint reprojection error breakdown
+- Curvature-stratified reconstruction quality
+- 3D track fragmentation
+
+Category A belongs inside existing evaluator dataclasses and functions. Category B belongs in a new `evaluation/analysis.py` module.
+
+### Component Boundaries
+
+| Component | Responsibility | Data Source |
+|-----------|---------------|-------------|
+| `evaluation/stages/reconstruction.py` | Add reproj error percentiles | `Midline3D.mean_residual` (already iterated) |
+| `evaluation/stages/midline.py` | Add confidence percentiles | `Midline2D.point_confidence` (already collected) |
+| `evaluation/stages/association.py` | Add camera count percentiles | `MidlineSet` n_cams (already counted) |
+| **`evaluation/analysis.py` (NEW)** | Per-keypoint, curvature, fragmentation | Multiple `PipelineContext` fields |
+| `evaluation/runner.py` | Call analysis functions, extend `EvalRunnerResult` | Orchestrates everything |
+| `evaluation/output.py` | Format new metrics + analyses | `EvalRunnerResult` |
+
+### Data Flow for New Features
+
+```
+PipelineContext (merged from chunks)
+    |
+    +---> evaluate_reconstruction(frame_results, ...)
+    |         NOW ALSO: p50/p90/p95 reproj error from flat residual list
+    |         -> ReconstructionMetrics (extended)
+    |
+    +---> evaluate_midline(frames)
+    |         NOW ALSO: p10/p50/p90 confidence from conf_array
+    |         -> MidlineMetrics (extended)
+    |
+    +---> evaluate_association(midline_sets, n_animals)
+    |         NOW ALSO: p50/p90 camera count from n_cams list
+    |         -> AssociationMetrics (extended)
+    |
+    +---> analyze_per_keypoint(frame_results, midline_sets, calib_bundle)
+    |         -> KeypointAnalysis (NEW)
+    |
+    +---> analyze_curvature_quality(frame_results)
+    |         -> CurvatureAnalysis (NEW)
+    |
+    +---> analyze_track_fragmentation(tracklet_groups, midlines_3d, ...)
+              -> FragmentationAnalysis (NEW)
+```
+
+## Detailed Design: Category A (Evaluator Extensions)
+
+### 1. Reprojection Error Percentiles
+
+**What changes:** Add `p50_reprojection_error`, `p90_reprojection_error`, `p95_reprojection_error` to `ReconstructionMetrics`.
+
+**Data already available:** `evaluate_reconstruction()` iterates all `Midline3D` objects to count low-confidence flags. In the same loop, collect `midline3d.mean_residual` into a flat list, then `np.percentile(residuals, [50, 90, 95])`.
+
+**Implementation:** ~10 lines of change in `evaluate_reconstruction()`, 3 new fields with `float` defaults in `ReconstructionMetrics`, 3 new lines in `to_dict()`.
+
+### 2. Midline Confidence Percentiles
+
+**What changes:** Add `p10_confidence`, `p50_confidence`, `p90_confidence` to `MidlineMetrics`.
+
+**Data already available:** `evaluate_midline()` already builds `conf_array = np.array(all_confidences)`. One `np.percentile()` call.
+
+**Implementation:** ~5 lines of change, 3 new fields, 3 new lines in `to_dict()`.
+
+### 3. Camera Count Percentiles
+
+**What changes:** Add `camera_count_p50`, `camera_count_p90` to `AssociationMetrics`.
+
+**Data already available:** `evaluate_association()` already computes `n_cams = len(cam_map)` per observation. Collect into a list, `np.percentile()`.
+
+**Implementation:** ~5 lines of change, 2 new fields, 2 new lines in `to_dict()`.
+
+### Backward Compatibility
+
+All new fields use default values (`0.0`), so existing code that constructs these dataclasses without the new fields continues to work. The frozen dataclass pattern already supports this via `field(default=0.0)` or keyword defaults. Existing tests constructing these dataclasses remain valid.
+
+## Detailed Design: Category B (New Analysis Module)
+
+### New File: `evaluation/analysis.py`
+
+Contains three frozen dataclasses and three pure analysis functions. No engine imports.
+
+### 4. Per-Keypoint Reprojection Error Breakdown
+
+**Goal:** Mean and p90 reprojection error broken down by body point index (0=head through 14=tail). Reveals whether head/tail points are systematically worse.
+
+**Data challenge:** `Midline3D` does NOT store per-body-point residuals. Two approaches:
+
+**(A) Recompute from spline (RECOMMENDED):** Evaluate the cached B-spline at N uniform positions, reproject into each observing camera using `CalibBundle`, compute per-point pixel error against the observed 2D midline points from `MidlineSet`. This replicates what `dlt.py` lines 353-380 do at reconstruction time.
+
+**(B) Store per-body-point residuals in Midline3D:** Add array field, populate during reconstruction. Simpler analysis but **invalidates all existing caches** (StaleCacheError on deserialize due to `context_fingerprint` mismatch).
+
+**Recommendation: Approach A.** Avoids cache invalidation, keeps analysis self-contained. The function needs `CalibBundle` (for reprojection), confirming it belongs in `analysis.py` not in a stage evaluator.
+
+**Dependencies:** `EvalRunner` must load `CalibBundle` from the run's config. It already reads `config.yaml` for `n_animals`; extending it to load calibration is a small addition.
+
+**Type:**
 
 ```python
-for _frame_idx, frames in self._frame_source:
-    for cam_id in camera_ids:
-        frame_dets[cam_id] = self._detector.detect(frames[cam_id])  # one frame at a time
+@dataclass(frozen=True)
+class KeypointAnalysis:
+    per_keypoint_mean: dict[int, float]   # body_point_index -> mean px error
+    per_keypoint_p90: dict[int, float]    # body_point_index -> p90 px error
+    n_observations: dict[int, int]        # body_point_index -> observation count
 ```
 
-Midline — `SegmentationBackend._process_detection()` or `PoseEstimationBackend._process_detection()` called once per detection in a nested camera × detection loop:
+### 5. Curvature-Stratified Reconstruction Quality
+
+**Goal:** Bin reconstructions by 3D spline curvature, report reprojection error per bin. Answers: "does reconstruction quality degrade for curved fish?"
+
+**Data available:** `Midline3D.control_points` + `knots` allow spline evaluation. 3D curvature = `|r' x r''| / |r'|^3`. The codebase already has `compute_curvature()` in `training/frame_selection.py` (v3.5) for 2D -- the 3D version is analogous.
+
+**No external dependencies:** Curvature from 3D spline, reprojection error from `Midline3D.mean_residual`. Pure function.
+
+**Implementation:**
+1. For each fish-frame: evaluate spline, compute curvature at sample points, take max curvature as scalar summary.
+2. Compute curvature quantile bin edges (quartiles) from all fish-frames.
+3. Report mean/p90 reprojection error per bin.
+
+**Type:**
 
 ```python
-for cam_id in camera_ids:
-    for det in cam_dets:
-        ann = self._process_detection(det, frame, cam_id, frame_idx)  # one crop at a time
+@dataclass(frozen=True)
+class CurvatureAnalysis:
+    bins: list[tuple[float, float]]       # (low, high) curvature edges
+    mean_error_per_bin: list[float]        # mean reproj error per bin
+    p90_error_per_bin: list[float]         # p90 reproj error per bin
+    count_per_bin: list[int]              # observations per bin
+    overall_curvature_p50: float
+    overall_curvature_p90: float
 ```
 
-**Interface changes required:**
+### 6. 3D Track Fragmentation
 
-Detection batching lives inside `YOLOOBBBackend`. The backend's public interface must grow a `detect_batch(frames: list[np.ndarray]) -> list[list[Detection]]` method. The stage loop restructures to collect all camera frames first, then call the batch method. Ultralytics supports `model.predict(source=[img1, img2, ...])` natively — each `Results` object in the returned list corresponds to one input image.
+**Goal:** Post-association track continuity metrics -- how often does a visible fish fail to get reconstructed?
 
-Midline batching requires both backends to add a `process_batch()` method. The stage loop changes to collect all crops for all cameras and detections within a frame, run one `model.predict()`, then distribute results back to per-detection annotations.
+**Data sources:**
+- `tracklet_groups`: `TrackletGroup` objects with per-camera tracklets (frame ranges + status)
+- `midlines_3d`: per-frame `dict[int, Midline3D]` showing which fish were actually reconstructed
+- Cross-reference: for each `fish_id`, compare frames where tracklet_groups indicate >=3 camera views vs frames where `midlines_3d` has an entry
 
-**What changes:**
-- `YOLOOBBBackend`: add `detect_batch(frames) -> list[list[Detection]]`
-- `DetectionStage.run()`: restructure inner loop — collect all frames, call `detect_batch()`, distribute
-- `SegmentationBackend` and `PoseEstimationBackend`: add `process_batch(crops) -> list[AnnotatedDetection | None]`
-- `MidlineStage.run()`: restructure inner loop — collect all crops, call `process_batch()`, distribute
+**Implementation:**
+1. From `tracklet_groups`: for each fish_id, compute per-frame camera count from union of tracklets' frame ranges (counting only "detected" status frames).
+2. From `midlines_3d`: for each fish_id, collect set of frames with reconstruction.
+3. Gap = frame where camera_count >= 3 but no reconstruction exists.
+4. Continuity = reconstructed_frames / visible_frames.
 
-**What stays the same:** `Stage` protocol (`run(context) -> context`), all `PipelineContext` fields, crop extraction logic, post-processing (skeletonization, keypoint interpolation), output data structures.
-
-**Batching dimensions:** Detection: up to 13 cameras × N frames simultaneously. Midline: ~9 fish × ~5 confirmed cameras = ~45 crops per frame, significantly reduced by association filtering.
-
-**Isolation:** Changes stay inside `DetectionStage`, `YOLOOBBBackend`, `SegmentationBackend`, and `PoseEstimationBackend`. Nothing upstream or downstream changes.
-
-### Target 2: Frame I/O Optimization (~12% of wall time)
-
-**Where the work happens:**
-
-`ChunkFrameSource.__iter__()` calls `self._source.read_frame(global_idx)` for every frame. `VideoFrameSource.read_frame()` issues `cap.set(CAP_PROP_POS_FRAMES, idx)` (seek) then `cap.read()` for every camera, sequentially. The seek is the bottleneck — `ChunkFrameSource` wraps `VideoFrameSource` and forces random-access seek even though chunk processing is always sequential.
+**Type:**
 
 ```python
-# ChunkFrameSource.__iter__ — seek-based, no prefetch
-for local_idx in range(self.end_frame - self.start_frame):
-    global_idx = self.start_frame + local_idx
-    frames = self._source.read_frame(global_idx)  # seek + sequential-per-camera read
-    yield local_idx, frames
+@dataclass(frozen=True)
+class FragmentationAnalysis:
+    unique_fish_ids: int
+    expected_fish: int
+    mean_continuity_ratio: float
+    per_fish_continuity: dict[int, float]
+    total_gaps: int
+    mean_gap_duration: float
+    max_gap_duration: int
 ```
 
-**Interface changes required:**
+## Integration with EvalRunnerResult
 
-The `FrameSource` protocol does not change. Detection and midline stages iterate with `for frame_idx, frames in self._frame_source:` which continues to work.
-
-Option A (minimal): Add prefetch threading inside `VideoFrameSource.read_frame()` — a background thread pool reads all cameras in parallel for the current frame.
-
-Option B (recommended): Add a `BatchFrameSource` new class implementing `FrameSource` that streams frames sequentially (no seek) with a background prefetch queue. It is injected at `build_stages()` instead of `ChunkFrameSource` when batched inference is active, so detection and midline see N frames available at once rather than one.
-
-**What changes:** New class `BatchFrameSource` in `core/types/frame_source.py`, or internal threading added to `VideoFrameSource`.
-
-**What stays the same:** `FrameSource` protocol, all stage code, `ChunkOrchestrator` (it already opens `VideoFrameSource` once for the run).
-
-**Isolation:** Fully isolated to `core/types/frame_source.py`. No stage code changes if `BatchFrameSource` satisfies the `FrameSource` protocol.
-
-### Target 3: Vectorized DLT Reconstruction (~9% of wall time)
-
-**Where the work happens:**
-
-`DltBackend._reconstruct_fish()` loops over body points (15 by default), calling `_triangulate_body_point()` for each:
+Extend `EvalRunnerResult` with three optional analysis fields:
 
 ```python
-for i in range(n_body_points):
-    result = self._triangulate_body_point(i, cam_midlines, water_z)
+@dataclass(frozen=True)
+class EvalRunnerResult:
+    # ... existing 10 fields ...
+    keypoint_analysis: KeypointAnalysis | None = None
+    curvature_analysis: CurvatureAnalysis | None = None
+    fragmentation_analysis: FragmentationAnalysis | None = None
 ```
 
-`_triangulate_body_point()` constructs per-camera tensors one at a time, calls `cast_ray()` per camera per point, then `triangulate_rays()`. That is 15 body points × ~5 cameras × 2 triangulation passes ≈ 150+ Python iterations per fish per frame. The spline residual loop afterward also iterates per camera per body point.
+The `to_dict()` method adds these under a top-level `"analyses"` key (separate from `"stages"`) to distinguish per-stage metrics from cross-cutting analyses. Formatters add new report sections when non-None.
 
-**Key observation:** `RefractiveProjectionModel.cast_ray()` and `.project()` already accept batched tensor inputs — the existing spline residual code calls `self._models[cid].project(spline_pts_3d)` where `spline_pts_3d` is shape `(n_body_points, 3)`. This means the vectorized call pattern is already used within `DltBackend`; extending it to the triangulation loop is a natural continuation.
+## Anti-Patterns to Avoid
 
-**Interface changes required:** None. The public `reconstruct_frame(frame_idx, midline_set) -> dict[int, Midline3D]` interface is unchanged. The vectorization is entirely inside `_triangulate_body_point()` (replaced with `_triangulate_fish_vectorized()`):
+### Anti-Pattern 1: Cross-Stage Analysis in a Stage Evaluator
+**What:** Adding per-keypoint analysis (needs CalibBundle + 2D observations + 3D splines) into `reconstruction.py`.
+**Why bad:** Stage evaluators are pure functions of their stage's output. Adding calibration dependency breaks the evaluator contract.
+**Instead:** Put it in `analysis.py` with explicit CalibBundle parameter. EvalRunner orchestrates loading.
 
-```python
-# Vectorized approach sketch
-def _triangulate_fish_vectorized(self, cam_midlines, water_z):
-    # Stack all body points for all cameras: {cam_id: (N, 2)} pixel tensors
-    for cam_id in active_cams:
-        px_batch = torch.from_numpy(cam_midlines[cam_id].points).float()  # (N, 2)
-        origins[cam_id], dirs[cam_id] = self._models[cam_id].cast_ray(px_batch)  # (N, 3)
-    # Stack across cameras: (C, N, 3)
-    all_origins = torch.stack([origins[c] for c in active_cams])
-    all_dirs    = torch.stack([dirs[c]    for c in active_cams])
-    # Vectorized DLT over all N body points simultaneously -> (N, 3)
-    pts_3d = triangulate_rays_batched(all_origins, all_dirs)
-    # Vectorized reprojection residuals -> (C, N) for outlier masking
-    ...
-```
+### Anti-Pattern 2: Storing Per-Body-Point Data in Midline3D
+**What:** Adding `per_point_residuals`, `per_point_camera_ids` arrays to Midline3D to simplify analysis.
+**Why bad:** Invalidates all existing caches (context_fingerprint changes trigger StaleCacheError warnings). Bloats cache size. Couples storage format to analysis needs.
+**Instead:** Recompute from spline + 2D observations at analysis time. Spline evaluation is cheap.
 
-**What changes:** `DltBackend._triangulate_body_point()` replaced by `_triangulate_fish_vectorized()`. Potentially a new `triangulate_rays_batched()` function in `calibration/projection.py`.
+### Anti-Pattern 3: Analysis Functions That Load Their Own Data
+**What:** Having analysis functions call `load_run_context()` or read config files internally.
+**Why bad:** Makes them untestable in isolation, couples analysis to file layout.
+**Instead:** Analysis functions take typed data as parameters. EvalRunner handles loading and passes data in.
 
-**What stays the same:** `DltBackend.reconstruct_frame()`, `ReconstructionStage`, `PipelineContext`, all evaluation infrastructure.
-
-**Isolation:** Fully inside `DltBackend` internals (and optionally `calibration/projection.py` for the batched triangulation primitive).
-
-**Numerical equivalence:** The vectorized path must produce results within float tolerance of the scalar path. The reconstruction evaluator (`aquapose eval --stage reconstruction`) validates this automatically against cached data.
-
-### Target 4: Vectorized Association Scoring (~5% of wall time)
-
-**Where the work happens:**
-
-`score_all_pairs()` has three nested loops — camera pairs → tracklet_a × tracklet_b → shared frames. The inner `score_tracklet_pair()` processes shared frames one at a time:
-
-```python
-for frame_idx_in_shared, frame in enumerate(shared_frames):
-    pix_a = torch.tensor([[centroid_a[0], centroid_a[1]]], dtype=torch.float32)
-    pix_b = torch.tensor([[centroid_b[0], centroid_b[1]]], dtype=torch.float32)
-    origins_a, dirs_a = lut_a.cast_ray(pix_a)   # one pixel at a time
-    origins_b, dirs_b = lut_b.cast_ray(pix_b)   # one pixel at a time
-    dist, _ = ray_ray_closest_point(o_a, d_a, o_b, d_b)  # scalar numpy
-```
-
-**Interface changes required:** None. Function signatures stay identical. The internal implementation of `score_tracklet_pair()` is restructured:
-
-```python
-# Vectorized approach sketch
-def score_tracklet_pair(ta, tb, forward_luts, config, ...):
-    # Collect all shared-frame centroids at once
-    pix_a = torch.tensor([ta.centroids[frames_a[f]] for f in shared_frames])  # (T, 2)
-    pix_b = torch.tensor([tb.centroids[frames_b[f]] for f in shared_frames])  # (T, 2)
-    # One batched cast_ray call per tracklet
-    origins_a, dirs_a = lut_a.cast_ray(pix_a)  # (T, 3), (T, 3)
-    origins_b, dirs_b = lut_b.cast_ray(pix_b)  # (T, 3), (T, 3)
-    # Vectorized ray-ray distance computation
-    dists = ray_ray_closest_point_batch(origins_a, dirs_a, origins_b, dirs_b)  # (T,)
-    # Vectorized score computation (masking, summing)
-    ...
-```
-
-A new `ray_ray_closest_point_batch(origins_a, dirs_a, origins_b, dirs_b) -> torch.Tensor` function is needed, implementing the same analytic formula but operating on `(T, 3)` inputs.
-
-**What changes:** `score_tracklet_pair()` internals, new `ray_ray_closest_point_batch()` function in `scoring.py`.
-
-**What stays the same:** `score_all_pairs()` signature, `AssociationStage`, `PipelineContext`, all downstream stages.
-
-**Isolation:** Fully inside `core/association/scoring.py`.
-
-## Data Flow: Baseline vs Optimized
-
-### Baseline
-
-```
-ChunkFrameSource (seek-based, per-frame random access)
-    ↓ one frame at a time
-DetectionStage
-    ↓ for each camera: detector.detect(single_frame)  [1 GPU call / camera / frame]
-    ↓ → context.detections
-TrackingStage (unchanged)
-    ↓ → context.tracks_2d
-AssociationStage
-    ↓ score_all_pairs() → nested loops, per-frame scalar ray-ray
-    ↓ → context.tracklet_groups
-MidlineStage
-    ↓ for each frame, each camera, each detection:
-    ↓     extract crop → model.predict(single_crop) [1 GPU call / detection]
-    ↓ → context.annotated_detections
-ReconstructionStage
-    ↓ for each fish: for each body point: _triangulate_body_point() scalar loops
-    ↓ → context.midlines_3d
-```
-
-### Optimized
-
-```
-BatchFrameSource (sequential streaming, prefetch queue, parallel camera reads)
-    ↓ batches of N frames at a time
-DetectionStage (batched)
-    ↓ detector.detect_batch([frame_cam1, ..., frame_cam13])
-    ↓     → one model.predict(13 images) call per frame (or N×13 per batch)
-    ↓ → context.detections (same structure)
-TrackingStage (unchanged)
-    ↓ → context.tracks_2d (unchanged)
-AssociationStage (vectorized scoring)
-    ↓ score_all_pairs() → batched cast_ray, vectorized ray-ray distances
-    ↓ → context.tracklet_groups (same structure)
-MidlineStage (batched)
-    ↓ collect all crops for a frame (all cameras, all detections)
-    ↓ backend.process_batch(all_crops) → one model.predict(~45 crops) per frame
-    ↓ → context.annotated_detections (same structure)
-ReconstructionStage (vectorized)
-    ↓ for each fish: _triangulate_fish_vectorized() — all body points in one tensor pass
-    ↓ → context.midlines_3d (same structure)
-```
-
-## Component Boundary Summary
-
-### No Interface Changes — Internals Only
-
-| Component | What changes internally | Public interface unchanged |
-|-----------|------------------------|---------------------------|
-| `DltBackend` | Body-point scalar loop → vectorized tensor pass | `reconstruct_frame(frame_idx, midline_set)` |
-| `score_tracklet_pair()` | Frame loop → batched `cast_ray()` + vectorized distance | Same signature |
-| `score_all_pairs()` | Possibly restructured outer pair loop | Same signature |
-
-### New Methods Added to Existing Classes
-
-| Class | New Method | Caller |
-|-------|-----------|--------|
-| `YOLOOBBBackend` | `detect_batch(frames: list[np.ndarray]) -> list[list[Detection]]` | `DetectionStage.run()` |
-| `SegmentationBackend` | `process_batch(crops: list[np.ndarray], ...) -> list[AnnotatedDetection | None]` | `MidlineStage.run()` |
-| `PoseEstimationBackend` | `process_batch(crops: list[np.ndarray], ...) -> list[AnnotatedDetection | None]` | `MidlineStage.run()` |
-
-### Stage-Level Loop Restructure (same `run()` signature)
-
-| Stage | What changes |
-|-------|-------------|
-| `DetectionStage.run()` | Inner loop collects frames first, then calls `detect_batch()` |
-| `MidlineStage.run()` | Inner loop collects all crops per frame, calls `process_batch()`, distributes results |
-
-### New Components
-
-| Component | Type | File | Purpose |
-|-----------|------|------|---------|
-| `BatchFrameSource` | New class, implements `FrameSource` | `core/types/frame_source.py` | Sequential streaming + prefetch; no seek overhead |
-| `ray_ray_closest_point_batch()` | New function | `core/association/scoring.py` | Vectorized ray-ray distance for `(T, 3)` tensor inputs |
-| `triangulate_rays_batched()` (optional) | New function | `calibration/projection.py` | Batched DLT triangulation over N body points simultaneously |
-
-### Unchanged Components
-
-| Component | Why unchanged |
-|-----------|--------------|
-| `PipelineContext` field types | Same field names, same data structures — only how values are computed changes |
-| `Stage` protocol | `run(context) -> context` unchanged |
-| `TrackingStage` | OC-SORT is per-camera sequential by design; not a bottleneck |
-| `AssociationStage` | Calls `score_all_pairs()` which is optimized internally |
-| `ReconstructionStage` | Calls `backend.reconstruct_frame()` which is optimized internally |
-| `ChunkOrchestrator` | Frame source swap is transparent via `FrameSource` protocol |
-| `PosePipeline` | No awareness of batching strategy |
-| Observers, EventBus | Unchanged |
-| Per-chunk pickle caching | Same `PipelineContext` structure — caching is unaffected |
-| `aquapose eval`, `aquapose tune`, `aquapose viz` | Read cached context — unaffected by how it was computed |
+### Anti-Pattern 4: Breaking Frozen Dataclass Backward Compatibility
+**What:** Adding required (non-default) fields to existing frozen dataclasses.
+**Why bad:** All existing construction sites break. Tests break. Any code that constructs `ReconstructionMetrics(...)` positionally will get wrong field mapping.
+**Instead:** Always add new fields with defaults (e.g., `p50_reprojection_error: float = 0.0`). Place new fields after existing fields.
 
 ## Suggested Build Order
 
-The four optimization targets are nearly independent. Dependencies are:
+Three dependency chains, ordered by risk and dependency:
 
-- Association and reconstruction vectorization have no dependencies on each other or on I/O / batching.
-- Frame I/O optimization enables maximum gain from batched inference (prefetched frames available for batch collection), but batched inference yields gains even without it.
-- Batched inference is the highest complexity and highest impact, so it is built last.
+### Chain 1: Evaluator Extensions (independent, parallelizable)
+- **1a.** Reprojection error percentiles (reconstruction evaluator) -- ~30 min
+- **1b.** Midline confidence percentiles (midline evaluator) -- ~30 min
+- **1c.** Camera count percentiles (association evaluator) -- ~30 min
 
-### Phase Order
+These are leaf changes with no cross-dependencies. Do them first to establish the pattern. Update `format_eval_report()` and `format_eval_json()` for each.
 
-**Phase 1: Association vectorization** — 5% gain, lowest complexity, no dependencies
+### Chain 2: Analysis Module + Simple Analyses
+- **2a.** Create `evaluation/analysis.py` with `CurvatureAnalysis` + `analyze_curvature_quality()` -- no calibration dependency, reads only `Midline3D` fields. Most directly relevant to model iteration loop (validates curved-fish reconstruction quality).
+- **2b.** `FragmentationAnalysis` + `analyze_track_fragmentation()` -- reads `tracklet_groups` + `midlines_3d`, no calibration needed.
+- **2c.** Wire analysis results into `EvalRunnerResult` (3 new optional fields), update `output.py` formatters.
 
-`score_tracklet_pair()` frame loop → batched `cast_ray()` + new `ray_ray_closest_point_batch()`. Verify output is numerically equivalent to scalar path. Good warm-up: establishes the batched `cast_ray()` call pattern used again in reconstruction.
+### Chain 3: Per-Keypoint Analysis (requires calibration plumbing)
+- **3a.** Add CalibBundle loading to `EvalRunner` (read calibration path from config.yaml, load via AquaCal).
+- **3b.** Implement `analyze_per_keypoint()` with spline evaluation + multi-camera reprojection + per-point error.
+- **3c.** Wire into `EvalRunnerResult` and formatters.
 
-**Phase 2: Reconstruction vectorization** — 9% gain, medium complexity, no dependencies
-
-`_triangulate_body_point()` scalar loop → `_triangulate_fish_vectorized()` tensor pass. The existing code already uses `cast_ray(batch)` in the spline residual step, confirming `RefractiveProjectionModel` supports this. Use the reconstruction evaluator (`aquapose eval --stage reconstruction`) on cached data to validate numerical equivalence before and after.
-
-**Phase 3: Frame I/O optimization** — 12% gain, low-to-medium complexity, should precede Phase 4
-
-`BatchFrameSource` replaces `ChunkFrameSource` in `build_stages()`. Background prefetch thread eliminates seek overhead. Parallel camera reads within each frame address the sequential-per-camera bottleneck. Must be built before Phase 4 so detection and midline stages can collect full frame batches rather than single frames.
-
-**Phase 4: Batched YOLO inference** — ~70% of wall time, highest complexity, benefits from Phase 3
-
-`YOLOOBBBackend.detect_batch()` + `DetectionStage` loop restructure, then `SegmentationBackend.process_batch()` / `PoseEstimationBackend.process_batch()` + `MidlineStage` loop restructure.
-
-### Dependency Graph
+### Recommended Order
 
 ```
-Phase 1: Association vectorization    (no dependencies — start immediately)
-    │
-    ↓ (patterns established)
-Phase 2: Reconstruction vectorization (no dependencies — can run in parallel with Phase 1)
-    │
-Phase 3: Frame I/O (BatchFrameSource) (no dependencies — enables Phase 4)
-    │
-    ↓
-Phase 4: Batched YOLO inference       (benefits from Phase 3 prefetch)
+1a + 1b + 1c (parallel, trivial)
+    |
+    v
+2a: CurvatureAnalysis (creates analysis.py, most impactful for iteration loop)
+    |
+    v
+2b: FragmentationAnalysis (second analysis, same module)
+    |
+    v
+2c: Wire analyses into EvalRunnerResult + formatters
+    |
+    v
+3a: CalibBundle loading in EvalRunner
+    |
+    v
+3b + 3c: Per-keypoint analysis + wiring
 ```
 
-Phases 1 and 2 can be done in either order or in parallel. Phase 3 should precede Phase 4 for maximum benefit, but Phase 4 produces gains even without Phase 3 (batching across cameras within a single frame is already a significant improvement over one-at-a-time inference).
+**Rationale:**
+- Chain 1 first because it is trivial and establishes the frozen-dataclass-extension pattern.
+- CurvatureAnalysis (2a) before FragmentationAnalysis (2b) because curvature analysis is the primary signal for whether retrained models handle curved fish better -- the core question of the iteration loop.
+- Per-keypoint (Chain 3) last because it introduces a new dependency (CalibBundle in EvalRunner), requires the most complex computation, and is less critical for the iteration loop's primary question.
 
-## Architectural Patterns
+## File Change Summary
 
-### Pattern 1: Internal Vectorization
-
-**What:** Replace Python loops over small independent collections (body points, shared frames) with vectorized NumPy/PyTorch tensor operations. Public interface unchanged.
-
-**When to use:** When the loop body is pure math operating on independent elements (no per-element Python control flow mid-loop), and all inputs can be pre-collected into arrays. Both body-point triangulation and frame-level ray-ray scoring satisfy this.
-
-**Trade-offs:** Outlier rejection (filter cameras below residual threshold) requires a mask-based approach rather than an early `continue`. For DLT: compute initial residuals vectorized, apply mask, re-triangulate inliers — this is a two-pass design but still far fewer Python iterations than the scalar loop.
-
-### Pattern 2: Backend Batch Extension
-
-**What:** Add a batch method alongside the existing single-item method. The stage loop is restructured into two passes — collect all inputs, then call the batch method once, then distribute results back to the original output structure.
-
-**When to use:** When the expensive operation (GPU inference) supports batched input natively (Ultralytics `model.predict(list_of_images)`), and surrounding logic (crop extraction, post-processing) is lightweight CPU work.
-
-**Trade-offs:** Stage loop structure changes significantly. The existing single-item methods can be kept as thin wrappers over the batch methods for backward compatibility in tests. The output structure (per-frame per-camera lists) does not change, so downstream stages see no difference.
-
-### Pattern 3: Protocol-Transparent I/O Replacement
-
-**What:** New class implementing the same `FrameSource` protocol, with different internal I/O strategy. Drop in at `build_stages()`.
-
-**When to use:** When the bottleneck is in I/O and the consumer only uses the protocol interface. The `FrameSource` protocol provides clean separation — detection and midline stages do not know or care whether frames come from `ChunkFrameSource` or `BatchFrameSource`.
-
-**Trade-offs:** Prefetch adds memory pressure. At 1600×1200×3 bytes per frame × 13 cameras, buffering N=5 frames is ~375 MB. Buffer size is a tunable parameter; default should be modest (3-5 frames). Background thread errors must be propagated to the main thread — use a sentinel value or exception re-raise pattern.
-
-## Anti-Patterns
-
-### Anti-Pattern 1: Changing PipelineContext Field Types
-
-**What people do:** Change `detections` to a batched tensor format to avoid per-stage re-assembly overhead.
-
-**Why it's wrong:** All downstream stages, the diagnostic observer, cache serialization, evaluators, and tuning infrastructure depend on the existing field structure. GPU tensors also cannot be pickled across process boundaries.
-
-**Do this instead:** Keep context field types unchanged. Batch processing is an internal implementation detail of each stage. The existing `.cpu().numpy()` pattern at backend boundaries is correct.
-
-### Anti-Pattern 2: Cross-Stage Batching (Detection + Midline in One Pass)
-
-**What people do:** Combine detection and midline into a single GPU pass to avoid re-reading frames.
-
-**Why it's wrong:** Detection runs across all frames first; tracking and association run next; midline runs with filtered detections only. You cannot skip the intermediate stages. Stage result caching depends on stage independence.
-
-**Do this instead:** Batch within each stage independently. Detection batches 13-camera frames per invocation; midline batches all crops for a frame per invocation. Frame re-reading is avoided by `BatchFrameSource` buffering.
-
-### Anti-Pattern 3: Vectorization That Changes Numerical Output
-
-**What people do:** Vectorize DLT but change the numerical result due to floating-point reduction order (e.g., different summation order in weighted DLT A-matrix construction).
-
-**Why it's wrong:** The reconstruction evaluator validates against cached ground truth. Numerical non-equivalence fails the regression tests and invalidates comparisons with cached tuning sweep results.
-
-**Do this instead:** Ensure vectorized path produces results within 1e-5 relative tolerance vs the scalar path. Run the reconstruction evaluator before and after the change. The evaluation harness is specifically designed for this validation workflow.
-
-### Anti-Pattern 4: Prefetch Buffer Too Large
-
-**What people do:** Prefetch all chunk frames upfront (e.g., 1000 frames × 13 cameras × 1600×1200×3 bytes ≈ 75 GB) to minimize I/O latency.
-
-**Why it's wrong:** Exceeds GPU VRAM and system RAM for reasonable chunk sizes. The frame buffer is a pipeline stage, not a cache — it should buffer just enough frames to keep GPU busy.
-
-**Do this instead:** Tune prefetch buffer depth as a configuration parameter. Default 3-5 frames provides sufficient overlap between I/O and GPU compute without excessive memory pressure. For batch inference of N frames at once, buffer depth should be at least N+1.
-
-## Integration Points
-
-### Internal Boundaries
-
-| Boundary | Communication | Optimization Impact |
-|----------|---------------|---------------------|
-| `DetectionStage` ↔ `YOLOOBBBackend` | `detect(frame)` | New `detect_batch()` added; stage loop restructured |
-| `MidlineStage` ↔ `SegmentationBackend`/`PoseEstimationBackend` | `process_frame()` | New `process_batch()` added; stage loop restructured |
-| `ReconstructionStage` ↔ `DltBackend` | `reconstruct_frame()` | Unchanged; DltBackend internals vectorized |
-| `AssociationStage` ↔ `score_all_pairs()` | Function call | Unchanged; scoring internals vectorized |
-| `ChunkOrchestrator` ↔ `VideoFrameSource` | `FrameSource` protocol | `BatchFrameSource` replaces `ChunkFrameSource` in `build_stages()` |
-| Stage ↔ `PipelineContext` | Direct field read/write | Fields unchanged |
-| `DltBackend` ↔ `RefractiveProjectionModel` | `.cast_ray()` / `.project()` | Already supports batched tensors — vectorization exploits existing capability |
-
-### Evaluation Infrastructure Compatibility
-
-| Infrastructure | Impact |
-|----------------|--------|
-| Per-chunk pickle caching | None — same `PipelineContext` structure |
-| `aquapose eval` | None — reads cached context, evaluators unchanged |
-| `aquapose tune` | None — evaluators unchanged; optimizations only reduce pipeline runtime |
-| `aquapose viz` | None — reads cached context |
-| Unit tests | Backend tests need coverage of batch methods; stage tests need coverage of restructured loops |
-
-## Recommended Project Structure Changes
-
-No new modules needed for association and reconstruction vectorization — changes are within existing files.
-
-New additions for inference batching and I/O:
-
-```
-src/aquapose/core/types/frame_source.py
-    + BatchFrameSource class (or inline in existing file)
-
-src/aquapose/core/detection/backends/yolo_obb.py
-    + detect_batch() method
-
-src/aquapose/core/midline/backends/segmentation.py
-    + process_batch() method
-
-src/aquapose/core/midline/backends/pose_estimation.py
-    + process_batch() method
-
-src/aquapose/core/association/scoring.py
-    + ray_ray_closest_point_batch() function (local helper)
-
-src/aquapose/calibration/projection.py  (optional)
-    + triangulate_rays_batched() function
-```
-
-No changes to `engine/`, `evaluation/`, or `io/`.
+| File | Change Type | What |
+|------|-------------|------|
+| `evaluation/stages/reconstruction.py` | MODIFY | +3 percentile fields to `ReconstructionMetrics`, compute in `evaluate_reconstruction()` |
+| `evaluation/stages/midline.py` | MODIFY | +3 percentile fields to `MidlineMetrics`, compute in `evaluate_midline()` |
+| `evaluation/stages/association.py` | MODIFY | +2 percentile fields to `AssociationMetrics`, compute in `evaluate_association()` |
+| `evaluation/analysis.py` | **NEW** | 3 frozen dataclasses + 3 analysis functions |
+| `evaluation/runner.py` | MODIFY | +3 optional fields on `EvalRunnerResult`, call analysis functions in `run()`, add CalibBundle loading |
+| `evaluation/output.py` | MODIFY | Extend formatters for new metrics and analyses |
+| `evaluation/__init__.py` | MODIFY | Export new analysis types and functions |
+| `evaluation/stages/__init__.py` | NO CHANGE | Field additions are backward-compatible |
 
 ## Sources
 
-- Direct analysis of `src/aquapose/core/detection/stage.py` — frame-by-frame detection loop structure
-- Direct analysis of `src/aquapose/core/detection/backends/yolo_obb.py` — single-frame `detect()` pattern
-- Direct analysis of `src/aquapose/core/midline/stage.py` — per-detection inference loop
-- Direct analysis of `src/aquapose/core/midline/backends/segmentation.py` and `pose_estimation.py` — per-crop `model.predict()` pattern
-- Direct analysis of `src/aquapose/core/reconstruction/backends/dlt.py` — body-point scalar loop, existing batched `cast_ray()` usage in spline residual step confirms `RefractiveProjectionModel` supports batched input
-- Direct analysis of `src/aquapose/core/association/scoring.py` — per-frame scalar ray-ray scoring loop
-- Direct analysis of `src/aquapose/core/types/frame_source.py` — `ChunkFrameSource` seek-based random-access pattern
-- Direct analysis of `src/aquapose/core/context.py` — `PipelineContext` field types and `Stage` protocol
-- Direct analysis of `src/aquapose/engine/pipeline.py` — `build_stages()` factory, stage ordering
+- Direct code inspection: `src/aquapose/evaluation/stages/reconstruction.py` -- ReconstructionMetrics fields, evaluate_reconstruction() loop structure
+- Direct code inspection: `src/aquapose/evaluation/stages/midline.py` -- MidlineMetrics fields, evaluate_midline() confidence collection
+- Direct code inspection: `src/aquapose/evaluation/stages/association.py` -- AssociationMetrics fields, evaluate_association() camera counting
+- Direct code inspection: `src/aquapose/evaluation/stages/detection.py` -- DetectionMetrics (no changes needed)
+- Direct code inspection: `src/aquapose/evaluation/stages/tracking.py` -- TrackingMetrics (no changes needed)
+- Direct code inspection: `src/aquapose/evaluation/runner.py` -- EvalRunner.run() orchestration, _build_midline_sets() assembly, EvalRunnerResult structure
+- Direct code inspection: `src/aquapose/evaluation/output.py` -- format_eval_report() and format_eval_json() patterns
+- Direct code inspection: `src/aquapose/evaluation/metrics.py` -- Tier1Result, compute_tier1() residual aggregation
+- Direct code inspection: `src/aquapose/core/types/reconstruction.py` -- Midline3D fields (what is/isn't stored)
+- Direct code inspection: `src/aquapose/core/types/midline.py` -- Midline2D fields
+- Direct code inspection: `src/aquapose/core/reconstruction/backends/dlt.py` -- per-body-point residual computation (lines 255-287), spline residual computation (lines 353-380)
+- Direct code inspection: `src/aquapose/core/association/types.py` -- TrackletGroup structure
+- Direct code inspection: `src/aquapose/core/context.py` -- PipelineContext fields, context_fingerprint cache versioning
+- v3.6 seed document: Phase 70 specification
 
 ---
-*Architecture research for: AquaPose v3.4 Performance Optimization*
-*Researched: 2026-03-04*
+*Architecture research for: AquaPose v3.6 Model Iteration & QA (Phase 70: Metrics & Comparison Infrastructure)*
+*Researched: 2026-03-06*

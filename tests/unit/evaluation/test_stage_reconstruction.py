@@ -549,3 +549,253 @@ def test_reconstruction_metrics_backward_compat_without_percentiles() -> None:
     assert m.p50_reprojection_error is None
     assert m.p90_reprojection_error is None
     assert m.p95_reprojection_error is None
+
+
+# ---------------------------------------------------------------------------
+# Per-keypoint reprojection error (EVAL-04)
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_projection_model(offset_x: float = 0.0, offset_y: float = 0.0):
+    """Create a mock projection model that returns pts_3d[:, :2] + offset.
+
+    This simulates a camera projection that maps 3D (x, y, z) to 2D (x+ox, y+oy)
+    with all points valid. Returns a tuple (projected_2d, valid_mask).
+    """
+    import torch
+
+    class MockProjectionModel:
+        def project(self, points_3d: torch.Tensor):
+            projected = points_3d[:, :2].clone() + torch.tensor(
+                [offset_x, offset_y], dtype=points_3d.dtype
+            )
+            valid = torch.ones(points_3d.shape[0], dtype=torch.bool)
+            return projected, valid
+
+    return MockProjectionModel()
+
+
+def test_compute_per_point_error_known_data() -> None:
+    """compute_per_point_error with known offset returns expected per-point errors."""
+    from aquapose.evaluation.stages.reconstruction import compute_per_point_error
+
+    # Create a Midline3D with a simple straight-line spline
+    cp = np.zeros((7, 3), dtype=np.float32)
+    cp[:, 0] = np.linspace(0.0, 1.0, 7)  # x varies 0..1
+    knots = np.array([0, 0, 0, 0, 0.25, 0.5, 0.75, 1, 1, 1, 1], dtype=np.float32)
+    m3d = Midline3D(
+        fish_id=0,
+        frame_index=0,
+        control_points=cp,
+        knots=knots,
+        degree=3,
+        arc_length=1.0,
+        half_widths=np.zeros(15, dtype=np.float32),
+        n_cameras=2,
+        mean_residual=1.0,
+        max_residual=2.0,
+        per_camera_residuals={"cam0": 1.0, "cam1": 1.0},
+    )
+
+    # 2D midline: same as the 3D spline projected (x, y) but sampled at 5 points
+    from aquapose.core.types.midline import Midline2D
+
+    n_pts = 5
+    u_sample = np.linspace(0, 1, n_pts)
+    import scipy.interpolate
+
+    spl = scipy.interpolate.BSpline(knots.astype(np.float64), cp.astype(np.float64), 3)
+    pts_2d = spl(u_sample)[:, :2].astype(np.float32)
+
+    midline_2d = Midline2D(
+        points=pts_2d,
+        half_widths=np.zeros(n_pts, dtype=np.float32),
+        fish_id=0,
+        camera_id="cam0",
+        frame_index=0,
+    )
+
+    # Mock projection: adds (3.0, 4.0) offset -> error = 5.0 per point
+    model = _make_mock_projection_model(offset_x=3.0, offset_y=4.0)
+
+    frame_results = [(0, {0: m3d})]
+    midline_sets_by_frame = {0: {0: {"cam0": midline_2d}}}
+    projection_models = {"cam0": model}
+
+    result = compute_per_point_error(
+        frame_results, midline_sets_by_frame, projection_models, n_body_points=n_pts
+    )
+    assert result is not None
+    # Each point should have error = sqrt(3^2 + 4^2) = 5.0
+    for pt_idx in range(n_pts):
+        assert result[pt_idx]["mean_px"] == pytest.approx(5.0, abs=0.1)
+        assert result[pt_idx]["p90_px"] == pytest.approx(5.0, abs=0.1)
+
+
+def test_compute_per_point_error_empty_returns_none() -> None:
+    """compute_per_point_error with empty frame_results returns None."""
+    from aquapose.evaluation.stages.reconstruction import compute_per_point_error
+
+    result = compute_per_point_error([], {}, {})
+    assert result is None
+
+
+def test_compute_per_point_error_no_matching_models_returns_none() -> None:
+    """compute_per_point_error with no matching projection models returns None."""
+    from aquapose.evaluation.stages.reconstruction import compute_per_point_error
+
+    m3d = _make_midline3d(per_camera_residuals={"cam0": 1.0})
+    frame_results = [(0, {0: m3d})]
+    # projection_models has a different camera
+    result = compute_per_point_error(frame_results, {0: {0: {}}}, {"cam99": None})
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Curvature-stratified quality (EVAL-05)
+# ---------------------------------------------------------------------------
+
+
+def test_compute_curvature_stratified_known_data() -> None:
+    """compute_curvature_stratified with enough data returns 4 quartile bins."""
+    from aquapose.core.types.midline import Midline2D
+    from aquapose.evaluation.stages.reconstruction import compute_curvature_stratified
+
+    # Create 8 fish-frames with varying curvature
+    frame_results = []
+    midline_sets_by_frame = {}
+    for i in range(8):
+        m3d = _make_midline3d(fish_id=i, frame_index=i, mean_residual=float(i + 1))
+        frame_results.append((i, {i: m3d}))
+        # Create 2D midlines with varying curvature (bend angle increases with i)
+        n_pts = 10
+        t = np.linspace(0, 1, n_pts)
+        # Curvature scales with i: more bending = higher curvature
+        angle = (i + 1) * 0.1
+        pts = np.column_stack([t, np.sin(angle * t * np.pi)]).astype(np.float32)
+        midline_2d = Midline2D(
+            points=pts * 100,  # scale to pixel coords
+            half_widths=np.zeros(n_pts, dtype=np.float32),
+            fish_id=i,
+            camera_id="cam0",
+            frame_index=i,
+            point_confidence=np.ones(n_pts, dtype=np.float32),
+        )
+        midline_sets_by_frame[i] = {i: {"cam0": midline_2d}}
+
+    result = compute_curvature_stratified(frame_results, midline_sets_by_frame)
+    assert result is not None
+    assert len(result) == 4
+    # Check all quartiles have expected keys
+    for q_key in ["Q1", "Q2", "Q3", "Q4"]:
+        assert q_key in result
+        assert "mean_error_px" in result[q_key]
+        assert "p90_error_px" in result[q_key]
+        assert "count" in result[q_key]
+        assert "curvature_range" in result[q_key]
+    # Total count should be 8
+    total_count = sum(result[q]["count"] for q in ["Q1", "Q2", "Q3", "Q4"])
+    assert total_count == 8
+
+
+def test_compute_curvature_stratified_too_few_returns_none() -> None:
+    """compute_curvature_stratified with fewer than 4 samples returns None."""
+    from aquapose.core.types.midline import Midline2D
+    from aquapose.evaluation.stages.reconstruction import compute_curvature_stratified
+
+    # Only 3 fish-frames
+    frame_results = []
+    midline_sets_by_frame = {}
+    for i in range(3):
+        m3d = _make_midline3d(fish_id=i, frame_index=i, mean_residual=1.0)
+        frame_results.append((i, {i: m3d}))
+        pts = np.zeros((5, 2), dtype=np.float32)
+        pts[:, 0] = np.linspace(0, 1, 5)
+        midline_2d = Midline2D(
+            points=pts,
+            half_widths=np.zeros(5, dtype=np.float32),
+            fish_id=i,
+            camera_id="cam0",
+            frame_index=i,
+            point_confidence=np.ones(5, dtype=np.float32),
+        )
+        midline_sets_by_frame[i] = {i: {"cam0": midline_2d}}
+
+    result = compute_curvature_stratified(frame_results, midline_sets_by_frame)
+    assert result is None
+
+
+def test_compute_curvature_stratified_empty_returns_none() -> None:
+    """compute_curvature_stratified with empty data returns None."""
+    from aquapose.evaluation.stages.reconstruction import compute_curvature_stratified
+
+    result = compute_curvature_stratified([], {})
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# New optional fields (EVAL-04, EVAL-05) backward compat
+# ---------------------------------------------------------------------------
+
+
+def test_reconstruction_metrics_backward_compat_per_point_curvature() -> None:
+    """ReconstructionMetrics can be constructed without per_point_error/curvature_stratified."""
+    m = ReconstructionMetrics(
+        mean_reprojection_error=0.0,
+        max_reprojection_error=0.0,
+        fish_reconstructed=0,
+        fish_available=0,
+        inlier_ratio=1.0,
+        low_confidence_flag_rate=0.0,
+        tier2_stability=None,
+        per_camera_error={},
+        per_fish_error={},
+    )
+    assert m.per_point_error is None
+    assert m.curvature_stratified is None
+
+
+def test_to_dict_includes_per_point_error_and_curvature() -> None:
+    """to_dict serializes per_point_error and curvature_stratified correctly."""
+    m = ReconstructionMetrics(
+        mean_reprojection_error=2.0,
+        max_reprojection_error=5.0,
+        fish_reconstructed=1,
+        fish_available=1,
+        inlier_ratio=1.0,
+        low_confidence_flag_rate=0.0,
+        tier2_stability=None,
+        per_camera_error={},
+        per_fish_error={},
+        per_point_error={0: {"mean_px": 1.5, "p90_px": 3.0}},
+        curvature_stratified={
+            "Q1": {
+                "mean_error_px": 1.0,
+                "p90_error_px": 2.0,
+                "count": 5,
+                "curvature_range": "0.00-0.01",
+            }
+        },
+    )
+    d = m.to_dict()
+    assert "per_point_error" in d
+    assert d["per_point_error"] is not None
+    assert "0" in d["per_point_error"]  # int keys converted to str
+    assert "curvature_stratified" in d
+    assert d["curvature_stratified"] is not None
+
+    # None case
+    m2 = ReconstructionMetrics(
+        mean_reprojection_error=0.0,
+        max_reprojection_error=0.0,
+        fish_reconstructed=0,
+        fish_available=0,
+        inlier_ratio=1.0,
+        low_confidence_flag_rate=0.0,
+        tier2_stability=None,
+        per_camera_error={},
+        per_fish_error={},
+    )
+    d2 = m2.to_dict()
+    assert d2["per_point_error"] is None
+    assert d2["curvature_stratified"] is None

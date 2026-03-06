@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import scipy.interpolate
+import torch
 
 from aquapose.core.reconstruction.utils import SPLINE_K
-from aquapose.core.types.reconstruction import Midline3D
+from aquapose.core.types.midline import Midline2D
+from aquapose.core.types.reconstruction import Midline3D, MidlineSet
 from aquapose.evaluation.metrics import Tier2Result, compute_tier1
 
 DEFAULT_GRID: dict[str, list[float]] = {
@@ -52,6 +55,8 @@ class ReconstructionMetrics:
     p50_reprojection_error: float | None = None
     p90_reprojection_error: float | None = None
     p95_reprojection_error: float | None = None
+    per_point_error: dict[int, dict[str, float]] | None = None
+    curvature_stratified: dict[str, dict[str, float]] | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serializable dict representation.
@@ -91,6 +96,13 @@ class ReconstructionMetrics:
             "p95_reprojection_error": float(self.p95_reprojection_error)
             if self.p95_reprojection_error is not None
             else None,
+            "per_point_error": {
+                str(k): {sk: float(sv) for sk, sv in v.items()}
+                for k, v in self.per_point_error.items()
+            }
+            if self.per_point_error is not None
+            else None,
+            "curvature_stratified": self.curvature_stratified,
         }
 
 
@@ -99,6 +111,8 @@ def evaluate_reconstruction(
     fish_available: int = 0,
     *,
     tier2_result: Tier2Result | None = None,
+    per_point_error: dict[int, dict[str, float]] | None = None,
+    curvature_stratified: dict[str, dict[str, float]] | None = None,
 ) -> ReconstructionMetrics:
     """Evaluate reconstruction quality from triangulation frame results.
 
@@ -178,6 +192,8 @@ def evaluate_reconstruction(
         p50_reprojection_error=p50_err,
         p90_reprojection_error=p90_err,
         p95_reprojection_error=p95_err,
+        per_point_error=per_point_error,
+        curvature_stratified=curvature_stratified,
     )
 
 
@@ -327,10 +343,197 @@ def compute_z_denoising_metrics(
     )
 
 
+def compute_per_point_error(
+    frame_results: list[tuple[int, dict[int, Midline3D]]],
+    midline_sets_by_frame: dict[int, MidlineSet],
+    projection_models: dict[str, Any],
+    n_body_points: int = 15,
+) -> dict[int, dict[str, float]] | None:
+    """Compute per-keypoint reprojection error from 3D spline reprojection.
+
+    For each Midline3D, evaluates the B-spline at ``n_body_points`` uniform
+    parameter values, projects through each observing camera's model, and
+    measures pixel distance to the corresponding 2D midline points.
+
+    Args:
+        frame_results: List of ``(frame_idx, dict[fish_id, Midline3D])`` pairs.
+        midline_sets_by_frame: Mapping from frame_idx to MidlineSet
+            (fish_id -> camera_id -> Midline2D).
+        projection_models: Mapping from camera_id to projection model with
+            a ``project(points_3d: Tensor) -> (projected_2d, valid_mask)``
+            method.
+        n_body_points: Number of uniform sample points on the spline.
+
+    Returns:
+        Dict mapping point_index (0..n_body_points-1) to
+        ``{"mean_px": float, "p90_px": float}``, or None if no data.
+    """
+    # Accumulate errors per point index: point_idx -> list of pixel errors
+    per_point_errors: dict[int, list[float]] = {i: [] for i in range(n_body_points)}
+    u_sample = np.linspace(0.0, 1.0, n_body_points)
+
+    for frame_idx, midline_dict in frame_results:
+        if frame_idx not in midline_sets_by_frame:
+            continue
+        frame_ms = midline_sets_by_frame[frame_idx]
+
+        for fish_id, m3d in midline_dict.items():
+            if m3d.control_points is None:
+                continue
+            if fish_id not in frame_ms:
+                continue
+
+            # Evaluate 3D spline
+            try:
+                spl = scipy.interpolate.BSpline(
+                    m3d.knots.astype(np.float64),
+                    m3d.control_points.astype(np.float64),
+                    SPLINE_K,
+                )
+                pts_3d = spl(u_sample).astype(np.float32)  # (N, 3)
+            except Exception:
+                continue
+
+            cam_map = frame_ms[fish_id]
+            for camera_id, midline_2d in cam_map.items():
+                if camera_id not in projection_models:
+                    continue
+                model = projection_models[camera_id]
+
+                # Project 3D points
+                pts_tensor = torch.from_numpy(pts_3d)
+                proj_px, valid = model.project(pts_tensor)
+                proj_np = proj_px.detach().cpu().numpy()  # CUDA safety
+
+                # Get observed 2D points — must have same count
+                obs_2d = midline_2d.points
+                if obs_2d.shape[0] != n_body_points:
+                    continue
+
+                valid_np = valid.cpu().numpy()
+                for j in range(n_body_points):
+                    if not valid_np[j]:
+                        continue
+                    err = float(
+                        np.linalg.norm(proj_np[j] - obs_2d[j].astype(np.float64))
+                    )
+                    per_point_errors[j].append(err)
+
+    # Check if we collected any data
+    has_data = any(len(errs) > 0 for errs in per_point_errors.values())
+    if not has_data:
+        return None
+
+    result: dict[int, dict[str, float]] = {}
+    for pt_idx in range(n_body_points):
+        errs = per_point_errors[pt_idx]
+        if len(errs) > 0:
+            arr = np.array(errs)
+            result[pt_idx] = {
+                "mean_px": float(np.mean(arr)),
+                "p90_px": float(np.percentile(arr, 90)),
+            }
+        else:
+            result[pt_idx] = {"mean_px": 0.0, "p90_px": 0.0}
+
+    return result
+
+
+def compute_curvature_stratified(
+    frame_results: list[tuple[int, dict[int, Midline3D]]],
+    midline_sets_by_frame: dict[int, MidlineSet],
+) -> dict[str, dict[str, float]] | None:
+    """Compute curvature-stratified reconstruction quality.
+
+    Bins fish-frames by 2D curvature quartile using the camera with highest
+    mean keypoint confidence, then reports reprojection error per quartile.
+
+    Args:
+        frame_results: List of ``(frame_idx, dict[fish_id, Midline3D])`` pairs.
+        midline_sets_by_frame: Mapping from frame_idx to MidlineSet.
+
+    Returns:
+        Dict with keys ``"Q1"``..``"Q4"`` mapping to
+        ``{"mean_error_px", "p90_error_px", "count", "curvature_range"}``,
+        or None if fewer than 4 data points.
+    """
+    from aquapose.training.pseudo_labels import compute_curvature
+
+    pairs: list[tuple[float, float]] = []  # (curvature, mean_residual)
+
+    for frame_idx, midline_dict in frame_results:
+        if frame_idx not in midline_sets_by_frame:
+            continue
+        frame_ms = midline_sets_by_frame[frame_idx]
+
+        for fish_id, m3d in midline_dict.items():
+            if fish_id not in frame_ms:
+                continue
+            cam_map = frame_ms[fish_id]
+            if not cam_map:
+                continue
+
+            # Find camera with highest mean point confidence
+            best_midline: Midline2D | None = None
+            best_conf = -1.0
+            for midline_2d in cam_map.values():
+                if midline_2d.point_confidence is not None:
+                    conf = float(np.mean(midline_2d.point_confidence))
+                else:
+                    conf = 1.0
+                if conf > best_conf:
+                    best_conf = conf
+                    best_midline = midline_2d
+
+            if best_midline is None:
+                continue
+            if best_midline.points.shape[0] < 3:
+                continue
+
+            curv = compute_curvature(best_midline.points)
+            pairs.append((curv, m3d.mean_residual))
+
+    if len(pairs) < 4:
+        return None
+
+    curvatures = np.array([p[0] for p in pairs])
+    errors = np.array([p[1] for p in pairs])
+
+    # Compute quartile bin edges
+    bin_edges = np.quantile(curvatures, [0.25, 0.5, 0.75])
+    # np.digitize: values <= edge[0] -> bin 0, etc.
+    bin_indices = np.digitize(curvatures, bin_edges)  # 0, 1, 2, 3
+
+    result: dict[str, dict[str, float]] = {}
+    for bin_idx, q_label in enumerate(["Q1", "Q2", "Q3", "Q4"]):
+        mask = bin_indices == bin_idx
+        count = int(np.sum(mask))
+        if count > 0:
+            bin_errors = errors[mask]
+            bin_curvatures = curvatures[mask]
+            result[q_label] = {
+                "mean_error_px": float(np.mean(bin_errors)),
+                "p90_error_px": float(np.percentile(bin_errors, 90)),
+                "count": count,
+                "curvature_range": f"{float(np.min(bin_curvatures)):.4f}-{float(np.max(bin_curvatures)):.4f}",
+            }
+        else:
+            result[q_label] = {
+                "mean_error_px": 0.0,
+                "p90_error_px": 0.0,
+                "count": 0,
+                "curvature_range": "N/A",
+            }
+
+    return result
+
+
 __all__ = [
     "DEFAULT_GRID",
     "ReconstructionMetrics",
     "ZDenoisingMetrics",
+    "compute_curvature_stratified",
+    "compute_per_point_error",
     "compute_z_denoising_metrics",
     "evaluate_reconstruction",
 ]

@@ -18,7 +18,27 @@ def runner() -> click.testing.CliRunner:
 
 
 @pytest.fixture
-def mock_pipeline(tmp_path: Path):
+def project_dir(tmp_path: Path) -> Path:
+    """Create a minimal project directory with config.yaml."""
+    proj = tmp_path / "test_project"
+    proj.mkdir()
+    (proj / "config.yaml").write_text("mode: production\n")
+    (proj / "runs").mkdir()
+    return proj
+
+
+@pytest.fixture
+def monkeypatch_project(monkeypatch: pytest.MonkeyPatch, project_dir: Path) -> Path:
+    """Patch resolve_project so --project test resolves to project_dir."""
+    monkeypatch.setattr(
+        "aquapose.cli_utils.resolve_project",
+        lambda name: project_dir,
+    )
+    return project_dir
+
+
+@pytest.fixture
+def mock_pipeline(tmp_path: Path, monkeypatch_project: Path):
     """Mock load_config and ChunkOrchestrator for CLI tests.
 
     Yields a dict with the mocks for introspection.
@@ -51,6 +71,7 @@ def mock_pipeline(tmp_path: Path):
             "ChunkOrchestrator": mock_co,
             "orchestrator_instance": mock_orchestrator_instance,
             "config": mock_config,
+            "project_dir": monkeypatch_project,
         }
 
 
@@ -63,13 +84,13 @@ class TestCLIHelp:
 
     def test_run_help_shows_options(self, runner: click.testing.CliRunner) -> None:
         result = runner.invoke(cli, ["run", "--help"])
-        assert "--config" in result.output
         assert "--mode" in result.output
         assert "--set" in result.output
         assert "--add-observer" in result.output
         assert "--verbose" in result.output
 
-    def test_run_without_config_fails(self, runner: click.testing.CliRunner) -> None:
+    def test_run_without_project_fails(self, runner: click.testing.CliRunner) -> None:
+        """run without --project (and no CWD detection) fails."""
         result = runner.invoke(cli, ["run"])
         assert result.exit_code != 0
 
@@ -80,35 +101,26 @@ class TestCLIExecution:
     def test_run_success_exit_zero(
         self,
         runner: click.testing.CliRunner,
-        tmp_path: Path,
         mock_pipeline: dict,
     ) -> None:
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("mode: production\n")
-        result = runner.invoke(cli, ["run", "--config", str(config_file)])
+        result = runner.invoke(cli, ["--project", "test", "run"])
         assert result.exit_code == 0
 
     def test_run_failure_exit_one(
         self,
         runner: click.testing.CliRunner,
-        tmp_path: Path,
         mock_pipeline: dict,
     ) -> None:
         mock_pipeline["orchestrator_instance"].run.side_effect = RuntimeError("boom")
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("mode: production\n")
-        result = runner.invoke(cli, ["run", "--config", str(config_file)])
+        result = runner.invoke(cli, ["--project", "test", "run"])
         assert result.exit_code == 1
 
     def test_mode_defaults_to_production(
         self,
         runner: click.testing.CliRunner,
-        tmp_path: Path,
         mock_pipeline: dict,
     ) -> None:
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("output_dir: /tmp/test\n")
-        runner.invoke(cli, ["run", "--config", str(config_file)])
+        runner.invoke(cli, ["--project", "test", "run"])
         # When --mode is not passed, mode should NOT be injected into overrides
         lc_kwargs = mock_pipeline["load_config"].call_args
         overrides = lc_kwargs.kwargs.get("cli_overrides", {})
@@ -117,14 +129,9 @@ class TestCLIExecution:
     def test_mode_diagnostic_passed_to_config(
         self,
         runner: click.testing.CliRunner,
-        tmp_path: Path,
         mock_pipeline: dict,
     ) -> None:
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("output_dir: /tmp/test\n")
-        runner.invoke(
-            cli, ["run", "--config", str(config_file), "--mode", "diagnostic"]
-        )
+        runner.invoke(cli, ["--project", "test", "run", "--mode", "diagnostic"])
         overrides = mock_pipeline["load_config"].call_args.kwargs.get(
             "cli_overrides", {}
         )
@@ -133,17 +140,14 @@ class TestCLIExecution:
     def test_set_overrides_parsed(
         self,
         runner: click.testing.CliRunner,
-        tmp_path: Path,
         mock_pipeline: dict,
     ) -> None:
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("output_dir: /tmp/test\n")
         runner.invoke(
             cli,
             [
+                "--project",
+                "test",
                 "run",
-                "--config",
-                str(config_file),
                 "--set",
                 "detection.detector_kind=yolo",
                 "--set",
@@ -159,12 +163,9 @@ class TestCLIExecution:
     def test_orchestrator_constructed_with_config(
         self,
         runner: click.testing.CliRunner,
-        tmp_path: Path,
         mock_pipeline: dict,
     ) -> None:
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("output_dir: /tmp/test\n")
-        runner.invoke(cli, ["run", "--config", str(config_file)])
+        runner.invoke(cli, ["--project", "test", "run"])
         co_call = mock_pipeline["ChunkOrchestrator"].call_args
         assert co_call is not None
         assert co_call.kwargs["config"] is mock_pipeline["config"]
@@ -172,14 +173,11 @@ class TestCLIExecution:
     def test_add_observer_passed_to_orchestrator(
         self,
         runner: click.testing.CliRunner,
-        tmp_path: Path,
         mock_pipeline: dict,
     ) -> None:
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("output_dir: /tmp/test\n")
         runner.invoke(
             cli,
-            ["run", "--config", str(config_file), "--add-observer", "timing"],
+            ["--project", "test", "run", "--add-observer", "timing"],
         )
         co_call = mock_pipeline["ChunkOrchestrator"].call_args
         extra = co_call.kwargs.get("extra_observers", ())
@@ -188,31 +186,25 @@ class TestCLIExecution:
     def test_verbose_flag_passed_to_orchestrator(
         self,
         runner: click.testing.CliRunner,
-        tmp_path: Path,
         mock_pipeline: dict,
     ) -> None:
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("output_dir: /tmp/test\n")
-        runner.invoke(cli, ["run", "--config", str(config_file), "--verbose"])
+        runner.invoke(cli, ["--project", "test", "run", "--verbose"])
         co_call = mock_pipeline["ChunkOrchestrator"].call_args
         assert co_call.kwargs.get("verbose") is True
 
     def test_max_chunks_passed_to_orchestrator(
         self,
         runner: click.testing.CliRunner,
-        tmp_path: Path,
         mock_pipeline: dict,
     ) -> None:
         """--max-chunks 2 passes max_chunks=2 to ChunkOrchestrator."""
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("output_dir: /tmp/test\n")
-        runner.invoke(cli, ["run", "--config", str(config_file), "--max-chunks", "2"])
+        runner.invoke(cli, ["--project", "test", "run", "--max-chunks", "2"])
         co_call = mock_pipeline["ChunkOrchestrator"].call_args
         assert co_call.kwargs.get("max_chunks") == 2
 
 
 class TestInitConfig:
-    """Tests for the init-config subcommand."""
+    """Tests for the init subcommand."""
 
     @pytest.fixture(autouse=False)
     def patch_home(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -228,7 +220,7 @@ class TestInitConfig:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """init-config creates project dir with config.yaml and 4 subdirectories."""
+        """init creates project dir with config.yaml and 4 subdirectories."""
         home_str = str(tmp_path)
         monkeypatch.setenv("HOME", home_str)
         monkeypatch.setenv("USERPROFILE", home_str)
@@ -291,7 +283,7 @@ class TestInitConfig:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """init-config fails with non-zero exit if project directory already exists."""
+        """init fails with non-zero exit if project directory already exists."""
         home_str = str(tmp_path)
         monkeypatch.setenv("HOME", home_str)
         monkeypatch.setenv("USERPROFILE", home_str)
@@ -331,23 +323,17 @@ class TestSyntheticMode:
     def test_synthetic_mode_calls_orchestrator(
         self,
         runner: click.testing.CliRunner,
-        tmp_path: Path,
         mock_pipeline: dict,
     ) -> None:
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("output_dir: /tmp/test\n")
-        runner.invoke(cli, ["run", "--config", str(config_file), "--mode", "synthetic"])
+        runner.invoke(cli, ["--project", "test", "run", "--mode", "synthetic"])
         mock_pipeline["ChunkOrchestrator"].assert_called_once()
 
     def test_synthetic_mode_passes_mode_in_config(
         self,
         runner: click.testing.CliRunner,
-        tmp_path: Path,
         mock_pipeline: dict,
     ) -> None:
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("output_dir: /tmp/test\n")
-        runner.invoke(cli, ["run", "--config", str(config_file), "--mode", "synthetic"])
+        runner.invoke(cli, ["--project", "test", "run", "--mode", "synthetic"])
         overrides = mock_pipeline["load_config"].call_args.kwargs.get(
             "cli_overrides", {}
         )

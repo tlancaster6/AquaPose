@@ -9,6 +9,7 @@ from typing import Any
 import click
 import yaml
 
+from aquapose.cli_utils import get_config_path, get_project_dir, resolve_run
 from aquapose.engine import load_config
 from aquapose.engine.orchestrator import ChunkOrchestrator
 from aquapose.training.cli import train_group
@@ -37,13 +38,6 @@ def cli(ctx: click.Context, project_name: str | None) -> None:
 
 
 @cli.command()
-@click.option(
-    "--config",
-    "-c",
-    required=True,
-    type=click.Path(exists=True),
-    help="Path to pipeline config YAML.",
-)
 @click.option(
     "--mode",
     "-m",
@@ -86,8 +80,9 @@ def cli(ctx: click.Context, project_name: str | None) -> None:
     default=None,
     help="Process at most N chunks then stop (e.g. --max-chunks 1 for single-chunk).",
 )
+@click.pass_context
 def run(
-    config: str,
+    ctx: click.Context,
     mode: str | None,
     overrides: tuple[str, ...],
     extra_observers: tuple[str, ...],
@@ -96,6 +91,8 @@ def run(
     max_chunks: int | None,
 ) -> None:
     """Run the AquaPose pipeline."""
+    config_path = get_config_path(ctx)
+
     # 1. Parse --set overrides into dict
     cli_overrides: dict[str, Any] = {}
     for item in overrides:
@@ -121,7 +118,9 @@ def run(
         cli_overrides["stop_after"] = stop_after
 
     # 3. Load config
-    pipeline_config = load_config(yaml_path=config, cli_overrides=cli_overrides)
+    pipeline_config = load_config(
+        yaml_path=str(config_path), cli_overrides=cli_overrides
+    )
 
     # 4. Delegate to ChunkOrchestrator (config-only handoff).
     # Orchestrator constructs and manages VideoFrameSource internally so that
@@ -220,7 +219,7 @@ def init_cmd(name: str, synthetic: bool) -> None:
 
 
 @cli.command("eval")
-@click.argument("run_dir", type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.argument("run", default=None, required=False)
 @click.option(
     "--report",
     type=click.Choice(["text", "json"], case_sensitive=False),
@@ -234,7 +233,10 @@ def init_cmd(name: str, synthetic: bool) -> None:
     default=None,
     help="Number of frames to evaluate (default: all frames).",
 )
-def eval_cmd(run_dir: str, report: str, n_frames: int | None) -> None:
+@click.pass_context
+def eval_cmd(
+    ctx: click.Context, run: str | None, report: str, n_frames: int | None
+) -> None:
     """Evaluate a diagnostic run directory and print a quality report."""
     import json as _json
 
@@ -247,9 +249,11 @@ def eval_cmd(run_dir: str, report: str, n_frames: int | None) -> None:
     from aquapose.evaluation.runner import EvalRunner
     from aquapose.logging import setup_file_logging
 
-    setup_file_logging(Path(run_dir), "eval")
+    run_dir = resolve_run(run, get_project_dir(ctx))
 
-    runner = EvalRunner(Path(run_dir))
+    setup_file_logging(run_dir, "eval")
+
+    runner = EvalRunner(run_dir)
     try:
         result = runner.run(n_frames=n_frames)
     except StaleCacheError as exc:
@@ -263,25 +267,19 @@ def eval_cmd(run_dir: str, report: str, n_frames: int | None) -> None:
     click.echo(output)
 
     # Write eval_results.json to run directory on every invocation
-    results_path = Path(run_dir) / "eval_results.json"
+    results_path = run_dir / "eval_results.json"
     with results_path.open("w") as f:
         _json.dump(result.to_dict(), f, cls=_NumpySafeEncoder, indent=2)
 
 
 @cli.command("tune")
+@click.argument("run", default=None, required=False)
 @click.option(
     "--stage",
     "-s",
     required=True,
     type=click.Choice(["association", "reconstruction"], case_sensitive=False),
     help="Stage to tune.",
-)
-@click.option(
-    "--config",
-    "-c",
-    required=True,
-    type=click.Path(exists=True),
-    help="Path to the run-generated exhaustive config YAML.",
 )
 @click.option(
     "--n-frames",
@@ -304,16 +302,16 @@ def eval_cmd(run_dir: str, report: str, n_frames: int | None) -> None:
     default=3,
     help="Number of top candidates for validation (reconstruction only, default: 3).",
 )
+@click.pass_context
 def tune_cmd(
+    ctx: click.Context,
+    run: str | None,
     stage: str,
-    config: str,
     n_frames: int,
     n_frames_validate: int,
     top_n: int,
 ) -> None:
     """Sweep stage parameters and output a recommended config diff."""
-    from pathlib import Path as _Path
-
     from aquapose.core.context import StaleCacheError
     from aquapose.evaluation.tuning import (
         TuningOrchestrator,
@@ -323,8 +321,15 @@ def tune_cmd(
     )
     from aquapose.logging import setup_file_logging
 
-    config_path = _Path(config)
-    setup_file_logging(config_path.parent, "tune")
+    run_dir = resolve_run(run, get_project_dir(ctx))
+    config_path = run_dir / "config_exhaustive.yaml"
+    if not config_path.exists():
+        raise click.ClickException(
+            f"config_exhaustive.yaml not found in {run_dir}. "
+            "Run the pipeline with --add-observer diagnostic to generate it."
+        )
+
+    setup_file_logging(run_dir, "tune")
 
     try:
         orchestrator = TuningOrchestrator(config_path)
@@ -373,7 +378,7 @@ def tune_cmd(
 
 
 @cli.command()
-@click.argument("run_dir", type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.argument("run", default=None, required=False)
 @click.option(
     "--output-dir",
     "-o",
@@ -400,8 +405,10 @@ def tune_cmd(
     default=False,
     help="Enable per-segment alpha fading on trail lines (significantly slower).",
 )
+@click.pass_context
 def viz(
-    run_dir: str,
+    ctx: click.Context,
+    run: str | None,
     output_dir: str | None,
     overlay: bool,
     animation: bool,
@@ -420,9 +427,9 @@ def viz(
     )
 
     out_dir = Path(output_dir) if output_dir is not None else None
-    run_path = Path(run_dir)
+    run_path = resolve_run(run, get_project_dir(ctx))
 
-    # No flags → all visualizations
+    # No flags -> all visualizations
     selected = {
         "overlay": overlay,
         "animation": animation,
@@ -460,14 +467,7 @@ def viz(
 
 
 @cli.command("smooth-z")
-@click.option(
-    "--input",
-    "-i",
-    "input_path",
-    required=True,
-    type=click.Path(exists=True),
-    help="Path to midlines.h5 file (from pipeline run).",
-)
+@click.argument("run", default=None, required=False)
 @click.option(
     "--sigma-frames",
     default=3,
@@ -480,7 +480,10 @@ def viz(
     is_flag=True,
     help="Report metrics without modifying the file.",
 )
-def smooth_z_cmd(input_path: str, sigma_frames: int, dry_run: bool) -> None:
+@click.pass_context
+def smooth_z_cmd(
+    ctx: click.Context, run: str | None, sigma_frames: int, dry_run: bool
+) -> None:
     """Temporally smooth centroid z and shift control points in a midlines HDF5.
 
     Reads centroid_z per fish from a pipeline run's midlines.h5, applies
@@ -493,7 +496,15 @@ def smooth_z_cmd(input_path: str, sigma_frames: int, dry_run: bool) -> None:
     from aquapose.core.reconstruction.temporal_smoothing import smooth_centroid_z
     from aquapose.io.midline_writer import read_midline3d_results
 
-    data = read_midline3d_results(input_path)
+    run_dir = resolve_run(run, get_project_dir(ctx))
+    input_path = run_dir / "midlines.h5"
+    if not input_path.exists():
+        raise click.ClickException(
+            f"midlines.h5 not found in {run_dir}. "
+            "Run the pipeline first to generate midline data."
+        )
+
+    data = read_midline3d_results(str(input_path))
 
     if data["centroid_z"] is None:
         raise click.ClickException(
@@ -580,7 +591,7 @@ def smooth_z_cmd(input_path: str, sigma_frames: int, dry_run: bool) -> None:
         click.echo("Dry run -- no changes written.")
         return
 
-    with h5py.File(input_path, "r+") as f:
+    with h5py.File(str(input_path), "r+") as f:
         grp = f["midlines"]
 
         if "smoothed_centroid_z" in grp:

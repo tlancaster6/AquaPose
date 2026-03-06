@@ -32,6 +32,9 @@ class MidlineMetrics:
     completeness: float
     temporal_smoothness: float
     total_midlines: int
+    p10_confidence: float | None = None
+    p50_confidence: float | None = None
+    p90_confidence: float | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serializable dict representation.
@@ -45,6 +48,15 @@ class MidlineMetrics:
             "completeness": float(self.completeness),
             "temporal_smoothness": float(self.temporal_smoothness),
             "total_midlines": int(self.total_midlines),
+            "p10_confidence": float(self.p10_confidence)
+            if self.p10_confidence is not None
+            else None,
+            "p50_confidence": float(self.p50_confidence)
+            if self.p50_confidence is not None
+            else None,
+            "p90_confidence": float(self.p90_confidence)
+            if self.p90_confidence is not None
+            else None,
         }
 
 
@@ -114,12 +126,26 @@ def evaluate_midline(frames: list[dict[int, Midline2D]]) -> MidlineMetrics:
         float(np.mean(per_fish_smoothness)) if per_fish_smoothness else 0.0
     )
 
+    # Compute confidence percentiles (EVAL-02)
+    if len(conf_array) > 0:
+        conf_pcts = np.percentile(conf_array, [10, 50, 90])
+        p10_conf: float | None = float(conf_pcts[0])
+        p50_conf: float | None = float(conf_pcts[1])
+        p90_conf: float | None = float(conf_pcts[2])
+    else:
+        p10_conf = None
+        p50_conf = None
+        p90_conf = None
+
     return MidlineMetrics(
         mean_confidence=mean_confidence,
         std_confidence=std_confidence,
         completeness=completeness,
         temporal_smoothness=temporal_smoothness,
         total_midlines=total_midlines,
+        p10_confidence=p10_conf,
+        p50_confidence=p50_conf,
+        p90_confidence=p90_conf,
     )
 
 

@@ -8,6 +8,10 @@ from aquapose.evaluation.stages.association import (
     evaluate_association,
 )
 from aquapose.evaluation.stages.detection import DetectionMetrics, evaluate_detection
+from aquapose.evaluation.stages.fragmentation import (
+    FragmentationMetrics,
+    evaluate_fragmentation,
+)
 from aquapose.evaluation.stages.midline import MidlineMetrics, evaluate_midline
 from aquapose.evaluation.stages.reconstruction import (
     DEFAULT_GRID as RECONSTRUCTION_DEFAULT_GRID,
@@ -25,6 +29,7 @@ __all__ = [
     "RECONSTRUCTION_DEFAULT_GRID",
     "AssociationMetrics",
     "DetectionMetrics",
+    "FragmentationMetrics",
     "MidlineMetrics",
     "ReconstructionMetrics",
     "TrackingMetrics",
@@ -32,6 +37,7 @@ __all__ = [
     "compute_z_denoising_metrics",
     "evaluate_association",
     "evaluate_detection",
+    "evaluate_fragmentation",
     "evaluate_midline",
     "evaluate_reconstruction",
     "evaluate_tracking",

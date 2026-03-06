@@ -474,3 +474,78 @@ def test_z_denoising_metrics_residual_delta_passthrough() -> None:
     """residual_delta_px is passed through to the result."""
     result = compute_z_denoising_metrics([], residual_delta_px=0.42)
     assert result.residual_delta_px == pytest.approx(0.42)
+
+
+# ---------------------------------------------------------------------------
+# Percentile fields (EVAL-01)
+# ---------------------------------------------------------------------------
+
+
+def test_evaluate_reconstruction_percentiles_known_data() -> None:
+    """evaluate_reconstruction with known residuals returns correct p50/p90/p95."""
+    # Create 10 fish-frames with mean_residuals [1, 2, 3, ..., 10]
+    frame_results = [
+        (
+            i,
+            {i: _make_midline3d(fish_id=i, frame_index=i, mean_residual=float(i + 1))},
+        )
+        for i in range(10)
+    ]
+    result = evaluate_reconstruction(frame_results)
+    residuals = np.array([float(i + 1) for i in range(10)])
+    assert result.p50_reprojection_error == pytest.approx(
+        float(np.percentile(residuals, 50)), abs=1e-5
+    )
+    assert result.p90_reprojection_error == pytest.approx(
+        float(np.percentile(residuals, 90)), abs=1e-5
+    )
+    assert result.p95_reprojection_error == pytest.approx(
+        float(np.percentile(residuals, 95)), abs=1e-5
+    )
+
+
+def test_evaluate_reconstruction_percentiles_empty_are_none() -> None:
+    """evaluate_reconstruction([]) returns None for all percentile fields."""
+    result = evaluate_reconstruction([])
+    assert result.p50_reprojection_error is None
+    assert result.p90_reprojection_error is None
+    assert result.p95_reprojection_error is None
+
+
+def test_to_dict_includes_percentile_fields() -> None:
+    """to_dict includes percentile fields as float or None."""
+    # Non-empty case
+    frame_results = [
+        (0, {0: _make_midline3d(fish_id=0, frame_index=0, mean_residual=3.0)}),
+    ]
+    result = evaluate_reconstruction(frame_results)
+    d = result.to_dict()
+    assert "p50_reprojection_error" in d
+    assert "p90_reprojection_error" in d
+    assert "p95_reprojection_error" in d
+    assert isinstance(d["p50_reprojection_error"], float)
+
+    # Empty case
+    result_empty = evaluate_reconstruction([])
+    d_empty = result_empty.to_dict()
+    assert d_empty["p50_reprojection_error"] is None
+    assert d_empty["p90_reprojection_error"] is None
+    assert d_empty["p95_reprojection_error"] is None
+
+
+def test_reconstruction_metrics_backward_compat_without_percentiles() -> None:
+    """ReconstructionMetrics can be constructed without percentile fields."""
+    m = ReconstructionMetrics(
+        mean_reprojection_error=0.0,
+        max_reprojection_error=0.0,
+        fish_reconstructed=0,
+        fish_available=0,
+        inlier_ratio=1.0,
+        low_confidence_flag_rate=0.0,
+        tier2_stability=None,
+        per_camera_error={},
+        per_fish_error={},
+    )
+    assert m.p50_reprojection_error is None
+    assert m.p90_reprojection_error is None
+    assert m.p95_reprojection_error is None

@@ -288,6 +288,82 @@ def test_to_dict_camera_distribution_str_keyed() -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Camera count percentiles (EVAL-03)
+# ---------------------------------------------------------------------------
+
+
+def test_evaluate_association_camera_count_percentiles() -> None:
+    """evaluate_association with known camera counts returns correct p50/p90."""
+    # 5 singletons (1 cam), 4 fish with 3 cams = 9 observations
+    # cam counts: [1,1,1,1,1,3,3,3,3]
+    frame: MidlineSet = {}
+    for fid in range(5):
+        frame[fid] = {
+            "cam0": Midline2D(
+                points=np.zeros((5, 2), dtype=np.float32),
+                half_widths=np.zeros(5, dtype=np.float32),
+                fish_id=fid,
+                camera_id="cam0",
+                frame_index=0,
+            )
+        }
+    for fid in range(5, 9):
+        frame[fid] = {
+            c: Midline2D(
+                points=np.zeros((5, 2), dtype=np.float32),
+                half_widths=np.zeros(5, dtype=np.float32),
+                fish_id=fid,
+                camera_id=c,
+                frame_index=0,
+            )
+            for c in ["cam0", "cam1", "cam2"]
+        }
+    result = evaluate_association([frame], n_animals=9)
+    cam_counts = np.array([1, 1, 1, 1, 1, 3, 3, 3, 3])
+    assert result.p50_camera_count == pytest.approx(
+        float(np.percentile(cam_counts, 50)), abs=1e-4
+    )
+    assert result.p90_camera_count == pytest.approx(
+        float(np.percentile(cam_counts, 90)), abs=1e-4
+    )
+
+
+def test_evaluate_association_camera_count_percentiles_empty_are_none() -> None:
+    """evaluate_association([]) returns None for camera count percentiles."""
+    result = evaluate_association([], n_animals=9)
+    assert result.p50_camera_count is None
+    assert result.p90_camera_count is None
+
+
+def test_association_to_dict_includes_camera_count_percentiles() -> None:
+    """to_dict includes camera count percentile fields."""
+    frame = _make_midline_set({0: ["cam0", "cam1"]})
+    result = evaluate_association([frame], n_animals=2)
+    d = result.to_dict()
+    assert "p50_camera_count" in d
+    assert "p90_camera_count" in d
+    assert isinstance(d["p50_camera_count"], float)
+
+
+def test_association_metrics_backward_compat_without_percentiles() -> None:
+    """AssociationMetrics can be constructed without percentile fields."""
+    m = AssociationMetrics(
+        fish_yield_ratio=0.8,
+        singleton_rate=0.2,
+        camera_distribution={2: 10},
+        total_fish_observations=10,
+        frames_evaluated=5,
+    )
+    assert m.p50_camera_count is None
+    assert m.p90_camera_count is None
+
+
+# ---------------------------------------------------------------------------
+# No engine imports
+# ---------------------------------------------------------------------------
+
+
 def test_no_engine_imports_in_association_module() -> None:
     """association.py must not import from aquapose.engine."""
     module_path = (

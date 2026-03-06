@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 
+import numpy as np
+
 from aquapose.core.types.reconstruction import MidlineSet
 
 DEFAULT_GRID: dict[str, list[float]] = {
@@ -37,6 +39,8 @@ class AssociationMetrics:
     camera_distribution: dict[int, int]
     total_fish_observations: int
     frames_evaluated: int
+    p50_camera_count: float | None = None
+    p90_camera_count: float | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serializable dict representation.
@@ -53,6 +57,12 @@ class AssociationMetrics:
             },
             "total_fish_observations": int(self.total_fish_observations),
             "frames_evaluated": int(self.frames_evaluated),
+            "p50_camera_count": float(self.p50_camera_count)
+            if self.p50_camera_count is not None
+            else None,
+            "p90_camera_count": float(self.p90_camera_count)
+            if self.p90_camera_count is not None
+            else None,
         }
 
 
@@ -77,14 +87,15 @@ def evaluate_association(
     camera_distribution: dict[int, int] = defaultdict(int)
     total_observations = 0
     singleton_count = 0
-
     multi_view_count = 0
+    all_cam_counts: list[int] = []
 
     for midline_set in midline_sets:
         for _fish_id, cam_map in midline_set.items():
             n_cams = len(cam_map)
             camera_distribution[n_cams] += 1
             total_observations += 1
+            all_cam_counts.append(n_cams)
             if n_cams == 1:
                 singleton_count += 1
             else:
@@ -95,6 +106,15 @@ def evaluate_association(
     fish_per_frame = multi_view_count / max(frames, 1)
     yield_ratio = fish_per_frame / max(n_animals, 1)
 
+    # Compute camera count percentiles (EVAL-03)
+    if len(all_cam_counts) > 0:
+        cam_pcts = np.percentile(all_cam_counts, [50, 90])
+        p50_cam: float | None = float(cam_pcts[0])
+        p90_cam: float | None = float(cam_pcts[1])
+    else:
+        p50_cam = None
+        p90_cam = None
+
     # Convert defaultdict to plain dict for frozen dataclass storage
     return AssociationMetrics(
         fish_yield_ratio=float(yield_ratio),
@@ -102,6 +122,8 @@ def evaluate_association(
         camera_distribution=dict(camera_distribution),
         total_fish_observations=total_observations,
         frames_evaluated=frames,
+        p50_camera_count=p50_cam,
+        p90_camera_count=p90_cam,
     )
 
 

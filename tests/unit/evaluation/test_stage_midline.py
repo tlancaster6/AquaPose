@@ -225,6 +225,75 @@ def test_to_dict_types_are_python_scalars() -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Confidence percentiles (EVAL-02)
+# ---------------------------------------------------------------------------
+
+
+def test_evaluate_midline_confidence_percentiles_known_data() -> None:
+    """evaluate_midline with known confidences returns correct p10/p50/p90."""
+    # 10 points with confidences 0.1, 0.2, ..., 1.0
+    conf = np.array([0.1 * (i + 1) for i in range(10)], dtype=np.float32)
+    midline = _make_midline(
+        fish_id=0,
+        frame_index=0,
+        points=np.zeros((10, 2), dtype=np.float32),
+        point_confidence=conf,
+    )
+    result = evaluate_midline([{0: midline}])
+    assert result.p10_confidence == pytest.approx(
+        float(np.percentile(conf, 10)), abs=1e-4
+    )
+    assert result.p50_confidence == pytest.approx(
+        float(np.percentile(conf, 50)), abs=1e-4
+    )
+    assert result.p90_confidence == pytest.approx(
+        float(np.percentile(conf, 90)), abs=1e-4
+    )
+
+
+def test_evaluate_midline_confidence_percentiles_empty_are_none() -> None:
+    """evaluate_midline([]) returns None for all confidence percentile fields."""
+    result = evaluate_midline([])
+    assert result.p10_confidence is None
+    assert result.p50_confidence is None
+    assert result.p90_confidence is None
+
+
+def test_midline_to_dict_includes_confidence_percentiles() -> None:
+    """to_dict includes confidence percentile fields."""
+    conf = np.array([0.5, 0.6, 0.7], dtype=np.float32)
+    midline = _make_midline(
+        points=np.zeros((3, 2), dtype=np.float32),
+        point_confidence=conf,
+    )
+    result = evaluate_midline([{0: midline}])
+    d = result.to_dict()
+    assert "p10_confidence" in d
+    assert "p50_confidence" in d
+    assert "p90_confidence" in d
+    assert isinstance(d["p50_confidence"], float)
+
+
+def test_midline_metrics_backward_compat_without_percentiles() -> None:
+    """MidlineMetrics can be constructed without percentile fields."""
+    m = MidlineMetrics(
+        mean_confidence=0.9,
+        std_confidence=0.1,
+        completeness=1.0,
+        temporal_smoothness=0.0,
+        total_midlines=10,
+    )
+    assert m.p10_confidence is None
+    assert m.p50_confidence is None
+    assert m.p90_confidence is None
+
+
+# ---------------------------------------------------------------------------
+# No engine imports
+# ---------------------------------------------------------------------------
+
+
 def test_no_engine_imports_in_midline_module() -> None:
     """midline.py must not import from aquapose.engine."""
     module_path = (

@@ -49,6 +49,9 @@ class ReconstructionMetrics:
     per_camera_error: dict[str, dict[str, float]]
     per_fish_error: dict[int, dict[str, float]]
     z_denoising: ZDenoisingMetrics | None = None
+    p50_reprojection_error: float | None = None
+    p90_reprojection_error: float | None = None
+    p95_reprojection_error: float | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serializable dict representation.
@@ -78,6 +81,15 @@ class ReconstructionMetrics:
             },
             "z_denoising": self.z_denoising.to_dict()
             if self.z_denoising is not None
+            else None,
+            "p50_reprojection_error": float(self.p50_reprojection_error)
+            if self.p50_reprojection_error is not None
+            else None,
+            "p90_reprojection_error": float(self.p90_reprojection_error)
+            if self.p90_reprojection_error is not None
+            else None,
+            "p95_reprojection_error": float(self.p95_reprojection_error)
+            if self.p95_reprojection_error is not None
             else None,
         }
 
@@ -137,6 +149,22 @@ def evaluate_reconstruction(
         if all_displacements:
             tier2_stability = float(max(all_displacements))
 
+    # Compute reprojection error percentiles (EVAL-01)
+    all_residuals = [
+        midline3d.mean_residual
+        for _frame_idx, midline_dict in frame_results
+        for midline3d in midline_dict.values()
+    ]
+    if len(all_residuals) > 0:
+        pcts = np.percentile(all_residuals, [50, 90, 95])
+        p50_err: float | None = float(pcts[0])
+        p90_err: float | None = float(pcts[1])
+        p95_err: float | None = float(pcts[2])
+    else:
+        p50_err = None
+        p90_err = None
+        p95_err = None
+
     return ReconstructionMetrics(
         mean_reprojection_error=tier1.overall_mean_px,
         max_reprojection_error=tier1.overall_max_px,
@@ -147,6 +175,9 @@ def evaluate_reconstruction(
         tier2_stability=tier2_stability,
         per_camera_error=tier1.per_camera,
         per_fish_error=tier1.per_fish,
+        p50_reprojection_error=p50_err,
+        p90_reprojection_error=p90_err,
+        p95_reprojection_error=p95_err,
     )
 
 

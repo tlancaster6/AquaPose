@@ -71,12 +71,13 @@ Recent decisions affecting current work:
 ### Roadmap Evolution
 
 - Phase 67 added: Elastic midline deformation augmentation for pose training data
-- Phase 68 added: CLI Workflow Cleanup
+- Phase 68 removed: CLI Workflow Cleanup (split into 68+69)
+- Phase 68 added: Improved training data storage and tracking
+- Phase 69 added: CLI workflow cleanup
 
 ### Blockers/Concerns
 
-- Z-reconstruction noise (median z-range 1.77 cm, SNR 0.12-1.25) must be resolved before pseudo-labels are usable
-- Reference analysis run: ~/aquapose/projects/YH/runs/run_20260305_073212/
+None active. Z-reconstruction noise resolved via z-flattening and temporal z smoothing (Phase 61).
 
 ### Quick Tasks Completed
 

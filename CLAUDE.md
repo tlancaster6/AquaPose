@@ -46,6 +46,10 @@ tests/
 └── e2e/            # End-to-end pipeline tests
 ```
 
+## Workflow Preferences
+
+- **Long-running commands**: Use `TaskCreate` (subagent tasks) instead of backgrounding processes in `Bash` and polling in a sleep/check loop. `TaskCreate` provides async completion notification, avoiding wasted turns on manual polling.
+
 ## Common Pitfalls
 
 - **AskUserQuestion auto-answers**: When `AskUserQuestion` returns, check that the response actually contains user selections. An auto-answer (user didn't respond) looks like `"User has answered your questions: ."` with no content after the colon. If the answer is blank or doesn't match any offered option labels, **do not assume a default** — re-ask or ask the user to confirm. Never interpret an empty answer as "all options selected."

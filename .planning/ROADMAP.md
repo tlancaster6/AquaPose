@@ -241,7 +241,7 @@ Plans:
 Plans:
 - [x] 65-01-PLAN.md — Frame selection: temporal subsampling, empty-frame filtering, curvature diversity sampling
 - [x] 65-02-PLAN.md — Dataset assembly: pooling, confidence filtering, validation splits, CLI command
-- [ ] 65-03-PLAN.md — Gap closure: wire frame selection into assembly, add gap_reason to sidecar
+- [x] 65-03-PLAN.md — Gap closure: wire frame selection into assembly, add gap_reason to sidecar
 
 ### Phase 66: Training Run Management
 **Goal**: Users can track, compare, and iterate on training runs with full provenance of which pseudo-label round and thresholds produced each model
@@ -253,8 +253,8 @@ Plans:
   3. Comparison report tracks which pseudo-label round and confidence thresholds were used for each run
 **Plans:** 2/2 plans complete
 Plans:
-- [ ] 66-01-PLAN.md — Run manager module, CLI --config/--tag flags, provenance tracking
-- [ ] 66-02-PLAN.md — Compare command with terminal table, CSV export, source breakdown
+- [x] 66-01-PLAN.md — Run manager module, CLI --config/--tag flags, provenance tracking
+- [x] 66-02-PLAN.md — Compare command with terminal table, CSV export, source breakdown
 
 ### Phase 67: Elastic midline deformation augmentation for pose training data
 
@@ -264,8 +264,8 @@ Plans:
 **Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 67-01-PLAN.md — Core elastic deformation module: C-curve/S-curve keypoint displacement, TPS warp, label generation (TDD)
-- [ ] 67-02-PLAN.md — CLI command, YOLO output writer, preview grid generation
+- [x] 67-01-PLAN.md — Core elastic deformation module: C-curve/S-curve keypoint displacement, TPS warp, label generation (TDD)
+- [x] 67-02-PLAN.md — CLI command, YOLO output writer, preview grid generation
 
 ## Progress
 
@@ -290,3 +290,23 @@ Phases execute in numeric order: 61 -> 62 -> 63 -> 64 -> 65 -> 66
 | 65. Frame Selection and Dataset Assembly | 3/3 | Complete    | 2026-03-05 | - |
 | 66. Training Run Management | 2/2 | Complete    | 2026-03-05 | - |
 | 67. Elastic Deformation Augmentation | 2/2 | Complete    | 2026-03-06 | - |
+
+### Phase 68: Improved training data storage and tracking
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 67
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 68 to break down)
+
+### Phase 69: CLI workflow cleanup
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 68
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 69 to break down)

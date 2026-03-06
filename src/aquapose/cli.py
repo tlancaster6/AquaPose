@@ -22,8 +22,18 @@ from aquapose.training.pseudo_label_cli import pseudo_label_group
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
-def cli() -> None:
+@click.option(
+    "--project",
+    "-p",
+    "project_name",
+    default=None,
+    help="Project name (looked up under ~/aquapose/projects/).",
+)
+@click.pass_context
+def cli(ctx: click.Context, project_name: str | None) -> None:
     """AquaPose -- 3D fish pose estimation via refractive multi-view triangulation."""
+    ctx.ensure_object(dict)
+    ctx.obj["project_name"] = project_name
 
 
 @cli.command()
@@ -134,7 +144,7 @@ def run(
         sys.exit(1)
 
 
-@cli.command("init-config")
+@cli.command("init")
 @click.argument("name")
 @click.option(
     "--synthetic",
@@ -142,11 +152,12 @@ def run(
     default=False,
     help="Include a synthetic section in the generated config.",
 )
-def init_config(name: str, synthetic: bool) -> None:
+def init_cmd(name: str, synthetic: bool) -> None:
     """Create a new AquaPose project directory scaffold with a starter config.
 
     NAME is the project name. Creates ~/aquapose/projects/<name>/ with
-    config.yaml and subdirectories: runs/, models/, geometry/, videos/.
+    config.yaml and subdirectories: runs/, models/, geometry/, videos/,
+    training_data/obb/, training_data/pose/.
     """
     project_dir = Path("~/aquapose/projects").expanduser() / name
     if project_dir.exists():
@@ -154,8 +165,15 @@ def init_config(name: str, synthetic: bool) -> None:
 
     # Create directory structure
     project_dir.mkdir(parents=True, exist_ok=False)
-    for subdir in ("runs", "models", "geometry", "videos"):
-        (project_dir / subdir).mkdir()
+    for subdir in (
+        "runs",
+        "models",
+        "geometry",
+        "videos",
+        "training_data/obb",
+        "training_data/pose",
+    ):
+        (project_dir / subdir).mkdir(parents=True)
 
     # Build ordered config dict (user-relevant order, not alphabetical)
     data: dict[str, Any] = {}
@@ -194,10 +212,10 @@ def init_config(name: str, synthetic: bool) -> None:
     click.echo("")
     click.echo("Next steps:")
     click.echo("  1. Place calibration JSON in geometry/calibration.json")
-    click.echo("  2. Run: aquapose prep generate-luts --config config.yaml")
+    click.echo(f"  2. Run: aquapose --project {name} prep generate-luts")
     click.echo(
-        "  3. Run: aquapose prep calibrate-keypoints"
-        " --annotations <json> --config config.yaml"
+        f"  3. Run: aquapose --project {name} prep calibrate-keypoints"
+        " --annotations <json>"
     )
 
 

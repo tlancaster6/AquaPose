@@ -232,7 +232,7 @@ class TestInitConfig:
         home_str = str(tmp_path)
         monkeypatch.setenv("HOME", home_str)
         monkeypatch.setenv("USERPROFILE", home_str)
-        result = runner.invoke(cli, ["init-config", "test1"])
+        result = runner.invoke(cli, ["init", "test1"])
         assert result.exit_code == 0, result.output
         project_dir = tmp_path / "aquapose" / "projects" / "test1"
         assert project_dir.exists()
@@ -241,6 +241,8 @@ class TestInitConfig:
         assert (project_dir / "models").is_dir()
         assert (project_dir / "geometry").is_dir()
         assert (project_dir / "videos").is_dir()
+        assert (project_dir / "training_data" / "obb").is_dir()
+        assert (project_dir / "training_data" / "pose").is_dir()
 
     def test_init_config_yaml_field_order(
         self,
@@ -252,7 +254,7 @@ class TestInitConfig:
         home_str = str(tmp_path)
         monkeypatch.setenv("HOME", home_str)
         monkeypatch.setenv("USERPROFILE", home_str)
-        runner.invoke(cli, ["init-config", "test1"])
+        runner.invoke(cli, ["init", "test1"])
         project_dir = tmp_path / "aquapose" / "projects" / "test1"
         import yaml as _yaml
 
@@ -273,7 +275,7 @@ class TestInitConfig:
         home_str = str(tmp_path)
         monkeypatch.setenv("HOME", home_str)
         monkeypatch.setenv("USERPROFILE", home_str)
-        result = runner.invoke(cli, ["init-config", "test2", "--synthetic"])
+        result = runner.invoke(cli, ["init", "test2", "--synthetic"])
         assert result.exit_code == 0, result.output
         project_dir = tmp_path / "aquapose" / "projects" / "test2"
         import yaml as _yaml
@@ -295,7 +297,7 @@ class TestInitConfig:
         monkeypatch.setenv("USERPROFILE", home_str)
         target = tmp_path / "aquapose" / "projects" / "test1"
         target.mkdir(parents=True)
-        result = runner.invoke(cli, ["init-config", "test1"])
+        result = runner.invoke(cli, ["init", "test1"])
         assert result.exit_code != 0
         assert "already exists" in result.output
 
@@ -309,7 +311,7 @@ class TestInitConfig:
         home_str = str(tmp_path)
         monkeypatch.setenv("HOME", home_str)
         monkeypatch.setenv("USERPROFILE", home_str)
-        runner.invoke(cli, ["init-config", "test3"])
+        runner.invoke(cli, ["init", "test3"])
         project_dir = tmp_path / "aquapose" / "projects" / "test3"
         import yaml as _yaml
 
@@ -318,7 +320,7 @@ class TestInitConfig:
         assert "synthetic" not in parsed
 
     def test_init_config_help(self, runner: click.testing.CliRunner) -> None:
-        result = runner.invoke(cli, ["init-config", "--help"])
+        result = runner.invoke(cli, ["init", "--help"])
         assert result.exit_code == 0
         assert "NAME" in result.output
 

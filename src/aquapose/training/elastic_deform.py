@@ -300,18 +300,19 @@ def generate_variants(
         List of 4 variant dicts, each with keys: ``image``, ``coords``,
         ``visible``, ``obb_line``, ``pose_line``, ``variant_tag``.
     """
-    angle = (angle_range[0] + angle_range[1]) / 2.0
+    rng = np.random.default_rng()
 
     deform_specs = [
-        ("c_pos", deform_keypoints_c_curve, angle),
-        ("c_neg", deform_keypoints_c_curve, -angle),
-        ("s_pos", deform_keypoints_s_curve, angle),
-        ("s_neg", deform_keypoints_s_curve, -angle),
+        ("c_pos", deform_keypoints_c_curve, +1.0),
+        ("c_neg", deform_keypoints_c_curve, -1.0),
+        ("s_pos", deform_keypoints_s_curve, +1.0),
+        ("s_neg", deform_keypoints_s_curve, -1.0),
     ]
 
     variants: list[dict] = []
     vis_coords = coords[visible]
-    for tag, deform_fn, deform_angle in deform_specs:
+    for tag, deform_fn, sign in deform_specs:
+        deform_angle = sign * rng.uniform(angle_range[0], angle_range[1])
         # Deform only visible keypoints so chord length (and thus amplitude)
         # isn't polluted by invisible (0,0) coordinates.
         deformed_vis = deform_fn(vis_coords, deform_angle)

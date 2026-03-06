@@ -261,7 +261,7 @@ Plans:
 **Goal:** Offline generation of synthetically curved variants of manually annotated pose training images to counteract straight-fish bias in the training set
 **Requirements**: AUG-01, AUG-02, AUG-03, AUG-04, AUG-05, AUG-06
 **Depends on:** Phase 66
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 67-01-PLAN.md — Core elastic deformation module: C-curve/S-curve keypoint displacement, TPS warp, label generation (TDD)
@@ -289,4 +289,4 @@ Phases execute in numeric order: 61 -> 62 -> 63 -> 64 -> 65 -> 66
 | 64. Gap Detection and Fill (Source B) | 2/2 | Complete    | 2026-03-05 | - |
 | 65. Frame Selection and Dataset Assembly | 3/3 | Complete    | 2026-03-05 | - |
 | 66. Training Run Management | 2/2 | Complete    | 2026-03-05 | - |
-| 67. Elastic Deformation Augmentation | 1/2 | In Progress|  | - |
+| 67. Elastic Deformation Augmentation | 2/2 | Complete   | 2026-03-06 | - |

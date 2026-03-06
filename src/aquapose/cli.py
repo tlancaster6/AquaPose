@@ -12,6 +12,7 @@ import yaml
 from aquapose.engine import load_config
 from aquapose.engine.orchestrator import ChunkOrchestrator
 from aquapose.training.cli import train_group
+from aquapose.training.data_cli import data_group
 from aquapose.training.prep import prep_group
 from aquapose.training.pseudo_label_cli import pseudo_label_group
 
@@ -578,6 +579,7 @@ def smooth_z_cmd(input_path: str, sigma_frames: int, dry_run: bool) -> None:
     click.echo(f"Written to {input_path}")
 
 
+cli.add_command(data_group)
 cli.add_command(train_group)
 cli.add_command(prep_group)
 cli.add_command(pseudo_label_group)

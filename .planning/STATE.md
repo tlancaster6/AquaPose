@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.5
 milestone_name: Pseudo-Labeling
 status: unknown
-last_updated: "2026-03-06T19:41:10.970Z"
+last_updated: "2026-03-06T19:59:38.117Z"
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 22
-  completed_plans: 20
+  completed_plans: 21
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-03-05)
 
 ## Current Position
 
-Phase: 69 (1 of 3 plans complete)
-Plan: 1/3 in current phase
-Status: Phase 69 in progress. CLI foundation utilities done.
-Last activity: 2026-03-06 - Completed 69-01: CLI foundation utilities
+Phase: 69 (2 of 3 plans complete)
+Plan: 2/3 in current phase
+Status: Phase 69 in progress. Config-to-project migration done.
+Last activity: 2026-03-06 - Completed 69-02: CLI config-to-project migration
 
-Progress: [███-------] 33%
+Progress: [██████----] 67%
 
 ## Performance Metrics
 
@@ -76,6 +76,8 @@ Recent decisions affecting current work:
 - [Phase 68]: Graceful degradation: model registration failure does not fail training
 - [Phase 69]: CWD walk-up stops at home dir for project detection
 - [Phase 69]: Lazy ctx.obj caching for project resolution
+- [Phase 69]: aquapose.cli_utils treated as shared utility for import boundary compliance
+- [Phase 69]: Pseudo-label inspect reworked from --data-dir to run-based auto-discovery
 
 ### Pending Todos
 
@@ -102,9 +104,10 @@ None active. Z-reconstruction noise resolved via z-flattening and temporal z smo
 | Phase 68 P02 | 8min | 1 tasks | 8 files |
 | Phase 68 P03 | 7min | 2 tasks | 4 files |
 | Phase 68 P04 | 6min | 2 tasks | 6 files |
+| Phase 69 P02 | 12min | 2 tasks | 11 files |
 
 ## Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Completed 69-01-PLAN.md (CLI Foundation Utilities)
-Resume file: .planning/phases/69-cli-workflow-cleanup/69-01-SUMMARY.md
+Stopped at: Completed 69-02-PLAN.md (CLI Config-to-Project Migration)
+Resume file: .planning/phases/69-cli-workflow-cleanup/69-02-SUMMARY.md

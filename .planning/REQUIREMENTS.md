@@ -70,9 +70,9 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 - [x] **CLI-01**: `resolve_project(name)` resolves `~/aquapose/projects/{name}/` by name; `resolve_project(None)` walks CWD upward looking for `config.yaml`
 - [x] **CLI-02**: `resolve_run(ref, project_dir)` resolves run shorthand: timestamp suffix, `latest` keyword, negative index, or full path; None defaults to latest
 - [x] **CLI-03**: `aquapose init <name>` creates project scaffold with training_data/obb/ and training_data/pose/ directories (renamed from `init-config`)
-- [ ] **CLI-04**: Top-level commands (run, eval, viz, tune, smooth-z) resolve config from `--project` instead of `--config`
-- [ ] **CLI-05**: eval, viz, tune, smooth-z accept RUN positional argument with shorthand resolution (latest, timestamp, negative index)
-- [ ] **CLI-06**: All subgroup commands (train, data, prep, pseudo-label) resolve project from `--project` context, eliminating per-command `--config`
+- [x] **CLI-04**: Top-level commands (run, eval, viz, tune, smooth-z) resolve config from `--project` instead of `--config`
+- [x] **CLI-05**: eval, viz, tune, smooth-z accept RUN positional argument with shorthand resolution (latest, timestamp, negative index)
+- [x] **CLI-06**: All subgroup commands (train, data, prep, pseudo-label) resolve project from `--project` context, eliminating per-command `--config`
 - [ ] **CLI-07**: `train augment-elastic` CLI command removed (redundant with `data import --augment`)
 - [ ] **CLI-08**: `pseudo-label assemble` command removed and `dataset_assembly.py` module deleted (`data assemble` is the single assembly path)
 - [ ] **CLI-09**: `train yolo-obb` renamed to `train obb`
@@ -142,9 +142,9 @@ Requirements for v3.5 Pseudo-Labeling milestone. Each maps to roadmap phases.
 | CLI-01 | Phase 69 | Complete |
 | CLI-02 | Phase 69 | Complete |
 | CLI-03 | Phase 69 | Complete |
-| CLI-04 | Phase 69 | Pending |
-| CLI-05 | Phase 69 | Pending |
-| CLI-06 | Phase 69 | Pending |
+| CLI-04 | Phase 69 | Complete |
+| CLI-05 | Phase 69 | Complete |
+| CLI-06 | Phase 69 | Complete |
 | CLI-07 | Phase 69 | Pending |
 | CLI-08 | Phase 69 | Pending |
 | CLI-09 | Phase 69 | Pending |

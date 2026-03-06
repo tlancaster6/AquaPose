@@ -180,8 +180,12 @@ def tps_warp_image(
 
     # Build backward mapping: for each output pixel, find where it comes from
     # in the input. We fit RBF from dst -> src (backward warp).
-    interp_x = RBFInterpolator(all_dst, all_src[:, 0], kernel="thin_plate_spline")
-    interp_y = RBFInterpolator(all_dst, all_src[:, 1], kernel="thin_plate_spline")
+    interp_x = RBFInterpolator(
+        all_dst, all_src[:, 0], kernel="thin_plate_spline", smoothing=1e-3
+    )
+    interp_y = RBFInterpolator(
+        all_dst, all_src[:, 1], kernel="thin_plate_spline", smoothing=1e-3
+    )
 
     # Create grid of output pixel coordinates
     grid_y, grid_x = np.mgrid[0:crop_h, 0:crop_w]
@@ -298,7 +302,12 @@ def generate_variants(
     variants: list[dict] = []
     for tag, deform_fn, deform_angle in deform_specs:
         deformed = deform_fn(coords, deform_angle)
-        warped = tps_warp_image(image, coords, deformed, crop_w, crop_h)
+        # Only use visible keypoints as TPS control points to avoid
+        # invisible (0,0) coords colliding with corner anchors.
+        vis_mask = visible
+        warped = tps_warp_image(
+            image, coords[vis_mask], deformed[vis_mask], crop_w, crop_h
+        )
         labels = generate_deformed_labels(
             deformed, visible, crop_w, crop_h, lateral_pad
         )

@@ -45,30 +45,26 @@ src/aquapose/
   core/               # Layer 1: pure computation modules
     types/            # Cross-stage shared types (Detection, CropRegion, AffineCrop, Midline2D, Midline3D, etc.)
     association/      # Cross-camera tracklet association (scoring, clustering, refinement, types)
-    detection/        # Detection stage, types, backends/ (yolo.py: YOLODetector, make_detector())
-    midline/          # Midline stage, types, backends/ (segmentation, pose_estimation); midline.py (MidlineExtractor), crop.py (affine crop utilities)
-    reconstruction/   # Reconstruction stage, types, backends/ (dlt.py)
-    tracking/         # 2D tracking stage, types, backends/ (ocsort_wrapper.py: OcSortTracker)
-    context.py        # PipelineContext
-    synthetic.py      # Synthetic data generation utilities
+    detection/        # Detection stage, types, backends/
+    midline/          # Midline stage, types, backends/ (segmentation, pose_estimation), crop utilities
+    reconstruction/   # Reconstruction stage, types, backends/ (DLT)
+    tracking/         # 2D tracking stage, types, backends/ (OC-SORT)
   engine/             # Layer 2 + 3: orchestration and observability
     pipeline.py       # PosePipeline orchestrator
+    orchestrator.py   # Chunk-based execution orchestrator
     events.py         # Event dataclasses
     observers.py      # Observer base, attachment protocol
     config.py         # Frozen config hierarchy
-    timing.py         # Stage timing observer
-    observer_factory.py  # Factory for creating observers from config
-    console_observer.py  # Console logging observer
-    diagnostic_observer.py  # Diagnostic data capture observer
-    hdf5_observer.py  # HDF5 raw data export observer
-    overlay_observer.py    # Reprojection overlay visualization observer
-    tracklet_trail_observer.py  # 2D tracklet trail visualization observer
-    animation_observer.py  # 3D animation rendering observer
-  cli.py              # CLI entrypoint
+    ...               # Observer implementations (console, diagnostic, timing, factory)
+  evaluation/         # OKS metrics, reconstruction quality, tuning, evaluation CLI
+    stages/           # Per-stage evaluation runners
+    viz/              # Evaluation visualization utilities
   io/                 # Video loading, HDF5 writing, discovery
   synthetic/          # Detection stubs, fish models, rig, scenarios, trajectory
   training/           # YOLO training wrappers (yolo_obb, yolo_seg, yolo_pose)
-  visualization/      # Overlay, diagnostics, midline_viz, plot3d, frames
+  cli.py              # CLI entrypoint
+  cli_utils.py        # Shared CLI utilities
+  logging.py          # Logging configuration
 ```
 
 ---
@@ -120,8 +116,8 @@ Detection → 2D Tracking → Cross-Camera Association → Midline → Reconstru
 - Cameras are processed independently — no cross-view logic here
 - Confidence threshold and NMS parameters are backend config
 - A 13-camera rig with partial overlap means most cameras will have zero or few detections per frame; this is normal, not an error
-- YOLO-OBB `(v2.2)` will be a configurable detection model producing oriented bounding boxes — each detection gains optional `angle` and `obb_points` fields for rotation-aware downstream crops
-- Affine crop utilities `(v2.2)` will support rotation-aligned crops from OBB detections and back-projection from crop coordinates to frame coordinates
+- YOLO-OBB is a configurable detection model producing oriented bounding boxes — each detection includes `angle` and `obb_points` fields for rotation-aware downstream crops
+- Affine crop utilities support rotation-aligned crops from OBB detections and back-projection from crop coordinates to frame coordinates
 
 ### Stage 2 — 2D Tracking
 *Swappable backend: OC-SORT*
@@ -245,7 +241,7 @@ YOLO-OBB is a **configurable model** (not a new backend) because oriented boundi
 Steps to add it:
 
 1. Add `core/detection/backends/yolo_obb.py` implementing the detector interface — loads the OBB model, runs inference, converts results to `Detection` objects.
-2. Extend `Detection` with optional fields `angle: float | None` and `obb_points: np.ndarray | None` `(v2.2)` — backends that don't produce OBB data leave these as `None`; downstream stages that don't need them ignore them.
+2. Extend `Detection` with optional fields `angle: float | None` and `obb_points: np.ndarray | None`  — backends that don't produce OBB data leave these as `None`; downstream stages that don't need them ignore them.
 3. Register in the detector factory under the key `yolo_obb`:
    ```python
    _DETECTOR_REGISTRY = {
@@ -284,16 +280,7 @@ Observers are synchronous by default — the pipeline blocks on each observer ca
 
 Observers may not mutate pipeline state, change stage logic, or control execution flow. They are passive consumers of events.
 
-Shipped observers in `src/aquapose/engine/`:
-
-- `console_observer.py` — Console logging of pipeline progress
-- `diagnostic_observer.py` — Diagnostic data capture
-- `hdf5_observer.py` — HDF5 raw data export
-- `overlay_observer.py` — Reprojection overlay visualization
-- `tracklet_trail_observer.py` — 2D tracklet trail visualization
-- `animation_observer.py` — 3D animation rendering
-- `timing.py` — Stage timing
-- `observer_factory.py` — Factory for creating observers from config
+Observer implementations live in `src/aquapose/engine/` — see the directory for current observers.
 
 ---
 
@@ -308,8 +295,6 @@ Execution modes (production, diagnostic, synthetic, benchmark) are named config 
 The full serialized config is logged as the first artifact of every run — the reproducibility contract. Given identical inputs, identical configuration, and identical random seeds, the pipeline must produce identical outputs.
 
 Run identity: timestamp-based (`run_20260225_143022`).
-
-Planned additions `(v2.2)`: top-level `device` parameter on `PipelineConfig` propagated to all stages via `build_stages()` (eliminates per-stage device config); configurable `n_sample_points` moved to `ReconstructionConfig.n_points` with no hardcoded literals anywhere; `init-config` CLI command for scaffolding a new project config file.
 
 ---
 
@@ -330,33 +315,23 @@ Artifacts are first-class citizens — structured, named consistently, associate
 
 File writing is not allowed inside stage functions. All artifacts are managed centrally by the pipeline. Stages and observers that need to persist artifacts request a write path from the pipeline.
 
-Default output location: `~/aquapose/runs/{run_id}/`, overridable via `AQUAPOSE_OUTPUT_DIR` environment variable or `config.output_dir`.
-
-```
-~/aquapose/runs/{run_id}/
-  config.yaml
-  stages/
-    detection/
-    tracking/
-    association/
-    midline/
-    reconstruction/
-  observers/
-    timing/
-    diagnostics/
-    visualization/
-  logs/
-```
+Default output location: `~/aquapose/projects/{project}/runs/{run_id}/`, overridable via config. Artifacts are organized by stage and observer, with the exact directory structure determined by pipeline configuration and active observers. The frozen config is always saved as the first artifact for reproducibility.
 
 ---
 
 ## 14. CLI
 
-Single command + flags: `aquapose run --mode diagnostic --config path.yaml`
+Click-based, project-aware (`--project`). The CLI is a thin wrapper over the engine layer. No script may call stage functions directly, reimplement orchestration logic, or bypass stage sequencing.
 
-The CLI is a thin wrapper over PosePipeline. No subcommands per mode. No script may call stage functions directly, reimplement orchestration logic, or bypass stage sequencing.
+Major command groups:
+- **run** — Pipeline execution (modes: production, diagnostic, synthetic, benchmark)
+- **init** — Project initialization and scaffolding
+- **eval** — Evaluation metrics (OKS, reconstruction quality)
+- **tune** — Parameter tuning sweeps
+- **viz** — Visualization generation (overlays, tracklet trails, 3D animations)
+- **train** — Model training (YOLO-OBB, YOLO-seg, YOLO-pose)
 
-`aquapose train` — CLI group for model training (YOLO-OBB detection, YOLO26n-seg segmentation, YOLO26n-pose keypoints). The training subsystem must not import from `engine/` — enforced as an AST import boundary by pre-commit.
+The training subsystem must not import from `engine/` — enforced as an AST import boundary by pre-commit.
 
 ---
 
@@ -374,8 +349,26 @@ Pipeline reorder to Detection → 2D Tracking → Cross-Camera Association → M
 ### v2.2 Backends (shipped 2026-03-01)
 Swappable detection and midline backends: YOLO-OBB as a configurable model within the detection backend, keypoint regression as the direct_pose midline backend. Training infrastructure for YOLO-OBB and keypoint models. Config cleanup and contract enforcement. 6 phases.
 
-### v3.0 Ultralytics Unification (current)
+### v3.0 Ultralytics Unification (shipped 2026-03-01)
 Replace custom U-Net segmentation and keypoint regression with Ultralytics-native YOLO26n-seg and YOLO26n-pose. Codebase cleanup, training wrappers, and pipeline integration as selectable midline backends. 3 phases.
+
+### v3.1 Reconstruction (shipped 2026-03-03)
+Reconstruction tuning, association tuning with corrected refractive LUTs, dead code cleanup.
+
+### v3.2 Evaluation Ecosystem (shipped)
+CLI eval/tune commands, OKS metrics, reconstruction quality metrics.
+
+### v3.3 Chunk Mode (shipped)
+Chunk-based pipeline execution for long videos, chunk-aware diagnostics, viz CLI migration.
+
+### v3.4 Performance Optimization (shipped)
+Vectorized association scoring, vectorized DLT reconstruction.
+
+### v3.5 Pseudo-Labeling (shipped 2026-03-06)
+Pseudo-label generation from pipeline output, elastic augmentation for pose model training, curvature-stratified evaluation.
+
+### v3.6 Model Iteration and QA (active)
+Current milestone — model retraining with pseudo-labels, quality metrics infrastructure, comparison tooling.
 
 ---
 

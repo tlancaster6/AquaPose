@@ -1,4 +1,4 @@
-"""Click CLI commands for training data management (import, convert)."""
+"""Click CLI commands for training data management."""
 
 from __future__ import annotations
 
@@ -363,3 +363,336 @@ def convert_cmd(
         click.echo(f"Pose: {pose_train} train, {pose_val} val")
 
     click.echo("Conversion complete.")
+
+
+def _resolve_store(config: str, store: str) -> Path:
+    """Resolve the store DB path from config and store type.
+
+    Args:
+        config: Path to project config YAML.
+        store: Store type (``"obb"`` or ``"pose"``).
+
+    Returns:
+        Path to the store database file.
+    """
+    config_data = yaml.safe_load(Path(config).read_text())
+    project_dir = Path(config_data["project_dir"])
+    return project_dir / "training_data" / store / "store.db"
+
+
+@data_group.command("assemble")
+@click.option(
+    "--config",
+    required=True,
+    type=click.Path(exists=True),
+    help="Project config YAML for path resolution.",
+)
+@click.option(
+    "--store",
+    required=True,
+    type=click.Choice(["obb", "pose"]),
+    help="Which store to assemble from.",
+)
+@click.option("--name", required=True, type=str, help="Dataset name.")
+@click.option(
+    "--source",
+    type=str,
+    multiple=True,
+    help="Filter by source type(s). Can be repeated.",
+)
+@click.option(
+    "--tags-include",
+    type=str,
+    multiple=True,
+    help="Include samples with ALL listed tags.",
+)
+@click.option(
+    "--tags-exclude",
+    type=str,
+    multiple=True,
+    help="Exclude samples with ANY listed tag.",
+)
+@click.option(
+    "--min-confidence",
+    type=float,
+    default=None,
+    help="Minimum confidence threshold.",
+)
+@click.option(
+    "--val-fraction",
+    type=float,
+    default=0.2,
+    show_default=True,
+    help="Fraction for validation split.",
+)
+@click.option("--seed", type=int, default=42, show_default=True, help="Random seed.")
+@click.option(
+    "--pseudo-in-val",
+    is_flag=True,
+    help="Allow pseudo-labels in validation split.",
+)
+def assemble_cmd(
+    config: str,
+    store: str,
+    name: str,
+    source: tuple[str, ...],
+    tags_include: tuple[str, ...],
+    tags_exclude: tuple[str, ...],
+    min_confidence: float | None,
+    val_fraction: float,
+    seed: int,
+    pseudo_in_val: bool,
+) -> None:
+    """Assemble a training dataset with symlinks from store."""
+    from .store import SampleStore
+
+    store_db = _resolve_store(config, store)
+
+    # Build query dict from filter options
+    query: dict = {}
+    if len(source) == 1:
+        query["source"] = source[0]
+    if tags_include:
+        query["tags_include"] = list(tags_include)
+    if tags_exclude:
+        query["tags_exclude"] = list(tags_exclude)
+    if min_confidence is not None:
+        query["min_confidence"] = min_confidence
+
+    with SampleStore(store_db) as sample_store:
+        ds_path = sample_store.assemble(
+            name=name,
+            query=query,
+            val_fraction=val_fraction,
+            seed=seed,
+            pseudo_in_val=pseudo_in_val,
+        )
+
+        # Count results
+        train_count = len(list((ds_path / "images" / "train").iterdir()))
+        val_count = len(list((ds_path / "images" / "val").iterdir()))
+
+    click.echo(f"Assembled dataset '{name}': {train_count} train, {val_count} val")
+    click.echo(f"Path: {ds_path}")
+
+
+@data_group.command("status")
+@click.option(
+    "--config",
+    required=True,
+    type=click.Path(exists=True),
+    help="Project config YAML for path resolution.",
+)
+def status_cmd(config: str) -> None:
+    """Show cross-store summary of training data."""
+    from .store import SampleStore
+
+    config_data = yaml.safe_load(Path(config).read_text())
+    project_dir = Path(config_data["project_dir"])
+
+    click.echo("Training Data Status")
+    click.echo("=" * 40)
+
+    for store_type in ("obb", "pose"):
+        store_db = project_dir / "training_data" / store_type / "store.db"
+        label = store_type.upper()
+
+        if not store_db.exists():
+            click.echo(f"{label} Store: No data (run `aquapose data import` first)")
+            continue
+
+        with SampleStore(store_db) as store:
+            s = store.summary()
+            source_parts = ", ".join(
+                f"{count} {src}" for src, count in sorted(s["by_source"].items())
+            )
+            click.echo(f"{label} Store: {s['total']} samples ({source_parts})")
+            click.echo(
+                f"  Augmented: {s['augmented_count']} | "
+                f"Excluded: {s['excluded_count']} | "
+                f"Datasets: {s['dataset_count']} | "
+                f"Models: {s['model_count']}"
+            )
+
+    click.echo("=" * 40)
+
+
+@data_group.command("list")
+@click.option(
+    "--config",
+    required=True,
+    type=click.Path(exists=True),
+    help="Project config YAML for path resolution.",
+)
+@click.option(
+    "--store",
+    required=True,
+    type=click.Choice(["obb", "pose"]),
+    help="Which store to list.",
+)
+@click.option("--verbose", is_flag=True, help="Show individual samples.")
+def list_cmd(config: str, store: str, verbose: bool) -> None:
+    """List store contents with summary statistics."""
+    from .store import SampleStore
+
+    store_db = _resolve_store(config, store)
+
+    with SampleStore(store_db) as sample_store:
+        s = sample_store.summary()
+
+        click.echo(f"{store.upper()} Store Summary")
+        click.echo(f"  Total: {s['total']}")
+        for src, count in sorted(s["by_source"].items()):
+            click.echo(f"  {src}: {count}")
+        click.echo(f"  Augmented: {s['augmented_count']}")
+        click.echo(f"  Excluded: {s['excluded_count']}")
+        click.echo(f"  Datasets: {s['dataset_count']}")
+
+        if verbose:
+            samples = sample_store.query(exclude_excluded=False)
+            click.echo("")
+            click.echo(f"{'ID':38s} {'Source':10s} {'Tags':20s} {'Created':25s}")
+            click.echo("-" * 93)
+            for sample in samples:
+                tags = (
+                    json.loads(sample["tags"])
+                    if isinstance(sample["tags"], str)
+                    else sample["tags"]
+                )
+                click.echo(
+                    f"{sample['id']:38s} {sample['source']:10s} "
+                    f"{','.join(tags) if tags else '-':20s} "
+                    f"{sample['created_at']:25s}"
+                )
+
+
+@data_group.command("exclude")
+@click.option(
+    "--config",
+    required=True,
+    type=click.Path(exists=True),
+    help="Project config YAML for path resolution.",
+)
+@click.option(
+    "--store",
+    required=True,
+    type=click.Choice(["obb", "pose"]),
+    help="Which store.",
+)
+@click.option("--ids", type=str, multiple=True, help="Sample IDs to exclude.")
+@click.option(
+    "--source", type=str, default=None, help="Exclude all samples from this source."
+)
+def exclude_cmd(
+    config: str, store: str, ids: tuple[str, ...], source: str | None
+) -> None:
+    """Soft-delete samples (reversible via include)."""
+    from .store import SampleStore
+
+    store_db = _resolve_store(config, store)
+
+    with SampleStore(store_db) as sample_store:
+        if ids:
+            sample_ids = list(ids)
+        elif source:
+            samples = sample_store.query(source=source)
+            sample_ids = [s["id"] for s in samples]
+        else:
+            click.echo("Error: Provide --ids or --source to select samples.")
+            return
+
+        count = sample_store.exclude(sample_ids)
+        click.echo(f"Excluded {count} samples")
+
+
+@data_group.command("include")
+@click.option(
+    "--config",
+    required=True,
+    type=click.Path(exists=True),
+    help="Project config YAML for path resolution.",
+)
+@click.option(
+    "--store",
+    required=True,
+    type=click.Choice(["obb", "pose"]),
+    help="Which store.",
+)
+@click.option("--ids", type=str, multiple=True, help="Sample IDs to include.")
+@click.option(
+    "--source",
+    type=str,
+    default=None,
+    help="Include all excluded samples from this source.",
+)
+def include_cmd(
+    config: str, store: str, ids: tuple[str, ...], source: str | None
+) -> None:
+    """Reverse exclusion (remove 'excluded' tag)."""
+    from .store import SampleStore
+
+    store_db = _resolve_store(config, store)
+
+    with SampleStore(store_db) as sample_store:
+        if ids:
+            sample_ids = list(ids)
+        elif source:
+            samples = sample_store.query(source=source, exclude_excluded=False)
+            sample_ids = [s["id"] for s in samples]
+        else:
+            click.echo("Error: Provide --ids or --source to select samples.")
+            return
+
+        count = sample_store.include(sample_ids)
+        click.echo(f"Included {count} samples")
+
+
+@data_group.command("remove")
+@click.option(
+    "--config",
+    required=True,
+    type=click.Path(exists=True),
+    help="Project config YAML for path resolution.",
+)
+@click.option(
+    "--store",
+    required=True,
+    type=click.Choice(["obb", "pose"]),
+    help="Which store.",
+)
+@click.option("--ids", type=str, multiple=True, help="Sample IDs to remove.")
+@click.option(
+    "--source", type=str, default=None, help="Remove all samples from this source."
+)
+@click.option("--purge", is_flag=True, help="Confirm permanent deletion.")
+def remove_cmd(
+    config: str,
+    store: str,
+    ids: tuple[str, ...],
+    source: str | None,
+    purge: bool,
+) -> None:
+    """Hard-delete samples (permanent, cascades to children)."""
+    from .store import SampleStore
+
+    if not purge:
+        click.echo(
+            "Error: Pass --purge to confirm permanent deletion of files "
+            "and database records."
+        )
+        return
+
+    store_db = _resolve_store(config, store)
+
+    with SampleStore(store_db) as sample_store:
+        if ids:
+            sample_ids = list(ids)
+        elif source:
+            samples = sample_store.query(source=source, exclude_excluded=False)
+            sample_ids = [s["id"] for s in samples]
+        else:
+            click.echo("Error: Provide --ids or --source to select samples.")
+            return
+
+        count = sample_store.remove(sample_ids)
+        click.echo(f"Removed {count} samples permanently")

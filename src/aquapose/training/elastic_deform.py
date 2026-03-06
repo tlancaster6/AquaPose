@@ -105,8 +105,9 @@ def deform_keypoints_s_curve(
         return coords.copy()
     t = cum_lengths / total_arc
 
-    # Pixel amplitude from angular amplitude
-    a_px = chord_length * np.tan(np.radians(amplitude_deg))
+    # Pixel amplitude from angular amplitude, halved so peak-to-peak
+    # excursion matches the C-curve's single-direction displacement.
+    a_px = 0.5 * chord_length * np.tan(np.radians(amplitude_deg))
 
     # Full-period sine: sin(2*pi*t) gives a true S-curve — zero at endpoints
     # and midpoint, positive hump in the first half, negative in the second.

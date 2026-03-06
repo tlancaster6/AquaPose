@@ -121,12 +121,13 @@ def generate_fish_labels(
     lateral_pad: float,
     max_camera_residual_px: float,
     camera_id: str,
+    min_visible_keypoints: int = 2,
 ) -> dict | None:
     """Generate OBB and pose labels for one fish in one camera view.
 
     Returns None if the camera did not contribute to the reconstruction,
     or if its per-camera residual exceeds the threshold, or if fewer than
-    2 keypoints are visible after projection.
+    *min_visible_keypoints* keypoints are visible after projection.
 
     Args:
         midline: 3D midline reconstruction for the fish.
@@ -137,6 +138,7 @@ def generate_fish_labels(
         lateral_pad: OBB lateral padding in pixels.
         max_camera_residual_px: Per-camera residual threshold in pixels.
         camera_id: Camera identifier.
+        min_visible_keypoints: Minimum visible keypoints to accept the label.
 
     Returns:
         Dict with keys ``obb_line``, ``pose_line``, ``confidence``,
@@ -168,8 +170,7 @@ def generate_fish_labels(
     )
     visibility = visibility & ~oob
 
-    # Need at least 2 visible keypoints
-    if visibility.sum() < 2:
+    if visibility.sum() < min_visible_keypoints:
         return None
 
     # OBB computation (no edge extrapolation for pseudo-labels)
@@ -374,6 +375,7 @@ def generate_gap_fish_labels(
     img_h: int,
     keypoint_t_values: list[float],
     lateral_pad: float,
+    min_visible_keypoints: int = 2,
 ) -> dict | None:
     """Generate OBB and pose labels for a gap camera.
 
@@ -388,11 +390,12 @@ def generate_gap_fish_labels(
         img_h: Image height in pixels.
         keypoint_t_values: Arc-length fractions for keypoint evaluation.
         lateral_pad: OBB lateral padding in pixels.
+        min_visible_keypoints: Minimum visible keypoints to accept the label.
 
     Returns:
         Dict with keys ``obb_line``, ``pose_line``, ``confidence``,
         ``raw_metrics``, ``keypoints_2d``, ``visibility``; or None if
-        fewer than 2 keypoints are visible or bounds check fails.
+        fewer than *min_visible_keypoints* are visible or bounds check fails.
     """
     # Reproject spline keypoints
     keypoints_2d, visibility = reproject_spline_keypoints(
@@ -408,8 +411,7 @@ def generate_gap_fish_labels(
     )
     visibility = visibility & ~oob
 
-    # Need at least 2 visible keypoints
-    if visibility.sum() < 2:
+    if visibility.sum() < min_visible_keypoints:
         return None
 
     # Bounds check

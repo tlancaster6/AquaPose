@@ -112,6 +112,13 @@ def pseudo_label_group() -> None:
     show_default=True,
     help="Process every Nth frame (1 = all frames).",
 )
+@click.option(
+    "--min-visible-ratio",
+    type=float,
+    default=0.34,
+    show_default=True,
+    help="Minimum fraction of keypoints that must be visible (rounded to nearest integer).",
+)
 def generate(
     config_path: str,
     lateral_pad: float,
@@ -121,6 +128,7 @@ def generate(
     crop_width: int,
     crop_height: int,
     temporal_step: int,
+    min_visible_ratio: float,
 ) -> None:
     """Generate YOLO OBB and pose pseudo-labels from diagnostic caches.
 
@@ -265,6 +273,11 @@ def generate(
     obb_confidence_values: list[float] = []
 
     n_keypoints = len(keypoint_t_values)
+    min_visible = max(1, round(min_visible_ratio * n_keypoints))
+    click.echo(
+        f"Min visible keypoints: {min_visible}/{n_keypoints} "
+        f"(ratio {min_visible_ratio:.2f})"
+    )
 
     with VideoFrameSource(
         pipeline_config.video_dir,
@@ -316,6 +329,7 @@ def generate(
                             lateral_pad=lateral_pad,
                             max_camera_residual_px=max_camera_residual,
                             camera_id=cam_id,
+                            min_visible_keypoints=min_visible,
                         )
 
                         if result is None:
@@ -384,6 +398,7 @@ def generate(
                             img_h=img_h,
                             keypoint_t_values=keypoint_t_values,
                             lateral_pad=lateral_pad,
+                            min_visible_keypoints=min_visible,
                         )
 
                         if gap_result is None:
@@ -489,6 +504,7 @@ def generate(
                         lateral_pad=lateral_pad,
                         pose_images_dir=cons_pose_images,
                         pose_labels_dir=cons_pose_labels,
+                        min_visible=min_visible,
                     )
                     for fd in cons_pose_data[cam_id]:
                         crop_stem = f"{frame_idx:06d}_{cam_id}"
@@ -523,6 +539,7 @@ def generate(
                         lateral_pad=lateral_pad,
                         pose_images_dir=gap_pose_images,
                         pose_labels_dir=gap_pose_labels,
+                        min_visible=min_visible,
                     )
                     for fd in gap_pose_data[cam_id]:
                         crop_stem = f"{frame_idx:06d}_{cam_id}"

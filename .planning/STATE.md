@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-03-06)
 Phase: 70 of 76 (Metrics & Comparison Infrastructure)
 Plan: —
 Status: Ready to plan
-Last activity: 2026-03-06 — Roadmap created for v3.6
+Last activity: 2026-03-06 - Completed quick task 22: Update GUIDEBOOK.md to be current, focused, and trustworthy — remove stale repo-specific content
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -58,8 +58,14 @@ v3.5 milestone decisions archived to milestones/v3.5-ROADMAP.md.
 - Phase 75 is conditional on Phase 74 decision checkpoint (may be skipped)
 - Algae domain shift between manual annotations (clean tank) and current conditions may cause false positives in pseudo-labels
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
+| 22 | Update GUIDEBOOK.md to be current, focused, and trustworthy — remove stale repo-specific content | 2026-03-06 | 197b152 | Verified | [22-update-guidebook-md-to-be-current-focuse](./quick/22-update-guidebook-md-to-be-current-focuse/) |
+
 ## Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Completed quick task 22: update GUIDEBOOK.md
+Stopped at: Completed quick task 22: Update GUIDEBOOK.md
 Resume file: None

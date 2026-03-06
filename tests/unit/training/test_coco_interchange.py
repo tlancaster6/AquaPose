@@ -6,12 +6,13 @@ import json
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
+
 from aquapose.training.coco_interchange import (
     coco_to_yolo_pose,
     write_coco_keypoints,
     yolo_pose_to_coco,
 )
-from PIL import Image
 
 N_KP = 13
 

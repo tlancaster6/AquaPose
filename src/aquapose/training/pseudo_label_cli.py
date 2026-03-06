@@ -11,6 +11,7 @@ import click
 import cv2
 import numpy as np
 
+from aquapose.training.coco_interchange import write_coco_keypoints
 from aquapose.training.geometry import (
     affine_warp_crop,
     format_pose_annotation,
@@ -576,11 +577,13 @@ def generate(
     # Pose consensus
     _write_pose_dataset_yaml(pseudo_dir / "pose" / "consensus", n_keypoints)
     _write_confidence_json(pseudo_dir / "pose" / "consensus", cons_pose_confidence)
+    write_coco_keypoints(pseudo_dir / "pose" / "consensus", n_keypoints)
 
     # Pose gap
     if gaps:
         _write_pose_dataset_yaml(pseudo_dir / "pose" / "gap", n_keypoints)
         _write_confidence_json(pseudo_dir / "pose" / "gap", gap_pose_confidence)
+        write_coco_keypoints(pseudo_dir / "pose" / "gap", n_keypoints)
 
     # 11. Print summary
     click.echo("\nPseudo-label generation complete.")

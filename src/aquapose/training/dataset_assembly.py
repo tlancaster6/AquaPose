@@ -34,6 +34,25 @@ def collect_pseudo_labels(
 
     for run_dir in run_dirs:
         run_id = run_dir.name
+
+        # COCO fallback: if coco_keypoints.json exists but YOLO labels are
+        # absent, convert COCO annotations to YOLO-Pose on-the-fly.
+        if base_path.startswith("pose/"):
+            coco_path = run_dir / "pseudo_labels" / base_path / "coco_keypoints.json"
+            labels_dir = run_dir / "pseudo_labels" / base_path / "labels" / "train"
+            if coco_path.exists() and (
+                not labels_dir.exists() or not any(labels_dir.iterdir())
+            ):
+                labels_dir.mkdir(parents=True, exist_ok=True)
+                from aquapose.training.coco_interchange import coco_to_yolo_pose
+
+                n_converted = coco_to_yolo_pose(coco_path, labels_dir)
+                logger.info(
+                    "Converted %d COCO annotations to YOLO-Pose in %s",
+                    n_converted,
+                    labels_dir,
+                )
+
         conf_path = run_dir / "pseudo_labels" / base_path / "confidence.json"
 
         if not conf_path.exists():

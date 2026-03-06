@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from .coco_interchange import (
+    coco_to_yolo_pose,
+    write_coco_keypoints,
+    yolo_pose_to_coco,
+)
 from .common import (
     EarlyStopping,
     MetricsLogger,
@@ -69,6 +74,7 @@ __all__ = [
     "affine_warp_crop",
     "apply_augmentation",
     "assemble_dataset",
+    "coco_to_yolo_pose",
     "compute_confidence_score",
     "compute_curvature",
     "create_run_dir",
@@ -105,7 +111,9 @@ __all__ = [
     "train_yolo_pose",
     "train_yolo_seg",
     "transform_keypoints",
+    "write_coco_keypoints",
     "write_comparison_csv",
     "write_summary",
     "write_yolo_dataset",
+    "yolo_pose_to_coco",
 ]

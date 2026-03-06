@@ -670,12 +670,10 @@ class TestPartialOobFish:
         )
 
         assert result is not None
-        # OBB annotation normalized values are clipped to [0,1]
-        # (by format_obb_annotation), but raw corners may extend past image
+        # OBB annotation has normalized values (may extend past [0,1] for
+        # border boxes to preserve rectangular shape)
         obb_tokens = result["obb_line"].split()
-        for i in range(1, 9):
-            val = float(obb_tokens[i])
-            assert 0.0 <= val <= 1.0, f"OBB token {i} = {val} out of [0,1]"
+        assert len(obb_tokens) == 9
 
     def test_returns_none_when_all_oob(self) -> None:
         """Fish entirely out of frame returns None."""

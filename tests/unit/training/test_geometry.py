@@ -152,15 +152,17 @@ class TestFormatObbAnnotation:
         assert row[1] == pytest.approx(0.1)
         assert row[2] == pytest.approx(0.2)
 
-    def test_clipping(self) -> None:
-        """Out-of-bounds corners are clipped to [0, 1]."""
+    def test_no_clipping(self) -> None:
+        """Out-of-bounds corners are preserved (not clipped) to maintain shape."""
         corners = np.array(
             [[-50, -50], [1500, -50], [1500, 1500], [-50, 1500]],
             dtype=np.float64,
         )
         row = format_obb_annotation(corners, img_w=1000, img_h=1000)
-        for v in row[1:]:
-            assert 0.0 <= v <= 1.0
+        assert row[1] == pytest.approx(-0.05)  # -50/1000
+        assert row[2] == pytest.approx(-0.05)
+        assert row[3] == pytest.approx(1.5)  # 1500/1000
+        assert row[4] == pytest.approx(-0.05)
 
 
 class TestFormatPoseAnnotation:

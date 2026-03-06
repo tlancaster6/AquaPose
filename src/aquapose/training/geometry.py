@@ -281,7 +281,9 @@ def format_obb_annotation(
     """Format one OBB annotation as a flat array for a YOLO-OBB .txt label line.
 
     Returns a flat list ``[cls, x1, y1, x2, y2, x3, y3, x4, y4]`` with
-    corners normalized to [0, 1] by image dimensions.
+    corners normalized by image dimensions. Coordinates are **not** clipped
+    to [0, 1] so that boxes near the image border preserve their rectangular
+    shape (clipping each corner independently distorts the quadrilateral).
 
     Args:
         obb_corners: float64 array of shape ``(4, 2)`` with corner (x, y) in
@@ -296,8 +298,8 @@ def format_obb_annotation(
     """
     row: list[float] = [float(class_id)]
     for corner in obb_corners:
-        x_norm = float(np.clip(corner[0] / img_w, 0.0, 1.0))
-        y_norm = float(np.clip(corner[1] / img_h, 0.0, 1.0))
+        x_norm = float(corner[0] / img_w)
+        y_norm = float(corner[1] / img_h)
         row.append(round(x_norm, 6))
         row.append(round(y_norm, 6))
     return row

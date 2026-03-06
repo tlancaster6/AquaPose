@@ -183,9 +183,6 @@ class TestGenerateDeformedLabels:
         # OBB line: [cls, x1, y1, ..., x4, y4] -> 9 values
         obb = result["obb_line"]
         assert len(obb) == 9
-        # All coordinate values should be in [0, 1]
-        for val in obb[1:]:
-            assert 0.0 <= val <= 1.0, f"OBB value {val} out of [0,1]"
 
         # Pose line: [cls, cx, cy, w, h, x1, y1, v1, ...] -> 5 + 6*3 = 23
         pose = result["pose_line"]

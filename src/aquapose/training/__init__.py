@@ -62,6 +62,7 @@ from .run_manager import (
     snapshot_config,
     write_summary,
 )
+from .store import SampleStore
 from .yolo_obb import train_yolo_obb
 from .yolo_pose import train_yolo_pose
 from .yolo_seg import train_yolo_seg
@@ -71,6 +72,7 @@ __all__ = [
     "DiversitySampleResult",
     "EarlyStopping",
     "MetricsLogger",
+    "SampleStore",
     "affine_warp_crop",
     "apply_augmentation",
     "assemble_dataset",

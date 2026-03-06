@@ -362,6 +362,37 @@ def format_eval_report(result: EvalRunnerResult) -> str:
                 f"    {cam_id:<{_W_METRIC - 2}}"
                 f" mean={stats['mean_px']:.2f} max={stats['max_px']:.2f}"
             )
+        if r.per_point_error is not None:
+            lines.append("")
+            lines.append("  Per-Keypoint Reprojection Error")
+            lines.append("  " + "-" * 40)
+            lines.append(f"    {'Point':>5}  {'Mean px':>8}  {'P90 px':>8}")
+            lines.append(f"    {'-----':>5}  {'-------':>8}  {'------':>8}")
+            for pt_idx in sorted(r.per_point_error.keys()):
+                stats = r.per_point_error[pt_idx]
+                lines.append(
+                    f"    {pt_idx:>5}  {stats['mean_px']:>8.2f}  {stats['p90_px']:>8.2f}"
+                )
+        if r.curvature_stratified is not None:
+            lines.append("")
+            lines.append("  Curvature-Stratified Quality")
+            lines.append("  " + "-" * 55)
+            lines.append(
+                f"    {'Quartile':>8}  {'Mean px':>8}  {'P90 px':>8}"
+                f"  {'Count':>5}  {'Curvature Range':>16}"
+            )
+            lines.append(
+                f"    {'--------':>8}  {'-------':>8}  {'------':>8}"
+                f"  {'-----':>5}  {'---------------':>16}"
+            )
+            for q_key in ["Q1", "Q2", "Q3", "Q4"]:
+                if q_key in r.curvature_stratified:
+                    qs = r.curvature_stratified[q_key]
+                    lines.append(
+                        f"    {q_key:>8}  {qs['mean_error_px']:>8.2f}"
+                        f"  {qs['p90_error_px']:>8.2f}"
+                        f"  {qs['count']:>5}  {qs['curvature_range']:>16}"
+                    )
         if r.tier2_stability is not None:
             lines.append("")
             lines.append("  Tier 2: Leave-One-Out Stability")

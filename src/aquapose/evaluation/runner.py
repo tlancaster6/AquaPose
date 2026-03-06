@@ -26,6 +26,10 @@ from aquapose.evaluation.stages import (
     evaluate_reconstruction,
     evaluate_tracking,
 )
+from aquapose.evaluation.stages.reconstruction import (
+    compute_curvature_stratified,
+    compute_per_point_error,
+)
 
 # Centroid match tolerance in pixels for TrackletGroup -> AnnotatedDetection matching.
 _CENTROID_MATCH_TOLERANCE_PX = 5.0
@@ -432,8 +436,34 @@ class EvalRunner:
                 except FileNotFoundError:
                     n_animals_recon = 0
             fish_available = n_animals_recon * frames_evaluated
+            # Per-keypoint error and curvature stratification (EVAL-04, EVAL-05)
+            per_point_result = None
+            curvature_result = None
+
+            # Build midline_sets_by_frame for per-keypoint and curvature analysis
+            midline_sets_for_recon = self._build_midline_sets(ctx, sampled_indices)
+            midline_sets_by_frame: dict[int, MidlineSet] = {}
+            for idx, ms in zip(sampled_indices, midline_sets_for_recon, strict=False):
+                if ms:
+                    midline_sets_by_frame[idx] = ms
+
+            # Try loading projection models for per-keypoint error
+            projection_models = self._load_projection_models()
+            if projection_models:
+                per_point_result = compute_per_point_error(
+                    frame_results, midline_sets_by_frame, projection_models
+                )
+
+            # Curvature stratification (no projection models needed)
+            curvature_result = compute_curvature_stratified(
+                frame_results, midline_sets_by_frame
+            )
+
             reconstruction_metrics = evaluate_reconstruction(
-                frame_results, fish_available
+                frame_results,
+                fish_available,
+                per_point_error=per_point_result,
+                curvature_stratified=curvature_result,
             )
 
             # Fragmentation analysis from 3D midline data
@@ -478,6 +508,44 @@ class EvalRunner:
             )
         config = load_config(config_path)
         return config.n_animals
+
+    def _load_projection_models(self) -> dict[str, Any]:
+        """Load refractive projection models from the run's config.yaml.
+
+        Attempts to load calibration data and build RefractiveProjectionModel
+        instances for each camera. Returns an empty dict on failure (graceful
+        degradation).
+
+        Returns:
+            Dict mapping camera_id to RefractiveProjectionModel, or empty dict
+            if calibration data is unavailable.
+        """
+        try:
+            from aquapose.calibration import load_calibration_data
+            from aquapose.calibration.loader import compute_undistortion_maps
+            from aquapose.calibration.projection import RefractiveProjectionModel
+            from aquapose.engine.config import load_config
+
+            config_path = self._run_dir / "config.yaml"
+            if not config_path.exists():
+                return {}
+            config = load_config(config_path)
+            cal_data = load_calibration_data(config.calibration_path)
+            models: dict[str, Any] = {}
+            for cam_id, cam_data in cal_data.cameras.items():
+                undist_maps = compute_undistortion_maps(cam_data)
+                models[cam_id] = RefractiveProjectionModel(
+                    K=undist_maps.K_new,
+                    R=cam_data.R,
+                    t=cam_data.t,
+                    water_z=cal_data.water_z,
+                    normal=cal_data.interface_normal,
+                    n_air=cal_data.n_air,
+                    n_water=cal_data.n_water,
+                )
+            return models
+        except Exception:
+            return {}
 
     def _build_midline_sets(
         self,

@@ -56,7 +56,7 @@ class ReconstructionMetrics:
     p90_reprojection_error: float | None = None
     p95_reprojection_error: float | None = None
     per_point_error: dict[int, dict[str, float]] | None = None
-    curvature_stratified: dict[str, dict[str, float]] | None = None
+    curvature_stratified: dict[str, dict[str, float | int | str]] | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serializable dict representation.
@@ -112,7 +112,7 @@ def evaluate_reconstruction(
     *,
     tier2_result: Tier2Result | None = None,
     per_point_error: dict[int, dict[str, float]] | None = None,
-    curvature_stratified: dict[str, dict[str, float]] | None = None,
+    curvature_stratified: dict[str, dict[str, float | int | str]] | None = None,
 ) -> ReconstructionMetrics:
     """Evaluate reconstruction quality from triangulation frame results.
 
@@ -442,7 +442,7 @@ def compute_per_point_error(
 def compute_curvature_stratified(
     frame_results: list[tuple[int, dict[int, Midline3D]]],
     midline_sets_by_frame: dict[int, MidlineSet],
-) -> dict[str, dict[str, float]] | None:
+) -> dict[str, dict[str, float | int | str]] | None:
     """Compute curvature-stratified reconstruction quality.
 
     Bins fish-frames by 2D curvature quartile using the camera with highest
@@ -504,7 +504,7 @@ def compute_curvature_stratified(
     # np.digitize: values <= edge[0] -> bin 0, etc.
     bin_indices = np.digitize(curvatures, bin_edges)  # 0, 1, 2, 3
 
-    result: dict[str, dict[str, float]] = {}
+    result: dict[str, dict[str, float | int | str]] = {}
     for bin_idx, q_label in enumerate(["Q1", "Q2", "Q3", "Q4"]):
         mask = bin_indices == bin_idx
         count = int(np.sum(mask))

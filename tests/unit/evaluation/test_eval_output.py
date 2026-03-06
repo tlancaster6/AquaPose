@@ -85,6 +85,36 @@ def _make_reconstruction_metrics() -> ReconstructionMetrics:
         p50_reprojection_error=2.45,
         p90_reprojection_error=5.2,
         p95_reprojection_error=6.8,
+        per_point_error={
+            0: {"mean_px": 3.1, "p90_px": 5.5},
+            1: {"mean_px": 2.8, "p90_px": 4.9},
+        },
+        curvature_stratified={
+            "Q1": {
+                "mean_error_px": 2.0,
+                "p90_error_px": 3.5,
+                "count": 10,
+                "curvature_range": "0.00-0.01",
+            },
+            "Q2": {
+                "mean_error_px": 2.5,
+                "p90_error_px": 4.0,
+                "count": 10,
+                "curvature_range": "0.01-0.03",
+            },
+            "Q3": {
+                "mean_error_px": 3.0,
+                "p90_error_px": 5.0,
+                "count": 10,
+                "curvature_range": "0.03-0.06",
+            },
+            "Q4": {
+                "mean_error_px": 4.0,
+                "p90_error_px": 7.0,
+                "count": 10,
+                "curvature_range": "0.06-0.12",
+            },
+        },
     )
 
 
@@ -447,6 +477,59 @@ def test_format_eval_json_includes_percentiles() -> None:
     assert "p10_confidence" in midline
     assoc = parsed["stages"]["association"]
     assert "p50_camera_count" in assoc
+
+
+# ---------------------------------------------------------------------------
+# Tests: per-keypoint and curvature-stratified in format_eval_report
+# ---------------------------------------------------------------------------
+
+
+def test_format_eval_report_shows_per_keypoint_table() -> None:
+    """format_eval_report shows per-keypoint reprojection error table."""
+    from aquapose.evaluation.output import format_eval_report
+
+    result = _make_full_result()
+    report = format_eval_report(result)
+    assert "Per-Keypoint Reprojection Error" in report
+    assert "Mean px" in report
+    assert "P90 px" in report
+
+
+def test_format_eval_report_shows_curvature_stratified_table() -> None:
+    """format_eval_report shows curvature-stratified quality table."""
+    from aquapose.evaluation.output import format_eval_report
+
+    result = _make_full_result()
+    report = format_eval_report(result)
+    assert "Curvature-Stratified Quality" in report
+    assert "Q1" in report
+    assert "Q4" in report
+    assert "Curvature Range" in report
+
+
+def test_format_eval_json_includes_per_point_error() -> None:
+    """format_eval_json includes per_point_error in reconstruction stage."""
+    from aquapose.evaluation.output import format_eval_json
+
+    result = _make_full_result()
+    parsed = json.loads(format_eval_json(result))
+    recon = parsed["stages"]["reconstruction"]
+    assert "per_point_error" in recon
+    assert recon["per_point_error"] is not None
+    # Keys should be string (converted from int)
+    assert "0" in recon["per_point_error"]
+
+
+def test_format_eval_json_includes_curvature_stratified() -> None:
+    """format_eval_json includes curvature_stratified in reconstruction stage."""
+    from aquapose.evaluation.output import format_eval_json
+
+    result = _make_full_result()
+    parsed = json.loads(format_eval_json(result))
+    recon = parsed["stages"]["reconstruction"]
+    assert "curvature_stratified" in recon
+    assert recon["curvature_stratified"] is not None
+    assert "Q1" in recon["curvature_stratified"]
 
 
 def test_eval_runner_result_to_dict_backward_compat() -> None:

@@ -16,6 +16,35 @@ from aquapose.training.geometry import (
 )
 
 
+def compute_curvature(control_points: np.ndarray) -> float:
+    """Compute mean absolute curvature from control points via finite differences.
+
+    Uses finite differences of tangent vectors:
+    ``T[i] = cp[i+1] - cp[i]``, then
+    ``k[i] = |T[i+1] - T[i]| / (0.5 * (|T[i]| + |T[i+1]|))``.
+
+    Args:
+        control_points: Shape ``(N, D)`` array of control points (2D or 3D).
+
+    Returns:
+        Mean absolute curvature (scalar). Near zero for straight lines.
+    """
+    tangents = np.diff(control_points, axis=0)
+    tangent_norms = np.linalg.norm(tangents, axis=1)
+
+    dt = np.diff(tangents, axis=0)
+    dt_norms = np.linalg.norm(dt, axis=1)
+
+    # Average adjacent tangent magnitudes for normalization
+    avg_norms = 0.5 * (tangent_norms[:-1] + tangent_norms[1:])
+
+    # Avoid division by zero for degenerate cases
+    safe_norms = np.where(avg_norms > 1e-12, avg_norms, 1.0)
+    curvatures = dt_norms / safe_norms
+
+    return float(np.mean(curvatures))
+
+
 def reproject_spline_keypoints(
     midline: Midline3D,
     keypoint_t_values: list[float],

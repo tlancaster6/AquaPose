@@ -328,12 +328,12 @@ def print_next_steps(run_dir: Path, model_type: str, best_weights: Path) -> None
     click.echo(f"  Model registered as: {run_dir.name}")
     click.echo("")
     click.echo("Next steps:")
-    config_path = run_dir.parent.parent.parent / "config.yaml"
+    project_dir = run_dir.parent.parent.parent
     click.echo(
-        f"  Compare runs:  aquapose train compare --config {config_path}"
+        f"  Compare runs:  aquapose train compare --project {project_dir}"
         f" --model-type {model_type}"
     )
     click.echo(
         f"  Retrain:       aquapose train {model_type}"
-        f" --config ... --weights {best_weights}"
+        f" --project {project_dir} --weights {best_weights}"
     )

@@ -37,13 +37,6 @@ from .elastic_deform import (
     parse_pose_label,
     tps_warp_image,
 )
-from .frame_selection import (
-    DiversitySampleResult,
-    compute_curvature,
-    diversity_sample,
-    filter_empty_frames,
-    temporal_subsample,
-)
 from .geometry import (
     affine_warp_crop,
     extrapolate_edge_keypoints,
@@ -55,6 +48,7 @@ from .geometry import (
 from .prep import prep_group
 from .pseudo_labels import (
     compute_confidence_score,
+    compute_curvature,
     detect_gaps,
     generate_fish_labels,
     generate_gap_fish_labels,
@@ -77,7 +71,6 @@ from .yolo_seg import train_yolo_seg
 
 __all__ = [
     "CropDataset",
-    "DiversitySampleResult",
     "EarlyStopping",
     "MetricsLogger",
     "SampleStore",
@@ -94,10 +87,8 @@ __all__ = [
     "deform_keypoints_s_curve",
     "detect_gaps",
     "discover_runs",
-    "diversity_sample",
     "extract_dataset_provenance",
     "extrapolate_edge_keypoints",
-    "filter_empty_frames",
     "format_comparison_table",
     "format_obb_annotation",
     "format_pose_annotation",
@@ -121,7 +112,6 @@ __all__ = [
     "save_best_and_last",
     "snapshot_config",
     "stratified_split",
-    "temporal_subsample",
     "tps_warp_image",
     "train_yolo_obb",
     "train_yolo_pose",

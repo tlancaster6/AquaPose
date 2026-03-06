@@ -1,0 +1,100 @@
+# Requirements: AquaPose v3.6
+
+**Defined:** 2026-03-06
+**Core Value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
+
+## v3.6 Requirements
+
+Requirements for v3.6 Model Iteration & QA. Each maps to roadmap phases.
+
+### Evaluation Metrics
+
+- [ ] **EVAL-01**: `aquapose eval` reports reprojection error percentiles (p50, p90, p95) alongside existing mean/max
+- [ ] **EVAL-02**: `aquapose eval` reports midline confidence percentiles (p10, p50, p90) alongside existing mean/std
+- [ ] **EVAL-03**: `aquapose eval` reports camera count percentiles (p50, p90) summarizing association coverage
+- [ ] **EVAL-04**: `aquapose eval` reports per-keypoint reprojection error (mean + p90 per body point index) recomputed from cached splines
+- [ ] **EVAL-05**: `aquapose eval` reports curvature-stratified reconstruction quality (reprojection error per curvature quantile bin with sample counts)
+- [ ] **EVAL-06**: `aquapose eval` reports 3D track fragmentation (gap count, gap duration stats, continuity ratio)
+
+### Data Bootstrap
+
+- [ ] **BOOT-01**: `aquapose data convert` CLI subcommand converts COCO-JSON annotations to YOLO-OBB and YOLO-pose formats via existing `coco_convert.py`
+- [ ] **BOOT-02**: Manual annotations imported into data store as `source=manual` with correct provenance
+- [ ] **BOOT-03**: Baseline OBB and pose models trained from store-assembled datasets and registered with model lineage
+- [ ] **BOOT-04**: Temporal split convention implemented — train/val split respects temporal holdout to prevent near-duplicate leakage
+- [ ] **BOOT-05**: `aquapose data exclude --reason TAG` adds reason tag to sample's tags JSON array alongside "excluded" tag; `data status` shows breakdown by reason tag; `SampleStore.exclude()` accepts optional `reason: str | None` parameter — no schema changes
+
+### Iteration Loop
+
+- [ ] **ITER-01**: Baseline pipeline run on short clip (~1 min) with diagnostic caching produces baseline metric snapshot
+- [ ] **ITER-02**: Pseudo-labels generated from baseline run, visually audited, and imported into store as `source=pseudo, round=1`
+- [ ] **ITER-03**: Round 1 models trained on manual + pseudo-label datasets (elastic augmentation on manual only) and registered
+- [ ] **ITER-04**: Round 1 pipeline run evaluated against baseline metrics; decision checkpoint on whether to proceed to round 2
+- [ ] **ITER-05**: Conditional round 2 executed if round 1 shows clear improvement (pseudo-label -> retrain -> evaluate)
+- [ ] **ITER-06**: A/B comparison — model trained with human-curated exclusions vs model trained with full uncurated pseudo-labels, quantifying the value of light human curation
+
+### Final Validation
+
+- [ ] **FINAL-01**: Full 5-minute pipeline run with best iteration models and full `aquapose eval` report
+- [ ] **FINAL-02**: Overlay videos generated for all 12 cameras from final run
+- [ ] **FINAL-03**: Summary document with metrics table (round 0 vs round 1 vs round 2 vs final), key observations, and known limitations
+
+## Future Requirements
+
+### Deferred
+
+- **SEG-ITER-01**: Segmentation model iteration (blocked by unresolved cross-camera orientation problem)
+- **EVAL-COMPARE-01**: Dedicated `aquapose eval --compare` command for round-over-round metric comparison
+- **VIZ-SIDEBY-01**: Side-by-side overlay video composition command
+- **PROV-01**: Per-round provenance summary CLI (`aquapose data summary`)
+- **FP-EST-01**: Detection false positive rate estimation from singleton analysis
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| Segmentation model iteration | Cross-camera orientation problem unresolved |
+| Calibration refinement | Deferred to v3.7 |
+| Automated iteration loop orchestration | Only 1-2 rounds; human judgment at checkpoints is more valuable |
+| Ground-truth evaluation against held-out annotations | Insufficient annotation budget (~50 images) |
+| Hyperparameter search for training | Bottleneck is data quality, not training hyperparameters |
+| Real-time eval dashboard | Training runs are 1-2 hours; text/JSON output suffices |
+| Documentation and publication artifacts | Deferred to v4.0 |
+| New pipeline features or architectural changes | Milestone focuses on exercising existing infrastructure |
+| Full-day recording support | Future milestone |
+
+## Traceability
+
+Which phases cover which requirements. Updated during roadmap creation.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| EVAL-01 | — | Pending |
+| EVAL-02 | — | Pending |
+| EVAL-03 | — | Pending |
+| EVAL-04 | — | Pending |
+| EVAL-05 | — | Pending |
+| EVAL-06 | — | Pending |
+| BOOT-01 | — | Pending |
+| BOOT-02 | — | Pending |
+| BOOT-03 | — | Pending |
+| BOOT-04 | — | Pending |
+| BOOT-05 | — | Pending |
+| ITER-01 | — | Pending |
+| ITER-02 | — | Pending |
+| ITER-03 | — | Pending |
+| ITER-04 | — | Pending |
+| ITER-05 | — | Pending |
+| ITER-06 | — | Pending |
+| FINAL-01 | — | Pending |
+| FINAL-02 | — | Pending |
+| FINAL-03 | — | Pending |
+
+**Coverage:**
+- v3.6 requirements: 20 total
+- Mapped to phases: 0
+- Unmapped: 20
+
+---
+*Requirements defined: 2026-03-06*
+*Last updated: 2026-03-06 after initial definition*

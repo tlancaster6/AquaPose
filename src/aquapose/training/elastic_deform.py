@@ -310,14 +310,15 @@ def generate_variants(
     ]
 
     variants: list[dict] = []
+    vis_coords = coords[visible]
     for tag, deform_fn, deform_angle in deform_specs:
-        deformed = deform_fn(coords, deform_angle)
-        # Only use visible keypoints as TPS control points to avoid
-        # invisible (0,0) coords colliding with corner anchors.
-        vis_mask = visible
-        warped = tps_warp_image(
-            image, coords[vis_mask], deformed[vis_mask], crop_w, crop_h
-        )
+        # Deform only visible keypoints so chord length (and thus amplitude)
+        # isn't polluted by invisible (0,0) coordinates.
+        deformed_vis = deform_fn(vis_coords, deform_angle)
+        # Reconstruct full coord array with invisible points unchanged.
+        deformed = coords.copy()
+        deformed[visible] = deformed_vis
+        warped = tps_warp_image(image, vis_coords, deformed_vis, crop_w, crop_h)
         labels = generate_deformed_labels(
             deformed, visible, crop_w, crop_h, lateral_pad
         )

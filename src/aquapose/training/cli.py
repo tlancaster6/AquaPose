@@ -181,6 +181,67 @@ def compare(
         click.echo(f"\nCSV exported to {csv_path}")
 
 
+@train_group.command("augment-elastic")
+@click.option(
+    "--input-dir",
+    required=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Source YOLO dataset with manual annotations (images/train + labels/train).",
+)
+@click.option(
+    "--output-dir",
+    required=True,
+    type=click.Path(path_type=Path),
+    help="Destination for augmented YOLO dataset.",
+)
+@click.option(
+    "--lateral-pad",
+    default=15.0,
+    type=float,
+    help="OBB lateral padding in pixels.",
+)
+@click.option(
+    "--min-angle",
+    default=10.0,
+    type=float,
+    help="Minimum deformation angle in degrees.",
+)
+@click.option(
+    "--max-angle",
+    default=30.0,
+    type=float,
+    help="Maximum deformation angle in degrees.",
+)
+@click.option(
+    "--preview/--no-preview",
+    default=True,
+    help="Generate preview grid PNG.",
+)
+def augment_elastic(
+    input_dir: Path,
+    output_dir: Path,
+    lateral_pad: float,
+    min_angle: float,
+    max_angle: float,
+    preview: bool,
+) -> None:
+    """Generate elastically deformed variants of manual pose annotations."""
+    from .elastic_deform import write_yolo_dataset
+
+    angle_range = (min_angle, max_angle)
+    write_yolo_dataset(input_dir, output_dir, lateral_pad, angle_range)
+
+    n_imgs = len(list((output_dir / "images" / "train").glob("*.jpg")))
+    click.echo(f"Wrote {n_imgs} images to {output_dir}")
+
+    if preview:
+        from .elastic_deform import generate_preview_grid
+
+        preview_path = output_dir / "preview_grid.png"
+        generate_preview_grid(input_dir, preview_path, lateral_pad, angle_range)
+        click.echo(f"Preview grid: {preview_path}")
+
+
 @train_group.command("seg")
 @click.option(
     "--data-dir",

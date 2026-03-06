@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
+
 import numpy as np
 
 from .geometry import format_obb_annotation, format_pose_annotation, pca_obb
@@ -311,3 +314,115 @@ def generate_variants(
         )
 
     return variants
+
+
+def parse_pose_label(
+    label_path: Path,
+    crop_w: int,
+    crop_h: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Parse a YOLO pose label file and extract keypoint coordinates.
+
+    Reads the first line of the label file in YOLO pose format:
+    ``cls cx cy w h x1 y1 v1 x2 y2 v2 ...`` with 6 keypoints.
+
+    Args:
+        label_path: Path to the ``.txt`` label file.
+        crop_w: Image width in pixels (for denormalization).
+        crop_h: Image height in pixels (for denormalization).
+
+    Returns:
+        Tuple of:
+        - coords: float64 array of shape ``(6, 2)`` with (x, y) in pixels.
+        - visible: bool array of shape ``(6,)``, True if visibility flag >= 1.
+    """
+    text = label_path.read_text().strip()
+    vals = [float(v) for v in text.split()]
+    # Skip cls, cx, cy, w, h (5 values), then read 6 keypoint triplets
+    kp_vals = vals[5:]
+    n_kpts = len(kp_vals) // 3
+    coords = np.zeros((n_kpts, 2), dtype=np.float64)
+    visible = np.zeros(n_kpts, dtype=bool)
+    for i in range(n_kpts):
+        x_norm = kp_vals[i * 3]
+        y_norm = kp_vals[i * 3 + 1]
+        v = kp_vals[i * 3 + 2]
+        coords[i] = [x_norm * crop_w, y_norm * crop_h]
+        visible[i] = v >= 1
+    return coords, visible
+
+
+def write_yolo_dataset(
+    input_dir: Path,
+    output_dir: Path,
+    lateral_pad: float,
+    angle_range: tuple[float, float] = (10.0, 30.0),
+) -> None:
+    """Generate a YOLO-format dataset with elastic deformation variants.
+
+    Reads images and pose labels from ``input_dir`` (YOLO format), generates
+    4 deformed variants per image, and writes originals + variants to
+    ``output_dir`` in YOLO format.
+
+    Args:
+        input_dir: Source directory with ``images/train/`` and ``labels/train/``.
+        output_dir: Destination directory for augmented dataset.
+        lateral_pad: OBB lateral padding in pixels.
+        angle_range: ``(min_angle, max_angle)`` in degrees.
+    """
+    import cv2
+    import yaml
+
+    img_in = input_dir / "images" / "train"
+    lbl_in = input_dir / "labels" / "train"
+
+    img_out = output_dir / "images" / "train"
+    lbl_out = output_dir / "labels" / "train"
+    img_out.mkdir(parents=True, exist_ok=True)
+    lbl_out.mkdir(parents=True, exist_ok=True)
+
+    for img_path in sorted(img_in.glob("*.jpg")):
+        stem = img_path.stem
+        lbl_path = lbl_in / f"{stem}.txt"
+        if not lbl_path.exists():
+            continue
+
+        # Read image
+        image = cv2.imread(str(img_path))
+        if image is None:
+            continue
+        crop_h, crop_w = image.shape[:2]
+
+        # Copy original
+        shutil.copy2(img_path, img_out / img_path.name)
+        shutil.copy2(lbl_path, lbl_out / lbl_path.name)
+
+        # Parse keypoints from label
+        coords, visible = parse_pose_label(lbl_path, crop_w, crop_h)
+
+        # Generate variants
+        variants = generate_variants(
+            image, coords, visible, crop_w, crop_h, lateral_pad, angle_range
+        )
+
+        for variant in variants:
+            tag = variant["variant_tag"]
+            # Write variant image
+            var_img_path = img_out / f"{stem}_{tag}.jpg"
+            cv2.imwrite(str(var_img_path), variant["image"])
+
+            # Write variant pose label
+            var_lbl_path = lbl_out / f"{stem}_{tag}.txt"
+            line = " ".join(str(round(v, 6)) for v in variant["pose_line"])
+            var_lbl_path.write_text(line + "\n")
+
+    # Write dataset.yaml
+    dataset_yaml = {
+        "path": str(output_dir.resolve()),
+        "train": "images/train",
+        "names": {0: "fish"},
+        "nc": 1,
+        "kpt_shape": [6, 3],
+    }
+    with open(output_dir / "dataset.yaml", "w") as f:
+        yaml.dump(dataset_yaml, f, default_flow_style=False)

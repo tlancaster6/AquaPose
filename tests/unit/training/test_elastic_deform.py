@@ -89,13 +89,12 @@ class TestDeformKeypointsSCurve:
 
         result = deform_keypoints_s_curve(collinear_keypoints, 20.0)
         lateral = result[:, 1] - collinear_keypoints[:, 1]
-        # S-curve (sin(pi*t)) produces single-lobe displacement before
-        # re-centering. After re-centering, the shape is preserved but shifted.
-        # The key property: all lateral displacements should not be zero
-        # (deformation is non-trivial).
+        # S-curve (sin(2*pi*t)) produces opposite-signed displacement in the
+        # first and second halves. The key property: first-half and second-half
+        # interior points should have opposite lateral sign.
         assert np.abs(lateral).max() > 0.1
-        # Endpoints should have equal displacement (symmetric sine)
-        np.testing.assert_allclose(lateral[0], lateral[5], atol=1e-6)
+        # Points near 1/4 and 3/4 should have opposite signs
+        assert np.sign(lateral[1]) != np.sign(lateral[4])
 
     def test_negative_amplitude_mirrors(self, collinear_keypoints: np.ndarray) -> None:
         from aquapose.training.elastic_deform import deform_keypoints_s_curve

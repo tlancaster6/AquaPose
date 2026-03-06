@@ -14,15 +14,16 @@ def deform_keypoints_c_curve(
     coords: np.ndarray,
     angle_deg: float,
 ) -> np.ndarray:
-    """Displace keypoints along a uniform circular arc.
+    """Displace keypoints along a uniform circular arc (C-shape bend).
 
-    Applies a C-curve deformation by bending the keypoint polyline into an arc
-    with the specified total bending angle. The centroid of the deformed points
-    matches the centroid of the original.
+    Applies lateral displacement following a parabolic profile (zero at
+    endpoints, maximum at midpoint) scaled by
+    ``chord_length * tan(angle_deg)``. This produces a single-direction
+    bend matching the amplitude convention used by ``deform_keypoints_s_curve``.
 
     Args:
         coords: Keypoint coordinates of shape ``(N, 2)`` in pixel space.
-        angle_deg: Signed total bending angle in degrees. Positive bends one
+        angle_deg: Signed bending angle in degrees. Positive bends one
             way, negative the other. Zero is identity.
 
     Returns:
@@ -31,14 +32,12 @@ def deform_keypoints_c_curve(
     if abs(angle_deg) < 1e-12:
         return coords.copy()
 
-    n = len(coords)
     # Compute chord direction and length
     chord_vec = coords[-1] - coords[0]
     chord_length = float(np.linalg.norm(chord_vec))
     if chord_length < 1e-12:
         return coords.copy()
 
-    # Unit vectors along and perpendicular to chord
     tangent = chord_vec / chord_length
     normal = np.array([-tangent[1], tangent[0]])
 
@@ -51,37 +50,15 @@ def deform_keypoints_c_curve(
         return coords.copy()
     t = cum_lengths / total_arc  # [0, 1]
 
-    total_angle_rad = np.radians(angle_deg)
-    half_angle = total_angle_rad / 2.0
+    # Pixel amplitude from angular parameter (same convention as S-curve)
+    a_px = chord_length * np.tan(np.radians(angle_deg))
 
-    # Radius of curvature
-    r = chord_length / (2.0 * np.sin(half_angle))
+    # Parabolic C-curve profile: 4*t*(1-t) is zero at endpoints, 1 at midpoint
+    displacement = a_px * 4.0 * t * (1.0 - t)
 
-    # Displacement along arc for each keypoint
-    # Map t to angle: theta(t) = -half_angle + t * total_angle
-    theta = -half_angle + t * total_angle_rad
-
-    # Arc position relative to center of arc
-    # x_arc = R * sin(theta), y_arc = R * (1 - cos(theta))
-    # Subtract the linear interpolation to get displacement only
-    x_along = r * np.sin(theta)
-    y_perp = r * (1.0 - np.cos(theta))
-
-    # Linear interpolation from start to end
-    x_linear = r * np.sin(-half_angle) + t * (
-        r * np.sin(half_angle) - r * np.sin(-half_angle)
-    )
-    y_linear = r * (1.0 - np.cos(-half_angle)) + t * (
-        r * (1.0 - np.cos(half_angle)) - r * (1.0 - np.cos(-half_angle))
-    )
-
-    dx_along = x_along - x_linear
-    dy_perp = y_perp - y_linear
-
-    # Build deformed coordinates
     deformed = coords.copy()
-    for i in range(n):
-        deformed[i] = coords[i] + dx_along[i] * tangent + dy_perp[i] * normal
+    for i in range(len(coords)):
+        deformed[i] = coords[i] + displacement[i] * normal
 
     # Re-center to preserve centroid
     centroid_shift = deformed.mean(axis=0) - coords.mean(axis=0)
@@ -131,8 +108,9 @@ def deform_keypoints_s_curve(
     # Pixel amplitude from angular amplitude
     a_px = chord_length * np.tan(np.radians(amplitude_deg))
 
-    # Sinusoidal displacement: sin(pi * t) has zero at endpoints, max at midpoint
-    displacement = a_px * np.sin(np.pi * t)
+    # Full-period sine: sin(2*pi*t) gives a true S-curve — zero at endpoints
+    # and midpoint, positive hump in the first half, negative in the second.
+    displacement = a_px * np.sin(2.0 * np.pi * t)
 
     deformed = coords.copy()
     for i in range(len(coords)):

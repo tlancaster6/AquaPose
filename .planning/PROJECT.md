@@ -108,7 +108,15 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ### Active
 
-(No active milestone -- use `/gsd:new-milestone` to start next)
+## Current Milestone: v3.6 Model Iteration & QA
+
+**Goal:** Run the pseudo-label retraining loop end-to-end, producing demonstrably better OBB detection and pose estimation models with full provenance tracking.
+
+**Target features:**
+- Extended evaluation metrics (percentiles, per-keypoint breakdown, curvature-stratified quality, track fragmentation)
+- Data store bootstrap (manual annotation import, baseline model training and registration)
+- 1-2 rounds of pseudo-label generation, retraining, and pipeline-level evaluation
+- Final full-scale validation run with showcase overlay videos and metrics comparison
 
 ### Out of Scope
 
@@ -239,4 +247,4 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Source priority upsert (manual > corrected > pseudo) | Higher-quality labels always win in dedup | ✓ Good -- correct precedence |
 
 ---
-*Last updated: 2026-03-06 after v3.5 Pseudo-Labeling milestone*
+*Last updated: 2026-03-06 after v3.6 Model Iteration & QA milestone started*

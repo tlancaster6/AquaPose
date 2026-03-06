@@ -492,6 +492,448 @@ class TestDataConvert:
         assert (pose_dir / "dataset.yaml").exists()
 
 
+def _import_samples(
+    runner: CliRunner,
+    project_config: Path,
+    yolo_dir: Path,
+    store: str,
+    source: str,
+) -> None:
+    """Helper to import samples into a store via CLI."""
+    runner.invoke(
+        cli,
+        [
+            "data",
+            "import",
+            "--config",
+            str(project_config),
+            "--store",
+            store,
+            "--source",
+            source,
+            "--input-dir",
+            str(yolo_dir),
+        ],
+    )
+
+
+def _get_project_dir(project_config: Path) -> Path:
+    """Resolve project_dir from config yaml."""
+    import yaml
+
+    return Path(yaml.safe_load(project_config.read_text())["project_dir"])
+
+
+@pytest.fixture
+def yolo_dir_large(tmp_path: Path) -> Path:
+    """Create a YOLO directory with 10 distinct samples for assembly tests."""
+    img_dir = tmp_path / "yolo_large" / "images" / "train"
+    lbl_dir = tmp_path / "yolo_large" / "labels" / "train"
+    img_dir.mkdir(parents=True)
+    lbl_dir.mkdir(parents=True)
+
+    for i in range(10):
+        img = np.zeros((64, 128, 3), dtype=np.uint8)
+        img[i, i] = 255
+        cv2.imwrite(str(img_dir / f"s_{i}.jpg"), img)
+        lbl_dir.joinpath(f"s_{i}.txt").write_text("0 0.1 0.1 0.9 0.1 0.9 0.9 0.1 0.9\n")
+
+    return tmp_path / "yolo_large"
+
+
+@pytest.fixture
+def yolo_dir_pseudo(tmp_path: Path) -> Path:
+    """Create a YOLO dir with pseudo-label samples (unique from yolo_dir_large)."""
+    img_dir = tmp_path / "yolo_pseudo" / "images" / "train"
+    lbl_dir = tmp_path / "yolo_pseudo" / "labels" / "train"
+    img_dir.mkdir(parents=True)
+    lbl_dir.mkdir(parents=True)
+
+    for i in range(5):
+        img = np.zeros((64, 128, 3), dtype=np.uint8)
+        img[50 + i, 50 + i] = 128
+        cv2.imwrite(str(img_dir / f"p_{i}.jpg"), img)
+        lbl_dir.joinpath(f"p_{i}.txt").write_text("0 0.2 0.2 0.8 0.2 0.8 0.8 0.2 0.8\n")
+
+    return tmp_path / "yolo_pseudo"
+
+
+class TestDataAssemble:
+    """Tests for `aquapose data assemble` command."""
+
+    def test_assemble_creates_dataset_directory(
+        self,
+        runner: CliRunner,
+        yolo_dir: Path,
+        project_config: Path,
+    ) -> None:
+        """Import samples, run assemble, verify YOLO directory with symlinks exists."""
+        _import_samples(runner, project_config, yolo_dir, "obb", "manual")
+
+        result = runner.invoke(
+            cli,
+            [
+                "data",
+                "assemble",
+                "--config",
+                str(project_config),
+                "--store",
+                "obb",
+                "--name",
+                "test_ds",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        project_dir = _get_project_dir(project_config)
+        ds_dir = project_dir / "training_data" / "obb" / "datasets" / "test_ds"
+        assert ds_dir.exists()
+        assert (ds_dir / "images" / "train").is_dir()
+        assert (ds_dir / "dataset.yaml").exists()
+
+    def test_assemble_with_source_filter(
+        self,
+        runner: CliRunner,
+        yolo_dir: Path,
+        yolo_dir_large: Path,
+        project_config: Path,
+    ) -> None:
+        """Assemble with --source pseudo, verify only pseudo samples included."""
+        _import_samples(runner, project_config, yolo_dir, "obb", "manual")
+        _import_samples(runner, project_config, yolo_dir_large, "obb", "pseudo")
+
+        result = runner.invoke(
+            cli,
+            [
+                "data",
+                "assemble",
+                "--config",
+                str(project_config),
+                "--store",
+                "obb",
+                "--name",
+                "pseudo_only",
+                "--source",
+                "pseudo",
+                "--val-fraction",
+                "0",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        project_dir = _get_project_dir(project_config)
+        ds_dir = project_dir / "training_data" / "obb" / "datasets" / "pseudo_only"
+        train_imgs = list((ds_dir / "images" / "train").iterdir())
+        assert len(train_imgs) == 10  # only pseudo samples
+
+    def test_assemble_with_min_confidence(
+        self,
+        runner: CliRunner,
+        project_config: Path,
+        tmp_path: Path,
+    ) -> None:
+        """Assemble with --min-confidence 0.5, verify low-confidence excluded."""
+        # Import with metadata
+        img_dir = tmp_path / "conf_yolo" / "images" / "train"
+        lbl_dir = tmp_path / "conf_yolo" / "labels" / "train"
+        img_dir.mkdir(parents=True)
+        lbl_dir.mkdir(parents=True)
+
+        for i in range(4):
+            img = np.zeros((64, 128, 3), dtype=np.uint8)
+            img[i * 5, i * 5] = 200
+            cv2.imwrite(str(img_dir / f"c_{i}.jpg"), img)
+            lbl_dir.joinpath(f"c_{i}.txt").write_text("0 0.5 0.5 0.1 0.1\n")
+
+        # Import with high confidence
+        runner.invoke(
+            cli,
+            [
+                "data",
+                "import",
+                "--config",
+                str(project_config),
+                "--store",
+                "obb",
+                "--source",
+                "pseudo",
+                "--input-dir",
+                str(tmp_path / "conf_yolo"),
+                "--metadata-json",
+                json.dumps({"confidence": 0.9}),
+            ],
+        )
+
+        # Import low-confidence samples with different content
+        img_dir2 = tmp_path / "low_yolo" / "images" / "train"
+        lbl_dir2 = tmp_path / "low_yolo" / "labels" / "train"
+        img_dir2.mkdir(parents=True)
+        lbl_dir2.mkdir(parents=True)
+
+        for i in range(2):
+            img = np.zeros((64, 128, 3), dtype=np.uint8)
+            img[30 + i, 30 + i] = 50
+            cv2.imwrite(str(img_dir2 / f"low_{i}.jpg"), img)
+            lbl_dir2.joinpath(f"low_{i}.txt").write_text("0 0.5 0.5 0.1 0.1\n")
+
+        runner.invoke(
+            cli,
+            [
+                "data",
+                "import",
+                "--config",
+                str(project_config),
+                "--store",
+                "obb",
+                "--source",
+                "pseudo",
+                "--input-dir",
+                str(tmp_path / "low_yolo"),
+                "--metadata-json",
+                json.dumps({"confidence": 0.2}),
+            ],
+        )
+
+        result = runner.invoke(
+            cli,
+            [
+                "data",
+                "assemble",
+                "--config",
+                str(project_config),
+                "--store",
+                "obb",
+                "--name",
+                "conf_ds",
+                "--min-confidence",
+                "0.5",
+                "--val-fraction",
+                "0",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        project_dir = _get_project_dir(project_config)
+        ds_dir = project_dir / "training_data" / "obb" / "datasets" / "conf_ds"
+        train_imgs = list((ds_dir / "images" / "train").iterdir())
+        assert len(train_imgs) == 4  # only high-confidence
+
+
+class TestDataStatus:
+    """Tests for `aquapose data status` command."""
+
+    def test_status_shows_both_stores(
+        self,
+        runner: CliRunner,
+        yolo_dir: Path,
+        project_config: Path,
+    ) -> None:
+        """Import into both stores, verify status output."""
+        _import_samples(runner, project_config, yolo_dir, "obb", "manual")
+        _import_samples(runner, project_config, yolo_dir, "pose", "pseudo")
+
+        result = runner.invoke(
+            cli,
+            ["data", "status", "--config", str(project_config)],
+        )
+        assert result.exit_code == 0, result.output
+        assert "obb" in result.output.lower()
+        assert "pose" in result.output.lower()
+        assert "3" in result.output  # 3 samples in each
+
+    def test_status_handles_missing_store(
+        self,
+        runner: CliRunner,
+        project_config: Path,
+    ) -> None:
+        """Run status when no store exists, verify graceful handling."""
+        result = runner.invoke(
+            cli,
+            ["data", "status", "--config", str(project_config)],
+        )
+        assert result.exit_code == 0, result.output
+        assert "no data" in result.output.lower()
+
+
+class TestDataList:
+    """Tests for `aquapose data list` command."""
+
+    def test_list_shows_summary(
+        self,
+        runner: CliRunner,
+        yolo_dir: Path,
+        project_config: Path,
+    ) -> None:
+        """Import samples, run list, verify output contains source counts."""
+        _import_samples(runner, project_config, yolo_dir, "obb", "manual")
+
+        result = runner.invoke(
+            cli,
+            ["data", "list", "--config", str(project_config), "--store", "obb"],
+        )
+        assert result.exit_code == 0, result.output
+        assert "manual" in result.output.lower()
+        assert "3" in result.output
+
+
+class TestDataExcludeInclude:
+    """Tests for `aquapose data exclude` and `aquapose data include` commands."""
+
+    def test_exclude_soft_deletes_samples(
+        self,
+        runner: CliRunner,
+        yolo_dir: Path,
+        project_config: Path,
+    ) -> None:
+        """Import, run exclude with sample IDs, verify excluded tag added."""
+        _import_samples(runner, project_config, yolo_dir, "obb", "manual")
+
+        project_dir = _get_project_dir(project_config)
+        store_db = project_dir / "training_data" / "obb" / "store.db"
+        with SampleStore(store_db) as store:
+            samples = store.query()
+            sid = samples[0]["id"]
+
+        result = runner.invoke(
+            cli,
+            [
+                "data",
+                "exclude",
+                "--config",
+                str(project_config),
+                "--store",
+                "obb",
+                "--ids",
+                sid,
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        with SampleStore(store_db) as store:
+            row = store.get(sid)
+            tags = json.loads(row["tags"])
+            assert "excluded" in tags
+
+    def test_include_reverses_exclude(
+        self,
+        runner: CliRunner,
+        yolo_dir: Path,
+        project_config: Path,
+    ) -> None:
+        """Exclude then include, verify excluded tag removed."""
+        _import_samples(runner, project_config, yolo_dir, "obb", "manual")
+
+        project_dir = _get_project_dir(project_config)
+        store_db = project_dir / "training_data" / "obb" / "store.db"
+        with SampleStore(store_db) as store:
+            samples = store.query()
+            sid = samples[0]["id"]
+
+        runner.invoke(
+            cli,
+            [
+                "data",
+                "exclude",
+                "--config",
+                str(project_config),
+                "--store",
+                "obb",
+                "--ids",
+                sid,
+            ],
+        )
+
+        result = runner.invoke(
+            cli,
+            [
+                "data",
+                "include",
+                "--config",
+                str(project_config),
+                "--store",
+                "obb",
+                "--ids",
+                sid,
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        with SampleStore(store_db) as store:
+            row = store.get(sid)
+            tags = json.loads(row["tags"])
+            assert "excluded" not in tags
+
+    def test_exclude_by_source(
+        self,
+        runner: CliRunner,
+        yolo_dir: Path,
+        project_config: Path,
+    ) -> None:
+        """Run exclude with --source filter instead of explicit IDs."""
+        _import_samples(runner, project_config, yolo_dir, "obb", "manual")
+
+        result = runner.invoke(
+            cli,
+            [
+                "data",
+                "exclude",
+                "--config",
+                str(project_config),
+                "--store",
+                "obb",
+                "--source",
+                "manual",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        project_dir = _get_project_dir(project_config)
+        store_db = project_dir / "training_data" / "obb" / "store.db"
+        with SampleStore(store_db) as store:
+            # All should be excluded
+            visible = store.query()
+            assert len(visible) == 0
+
+
+class TestDataRemove:
+    """Tests for `aquapose data remove` command."""
+
+    def test_remove_purge_hard_deletes(
+        self,
+        runner: CliRunner,
+        yolo_dir: Path,
+        project_config: Path,
+    ) -> None:
+        """Import, run remove --purge, verify files and DB rows gone."""
+        _import_samples(runner, project_config, yolo_dir, "obb", "manual")
+
+        project_dir = _get_project_dir(project_config)
+        store_db = project_dir / "training_data" / "obb" / "store.db"
+        with SampleStore(store_db) as store:
+            samples = store.query()
+            sid = samples[0]["id"]
+
+        result = runner.invoke(
+            cli,
+            [
+                "data",
+                "remove",
+                "--config",
+                str(project_config),
+                "--store",
+                "obb",
+                "--ids",
+                sid,
+                "--purge",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        with SampleStore(store_db) as store:
+            assert store.get(sid) is None
+            assert store.count() == 2  # 3 - 1
+
+
 class TestDataGroup:
     """Tests for the data CLI group registration."""
 

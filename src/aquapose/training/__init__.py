@@ -68,7 +68,9 @@ from .run_manager import (
     extract_dataset_provenance,
     parse_best_metrics,
     print_next_steps,
+    register_trained_model,
     snapshot_config,
+    update_config_weights,
     write_summary,
 )
 from .store import SampleStore
@@ -119,6 +121,7 @@ __all__ = [
     "pca_obb",
     "prep_group",
     "print_next_steps",
+    "register_trained_model",
     "reproject_spline_keypoints",
     "save_best_and_last",
     "snapshot_config",
@@ -129,6 +132,7 @@ __all__ = [
     "train_yolo_pose",
     "train_yolo_seg",
     "transform_keypoints",
+    "update_config_weights",
     "write_coco_keypoints",
     "write_comparison_csv",
     "write_summary",

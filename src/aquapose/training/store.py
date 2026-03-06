@@ -729,6 +729,78 @@ class SampleStore:
             "model_count": model_count,
         }
 
+    def register_model(
+        self,
+        run_id: str,
+        weights_path: str,
+        model_type: str,
+        metrics: dict | None = None,
+        dataset_name: str | None = None,
+        tag: str | None = None,
+    ) -> None:
+        """Register a trained model in the store.
+
+        Args:
+            run_id: Unique identifier for the training run.
+            weights_path: Path to the best model weights file.
+            model_type: Model type string (e.g. ``"obb"``, ``"pose"``).
+            metrics: Optional dict of training metrics (e.g. mAP50, mAP50-95).
+            dataset_name: Optional dataset name linking to the datasets table.
+            tag: Optional human-readable tag for this model.
+        """
+        conn = self._connect()
+        now = datetime.now(tz=UTC).isoformat()
+        conn.execute(
+            """INSERT OR REPLACE INTO models
+               (run_id, dataset_name, weights_path, model_type, metrics, tag, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                run_id,
+                dataset_name,
+                weights_path,
+                model_type,
+                json.dumps(metrics or {}),
+                tag,
+                now,
+            ),
+        )
+        conn.commit()
+
+    def list_models(self) -> list[dict]:
+        """List all registered models.
+
+        Returns:
+            List of model dicts with parsed JSON metrics, ordered by
+            created_at descending (most recent first).
+        """
+        conn = self._connect()
+        rows = conn.execute("SELECT * FROM models ORDER BY created_at DESC").fetchall()
+        results = []
+        for row in rows:
+            d = dict(row)
+            d["metrics"] = json.loads(d["metrics"])
+            results.append(d)
+        return results
+
+    def get_model(self, run_id: str) -> dict | None:
+        """Retrieve a model record by run_id.
+
+        Args:
+            run_id: The training run identifier.
+
+        Returns:
+            Model dict with parsed JSON metrics, or None if not found.
+        """
+        conn = self._connect()
+        row = conn.execute(
+            "SELECT * FROM models WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        d = dict(row)
+        d["metrics"] = json.loads(d["metrics"])
+        return d
+
     def _append_provenance(
         self,
         existing_json: str,

@@ -216,6 +216,103 @@ def write_summary(
     )
 
 
+def update_config_weights(
+    config_path: Path,
+    model_type: str,
+    weights_path: Path,
+) -> None:
+    """Update the project config YAML with new model weights path.
+
+    Maps model_type to config section: ``"obb"`` -> ``"detection"``,
+    ``"pose"`` -> ``"midline"``, ``"seg"`` -> ``"segmentation"``.
+
+    Args:
+        config_path: Path to the project config YAML file.
+        model_type: Model type string (``"obb"``, ``"pose"``, ``"seg"``).
+        weights_path: Path to the new best weights file.
+    """
+    section_map = {
+        "obb": "detection",
+        "pose": "midline",
+        "seg": "segmentation",
+    }
+    section = section_map.get(model_type, model_type)
+
+    with open(config_path) as f:
+        config = yaml.safe_load(f) or {}
+
+    if section not in config:
+        config[section] = {}
+    config[section]["weights_path"] = str(weights_path)
+
+    with open(config_path, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+    click.echo(
+        click.style(
+            f"Updated {config_path}: {section}.weights_path = {weights_path}",
+            bold=True,
+            fg="green",
+        )
+    )
+
+
+def register_trained_model(
+    config_path: Path,
+    run_dir: Path,
+    model_type: str,
+    best_weights: Path,
+    dataset_dir: Path | None = None,
+    tag: str | None = None,
+) -> None:
+    """Register a trained model in the store and update config.
+
+    Opens (or auto-creates) the SampleStore for the model type,
+    reads metrics from ``summary.json`` if available, registers the
+    model, and updates the project config with the new weights path.
+
+    Args:
+        config_path: Path to the project config YAML file.
+        run_dir: Path to the completed training run directory.
+        model_type: Model type string (``"obb"``, ``"pose"``, ``"seg"``).
+        best_weights: Path to the best model weights file.
+        dataset_dir: Optional dataset directory for lineage tracking.
+        tag: Optional human-readable tag for this model.
+    """
+    from .store import SampleStore
+
+    project_dir = resolve_project_dir(config_path)
+    store_path = project_dir / "training_data" / model_type / "store.db"
+
+    # Read metrics from summary.json if it exists
+    metrics: dict | None = None
+    summary_path = run_dir / "summary.json"
+    if summary_path.exists():
+        with open(summary_path) as f:
+            summary_data = json.load(f)
+        metrics = summary_data.get("metrics")
+
+    # Determine dataset_name from dataset_dir (use basename regardless of
+    # whether it's a store-managed dataset or an external directory)
+    dataset_name: str | None = None
+    if dataset_dir is not None:
+        dataset_name = dataset_dir.name
+
+    # Register in store
+    with SampleStore(store_path) as store:
+        store.register_model(
+            run_id=run_dir.name,
+            weights_path=str(best_weights),
+            model_type=model_type,
+            metrics=metrics,
+            dataset_name=dataset_name,
+            tag=tag,
+        )
+
+    # Update config
+    update_config_weights(config_path, model_type, best_weights)
+
+
 def print_next_steps(run_dir: Path, model_type: str, best_weights: Path) -> None:
     """Print suggested next steps after training completes.
 

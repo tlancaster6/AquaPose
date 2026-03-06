@@ -726,6 +726,103 @@ class TestAssemble:
         )
 
 
+class TestRegisterModel:
+    def test_register_model_inserts_row(
+        self,
+        store: SampleStore,
+    ) -> None:
+        """Register model with run_id, weights_path, model_type, metrics. Verify row in models table."""
+        store._connect()
+        store.register_model(
+            run_id="run_20260306_100000",
+            weights_path="/path/to/best.pt",
+            model_type="obb",
+            metrics={"mAP50": 0.8, "mAP50-95": 0.5},
+        )
+        conn = store._connect()
+        row = conn.execute(
+            "SELECT * FROM models WHERE run_id = ?", ("run_20260306_100000",)
+        ).fetchone()
+        assert row is not None
+        assert row["weights_path"] == "/path/to/best.pt"
+        assert row["model_type"] == "obb"
+        import json
+
+        metrics = json.loads(row["metrics"])
+        assert metrics["mAP50"] == 0.8
+
+    def test_register_model_with_dataset(
+        self,
+        store: SampleStore,
+        sample_image: Path,
+        sample_label: Path,
+    ) -> None:
+        """Register model linked to a dataset name. Verify FK."""
+        sid, _ = store.import_sample(sample_image, sample_label, "manual")
+        store.save_dataset("my_dataset", {"source": "manual"}, [sid], split_seed=42)
+
+        store.register_model(
+            run_id="run_20260306_100001",
+            weights_path="/path/to/best.pt",
+            model_type="obb",
+            dataset_name="my_dataset",
+        )
+        model = store.get_model("run_20260306_100001")
+        assert model is not None
+        assert model["dataset_name"] == "my_dataset"
+
+    def test_list_models_returns_all(
+        self,
+        store: SampleStore,
+    ) -> None:
+        """Register two models, list returns both ordered by created_at desc."""
+        store._connect()
+        store.register_model(
+            run_id="run_a",
+            weights_path="/a/best.pt",
+            model_type="obb",
+        )
+        store.register_model(
+            run_id="run_b",
+            weights_path="/b/best.pt",
+            model_type="pose",
+        )
+        models = store.list_models()
+        assert len(models) == 2
+        # Most recent first
+        assert models[0]["run_id"] == "run_b"
+        assert models[1]["run_id"] == "run_a"
+
+    def test_get_model_by_run_id(
+        self,
+        store: SampleStore,
+    ) -> None:
+        """Register model, get by run_id returns correct record."""
+        store._connect()
+        store.register_model(
+            run_id="run_x",
+            weights_path="/x/best.pt",
+            model_type="pose",
+            metrics={"mAP50": 0.9},
+            tag="test-tag",
+        )
+        model = store.get_model("run_x")
+        assert model is not None
+        assert model["run_id"] == "run_x"
+        assert model["weights_path"] == "/x/best.pt"
+        assert model["model_type"] == "pose"
+        assert model["metrics"]["mAP50"] == 0.9
+        assert model["tag"] == "test-tag"
+
+    def test_get_model_returns_none_for_missing(
+        self,
+        store: SampleStore,
+    ) -> None:
+        """Get model for nonexistent run_id returns None."""
+        store._connect()
+        assert store.get_model("nonexistent") is None
+
+
 class TestSummary:
     def test_summary_returns_counts(
         self,

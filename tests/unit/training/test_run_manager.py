@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import yaml
+
 from aquapose.training.run_manager import (
     create_run_dir,
     extract_dataset_provenance,
@@ -242,6 +243,126 @@ class TestExtractDatasetProvenance:
         dataset_dir.mkdir()
         result = extract_dataset_provenance(dataset_dir)
         assert isinstance(result, dict)
+
+
+class TestUpdateConfigWeights:
+    """Tests for update_config_weights."""
+
+    def test_update_config_weights_obb(self, tmp_path: Path) -> None:
+        """Create config.yaml with detection.weights_path, call update, verify field changed."""
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(
+            yaml.dump(
+                {
+                    "project_dir": str(tmp_path),
+                    "detection": {"weights_path": "/old/model.pt", "threshold": 0.5},
+                    "midline": {"weights_path": "/old/pose.pt"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        from aquapose.training.run_manager import update_config_weights
+
+        update_config_weights(config_path, "obb", Path("/new/best.pt"))
+        loaded = yaml.safe_load(config_path.read_text())
+        assert loaded["detection"]["weights_path"] == "/new/best.pt"
+
+    def test_update_config_weights_pose(self, tmp_path: Path) -> None:
+        """Create config.yaml with midline.weights_path, call update, verify field changed."""
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(
+            yaml.dump(
+                {
+                    "project_dir": str(tmp_path),
+                    "detection": {"weights_path": "/old/model.pt"},
+                    "midline": {"weights_path": "/old/pose.pt", "num_keypoints": 11},
+                }
+            ),
+            encoding="utf-8",
+        )
+        from aquapose.training.run_manager import update_config_weights
+
+        update_config_weights(config_path, "pose", Path("/new/pose_best.pt"))
+        loaded = yaml.safe_load(config_path.read_text())
+        assert loaded["midline"]["weights_path"] == "/new/pose_best.pt"
+
+    def test_update_config_preserves_other_fields(self, tmp_path: Path) -> None:
+        """Verify other config fields are not modified."""
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(
+            yaml.dump(
+                {
+                    "project_dir": str(tmp_path),
+                    "detection": {"weights_path": "/old/model.pt", "threshold": 0.5},
+                    "midline": {"weights_path": "/old/pose.pt", "num_keypoints": 11},
+                    "other_section": {"keep_me": True},
+                }
+            ),
+            encoding="utf-8",
+        )
+        from aquapose.training.run_manager import update_config_weights
+
+        update_config_weights(config_path, "obb", Path("/new/best.pt"))
+        loaded = yaml.safe_load(config_path.read_text())
+        assert loaded["detection"]["threshold"] == 0.5
+        assert loaded["midline"]["weights_path"] == "/old/pose.pt"
+        assert loaded["other_section"]["keep_me"] is True
+
+
+class TestRegisterTrainedModel:
+    """Tests for register_trained_model."""
+
+    def test_register_trained_model_autocreates_store(self, tmp_path: Path) -> None:
+        """Call register_trained_model when store.db doesn't exist, verify store created and model registered."""
+        # Create project structure with config
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(
+            yaml.dump(
+                {
+                    "project_dir": str(project_dir),
+                    "detection": {"weights_path": "/old/model.pt"},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        # Create run dir with summary.json
+        run_dir = project_dir / "training" / "obb" / "run_20260306_100000"
+        run_dir.mkdir(parents=True)
+        (run_dir / "summary.json").write_text(
+            json.dumps({"metrics": {"mAP50": 0.8, "mAP50-95": 0.5}}),
+            encoding="utf-8",
+        )
+
+        best_weights = run_dir / "best.pt"
+        best_weights.touch()
+
+        from aquapose.training.run_manager import register_trained_model
+
+        register_trained_model(
+            config_path=config_path,
+            run_dir=run_dir,
+            model_type="obb",
+            best_weights=best_weights,
+        )
+
+        # Verify store was auto-created
+        store_path = project_dir / "training_data" / "obb" / "store.db"
+        assert store_path.exists()
+
+        # Verify model was registered
+        from aquapose.training.store import SampleStore
+
+        with SampleStore(store_path) as store:
+            model = store.get_model("run_20260306_100000")
+            assert model is not None
+            assert model["weights_path"] == str(best_weights)
+
+        # Verify config was updated
+        loaded = yaml.safe_load(config_path.read_text())
+        assert loaded["detection"]["weights_path"] == str(best_weights)
 
 
 class TestPrintNextSteps:

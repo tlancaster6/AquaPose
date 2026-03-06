@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aquapose"
-version = "1.0.0"
-description = "3D fish pose estimation via differentiable refractive rendering"
+version = "1.1.0-dev.7"
+description = "3D fish pose estimation via refractive multi-view triangulation"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
@@ -26,14 +26,21 @@ classifiers = [
 
 dependencies = [
     "torch>=2.0",
+    "torchvision>=0.15",
     "numpy>=1.24",
     "opencv-python>=4.8",
     "scipy>=1.11",
+    "scikit-image>=0.21",
     "h5py>=3.9",
+    "aquacal",
+    "pycocotools>=2.0",
+    "ultralytics>=8.0",
+    "plotly>=5.18",
+    "click>=8.1",
+    "boxmot>=11.0",
+    "igraph>=0.11",
+    "leidenalg>=0.10",
 ]
-
-# pytorch3d must be installed separately (not on PyPI):
-#   pip install pytorch3d -f https://dl.fbaipubliccode.com/pytorch3d/packaging/wheels/{torch_version}/download.html
 
 [project.urls]
 Homepage = "https://github.com/tlancaster6/aquapose"
@@ -41,9 +48,8 @@ Documentation = "https://aquapose.readthedocs.io"
 Repository = "https://github.com/tlancaster6/aquapose"
 Issues = "https://github.com/tlancaster6/aquapose/issues"
 
-# Uncomment to add a CLI entry point:
-# [project.scripts]
-# aquapose = "aquapose.cli:main"
+[project.scripts]
+aquapose = "aquapose.cli:main"
 
 [tool.hatch.build.targets.sdist]
 exclude = [".planning/", ".claude/", ".hooks/"]
@@ -88,6 +94,7 @@ dependencies = ["python-semantic-release", "build"]
 [tool.pytest.ini_options]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "e2e: marks end-to-end tests (deselect with '-m \"not e2e\"')",
 ]
 
 [tool.ruff]

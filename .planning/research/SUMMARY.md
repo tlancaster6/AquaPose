@@ -1,204 +1,164 @@
 # Project Research Summary
 
-**Project:** AquaPose
-**Domain:** Multi-view 3D fish pose estimation via analysis-by-synthesis with differentiable refractive rendering
-**Researched:** 2026-02-19
-**Confidence:** MEDIUM (novel domain with no direct comparators; core primitives well-documented; refractive rendering + fish mesh combination is genuinely new)
+**Project:** AquaPose v3.4 Performance Optimization
+**Domain:** Performance optimization of a 12-camera synchronous CV pipeline (batching, vectorization, async I/O)
+**Researched:** 2026-03-05
+**Confidence:** HIGH
 
 ## Executive Summary
 
-AquaPose is a research-grade analysis-by-synthesis system for reconstructing the full 3D body shape and pose of cichlid fish from 13 synchronized overhead cameras. The domain has no direct comparators — existing tools (DLC+Anipose, DANNCE, SLEAP) handle multi-view reconstruction but assume standard pinhole cameras in air and output keypoints, not body shape. AquaPose's three distinguishing innovations are: (1) physically correct refractive projection through the air-water interface integrated into a differentiable renderer, (2) a parametric fish mesh model encoding midline curvature and cross-section geometry rather than discrete keypoints, and (3) shape-signature-based identity assignment enabling persistent tracking without appearance features. The recommended build order is strict: calibration and refractive projection validation must precede any optimization work, and single-fish validation must precede multi-fish extension.
+AquaPose v3.4 is a focused performance optimization milestone targeting a synchronous multi-camera YOLO inference pipeline that currently runs far below GPU utilization capacity. The core problem is architectural: every GPU-accelerated operation is invoked one image or one data element at a time, leaving the GPU idle roughly 70% of the time. The recommended approach is four independent optimizations applied in a dependency-ordered sequence: vectorize association scoring (5% of wall time, lowest risk), vectorize DLT triangulation (9% of wall time, medium risk), replace the seek-based frame source with a streaming prefetch source (12% of wall time, design-critical for correctness), and finally introduce batched YOLO inference for both detection and midline stages (approximately 70% of wall time, highest impact and complexity). All four changes are correctness-neutral — they must produce numerically equivalent output to the baseline, verified against cached ground truth using the existing `aquapose eval` harness.
 
-The recommended stack centers on PyTorch 2.4.1 + PyTorch3D 0.7.9 (installed from source) with CUDA 12.1. This specific version combination is the only configuration confirmed to work by PyTorch3D's official installation guide. The rest of the stack (Detectron2, SAM2, OpenCV MOG2, kornia, filterpy, h5py) is well-established for this domain and presents low integration risk. The single largest installation risk is the 5-version gap between current PyTorch (2.10.0) and what PyTorch3D officially supports (2.4.x); the mitigation is to pin PyTorch at 2.4.1 for all development and not upgrade until PyTorch3D publishes a compatible release.
+The critical insight from combined research is that each optimization is isolated to a specific component boundary and leaves all downstream interfaces unchanged. `PipelineContext` field types, `Stage` protocol signatures, the evaluation infrastructure, and the HDF5 output format are entirely untouched. This isolation is the feature that makes the four phases independently executable and low-risk. The architectural anti-patterns to avoid are well-documented: do not change context field types, do not attempt cross-stage batching, do not share `VideoCapture` objects across threads, and do not store Ultralytics `Results` objects rather than immediately extracting CPU numpy arrays.
 
-The most critical risk for scientific validity is the camera geometry: 13 top-down cameras with nearly parallel optical axes create a degenerate Z-reconstruction problem. Reprojection error in 2D can look excellent (< 2px) while Z estimates are wrong by centimeters. This must be quantified before any optimization code is written, by measuring 3D reconstruction accuracy on a physical reference object at multiple depths. A secondary risk is the refractive projection itself — implementing it as a depth-independent distortion correction (as standard OpenCV calibration does) will introduce systematic errors that invalidate the entire pipeline. The AquaCal library handles this correctly, but its differentiability must be verified before it is assumed to work with PyTorch autograd.
+The primary risks are correctness risks, not performance risks. Batch result-to-input index mapping errors silently corrupt all downstream reconstruction. OpenCV `VideoCapture` thread safety issues produce non-deterministic frame identity corruption. Vectorized DLT can produce numerically different inlier sets due to floating-point reordering and TF32 precision differences on Ampere+ GPUs. Each of these has a known mitigation pattern: lockstep batch index construction, single-threaded sequential frame reader feeding a queue, and numerical equivalence tests on real cached data (not synthetic). The existing `aquapose eval` stage-by-stage evaluation harness is the primary validation tool for all four phases.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The stack is organized around PyTorch as the sole deep learning framework throughout; mixing frameworks is not feasible because Detectron2, PyTorch3D, SAM2, and kornia are all PyTorch-native and gradient flow cannot cross framework boundaries. The differentiable rendering primitive is PyTorch3D's `SoftSilhouetteShader` + `MeshRasterizer`, which provides the soft probabilistic blending necessary for silhouette-fitting from scratch (hard rasterizers like nvdiffrast cannot be used here). Detection uses OpenCV MOG2 as the primary foreground detector with Detectron2 Mask R-CNN as the segmentation backbone; SAM2 is used offline for pseudo-label generation only and is not in the inference path.
+No new dependencies are required for v3.4. All four optimizations use libraries already present: PyTorch batched tensor operations (`torch.linalg.svd` with batch dimension, confirmed in official docs), Ultralytics batch predict API (`model.predict(list_of_numpy_arrays)` — confirmed in official docs), NumPy broadcasting for vectorized ray-ray distance computation, and Python's `threading.Thread` + `queue.Queue` for producer-consumer I/O overlap. PyTorch can be upgraded freely (the PyTorch3D version-pinning constraint was removed in the v3.0 pivot to direct triangulation).
 
 **Core technologies:**
-- Python 3.11 + PyTorch 2.4.1 + CUDA 12.1: The only confirmed-compatible baseline for PyTorch3D 0.7.9
-- PyTorch3D 0.7.9 (source install): The only production-grade differentiable silhouette renderer with PyTorch-native mesh structures
-- Detectron2 (source install): Mask R-CNN for instance segmentation; PointRend head available if boundary quality is insufficient
-- SAM2 (source install, offline only): Zero-shot pseudo-label generation with video propagation for annotation bootstrapping
-- OpenCV 4.13 (headless): MOG2 background subtraction, video I/O, 2D overlays
-- kornia >= 0.7: Differentiable Lovász-hinge IoU loss; avoids custom implementation of differentiable binary IoU
-- scipy >= 1.13: Epipolar ray intersection (Phase II), Hungarian assignment (Phase IV)
-- filterpy 1.4.4: Extended Kalman Filter for per-fish 3D tracking
-- h5py >= 3.11: Primary output format for per-frame pose trajectories
-- rerun-sdk >= 0.22: Primary debugging and QA visualization; synchronized multi-camera 2D + 3D
-
-**Critical version constraint:** Do not use PyTorch > 2.4.x until PyTorch3D publishes a new release with confirmed compatibility. PyTorch3D source builds against 2.5–2.10 are possible but require manual patches and have caused community reports of instability.
+- **PyTorch (any recent version):** GPU inference and batched linear algebra — `torch.linalg.svd` confirmed to support batch dimensions natively; TF32 default on Ampere+ GPUs requires explicit management
+- **Ultralytics >= 8.1:** Batch predict API accepts list of numpy arrays; result ordering guaranteed to match input order
+- **OpenCV / VideoCapture:** Frame I/O — NOT thread-safe; the prefetch design must use a single-threaded reader feeding a queue; `CAP_PROP_POS_FRAMES` seek inaccurate on H.264 content
+- **NumPy:** Vectorized ray-ray distance computation for association scoring
+- **Python `threading` + `queue`:** Producer-consumer pattern for frame prefetch overlap with GPU inference
 
 ### Expected Features
 
-AquaPose is a research tool, not a product. "Users" are the research team itself and the downstream behavioral biology pipeline. Table stakes are features whose absence makes the system scientifically invalid; differentiators constitute the novel research contribution.
+**Must have (table stakes — all four required for v3.4 milestone success):**
+- **Batched YOLO detection inference** — replace 12 single-image `model.predict()` calls per frame with one `detect_batch([frame_cam1, ..., frame_cam12])` call; expected 2-5x detection throughput
+- **Batched YOLO midline inference** — collect all crops across all cameras for a frame, call `model.predict(crops_list)` once, redistribute keypoints by (cam_id, det_idx); expected 3-8x midline throughput
+- **Vectorized DLT triangulation** — replace 15-iteration per-body-point loop with batched `torch.linalg.svd` over all body points simultaneously; expected 5-15x reconstruction throughput
+- **Frame I/O overlap with GPU inference** — `BatchFrameSource` sequential streaming with prefetch queue eliminates seek overhead and GPU idle time between frames; expected to eliminate ~12% wall-time gap
 
-**Must have (table stakes):**
-- Refractive differentiable renderer with physically correct Snell's law projection — the core mechanism; without this the novelty claim does not exist
-- Parametric fish mesh model (midline spline + swept ellipse cross-sections) — required by the optimizer; defines the shape space
-- Single-fish per-frame pose/shape optimization — the v1 deliverable
-- Multi-view silhouette extraction pipeline (MOG2 + Mask R-CNN) — produces the inputs to the optimizer
-- Cross-view holdout validation with reprojection IoU metric — required for scientific credibility
-- Per-frame 3D trajectory output (position, orientation, curvature) in HDF5/CSV — enables downstream biological analysis
+**Should have (add after v3.4 validation):**
+- **Vectorized pairwise association scoring** — vectorize per-frame loop in `score_tracklet_pair()` using batched numpy ops; only ~5% of wall time, add if profiling post-v3.4 warrants it
 
-**Should have (competitive / v1.x):**
-- Shape-pose decomposition separating identity-linked body plan from instantaneous pose — enables identity-by-shape
-- Multi-fish detection and parallel per-fish optimization — v2 deliverable
-- Identity assignment via shape signatures — the novel Re-ID mechanism; replaces appearance-based Re-ID
-- Occlusion handling with warm-start identity recovery — required for robust multi-fish tracking
-
-**Defer (v2+):**
-- Full-day continuous tracking (hours-long recordings with identity persistence)
-- Behavioral feature extraction library (tail-beat frequency, curvature, inter-fish distance, approach angle)
-- Sex-differentiated shape model (requires labeled morphometric training data)
-- Batch processing infrastructure for full experimental dataset
-
-**Explicit anti-features (do not build):**
-- Real-time processing — incompatible with analysis-by-synthesis optimization; batch offline
-- GUI annotation tool — use Label Studio + supervision for format conversion
-- Monocular (single-camera) reconstruction — geometrically ill-posed; biases architecture away from multi-view
-- Appearance-based Re-ID — commit to shape-signature identity first; adding appearance Re-ID creates two competing identity systems
+**Defer (v3.5+):**
+- TensorRT / ONNX export — high maintenance cost, batching alone likely delivers comparable gains
+- Multiprocessing pipeline parallelism — requires architectural restructuring, out of scope
+- GPU-accelerated video decode via decord/PyAV — add only after profiling confirms decode is still dominant post-threading
+- Parallel per-camera decode via `ProcessPoolExecutor` — IPC overhead likely negative ROI
 
 ### Architecture Approach
 
-The system is organized as a strict linear pipeline of five phases: Segmentation (Phase I) → 3D Initialization (Phase II) → Differentiable Refinement (Phase III) → Tracking and Identity (Phase IV) → Output and Visualization (Phase V). The critical architectural decision is how the refractive projection integrates with PyTorch3D: mesh vertices are pre-projected through the differentiable RefractiveProjector (Π_ref) before being handed to PyTorch3D's rasterizer, which then operates in distorted camera space. Gradients flow back from the silhouette loss through the rasterizer, through the pre-projected vertex positions, through Π_ref, and into the FishState parameters {p, ψ, κ, s}. This entire chain must be differentiable; breaking it at any point (e.g., using numpy inside Π_ref) silently breaks the optimizer without raising an error.
+The four optimizations fit into the existing 4-layer architecture (ChunkOrchestrator → PosePipeline → Stage implementations → FrameSource) without changing any public interfaces. The dominant pattern is "internal vectorization" — public method signatures remain identical, only the implementation changes. The exceptions are `YOLOOBBBackend` and the midline backends, which receive new `detect_batch()` and `process_batch()` methods respectively (the stage loops call these new methods instead of the single-item methods). One new class, `BatchFrameSource`, replaces `ChunkFrameSource` at the `build_stages()` factory injection point — it satisfies the existing `FrameSource` protocol so all stage code is unaffected.
 
-**Major components:**
-1. CalibrationLoader + RefractiveProjector — parses AquaCal JSON; exposes differentiable per-camera Π_ref; must be built and validated first
-2. InstanceSegmenter + KeypointExtractor — Detectron2 Mask R-CNN producing binary masks M_i^(j) per camera per fish per frame
-3. EpipolarInitializer — refractive ray intersection via scipy.optimize.least_squares to estimate FishState {p, ψ, κ=0, s} on first frame only
-4. FishMeshBuilder — pure PyTorch parametric mesh from FishState; midline spline + swept ellipses → watertight triangle mesh
-5. RefractiveRenderer + LossComputer — PyTorch3D MeshRasterizer + SoftSilhouetteShader; multi-objective loss (silhouette IoU + gravity prior + shape prior + temporal smoothness)
-6. PoseOptimizer — Adam with ~50–100 iterations per frame; warm-starts from previous frame's solution at 30fps
-7. MotionPredictor + AssignmentSolver — filterpy EKF + scipy Hungarian algorithm for frame-to-frame identity assignment
-8. TrajectoryWriter + Visualizer — h5py HDF5 output; rerun-sdk for live QA; pyvista for publication renders
+**Major components and changes:**
+1. **`YOLOOBBBackend`** — add `detect_batch(frames: list[np.ndarray]) -> list[list[Detection]]`; `DetectionStage.run()` restructured to collect frames then call batch method
+2. **`SegmentationBackend` / `PoseEstimationBackend`** — add `process_batch(crops: list[np.ndarray]) -> list[AnnotatedDetection | None]`; `MidlineStage.run()` restructured to collect crops then call batch method
+3. **`DltBackend`** — `_triangulate_body_point()` scalar loop replaced by `_triangulate_fish_vectorized()` tensor pass; `reconstruct_frame()` signature unchanged
+4. **`BatchFrameSource`** (new class in `core/types/frame_source.py`) — sequential streaming + background prefetch queue; replaces `ChunkFrameSource` in `build_stages()`
+5. **`score_tracklet_pair()` internals** — frame loop replaced with batched `cast_ray()` + `ray_ray_closest_point_batch()`; function signature unchanged
+6. **`triangulate_rays_batched()`** (optional new function in `calibration/projection.py`) — batched DLT primitive for the vectorized reconstruction path
 
-**Key patterns:**
-- Warm-start every frame from the previous frame's FishState (reduces iterations from ~500 to ~50–100)
-- Batch all N fish into a single GPU call (PyTorch3D batched Meshes + Cameras)
-- Design for N fish from day one — all function signatures accept lists; use `join_meshes_as_batch` not single-mesh APIs
-- Cross-view holdout: withhold 1–2 cameras from gradient computation; evaluate IoU on them as a generalization metric
+**What does not change:** `PipelineContext` field types, `Stage` protocol, `TrackingStage`, `AssociationStage` (calls `score_all_pairs()` optimized internally), `ReconstructionStage` (calls `backend.reconstruct_frame()` optimized internally), `ChunkOrchestrator`, `PosePipeline`, per-chunk pickle caching, `aquapose eval`, `aquapose tune`, `aquapose viz`.
 
 ### Critical Pitfalls
 
-1. **Non-differentiable refractive projection** — Implementing Π_ref using numpy or scipy breaks the gradient chain silently. The optimizer runs without error but physical gradients are lost. Implement Π_ref entirely in PyTorch (Newton-Raphson with fixed iterations using autograd-compatible operations). Verify AquaCal's differentiability before assuming it works with autograd.
+1. **Batch predict result-to-input mapping errors (P1)** — building the image batch list and the identity index list out of sync silently corrupts all downstream reconstruction. Mitigation: build `batch_index: list[tuple[str, int]]` in lockstep with the `images` list; assert `len(results) == len(batch_index)` immediately after every predict call; unit test with deliberate camera-skip to verify index round-trip.
 
-2. **Depth-independent refraction model** — Using OpenCV's standard distortion model to approximate refraction produces systematic depth-dependent errors (fish near tank floor reproject worse than near-surface fish). The error is a consistent 3D bias, not noise, and invalidates reconstruction. Implement full per-ray Snell's law projection tracing through air-glass-water interface with correct refractive indices.
+2. **OpenCV VideoCapture thread safety + seek inaccuracy (P3 + P4)** — `VideoCapture` objects are not thread-safe for concurrent access, and `CAP_PROP_POS_FRAMES` on H.264 video seeks to the nearest I-frame, not the exact requested frame. Both issues produce non-deterministic frame identity corruption. Mitigation: one dedicated reader thread owns all captures; sequential reads (no seeking) feed frames into a `queue.Queue`; inference thread only dequeues.
 
-3. **Silhouette-only fitting converges to wrong local minimum** — Silhouette IoU loss is highly non-convex. Top-down cameras cannot disambiguate head-tail orientation (180° flip produces nearly identical silhouette). Must implement multi-start optimization for first frame of each track (4–8 orientation initializations, select lowest loss). Add coarse keypoint loss (head tip, tail tip) if detectable. Temporal smoothness regularization resists single-frame escapes.
+3. **GPU tensor leak from storing Ultralytics Results (P8)** — `Results` objects hold references to live CUDA tensors; storing a list of Results before processing them accumulates GPU memory across batches until OOM. Mitigation: immediately extract to CPU numpy (`Detection` objects) for each result after predict; never store `Results` objects in a list.
 
-4. **Top-down camera Z-weakness not quantified** — 13 cameras with nearly parallel optical axes create degenerate Z reconstruction. 2D reprojection error can look excellent while Z is wrong by centimeters. Quantify theoretical Z uncertainty bound before writing any optimization code. Validate 3D reconstruction accuracy on a physical reference at 3+ known depths. Report X, Y, Z errors separately — never report only aggregate reprojection error.
+4. **Vectorized DLT numerical drift and TF32 (P5 + P6)** — batched SVD may produce different floating-point results than the per-point loop due to reduction order changes and TF32 precision (10 mantissa bits vs 23 for float32 on Ampere+ GPUs), which can flip outlier rejection decisions for body points near the residual threshold. Mitigation: test vectorized path against scalar path on real YH chunk cache data; check that inlier camera sets are identical (not just final 3D positions); document and preserve the TF32 state used when `outlier_threshold=10.0` was calibrated.
 
-5. **Single-fish architecture blocking v2 extension** — Building v1 with global state (one mask, one optimizer, one mesh object) requires a full rewrite at v2. Design for N fish from day one: parameterized Fish class with per-instance state, batch-first PyTorch3D mesh operations, detection returning a list of per-fish masks even when length is 1.
+5. **CUDA OOM from over-batching (P2)** — 12 cameras at 1600x1200 is ~70 MB per frame batch; dense fish scenes can trigger OOM mid-chunk, aborting the entire chunk. Mitigation: make batch sizes configurable (`detection_batch_frames`, `midline_batch_crops`); wrap `model.predict()` in a try/except that catches `OutOfMemoryError`, halves batch, and retries; never hardcode batch size.
 
 ## Implications for Roadmap
 
-Based on combined research, a 5-phase build order is indicated by strict data dependencies and the need for validation gates before proceeding:
+Based on the architecture research's explicit build-order recommendation, combined with pitfall severity and feature dependencies, the following phase structure is strongly recommended.
 
-### Phase 1: Calibration and Refractive Geometry Foundation
-**Rationale:** Everything downstream depends on a working, differentiable, validated RefractiveProjector. No optimization code is scientifically meaningful until the camera model is correct. Building this first prevents propagating a subtle calibration error through the entire system.
-**Delivers:** CalibrationLoader parsing AquaCal JSON; differentiable RefractiveProjector (Π_ref) implementing per-ray Snell's law in PyTorch; unit tests covering central rays and edge-field rays at 30–48° incidence; validation showing < 1px reprojection error on known 3D points; quantified Z-uncertainty bounds for the 13-camera top-down geometry.
-**Addresses features:** Camera calibration (refractive) [table stakes]
-**Avoids pitfalls:** Non-differentiable Π_ref (Pitfall 1), depth-independent refraction model (Pitfall 2), port tilt unmodeled (Pitfall 6), Newton-Raphson edge instability (Pitfall 4), deferred calibration validation (Architecture Anti-Pattern 4)
-**Research flag:** NEEDS RESEARCH — AquaCal's internal differentiability must be verified before assuming it integrates with autograd; the Newton-Raphson convergence behavior at near-critical angles needs empirical characterization on this rig's geometry.
+### Phase 1: Vectorized Association Scoring
 
-### Phase 2: Segmentation Pipeline
-**Rationale:** Segmentation is a prerequisite for both initialization and optimization; it produces the masks that drive every downstream phase. It can be built and validated independently of the rendering pipeline, which makes it an ideal early phase for parallelism with Phase 3 development.
-**Delivers:** MOG2-based foreground detection with shadow suppression; Detectron2 Mask R-CNN trained on annotated frames (bootstrapped with SAM2); per-frame binary masks M_i^(j) per camera per fish; per-sex, per-behavior recall validation (males, females, stationary, edge-of-frame).
-**Addresses features:** Multi-view silhouette extraction [table stakes]
-**Avoids pitfalls:** MOG2 female fish dropout (Pitfall 5); missed per-sex validation
-**Uses:** OpenCV 4.13 (MOG2), Detectron2, SAM2, supervision (format conversion), Label Studio (annotation QA)
-**Research flag:** STANDARD PATTERNS — Detectron2 Mask R-CNN training is well-documented; SAM2 pseudo-label generation workflow is documented in Meta's release. The main unknowns are rig-specific (female contrast, lighting conditions) which require empirical tuning, not research.
+**Rationale:** Lowest complexity, no dependencies on other phases, establishes the batched `cast_ray()` call pattern that reconstruction vectorization also uses. Good warm-up phase: only 5% of wall time but risk is low and the vectorized ray-ray distance primitive (`ray_ray_closest_point_batch`) is a clean standalone deliverable. Early termination semantics must be replicated exactly (P7 pitfall).
+**Delivers:** `score_tracklet_pair()` inner loop replaced with batched numpy ops; new `ray_ray_closest_point_batch()` function in `scoring.py`; score dict equivalence test on real YH chunk cache.
+**Addresses:** FEATURES.md vectorized association (differentiator, P2 priority)
+**Avoids:** P7 (early termination semantics change), P5 (numerical drift)
 
-### Phase 3: Single-Fish 3D Reconstruction (v1 Core)
-**Rationale:** This is the core novelty and the v1 scientific deliverable. It must be built as a complete single-fish pipeline before any multi-fish extension. The build order within this phase follows the architectural dependency graph: FishMeshBuilder → RefractiveRenderer → LossComputer → EpipolarInitializer → PoseOptimizer.
-**Delivers:** FishMeshBuilder producing watertight triangle meshes from FishState {p, ψ, κ, s}; RefractiveRenderer rendering per-camera silhouettes via Π_ref + PyTorch3D SoftSilhouetteShader; multi-objective LossComputer (L_sil + L_grav + L_shape + L_temp); EpipolarInitializer for first-frame cold start; PoseOptimizer (Adam, warm-start, multi-start for first frame); cross-view holdout validation showing IoU on held-out cameras.
-**Addresses features:** Differentiable silhouette renderer, parametric fish mesh, single-fish optimization, cross-view holdout validation [all table stakes]
-**Avoids pitfalls:** Silhouette local minima without multi-start (Pitfall 3), rotation gimbal lock (Pitfall 10), soft rasterizer hyperparameters (Pitfall 7), sequential camera rendering anti-pattern, Z-only reprojection validation
-**Uses:** PyTorch3D 0.7.9, kornia (differentiable IoU), scipy (epipolar initialization)
-**Research flag:** NEEDS RESEARCH — the specific sigma/gamma hyperparameters for PyTorch3D's soft rasterizer at this rig's fish pixel sizes are unknown and require empirical sweep. The interaction between the temporal loss term (L_temp) and warm-start stability at 30fps needs characterization. The head-tail disambiguation strategy (multi-start vs. keypoint loss) needs validation on actual footage.
+### Phase 2: Vectorized DLT Reconstruction
 
-### Phase 4: Trajectory Output and Validation
-**Rationale:** Complete the v1 pipeline by adding output storage and establishing the evaluation framework with 3D (not just 2D) ground truth metrics. This phase makes the system scientifically publishable and validates the core claim before scaling to multi-fish.
-**Delivers:** TrajectoryWriter with HDF5 output (per-fish, per-frame position, orientation, curvature, scale); 3D reconstruction accuracy metric validated on a physical reference object at 3+ depths; separate X/Y/Z error reporting; 2D overlay visualization via OpenCV; 3D QA visualization via rerun-sdk.
-**Addresses features:** Per-frame trajectory output, reprojection error metric [table stakes]
-**Avoids pitfalls:** Reprojection-only validation masking 3D failures (Pitfall 11); no ground truth measurement protocol
-**Uses:** h5py, rerun-sdk, pyvista (publication renders), matplotlib
-**Research flag:** STANDARD PATTERNS — HDF5 output and matplotlib analysis are fully documented. The main decision is the ground truth measurement protocol (physical target design), which is experimental design rather than software research.
+**Rationale:** No dependencies on I/O or inference batching phases; moderate complexity. The existing `RefractiveProjectionModel.cast_ray()` already accepts batched tensor inputs (confirmed by the spline residual step already using batched calls), making vectorization a natural extension. Architecture research confirms `reconstruct_frame()` public interface is unchanged.
+**Delivers:** `_triangulate_body_point()` scalar loop replaced by `_triangulate_fish_vectorized()`; optional `triangulate_rays_batched()` primitive in `calibration/projection.py`; numerical equivalence test on real YH chunk cache showing inlier sets identical and 3D points within 1e-4 m.
+**Addresses:** FEATURES.md vectorized DLT (P1 table stakes, 5-15x reconstruction throughput)
+**Avoids:** P5 (numerical drift from batched SVD), P6 (TF32 precision baseline documentation)
 
-### Phase 5: Multi-Fish Tracking and Identity (v2)
-**Rationale:** Only after v1 single-fish reconstruction is validated (cross-view holdout IoU meets threshold) does multi-fish extension make sense. Scaling to 9 fish requires the tracking and identity layers that were deliberately deferred.
-**Delivers:** Multi-fish batched optimization (9 fish per GPU call using PyTorch3D batched Meshes); MotionPredictor (filterpy EKF, 3D position + velocity state per fish); AssignmentSolver (scipy Hungarian with Mahalanobis cost + sex-penalty augmentation); InteractionHandler for merge-split events with N-fish topology constraint; shape-pose decomposition for shape-signature identity; identity persistence validation across simulated occlusion events.
-**Addresses features:** Shape-pose decomposition, multi-fish tracking, identity via shape signatures [v1.x targets]
-**Avoids pitfalls:** Single-fish architecture blocking v2 (Pitfall 9), shape/pose coupling (Pitfall 8)
-**Uses:** filterpy, scipy (Hungarian), scikit-learn (sex classification), PyTorch3D batched rendering
-**Research flag:** NEEDS RESEARCH — the shape-signature Re-ID approach has no direct precedent in the fish tracking literature. The clustering stability of shape parameters across individuals within the same sex class needs empirical validation before committing to it as the identity mechanism. The interaction handler logic for merge-split events in a 9-fish tank is complex and should be researched during phase planning.
+### Phase 3: Frame I/O Optimization (BatchFrameSource)
+
+**Rationale:** Should precede inference batching because prefetched frames available as a full batch enable maximum gain from Phase 4. The I/O path is correctness-critical: OpenCV thread safety and seek inaccuracy pitfalls (P3, P4) mean the design must be settled before any code is written. Sequential-read-into-queue is the only safe design.
+**Delivers:** `BatchFrameSource` class implementing `FrameSource` protocol with background decode thread and bounded queue; replaces `ChunkFrameSource` in `build_stages()`; eliminates seek overhead and GPU idle gaps; memory-bounded prefetch (3-5 frame buffer depth, configurable).
+**Addresses:** FEATURES.md frame I/O overlap (P1 table stakes, ~12% wall-time elimination)
+**Avoids:** P3 (VideoCapture thread safety), P4 (CAP_PROP_POS_FRAMES seek inaccuracy)
+
+### Phase 4: Batched YOLO Inference (Detection + Midline)
+
+**Rationale:** Highest impact (~70% of wall time) and highest complexity. Benefits from Phase 3 prefetch (frames available as full-batch input), but delivers meaningful gains even without it (batching across 12 cameras for one frame is already a major improvement over one-at-a-time). Detection batching should be implemented and validated before midline batching because detection is simpler (fixed input count = n_cameras per frame; all full frames). Midline batching is more complex (variable crop count, per-detection affine transforms, (cam_id, det_idx) index reconstruction).
+**Delivers:** `YOLOOBBBackend.detect_batch()`; restructured `DetectionStage.run()`; `SegmentationBackend.process_batch()` / `PoseEstimationBackend.process_batch()`; restructured `MidlineStage.run()`; configurable `detection_batch_frames` and `midline_batch_crops` config fields; OOM recovery via try/except batch-size halving.
+**Addresses:** FEATURES.md batched YOLO detection (P1) and batched YOLO midline (P1) — together the dominant bottleneck
+**Avoids:** P1 (batch index mapping), P2 (CUDA OOM), P8 (GPU tensor leak)
 
 ### Phase Ordering Rationale
 
-- **Calibration first:** The RefractiveProjector is a shared dependency for every subsequent phase; errors here compound downstream. Validating it first eliminates the largest source of systemic bias.
-- **Segmentation second:** Masks are required by initialization and optimization; building and validating the segmentation pipeline in parallel with Phase 3 mesh/rendering development saves calendar time without creating blocking dependencies.
-- **Single-fish before multi-fish:** The feature dependency graph is explicit — multi-fish tracking requires reliable single-fish reconstruction, and identity-by-shape requires shape-pose decomposition which requires a working single-fish mesh optimization.
-- **Output and validation before scaling:** Establishing the 3D evaluation framework during v1 prevents inheriting unvalidated reconstruction into the more complex multi-fish system.
-- **Multi-fish last:** The identity mechanism (shape signatures) is the highest-risk novel contribution. Deferring it until v1 is proven reduces the risk that identity failures are confused with reconstruction failures during debugging.
+- Phases 1 and 2 are independent and could run in parallel but are sequenced to keep each phase focused and its correctness tests clean.
+- Phase 3 precedes Phase 4 because the prefetch source design directly enables the "collect full frame batch" loop structure in `DetectionStage`. Phase 4 delivers gains even without Phase 3, but Phase 3 maximizes those gains.
+- The sequence from lowest-risk to highest-risk matches the sequence from smallest impact to largest: each phase is a validated foundation for the next.
+- The correctness validation harness (`aquapose eval`) is available for every phase; no phase should be declared complete without a passing stage-level evaluation run on real YH chunk data.
 
 ### Research Flags
 
-Phases likely needing deeper research during planning:
-- **Phase 1 (Calibration):** AquaCal's internal PyTorch differentiability needs verification; Newton-Raphson convergence characterization at near-critical angles is rig-specific.
-- **Phase 3 (Reconstruction Core):** PyTorch3D soft rasterizer hyperparameter tuning; head-tail disambiguation strategy; temporal loss stability with warm-start.
-- **Phase 5 (Multi-Fish / Identity):** Shape-signature Re-ID stability across individuals has no direct literature precedent; merge-split interaction handling logic is complex.
+Phases requiring careful in-codebase verification before coding (not deeper external research — the patterns are well-established):
+- **Phase 3 (BatchFrameSource):** Confirm that `ChunkFrameSource`'s `read_frame(global_idx)` seek pattern is the sole I/O path exercised during a chunk run. Verify that `VideoFrameSource` has no internal position-tracking state that would conflict with sequential background-thread reading.
+- **Phase 4 (Batched YOLO):** Confirm Ultralytics result ordering guarantee on the exact pinned version in `pyproject.toml`. Verify batch predict behavior when all input images are the same resolution (no internal padding asymmetry across cameras of same size).
 
-Phases with standard patterns (skip research-phase):
-- **Phase 2 (Segmentation):** Detectron2 + SAM2 workflow is well-documented; unknowns are empirical (rig-specific), not conceptual.
-- **Phase 4 (Output and Validation):** HDF5 output and visualization are fully standard; the ground truth protocol is experimental design, not software research.
+Phases with standard, well-documented patterns (skip research-phase, implement directly):
+- **Phase 1 (Association vectorization):** NumPy broadcasting for ray-ray distance is a standard geometric computation. The only non-standard requirement is replicating early-termination semantics — document this as an explicit design constraint in the implementation plan.
+- **Phase 2 (DLT vectorization):** Batched SVD via `torch.linalg.svd` is documented and confirmed. Two-pass outlier rejection with masking is a standard pattern; the existing code already uses batched `cast_ray()` confirming the infrastructure supports it.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | MEDIUM-HIGH | PyTorch/PyTorch3D version pinning is HIGH confidence (official docs confirmed). Detectron2, SAM2, kornia are HIGH confidence. The 5-version compatibility gap between PyTorch 2.4.1 and current (2.10.0) introduces real installation risk. |
-| Features | MEDIUM | Table stakes and anti-features are HIGH confidence (competitor analysis is clear). Differentiators (refractive rendering, shape Re-ID) have no direct comparators, so feature scope is validated by domain logic rather than industry patterns. |
-| Architecture | HIGH | System design is confirmed by the detailed project spec in `.planning/proposed_pipeline.md`. PyTorch3D rendering architecture verified via official docs. Build order derives from clear data dependencies. |
-| Pitfalls | MEDIUM | Core optics and math pitfalls (refractive distortion, Z-weakness, silhouette ambiguity) are HIGH confidence from peer-reviewed literature. Multi-fish extension pitfalls are MEDIUM from analogous animal tracking work. Some implementation specifics (shape Re-ID stability) are LOW — flagged. |
+| Stack | HIGH | No new dependencies; all libraries verified against official docs. Ultralytics batch predict API confirmed. PyTorch batched linalg confirmed. |
+| Features | HIGH | Codebase read directly; profiling targets from PROJECT.md; Ultralytics batch API verified against docs. All four table-stakes features have confirmed implementation paths. |
+| Architecture | HIGH | Based on direct codebase analysis of all affected components. All interface boundaries explicitly mapped. Isolation of changes verified at each component boundary. |
+| Pitfalls | HIGH | OpenCV thread safety verified against multiple GitHub issues (4890, 9053, 20227, 24229). TF32 behavior verified against PyTorch official docs. GPU tensor leak pattern verified against Ultralytics issue history. |
 
-**Overall confidence:** MEDIUM
+**Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **AquaCal differentiability:** It is not confirmed whether AquaCal's RefractiveProjector exposes a PyTorch-differentiable `project()` method or requires reimplementation in PyTorch. This must be verified before Phase 1 is planned. If AquaCal is numpy-based, the refractive projection must be reimplemented from scratch in PyTorch — a significant scope addition.
-- **Z-uncertainty budget:** The theoretical Z reconstruction uncertainty for this specific rig (13 top-down cameras, baseline distances, operating depth) has not been quantified. This must be computed analytically in Phase 1 before committing to the analysis-by-synthesis approach for Z.
-- **Shape-signature discriminability:** It is unknown whether the shape parameters {κ, s} estimated for each fish in the tank are sufficiently distinct to serve as a biometric identifier across a full-day recording. This is the core scientific bet of v2. The gap should be flagged in the roadmap and a validation experiment designed early in Phase 5.
-- **PyTorch3D sigma/gamma for this rig:** Optimal soft rasterizer hyperparameters depend on fish apparent size in pixels, which depends on camera distance and focal length. These values must be swept empirically during Phase 3 development.
-- **Female detection under worst-case conditions:** MOG2 recall for stationary female fish has not been measured. This is the most likely operational failure mode for Phase 2.
+- **TF32 baseline audit:** The hardware used to generate the original `outlier_threshold=10.0` tuning (from the YH grid search runs) has not been identified. Whether TF32 was enabled during that calibration determines the correct default for the vectorized path. Resolve by checking the machine configuration in the YH run metadata before Phase 2 coding begins.
+- **Dense-scene OOM boundary:** The CUDA OOM threshold for the 12-camera x 1600x1200 setup is not profiled. The conservative default for `detection_batch_frames` should be 1 (current behavior). Establish the safe working batch size empirically at the start of Phase 4 on real hardware.
+- **YH AVI codec:** Whether the YH rig records H.264 or MJPEG (all-keyframes) determines whether the `CAP_PROP_POS_FRAMES` seek inaccuracy pitfall (P4) applies to the existing recordings. Verify codec before finalizing Phase 3 design — thread safety is a concern regardless, but seek accuracy is codec-dependent.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- PyTorch3D INSTALL.md — version compatibility matrix (PyTorch 2.4.1 + PyTorch3D 0.7.9 confirmed): https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md
-- PyTorch3D renderer docs — SoftSilhouetteShader, MeshRasterizer, batched API: https://pytorch3d.readthedocs.io/en/latest/modules/renderer/mesh/rasterizer.html
-- AquaPose proposed_pipeline.md — authoritative project spec (internal document)
-- Refractive Two-View Reconstruction for Underwater 3D Vision (IJCV 2019) — refractive model correctness requirements: https://link.springer.com/article/10.1007/s11263-019-01218-9
-- Multi-animal pose estimation and tracking with DeepLabCut (Nature Methods 2022) — competitor baseline: https://www.nature.com/articles/s41592-022-01443-0
-- WaterMask: Instance Segmentation for Underwater Imagery (ICCV 2023) — underwater segmentation precedent: https://openaccess.thecvf.com/content/ICCV2023/papers/Lian_WaterMask_Instance_Segmentation_for_Underwater_Imagery_ICCV_2023_paper.pdf
-- OpenCV MOG2 documentation: https://docs.opencv.org/4.x/d1/dc5/tutorial_background_subtraction.html
+- Direct codebase inspection: `YOLOOBBBackend`, `DetectionStage`, `MidlineStage`, `PoseEstimationBackend`, `DltBackend`, `score_all_pairs`, `VideoFrameSource`, `ChunkFrameSource`, `context.py`, `pipeline.py`
+- [Ultralytics Predict Docs](https://docs.ultralytics.com/modes/predict/) — batch inference API, result ordering guarantee
+- [torch.linalg.svd PyTorch Docs](https://docs.pytorch.org/docs/stable/generated/torch.linalg.svd.html) — batched SVD support confirmed
+- [torch.linalg.lstsq PyTorch Docs](https://docs.pytorch.org/docs/stable/generated/torch.linalg.lstsq.html) — batched least-squares, CUDA driver limitation noted
+- [PyTorch Numerical Accuracy Notes](https://docs.pytorch.org/docs/stable/notes/numerical_accuracy.html) — TF32 precision, batched matmul non-determinism
+- `/home/tlancaster6/Projects/AquaPose/.planning/PROJECT.md` — v3.4 milestone definition and profiling targets
 
 ### Secondary (MEDIUM confidence)
-- A Calibration Tool for Refractive Underwater Vision (arXiv 2024) — port tilt estimation, refractive calibration: https://arxiv.org/abs/2405.18018
-- VoGE: Differentiable Volume Renderer for Analysis-by-Synthesis (OpenReview) — confirms analysis-by-synthesis pattern: https://openreview.net/forum?id=AdPJb9cud_Y
-- SOD-SORT: Multi-fish tracking with EKF + Hungarian — confirms tracking pattern: https://arxiv.org/html/2507.06400v3
-- vmTracking: multi-animal pose tracking (PLOS Biology 2025): https://pmc.ncbi.nlm.nih.gov/articles/PMC11845028/
-- PyTorch3D GitHub issues #1626, #905, #1855 — soft rasterizer hyperparameter behavior: https://github.com/facebookresearch/pytorch3d/issues/1626
-- Adventures with Differentiable Mesh Rendering (Andrew Chan blog) — practical implementation gotchas
+- [Ultralytics YOLO11 Batch Inference Blog](https://www.ultralytics.com/blog/using-ultralytics-yolo11-to-run-batch-inferences) — batch arg behavior, default size=1
+- [OpenCV multithreading with VideoCapture](https://nrsyed.com/2018/07/05/multithreading-with-opencv-python-to-improve-video-processing-performance/) — threading pattern, GIL behavior for `cap.read()`
+- [YOLOv8 Batch Inference Speed Analysis](https://dev-kit.io/blog/machine-learning/yolov8-batch-inference-speed-and-efficiency) — throughput scaling characteristics
+- [NumPy pairwise vectorization](https://towardsdatascience.com/how-to-vectorize-pairwise-dis-similarity-metrics-5d522715fb4e/) — broadcasting patterns for distance matrices
+- [PyTorch CUDA Memory Documentation](https://docs.pytorch.org/docs/stable/torch_cuda_memory.html) — `memory_summary`, cache behavior
 
-### Tertiary (LOW confidence)
-- Shape-signature identity for fish Re-ID — no direct precedent found; extrapolated from SMAL-based shape Re-ID for quadrupeds. Needs validation during Phase 5 planning.
-- PyTorch3D source build stability against PyTorch 2.5–2.10 — community reports in GitHub issues; no official confirmation. Treat as LOW until PyTorch3D publishes updated release.
+### Tertiary (verified issue reports)
+- [OpenCV Issue #4890](https://github.com/opencv/opencv/issues/4890) — CAP_PROP_POS_FRAMES seek inaccuracy (open since 2015)
+- [OpenCV Issue #9053](https://github.com/opencv/opencv/issues/9053) — frame seek not exact with ffmpeg backend
+- [OpenCV Issue #20227](https://github.com/opencv/opencv/issues/20227) — set+read differs from sequential read
+- [OpenCV Issue #24229](https://github.com/opencv/opencv/issues/24229) — VideoCapture thread lock absence
+- [Ultralytics Issue #4057](https://github.com/ultralytics/ultralytics/issues/4057) — CUDA OOM during inference
 
 ---
-*Research completed: 2026-02-19*
+*Research completed: 2026-03-05*
 *Ready for roadmap: yes*

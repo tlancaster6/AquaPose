@@ -1,477 +1,470 @@
 # Architecture Research
 
-**Domain:** Multi-view 3D animal pose estimation (analysis-by-synthesis, differentiable rendering)
-**Researched:** 2026-02-19
-**Confidence:** HIGH (system design confirmed by detailed project spec in `.planning/proposed_pipeline.md`; PyTorch3D rendering architecture verified via official docs)
+**Domain:** Performance optimization of multi-camera 3D pose estimation pipeline
+**Researched:** 2026-03-04
+**Confidence:** HIGH (based on direct codebase analysis)
 
----
+## Existing Architecture Overview
 
-## Standard Architecture
-
-### System Overview
+The AquaPose pipeline has a strict 3-layer architecture with a fourth coordination layer above it:
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                         OFFLINE / PRE-RUN                              │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │  CalibrationLoader (AquaCal)                                    │   │
-│  │  • Per-camera intrinsics + extrinsics                           │   │
-│  │  • Flat-plane refraction parameters (air-glass-water)           │   │
-│  │  • Produces: RefractiveProjector Π_ref per camera               │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-└────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                         PHASE I — SEGMENTATION                         │
-│  ┌──────────────┐   ┌──────────────────────┐   ┌───────────────────┐  │
-│  │ VideoReader  │──▶│  InstanceSegmenter   │──▶│  MaskStore        │  │
-│  │ (13 cameras) │   │  (Detectron2 /       │   │  M_i^(j) per      │  │
-│  │ 30 fps, sync │   │   SAM2 fine-tuned)   │   │  camera per fish  │  │
-│  └──────────────┘   └──────────────────────┘   └─────────┬─────────┘  │
-│                                                           │            │
-│                                                           ▼            │
-│                                              ┌────────────────────┐    │
-│                                              │ KeypointExtractor  │    │
-│                                              │ (head / body /     │    │
-│                                              │  tail from mask    │    │
-│                                              │  PCA / geometry)   │    │
-│                                              └────────┬───────────┘    │
-└───────────────────────────────────────────────────────┼────────────────┘
-                                                        │
-                                                        ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                      PHASE II — 3D INITIALIZATION                      │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │  EpipolarInitializer                                             │  │
-│  │  • Cast refractive rays per keypoint per camera                  │  │
-│  │  • Least-squares centroid solve (scipy) → p*, ψ*, s*            │  │
-│  │  • κ = 0 (straight body) first frame; warm-start thereafter     │  │
-│  │  Fallback: VoxelCarver (open3d) when keypoints are ambiguous    │  │
-│  └──────────────────────────────────────────────────────────────────┘  │
-│  Output: initial FishState S = {p, ψ, κ, s} per fish                  │
-└────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                    PHASE III — DIFFERENTIABLE REFINEMENT               │
-│                                                                        │
-│  ┌──────────────────┐   ┌────────────────────────────────────────┐     │
-│  │  FishMeshBuilder │──▶│  RefractiveRenderer                   │     │
-│  │  • Midline spline│   │  • Pre-project vertices through        │     │
-│  │    from ψ + κ    │   │    Π_ref (AquaKit, differentiable)    │     │
-│  │  • Swept ellipse │   │  • PyTorch3D MeshRasterizer            │     │
-│  │    cross-sections│   │    (zbuf + SoftSilhouetteShader)       │     │
-│  │  • Watertight    │   │  • One render per camera per fish      │     │
-│  │    triangle mesh │   └────────────────┬───────────────────────┘     │
-│  └──────────────────┘                   │                              │
-│                                         ▼                              │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │  LossComputer                                                    │  │
-│  │  • L_sil  : IoU(rendered silhouette, observed mask) per camera   │  │
-│  │  • L_grav : dorsal-up orientation prior                          │  │
-│  │  • L_shape: cross-section aspect ratio vs. species norm          │  │
-│  │  • L_temp : position/curvature acceleration penalty (frame ≥ 2) │  │
-│  │  • Camera weighting: angular diversity downweights clustered cams│  │
-│  └──────────────────────────────────────────────────────────────────┘  │
-│                                         │                              │
-│                                         ▼                              │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │  PoseOptimizer (Adam, ~50–100 iters/frame)                       │  │
-│  │  • Gradients flow: Loss → Renderer → Π_ref → FishState params   │  │
-│  │  • All fish batched in parallel on GPU                           │  │
-│  │  Output: refined FishState S* per fish per frame                 │  │
-│  └──────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                    PHASE IV — TRACKING AND IDENTITY                    │
-│  ┌─────────────────────┐   ┌───────────────────────────────────────┐   │
-│  │  MotionPredictor    │   │  AssignmentSolver                    │   │
-│  │  (EKF per track)    │──▶│  • Mahalanobis cost matrix           │   │
-│  │  • State: p, dp     │   │  • Hungarian algorithm               │   │
-│  │  • Anisotropic Q    │   │  • Sex-classification cost boost     │   │
-│  │    (σ_z > σ_xy)     │   │  • Gating threshold                  │   │
-│  └─────────────────────┘   └───────────────────────────────────────┘   │
-│                                                                        │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │  InteractionHandler                                              │  │
-│  │  • Merge overlapping detections → "interaction event"            │  │
-│  │  • Split on re-separation; re-assign by trajectory + sex        │  │
-│  │  • Global constraint: enforce exactly N fish at all times        │  │
-│  └──────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                      PHASE V — OUTPUT AND VISUALIZATION                │
-│  ┌──────────────────────┐   ┌──────────────────────────────────────┐   │
-│  │  TrajectoryWriter    │   │  Visualizer                         │   │
-│  │  (HDF5 via h5py,     │   │  • 2D overlay: project mesh into    │   │
-│  │   parquet via        │   │    cameras via Π_ref + OpenCV       │   │
-│  │   pyarrow/pandas)    │   │  • 3D scene: rerun-sdk or PyVista   │   │
-│  └──────────────────────┘   │  • Analysis plots: matplotlib       │   │
-│                             └──────────────────────────────────────┘   │
-└────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                        ChunkOrchestrator                             │
+│  Owns: chunk loop, ChunkHandoff, identity stitching, HDF5 output    │
+├──────────────────────────────────────────────────────────────────────┤
+│                         PosePipeline                                  │
+│  Owns: stage ordering, EventBus, lifecycle events, stage timing      │
+│  ┌────────────┐  ┌─────────────┐  ┌──────────────┐  ┌───────────┐  │
+│  │ Detection  │→ │  Tracking   │→ │ Association  │→ │ Midline   │  │
+│  │  Stage 1   │  │   Stage 2   │  │   Stage 3    │  │  Stage 4  │  │
+│  └────────────┘  └─────────────┘  └──────────────┘  └─────┬─────┘  │
+│                                                             ↓        │
+│                                         ┌──────────────────────────┐ │
+│                                         │   Reconstruction Stage 5 │ │
+│                                         └──────────────────────────┘ │
+├──────────────────────────────────────────────────────────────────────┤
+│                          Core Computation                             │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  Backends: YOLOOBBBackend, SegmentationBackend,               │  │
+│  │           PoseEstimationBackend, DltBackend                   │  │
+│  │  Scoring: score_all_pairs(), score_tracklet_pair()            │  │
+│  │  Types: Detection, Midline2D, Midline3D, Tracklet2D, etc.    │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+├──────────────────────────────────────────────────────────────────────┤
+│                    FrameSource / VideoFrameSource                     │
+│  Owns: OpenCV video I/O, undistortion, chunk windowing              │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Component Responsibilities
 
-| Component | Responsibility | Typical Implementation |
-|-----------|----------------|------------------------|
-| CalibrationLoader | Parse AquaCal JSON; expose per-camera intrinsics, extrinsics, refraction params | `aquacal` library; read once at startup |
-| RefractiveProjector | Map 3D world point → 2D image point via Snell's law at flat water surface | Differentiable PyTorch; Newton-Raphson + bisection fallback (from AquaMVS reference) |
-| VideoReader | Load synchronized multi-camera frames; present as batched tensors | `cv2.VideoCapture` or `torchvision.io`; one reader per camera |
-| InstanceSegmenter | Produce binary body masks M_i^(j) per camera per fish per frame | Detectron2 Mask R-CNN (ResNet-50-FPN); SAM2 for pseudo-label bootstrapping |
-| KeypointExtractor | Derive coarse 2D head/body/tail points from mask geometry | PCA of mask pixels; endpoint detection |
-| EpipolarInitializer | Estimate initial FishState from multi-view refractive ray intersections | `scipy.optimize.least_squares`; ray-to-point distance minimization |
-| VoxelCarver | Fallback initializer via multi-view visual hull in a local bounding box | `open3d` voxel grid; intersection of back-projected masks |
-| FishMeshBuilder | Generate watertight triangle mesh from FishState {p, ψ, κ, s} | Pure PyTorch; spline evaluation + swept ellipse cross-sections |
-| RefractiveRenderer | Render per-camera silhouettes from mesh via Π_ref + PyTorch3D rasterizer | `pytorch3d.renderer.MeshRasterizer` → `SoftSilhouetteShader`; vertices pre-projected through Π_ref |
-| LossComputer | Compute weighted multi-objective loss from rendered vs. observed masks | PyTorch operations; `kornia` for differentiable IoU if needed |
-| PoseOptimizer | Run gradient descent to minimize loss over FishState parameters | `torch.optim.Adam`; ~50–100 iterations per frame; batched over all fish |
-| MotionPredictor | Maintain per-fish EKF; predict next-frame position and covariance | `filterpy.kalman.ExtendedKalmanFilter`; 3D position + velocity state |
-| AssignmentSolver | Match optimized detections to tracks via Mahalanobis distance + Hungarian | `scipy.optimize.linear_sum_assignment`; sex-penalty augmented cost matrix |
-| InteractionHandler | Detect, manage, and resolve fish grouping events | Custom logic; topology constraint (N fish always) |
-| TrajectoryWriter | Persist per-fish per-frame state vectors and metadata | `h5py` HDF5 + `pandas`/`pyarrow` for analysis |
-| Visualizer | 2D video overlay and 3D scene rendering for QA and publication | `rerun-sdk` (live debug), `pyvista` (publication), `opencv` (video overlay) |
+| Component | Responsibility | Key Interface |
+|-----------|---------------|---------------|
+| ChunkOrchestrator | Chunk loop, identity stitching, HDF5 flush | Creates PosePipeline per chunk |
+| PosePipeline | Stage ordering, event emission, timing | `run(initial_context) -> PipelineContext` |
+| DetectionStage | Read frames, run per-frame per-camera YOLO-OBB | `run(context) -> context` |
+| TrackingStage | Per-camera OC-SORT across frames | `run(context, carry) -> (context, carry)` |
+| AssociationStage | Cross-camera Leiden clustering via ray-ray scores | `run(context) -> context` |
+| MidlineStage | Crop-extract + YOLO-seg/pose per detection | `run(context) -> context` |
+| ReconstructionStage | DLT triangulation + B-spline per fish per frame | `run(context) -> context` |
+| YOLOOBBBackend | Single-frame OBB detection | `detect(frame) -> list[Detection]` |
+| SegmentationBackend | Single-frame multi-detection seg | `process_frame(frame_idx, frame_dets, frames, camera_ids) -> dict[str, list[AnnotatedDetection]]` |
+| PoseEstimationBackend | Single-frame multi-detection pose | `process_frame(frame_idx, frame_dets, frames, camera_ids) -> dict[str, list[AnnotatedDetection]]` |
+| DltBackend | Single-frame multi-fish DLT triangulation | `reconstruct_frame(frame_idx, midline_set) -> dict[int, Midline3D]` |
+| VideoFrameSource | Sequential frame I/O, undistortion | `__iter__() -> (frame_idx, {cam_id: np.ndarray})` |
+| ChunkFrameSource | Windowed view of VideoFrameSource | `__iter__()` delegates to `read_frame()` — random-access seek per frame, no prefetch |
 
----
+## Four Optimization Targets: Integration Analysis
 
-## Recommended Project Structure
+### Target 1: Batched YOLO Inference (~70% of wall time, GPU util ~30%)
 
-```
-src/aquapose/
-├── calibration/           # Calibration loading and refractive geometry
-│   ├── __init__.py
-│   ├── loader.py          # AquaCal JSON parsing → camera model objects
-│   └── refractive.py      # RefractiveProjector: 3D→2D via Snell's law (PyTorch, differentiable)
-│
-├── segmentation/          # Phase I: instance segmentation and keypoint extraction
-│   ├── __init__.py
-│   ├── segmenter.py       # Detectron2 / SAM2 inference wrapper
-│   └── keypoints.py       # Mask-geometry keypoint extraction (head/body/tail)
-│
-├── initialization/        # Phase II: 3D pose initialization
-│   ├── __init__.py
-│   ├── epipolar.py        # Refractive ray-based centroid / heading solve
-│   └── voxel_carving.py   # Visual hull fallback via open3d
-│
-├── mesh/                  # Parametric fish body model
-│   ├── __init__.py
-│   ├── fish_model.py      # FishMeshBuilder: spline + swept ellipses → triangle mesh
-│   └── species.py         # Species-specific morphological parameters (aspect ratios, etc.)
-│
-├── rendering/             # Phase III: differentiable rendering
-│   ├── __init__.py
-│   ├── renderer.py        # RefractiveRenderer: Π_ref pre-projection + PyTorch3D rasterizer
-│   └── loss.py            # LossComputer: silhouette IoU, gravity, shape, temporal
-│
-├── optimization/          # Phase III: pose refinement loop
-│   ├── __init__.py
-│   └── optimizer.py       # PoseOptimizer: Adam loop, warm-start, per-fish batching
-│
-├── tracking/              # Phase IV: EKF + Hungarian assignment + interaction handling
-│   ├── __init__.py
-│   ├── kalman.py          # MotionPredictor: per-fish EKF (filterpy)
-│   ├── assignment.py      # AssignmentSolver: Mahalanobis cost matrix + Hungarian
-│   └── interactions.py    # InteractionHandler: merge/split + population constraint
-│
-├── output/                # Phase V: storage and visualization
-│   ├── __init__.py
-│   ├── writer.py          # TrajectoryWriter: HDF5 + parquet export
-│   └── visualizer.py      # 2D overlay, rerun-sdk 3D scene, matplotlib analysis
-│
-├── pipeline.py            # Top-level orchestrator: wires phases together, frame loop
-├── state.py               # FishState dataclass: {p, ψ, κ, s} + metadata
-└── __init__.py
+**Where the work happens:**
+
+Detection — `YOLOOBBBackend.detect(frame)` called once per camera per frame in `DetectionStage.run()`:
+
+```python
+for _frame_idx, frames in self._frame_source:
+    for cam_id in camera_ids:
+        frame_dets[cam_id] = self._detector.detect(frames[cam_id])  # one frame at a time
 ```
 
-### Structure Rationale
+Midline — `SegmentationBackend._process_detection()` or `PoseEstimationBackend._process_detection()` called once per detection in a nested camera × detection loop:
 
-- **calibration/**: Isolated because it is loaded once and shared read-only by all phases. The `refractive.py` module is the single source of truth for Π_ref and must be differentiable — keeping it separate prevents accidental non-differentiable reimplementations elsewhere.
-- **mesh/**: Separate from `rendering/` because the mesh builder is pure geometry (no rendering concern). Species parameters belong here so they can be swapped without touching the rendering or optimization code.
-- **rendering/**: Contains both the renderer and the loss because the loss is tightly coupled to rendered outputs (IoU of rendered silhouette vs. observed mask). Keeping them co-located avoids awkward data passing.
-- **optimization/**: Thin layer — just the Adam loop and warm-start logic. All complexity lives in `rendering/loss.py` and `mesh/`.
-- **tracking/**: Completely decoupled from rendering. Takes optimized 3D states as input, outputs identity-labeled states.
-- **output/**: Pure I/O. No domain logic. Can be extended without touching pipeline logic.
-- **pipeline.py**: The only file that imports across all sub-packages. Acts as the wiring point for integration tests.
+```python
+for cam_id in camera_ids:
+    for det in cam_dets:
+        ann = self._process_detection(det, frame, cam_id, frame_idx)  # one crop at a time
+```
 
----
+**Interface changes required:**
+
+Detection batching lives inside `YOLOOBBBackend`. The backend's public interface must grow a `detect_batch(frames: list[np.ndarray]) -> list[list[Detection]]` method. The stage loop restructures to collect all camera frames first, then call the batch method. Ultralytics supports `model.predict(source=[img1, img2, ...])` natively — each `Results` object in the returned list corresponds to one input image.
+
+Midline batching requires both backends to add a `process_batch()` method. The stage loop changes to collect all crops for all cameras and detections within a frame, run one `model.predict()`, then distribute results back to per-detection annotations.
+
+**What changes:**
+- `YOLOOBBBackend`: add `detect_batch(frames) -> list[list[Detection]]`
+- `DetectionStage.run()`: restructure inner loop — collect all frames, call `detect_batch()`, distribute
+- `SegmentationBackend` and `PoseEstimationBackend`: add `process_batch(crops) -> list[AnnotatedDetection | None]`
+- `MidlineStage.run()`: restructure inner loop — collect all crops, call `process_batch()`, distribute
+
+**What stays the same:** `Stage` protocol (`run(context) -> context`), all `PipelineContext` fields, crop extraction logic, post-processing (skeletonization, keypoint interpolation), output data structures.
+
+**Batching dimensions:** Detection: up to 13 cameras × N frames simultaneously. Midline: ~9 fish × ~5 confirmed cameras = ~45 crops per frame, significantly reduced by association filtering.
+
+**Isolation:** Changes stay inside `DetectionStage`, `YOLOOBBBackend`, `SegmentationBackend`, and `PoseEstimationBackend`. Nothing upstream or downstream changes.
+
+### Target 2: Frame I/O Optimization (~12% of wall time)
+
+**Where the work happens:**
+
+`ChunkFrameSource.__iter__()` calls `self._source.read_frame(global_idx)` for every frame. `VideoFrameSource.read_frame()` issues `cap.set(CAP_PROP_POS_FRAMES, idx)` (seek) then `cap.read()` for every camera, sequentially. The seek is the bottleneck — `ChunkFrameSource` wraps `VideoFrameSource` and forces random-access seek even though chunk processing is always sequential.
+
+```python
+# ChunkFrameSource.__iter__ — seek-based, no prefetch
+for local_idx in range(self.end_frame - self.start_frame):
+    global_idx = self.start_frame + local_idx
+    frames = self._source.read_frame(global_idx)  # seek + sequential-per-camera read
+    yield local_idx, frames
+```
+
+**Interface changes required:**
+
+The `FrameSource` protocol does not change. Detection and midline stages iterate with `for frame_idx, frames in self._frame_source:` which continues to work.
+
+Option A (minimal): Add prefetch threading inside `VideoFrameSource.read_frame()` — a background thread pool reads all cameras in parallel for the current frame.
+
+Option B (recommended): Add a `BatchFrameSource` new class implementing `FrameSource` that streams frames sequentially (no seek) with a background prefetch queue. It is injected at `build_stages()` instead of `ChunkFrameSource` when batched inference is active, so detection and midline see N frames available at once rather than one.
+
+**What changes:** New class `BatchFrameSource` in `core/types/frame_source.py`, or internal threading added to `VideoFrameSource`.
+
+**What stays the same:** `FrameSource` protocol, all stage code, `ChunkOrchestrator` (it already opens `VideoFrameSource` once for the run).
+
+**Isolation:** Fully isolated to `core/types/frame_source.py`. No stage code changes if `BatchFrameSource` satisfies the `FrameSource` protocol.
+
+### Target 3: Vectorized DLT Reconstruction (~9% of wall time)
+
+**Where the work happens:**
+
+`DltBackend._reconstruct_fish()` loops over body points (15 by default), calling `_triangulate_body_point()` for each:
+
+```python
+for i in range(n_body_points):
+    result = self._triangulate_body_point(i, cam_midlines, water_z)
+```
+
+`_triangulate_body_point()` constructs per-camera tensors one at a time, calls `cast_ray()` per camera per point, then `triangulate_rays()`. That is 15 body points × ~5 cameras × 2 triangulation passes ≈ 150+ Python iterations per fish per frame. The spline residual loop afterward also iterates per camera per body point.
+
+**Key observation:** `RefractiveProjectionModel.cast_ray()` and `.project()` already accept batched tensor inputs — the existing spline residual code calls `self._models[cid].project(spline_pts_3d)` where `spline_pts_3d` is shape `(n_body_points, 3)`. This means the vectorized call pattern is already used within `DltBackend`; extending it to the triangulation loop is a natural continuation.
+
+**Interface changes required:** None. The public `reconstruct_frame(frame_idx, midline_set) -> dict[int, Midline3D]` interface is unchanged. The vectorization is entirely inside `_triangulate_body_point()` (replaced with `_triangulate_fish_vectorized()`):
+
+```python
+# Vectorized approach sketch
+def _triangulate_fish_vectorized(self, cam_midlines, water_z):
+    # Stack all body points for all cameras: {cam_id: (N, 2)} pixel tensors
+    for cam_id in active_cams:
+        px_batch = torch.from_numpy(cam_midlines[cam_id].points).float()  # (N, 2)
+        origins[cam_id], dirs[cam_id] = self._models[cam_id].cast_ray(px_batch)  # (N, 3)
+    # Stack across cameras: (C, N, 3)
+    all_origins = torch.stack([origins[c] for c in active_cams])
+    all_dirs    = torch.stack([dirs[c]    for c in active_cams])
+    # Vectorized DLT over all N body points simultaneously -> (N, 3)
+    pts_3d = triangulate_rays_batched(all_origins, all_dirs)
+    # Vectorized reprojection residuals -> (C, N) for outlier masking
+    ...
+```
+
+**What changes:** `DltBackend._triangulate_body_point()` replaced by `_triangulate_fish_vectorized()`. Potentially a new `triangulate_rays_batched()` function in `calibration/projection.py`.
+
+**What stays the same:** `DltBackend.reconstruct_frame()`, `ReconstructionStage`, `PipelineContext`, all evaluation infrastructure.
+
+**Isolation:** Fully inside `DltBackend` internals (and optionally `calibration/projection.py` for the batched triangulation primitive).
+
+**Numerical equivalence:** The vectorized path must produce results within float tolerance of the scalar path. The reconstruction evaluator (`aquapose eval --stage reconstruction`) validates this automatically against cached data.
+
+### Target 4: Vectorized Association Scoring (~5% of wall time)
+
+**Where the work happens:**
+
+`score_all_pairs()` has three nested loops — camera pairs → tracklet_a × tracklet_b → shared frames. The inner `score_tracklet_pair()` processes shared frames one at a time:
+
+```python
+for frame_idx_in_shared, frame in enumerate(shared_frames):
+    pix_a = torch.tensor([[centroid_a[0], centroid_a[1]]], dtype=torch.float32)
+    pix_b = torch.tensor([[centroid_b[0], centroid_b[1]]], dtype=torch.float32)
+    origins_a, dirs_a = lut_a.cast_ray(pix_a)   # one pixel at a time
+    origins_b, dirs_b = lut_b.cast_ray(pix_b)   # one pixel at a time
+    dist, _ = ray_ray_closest_point(o_a, d_a, o_b, d_b)  # scalar numpy
+```
+
+**Interface changes required:** None. Function signatures stay identical. The internal implementation of `score_tracklet_pair()` is restructured:
+
+```python
+# Vectorized approach sketch
+def score_tracklet_pair(ta, tb, forward_luts, config, ...):
+    # Collect all shared-frame centroids at once
+    pix_a = torch.tensor([ta.centroids[frames_a[f]] for f in shared_frames])  # (T, 2)
+    pix_b = torch.tensor([tb.centroids[frames_b[f]] for f in shared_frames])  # (T, 2)
+    # One batched cast_ray call per tracklet
+    origins_a, dirs_a = lut_a.cast_ray(pix_a)  # (T, 3), (T, 3)
+    origins_b, dirs_b = lut_b.cast_ray(pix_b)  # (T, 3), (T, 3)
+    # Vectorized ray-ray distance computation
+    dists = ray_ray_closest_point_batch(origins_a, dirs_a, origins_b, dirs_b)  # (T,)
+    # Vectorized score computation (masking, summing)
+    ...
+```
+
+A new `ray_ray_closest_point_batch(origins_a, dirs_a, origins_b, dirs_b) -> torch.Tensor` function is needed, implementing the same analytic formula but operating on `(T, 3)` inputs.
+
+**What changes:** `score_tracklet_pair()` internals, new `ray_ray_closest_point_batch()` function in `scoring.py`.
+
+**What stays the same:** `score_all_pairs()` signature, `AssociationStage`, `PipelineContext`, all downstream stages.
+
+**Isolation:** Fully inside `core/association/scoring.py`.
+
+## Data Flow: Baseline vs Optimized
+
+### Baseline
+
+```
+ChunkFrameSource (seek-based, per-frame random access)
+    ↓ one frame at a time
+DetectionStage
+    ↓ for each camera: detector.detect(single_frame)  [1 GPU call / camera / frame]
+    ↓ → context.detections
+TrackingStage (unchanged)
+    ↓ → context.tracks_2d
+AssociationStage
+    ↓ score_all_pairs() → nested loops, per-frame scalar ray-ray
+    ↓ → context.tracklet_groups
+MidlineStage
+    ↓ for each frame, each camera, each detection:
+    ↓     extract crop → model.predict(single_crop) [1 GPU call / detection]
+    ↓ → context.annotated_detections
+ReconstructionStage
+    ↓ for each fish: for each body point: _triangulate_body_point() scalar loops
+    ↓ → context.midlines_3d
+```
+
+### Optimized
+
+```
+BatchFrameSource (sequential streaming, prefetch queue, parallel camera reads)
+    ↓ batches of N frames at a time
+DetectionStage (batched)
+    ↓ detector.detect_batch([frame_cam1, ..., frame_cam13])
+    ↓     → one model.predict(13 images) call per frame (or N×13 per batch)
+    ↓ → context.detections (same structure)
+TrackingStage (unchanged)
+    ↓ → context.tracks_2d (unchanged)
+AssociationStage (vectorized scoring)
+    ↓ score_all_pairs() → batched cast_ray, vectorized ray-ray distances
+    ↓ → context.tracklet_groups (same structure)
+MidlineStage (batched)
+    ↓ collect all crops for a frame (all cameras, all detections)
+    ↓ backend.process_batch(all_crops) → one model.predict(~45 crops) per frame
+    ↓ → context.annotated_detections (same structure)
+ReconstructionStage (vectorized)
+    ↓ for each fish: _triangulate_fish_vectorized() — all body points in one tensor pass
+    ↓ → context.midlines_3d (same structure)
+```
+
+## Component Boundary Summary
+
+### No Interface Changes — Internals Only
+
+| Component | What changes internally | Public interface unchanged |
+|-----------|------------------------|---------------------------|
+| `DltBackend` | Body-point scalar loop → vectorized tensor pass | `reconstruct_frame(frame_idx, midline_set)` |
+| `score_tracklet_pair()` | Frame loop → batched `cast_ray()` + vectorized distance | Same signature |
+| `score_all_pairs()` | Possibly restructured outer pair loop | Same signature |
+
+### New Methods Added to Existing Classes
+
+| Class | New Method | Caller |
+|-------|-----------|--------|
+| `YOLOOBBBackend` | `detect_batch(frames: list[np.ndarray]) -> list[list[Detection]]` | `DetectionStage.run()` |
+| `SegmentationBackend` | `process_batch(crops: list[np.ndarray], ...) -> list[AnnotatedDetection | None]` | `MidlineStage.run()` |
+| `PoseEstimationBackend` | `process_batch(crops: list[np.ndarray], ...) -> list[AnnotatedDetection | None]` | `MidlineStage.run()` |
+
+### Stage-Level Loop Restructure (same `run()` signature)
+
+| Stage | What changes |
+|-------|-------------|
+| `DetectionStage.run()` | Inner loop collects frames first, then calls `detect_batch()` |
+| `MidlineStage.run()` | Inner loop collects all crops per frame, calls `process_batch()`, distributes results |
+
+### New Components
+
+| Component | Type | File | Purpose |
+|-----------|------|------|---------|
+| `BatchFrameSource` | New class, implements `FrameSource` | `core/types/frame_source.py` | Sequential streaming + prefetch; no seek overhead |
+| `ray_ray_closest_point_batch()` | New function | `core/association/scoring.py` | Vectorized ray-ray distance for `(T, 3)` tensor inputs |
+| `triangulate_rays_batched()` (optional) | New function | `calibration/projection.py` | Batched DLT triangulation over N body points simultaneously |
+
+### Unchanged Components
+
+| Component | Why unchanged |
+|-----------|--------------|
+| `PipelineContext` field types | Same field names, same data structures — only how values are computed changes |
+| `Stage` protocol | `run(context) -> context` unchanged |
+| `TrackingStage` | OC-SORT is per-camera sequential by design; not a bottleneck |
+| `AssociationStage` | Calls `score_all_pairs()` which is optimized internally |
+| `ReconstructionStage` | Calls `backend.reconstruct_frame()` which is optimized internally |
+| `ChunkOrchestrator` | Frame source swap is transparent via `FrameSource` protocol |
+| `PosePipeline` | No awareness of batching strategy |
+| Observers, EventBus | Unchanged |
+| Per-chunk pickle caching | Same `PipelineContext` structure — caching is unaffected |
+| `aquapose eval`, `aquapose tune`, `aquapose viz` | Read cached context — unaffected by how it was computed |
+
+## Suggested Build Order
+
+The four optimization targets are nearly independent. Dependencies are:
+
+- Association and reconstruction vectorization have no dependencies on each other or on I/O / batching.
+- Frame I/O optimization enables maximum gain from batched inference (prefetched frames available for batch collection), but batched inference yields gains even without it.
+- Batched inference is the highest complexity and highest impact, so it is built last.
+
+### Phase Order
+
+**Phase 1: Association vectorization** — 5% gain, lowest complexity, no dependencies
+
+`score_tracklet_pair()` frame loop → batched `cast_ray()` + new `ray_ray_closest_point_batch()`. Verify output is numerically equivalent to scalar path. Good warm-up: establishes the batched `cast_ray()` call pattern used again in reconstruction.
+
+**Phase 2: Reconstruction vectorization** — 9% gain, medium complexity, no dependencies
+
+`_triangulate_body_point()` scalar loop → `_triangulate_fish_vectorized()` tensor pass. The existing code already uses `cast_ray(batch)` in the spline residual step, confirming `RefractiveProjectionModel` supports this. Use the reconstruction evaluator (`aquapose eval --stage reconstruction`) on cached data to validate numerical equivalence before and after.
+
+**Phase 3: Frame I/O optimization** — 12% gain, low-to-medium complexity, should precede Phase 4
+
+`BatchFrameSource` replaces `ChunkFrameSource` in `build_stages()`. Background prefetch thread eliminates seek overhead. Parallel camera reads within each frame address the sequential-per-camera bottleneck. Must be built before Phase 4 so detection and midline stages can collect full frame batches rather than single frames.
+
+**Phase 4: Batched YOLO inference** — ~70% of wall time, highest complexity, benefits from Phase 3
+
+`YOLOOBBBackend.detect_batch()` + `DetectionStage` loop restructure, then `SegmentationBackend.process_batch()` / `PoseEstimationBackend.process_batch()` + `MidlineStage` loop restructure.
+
+### Dependency Graph
+
+```
+Phase 1: Association vectorization    (no dependencies — start immediately)
+    │
+    ↓ (patterns established)
+Phase 2: Reconstruction vectorization (no dependencies — can run in parallel with Phase 1)
+    │
+Phase 3: Frame I/O (BatchFrameSource) (no dependencies — enables Phase 4)
+    │
+    ↓
+Phase 4: Batched YOLO inference       (benefits from Phase 3 prefetch)
+```
+
+Phases 1 and 2 can be done in either order or in parallel. Phase 3 should precede Phase 4 for maximum benefit, but Phase 4 produces gains even without Phase 3 (batching across cameras within a single frame is already a significant improvement over one-at-a-time inference).
 
 ## Architectural Patterns
 
-### Pattern 1: Pre-Project Vertices Through Refraction, Then Rasterize
+### Pattern 1: Internal Vectorization
 
-**What:** Before passing a mesh to PyTorch3D's rasterizer, apply the refractive projection Π_ref to transform all vertices from 3D world coordinates into the distorted 2D camera space (as if the camera had standard pinhole intrinsics but in a refractive medium). The rasterizer then operates on these pre-projected vertices.
+**What:** Replace Python loops over small independent collections (body points, shared frames) with vectorized NumPy/PyTorch tensor operations. Public interface unchanged.
 
-**When to use:** Always. PyTorch3D's rasterizer expects camera-space coordinates; Π_ref cannot be expressed as a standard projection matrix because refraction is nonlinear. Pre-projecting vertices is the correct architectural boundary.
+**When to use:** When the loop body is pure math operating on independent elements (no per-element Python control flow mid-loop), and all inputs can be pre-collected into arrays. Both body-point triangulation and frame-level ray-ray scoring satisfy this.
 
-**Trade-offs:** Vertices are pre-projected in world space, so the rasterizer depth buffer (zbuf) reflects camera-frame depths, not world depths. Gradients flow back through the rasterizer's zbuf/bary_coords tensors into the pre-projected vertex positions, and from there through Π_ref into FishState parameters. This chain is differentiable as long as Π_ref has valid gradients (Newton-Raphson with PyTorch autograd satisfies this).
+**Trade-offs:** Outlier rejection (filter cameras below residual threshold) requires a mask-based approach rather than an early `continue`. For DLT: compute initial residuals vectorized, apply mask, re-triangulate inliers — this is a two-pass design but still far fewer Python iterations than the scalar loop.
 
-**Example:**
-```python
-def render_silhouette(mesh: Meshes, proj: RefractiveProjector, camera_idx: int) -> torch.Tensor:
-    # Pre-project all mesh vertices through refraction
-    verts_world = mesh.verts_padded()               # (B, V, 3)
-    verts_2d = proj.project(verts_world, camera_idx) # (B, V, 2) — differentiable
-    # Feed pre-projected vertices to PyTorch3D rasterizer
-    raster_out = rasterizer(build_camera_space_mesh(verts_2d, mesh.faces_padded()))
-    # SoftSilhouetteShader uses alpha channel from raster_out
-    return silhouette_shader(raster_out)             # (B, H, W, 1)
-```
+### Pattern 2: Backend Batch Extension
 
-### Pattern 2: Warm-Start Initialization (Per-Frame and Per-Track)
+**What:** Add a batch method alongside the existing single-item method. The stage loop is restructured into two passes — collect all inputs, then call the batch method once, then distribute results back to the original output structure.
 
-**What:** For all frames after the first, initialize the optimizer from the previous frame's optimized FishState rather than re-running Phase II. For first frame of each track only, run epipolar initialization.
+**When to use:** When the expensive operation (GPU inference) supports batched input natively (Ultralytics `model.predict(list_of_images)`), and surrounding logic (crop extraction, post-processing) is lightweight CPU work.
 
-**When to use:** Always at 30 fps. Fish move ~1–3 mm/frame (<3% body length), so the previous solution is a near-optimal starting point. This reduces optimizer iterations from ~500 (cold start) to ~50–100.
+**Trade-offs:** Stage loop structure changes significantly. The existing single-item methods can be kept as thin wrappers over the batch methods for backward compatibility in tests. The output structure (per-frame per-camera lists) does not change, so downstream stages see no difference.
 
-**Trade-offs:** Creates a temporal dependency that means Phase III cannot process frames in arbitrary order. For parallelism across time, frames must be processed sequentially per-fish, or a batch of recent frames must be available. This is not a concern for online streaming processing but complicates random-access reprocessing.
+### Pattern 3: Protocol-Transparent I/O Replacement
 
-**Example:**
-```python
-state = initial_state_from_phase_ii(frame_0)
-for frame_t in video_frames[1:]:
-    masks = segmenter.infer(frame_t)
-    state = optimizer.refine(state, masks, warm_start=True)  # previous state is init
-    writer.write(frame_t, state)
-```
+**What:** New class implementing the same `FrameSource` protocol, with different internal I/O strategy. Drop in at `build_stages()`.
 
-### Pattern 3: Batched Per-Fish GPU Parallelism
+**When to use:** When the bottleneck is in I/O and the consumer only uses the protocol interface. The `FrameSource` protocol provides clean separation — detection and midline stages do not know or care whether frames come from `ChunkFrameSource` or `BatchFrameSource`.
 
-**What:** Pack all N fish into a single GPU batch for the rendering and optimization step. Each fish occupies one batch element; all Adam steps are vectorized across the batch dimension.
-
-**When to use:** Phase III refinement. Fish are independent given fixed masks, so this is embarrassingly parallel. PyTorch3D Meshes and cameras support batched operations natively.
-
-**Trade-offs:** Requires all fish meshes and masks to fit in GPU memory simultaneously. With 9 fish, ~500-vertex meshes, and 13 cameras at moderate resolution, this is tractable. Watch memory usage when scaling to 9 fish × 13 cameras × high-resolution masks — each rasterizer forward pass stores ~48 bytes per face per pixel (per PyTorch3D docs).
-
-### Pattern 4: Cross-View Holdout Validation
-
-**What:** Reserve one or more cameras as held-out test views during optimization. Silhouette loss is computed only on training cameras; held-out camera IoU is logged but not used in the gradient.
-
-**When to use:** During development and hyperparameter tuning. Measures generalization of the 3D reconstruction to unseen viewpoints — a direct proxy for whether the 3D shape is correct rather than merely fitting the training views.
-
-**Trade-offs:** Reduces the number of gradient-informing views. With 13 cameras and ~3–5 cameras covering each fish, holding out 1–2 cameras per fish is safe. The held-out camera should be selected to maximally stress-test the weakest geometric constraint (typically a camera orthogonal to the fish's primary viewing plane).
-
----
-
-## Data Flow
-
-### Per-Frame Processing Flow
-
-```
-Video frames (13 cameras, synchronized)
-    │
-    ▼
-[InstanceSegmenter]
-    │ M_i^(j): binary masks per camera per fish
-    │ kp_i^(j): 2D keypoints (head, body, tail) per camera per fish
-    ▼
-[EpipolarInitializer]  ←── calibration (Π_ref per camera)
-    │ FishState S_0^(j) = {p, ψ, κ=0, s}  (frame 0 only)
-    │ OR: S_{t-1}^(j)  (warm start, frames 1+)
-    ▼
-[FishMeshBuilder]
-    │ Meshes M^(j): watertight triangle mesh per fish
-    ▼
-[RefractiveRenderer]  ←── calibration (Π_ref per camera)
-    │ Silhouettes R_i^(j): rendered alpha mask per camera per fish
-    ▼
-[LossComputer]  ←── M_i^(j) (observed masks)
-    │ L_total^(j): scalar loss per fish
-    ▼
-[PoseOptimizer] (Adam, ~50–100 iters, autograd through full chain)
-    │ S*^(j): refined FishState per fish
-    ▼
-[AssignmentSolver]  ←── EKF predictions {p̂^(j), P̂^(j)}
-    │ identity-labeled states: (fish_id, S*)
-    ▼
-[TrajectoryWriter / Visualizer]
-    │ HDF5 rows, 2D overlay video, 3D scene
-```
-
-### Gradient Flow (Phase III Critical Path)
-
-```
-L_total
-  └── L_sil (IoU loss on alpha channel)
-        └── SoftSilhouetteShader
-              └── MeshRasterizer (zbuf, bary_coords — gradients supported)
-                    └── pre-projected vertices (2D camera space)
-                          └── Π_ref (RefractiveProjector — PyTorch autograd)
-                                └── FishState parameters {p, ψ, κ, s}
-                                      ← gradients arrive here; Adam updates
-```
-
-L_grav, L_shape, L_temp feed directly into FishState parameters without passing through the renderer.
-
-### Key Data Structures
-
-| Structure | Shape / Type | Produced By | Consumed By |
-|-----------|-------------|-------------|-------------|
-| `masks` | `dict[cam_id, (H, W) bool tensor]` per fish | InstanceSegmenter | EpipolarInitializer, LossComputer |
-| `keypoints_2d` | `dict[cam_id, (3, 2) float]` per fish | KeypointExtractor | EpipolarInitializer |
-| `FishState` | dataclass: `p(3), ψ(1), κ(K), s(1)` | Initializer / Optimizer | MeshBuilder, TrajectoryWriter, MotionPredictor |
-| `Meshes` | PyTorch3D `Meshes` object, batched (N_fish, V, 3) | FishMeshBuilder | RefractiveRenderer |
-| `rendered_silhouettes` | `(N_fish, N_cams, H, W, 1)` float | RefractiveRenderer | LossComputer |
-| `track_state` | EKF state `[p, dp]` + covariance per track | MotionPredictor | AssignmentSolver |
-
----
-
-## Build Order (Phase Dependencies)
-
-The system has strict data dependencies that dictate build order:
-
-```
-CalibrationLoader ──────────────────────────────────────┐
-(must exist first; everything depends on it)            │
-                                                        ▼
-InstanceSegmenter ──────┐                      RefractiveProjector
-(provides masks)        │                      (must be differentiable;
-                        │                       built before renderer)
-KeypointExtractor ──────┤
-(provides coarse 2D     │
- keypoints from masks)  │
-                        ▼
-             EpipolarInitializer
-             (depends on keypoints + Π_ref)
-                        │
-                        ▼
-             FishMeshBuilder ──────────────────┐
-             (parametric mesh; pure geometry)   │
-                                               ▼
-             RefractiveRenderer ◄──── Π_ref + FishMeshBuilder
-                        │
-                        ▼
-             LossComputer ◄──── masks (from InstanceSegmenter)
-                        │
-                        ▼
-             PoseOptimizer
-             (wires autograd chain; depends on everything above)
-                        │
-                        ▼
-             MotionPredictor / AssignmentSolver
-             (depends on optimized FishState; independent of renderer)
-                        │
-                        ▼
-             TrajectoryWriter / Visualizer
-             (pure I/O; built last)
-```
-
-**Recommended build stages:**
-
-| Stage | Components to Build | Validation Gate |
-|-------|--------------------|--------------------|
-| 1 | CalibrationLoader + RefractiveProjector | Round-trip: project known 3D points, check reprojection error < 1px |
-| 2 | InstanceSegmenter + KeypointExtractor | Mask IoU ≥ 0.90 on held-out frames |
-| 3 | EpipolarInitializer | 3D centroid within 5mm of hand-measured ground truth on test frames |
-| 4 | FishMeshBuilder | Mesh is watertight; spline + ellipses produce visually correct shape |
-| 5 | RefractiveRenderer | Rendered silhouette visually aligns with observed mask for known pose |
-| 6 | LossComputer + PoseOptimizer (single fish) | L_sil converges; optimized pose matches GT better than initialization |
-| 7 | VoxelCarver (fallback) | Produces plausible initialization when epipolar fails |
-| 8 | MotionPredictor + AssignmentSolver | Zero identity swaps on non-interacting sequences |
-| 9 | InteractionHandler | Identity preserved through a simulated merge-split event |
-| 10 | TrajectoryWriter + Visualizer | HDF5 loads cleanly; 2D overlay looks correct |
-
----
+**Trade-offs:** Prefetch adds memory pressure. At 1600×1200×3 bytes per frame × 13 cameras, buffering N=5 frames is ~375 MB. Buffer size is a tunable parameter; default should be modest (3-5 frames). Background thread errors must be propagated to the main thread — use a sentinel value or exception re-raise pattern.
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Non-Differentiable Refractive Projection
+### Anti-Pattern 1: Changing PipelineContext Field Types
 
-**What people do:** Implement Π_ref using numpy, scipy, or non-PyTorch solvers for performance, then call `.detach()` when passing to the renderer.
+**What people do:** Change `detections` to a batched tensor format to avoid per-stage re-assembly overhead.
 
-**Why it's wrong:** Breaks the gradient chain. The optimizer cannot backpropagate through the refractive projection into {p, ψ, κ, s}. The optimization will still converge to local minima of whatever is differentiable, but the physically meaningful gradients from the silhouette are lost. This is silent — the optimizer runs without error but produces wrong results.
+**Why it's wrong:** All downstream stages, the diagnostic observer, cache serialization, evaluators, and tuning infrastructure depend on the existing field structure. GPU tensors also cannot be pickled across process boundaries.
 
-**Do this instead:** Implement Π_ref entirely in PyTorch. The Newton-Raphson solver for Snell's law at a flat interface can be unrolled as a fixed-iteration loop with autograd-compatible operations. The AquaMVS reference implementation should be verified to use PyTorch operations throughout, not numpy fallbacks.
+**Do this instead:** Keep context field types unchanged. Batch processing is an internal implementation detail of each stage. The existing `.cpu().numpy()` pattern at backend boundaries is correct.
 
-### Anti-Pattern 2: Per-Camera Sequential Rendering
+### Anti-Pattern 2: Cross-Stage Batching (Detection + Midline in One Pass)
 
-**What people do:** Loop over cameras in Python, calling the renderer once per camera per fish per frame.
+**What people do:** Combine detection and midline into a single GPU pass to avoid re-reading frames.
 
-**Why it's wrong:** Leaves GPU throughput on the table. With 13 cameras and 9 fish, a sequential loop invokes the renderer 117 times per frame. Python loop overhead and kernel launch latency dominate runtime.
+**Why it's wrong:** Detection runs across all frames first; tracking and association run next; midline runs with filtered detections only. You cannot skip the intermediate stages. Stage result caching depends on stage independence.
 
-**Do this instead:** Batch cameras and fish into a single rasterizer call by stacking into the batch dimension of PyTorch3D's `Meshes` and `Cameras` objects. One forward pass per frame, not 117.
+**Do this instead:** Batch within each stage independently. Detection batches 13-camera frames per invocation; midline batches all crops for a frame per invocation. Frame re-reading is avoided by `BatchFrameSource` buffering.
 
-### Anti-Pattern 3: Applying the Full Loss to All Cameras Equally
+### Anti-Pattern 3: Vectorization That Changes Numerical Output
 
-**What people do:** Sum silhouette losses over all cameras with equal weight (w_i = 1 for all i).
+**What people do:** Vectorize DLT but change the numerical result due to floating-point reduction order (e.g., different summation order in weighted DLT A-matrix construction).
 
-**Why it's wrong:** With 12 ring cameras spaced ~30° apart, cameras on the same side of the tank see nearly identical projections of the fish. Equal weighting lets these clusters dominate the gradient, pulling the optimizer toward a pose that satisfies the local cluster rather than the full 3D reconstruction.
+**Why it's wrong:** The reconstruction evaluator validates against cached ground truth. Numerical non-equivalence fails the regression tests and invalidates comparisons with cached tuning sweep results.
 
-**Do this instead:** Apply angular diversity weighting — downweight cameras whose viewing directions cluster together relative to the fish centroid. The proposed formula in `proposed_pipeline.md` (exponential repulsion in viewing direction space) achieves this.
+**Do this instead:** Ensure vectorized path produces results within 1e-5 relative tolerance vs the scalar path. Run the reconstruction evaluator before and after the change. The evaluation harness is specifically designed for this validation workflow.
 
-### Anti-Pattern 4: Deferring Calibration Validation
+### Anti-Pattern 4: Prefetch Buffer Too Large
 
-**What people do:** Assume the calibration library is correct and build Phase II and III before checking reprojection errors.
+**What people do:** Prefetch all chunk frames upfront (e.g., 1000 frames × 13 cameras × 1600×1200×3 bytes ≈ 75 GB) to minimize I/O latency.
 
-**Why it's wrong:** If the refractive camera model has a systematic error (wrong glass thickness, wrong refractive index, wrong air-glass interface position), every downstream component inherits the error. A 1mm calibration error can produce 5–10mm pose errors at the far side of the 2m tank.
+**Why it's wrong:** Exceeds GPU VRAM and system RAM for reasonable chunk sizes. The frame buffer is a pipeline stage, not a cache — it should buffer just enough frames to keep GPU busy.
 
-**Do this instead:** Build CalibrationLoader and RefractiveProjector first. Validate by projecting known 3D points (e.g., calibration target locations) into all cameras and measuring reprojection error. This must pass before building any optimization code.
-
-### Anti-Pattern 5: Optimizing All Loss Terms From Frame 1
-
-**What people do:** Enable all four loss terms (L_sil, L_grav, L_shape, L_temp) from the very first frame.
-
-**Why it's wrong:** L_temp requires at least two previous frames. On frame 0, L_temp is undefined; activating it forces arbitrary initialization of the temporal buffer, which can destabilize the optimizer. More subtly, λ values tuned on frame 0 (cold start) behave differently on warm-started frames.
-
-**Do this instead:** Activate L_temp only from frame 2 onward. Tune λ_sil, λ_grav, λ_shape on frame 0 in isolation, then validate that L_temp does not dominate when introduced.
-
----
-
-## Scaling Considerations
-
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| v1: 1 fish, 5–30 min clips | Sequential frame processing; single-fish optimizer; everything fits in memory |
-| v2: 9 fish, 5–30 min clips | Batched optimizer (9 fish per GPU call); EKF + Hungarian tracking; streaming frame reading |
-| v3: 9 fish, full-day recordings (hours) | Streaming with HDF5 checkpointing; cannot hold full video in RAM; must resume mid-clip after interruption |
-| v4: real-time or near-real-time | Profiling required; CUDA kernel optimization for Π_ref; potential TorchScript compilation of renderer |
-
-**First bottleneck (9 fish × 13 cameras):** GPU memory for batched rendering. With ~500 vertices per fish and 480×480px masks, memory per rasterizer pass ≈ 48 bytes × faces_per_pixel × H × W × N_fish × N_cams. Profile before assuming it fits.
-
-**Second bottleneck (full-day recordings):** Disk I/O for mask loading. Pre-compute and store all masks to disk after segmentation; do not re-run the segmenter during optimization.
-
----
+**Do this instead:** Tune prefetch buffer depth as a configuration parameter. Default 3-5 frames provides sufficient overlap between I/O and GPU compute without excessive memory pressure. For batch inference of N frames at once, buffer depth should be at least N+1.
 
 ## Integration Points
 
-### External Dependencies
-
-| Dependency | Integration Pattern | Notes |
-|------------|---------------------|-------|
-| AquaCal (calibration library) | Import at startup; load JSON config; expose `RefractiveProjector` objects | Must verify: is Π_ref exposed as a differentiable PyTorch function, or does it require re-implementation? See PITFALLS.md |
-| PyTorch3D | `MeshRasterizer` + `SoftSilhouetteShader`; batched Meshes + Cameras API | Version-sensitive: zbuf gradient support and batch API have changed across versions. Pin to a tested version. |
-| Detectron2 | Inference only at runtime; training is offline | Large dependency; consider containerizing separately from the optimization pipeline |
-| SAM2 | Offline pseudo-label generation only; not in the live inference path | |
-| filterpy | `ExtendedKalmanFilter` class | Lightweight; no GPU dependency |
-
 ### Internal Boundaries
 
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| Phase I → Phase II | `dict[fish_id, dict[cam_id, mask_tensor]]` + `dict[fish_id, dict[cam_id, keypoints]]` | Masks stay on CPU until needed for loss computation |
-| Phase II → Phase III | `FishState` dataclass with `.requires_grad_(True)` parameters | State must have autograd enabled before entering optimizer |
-| Phase III → Phase IV | `list[FishState]` (detached, CPU) — plain 3D positions and orientations | Phase IV uses numpy/scipy; do not pass autograd-enabled tensors |
-| Phase IV → Phase V | `list[FishTrajectoryRecord]` — fish_id, position, heading, curvature, scale, metadata | Pure data; no library-specific types |
-| CalibrationLoader → all phases | `CameraModel` objects with `project()` method | Shared read-only; no mutable state after initialization |
+| Boundary | Communication | Optimization Impact |
+|----------|---------------|---------------------|
+| `DetectionStage` ↔ `YOLOOBBBackend` | `detect(frame)` | New `detect_batch()` added; stage loop restructured |
+| `MidlineStage` ↔ `SegmentationBackend`/`PoseEstimationBackend` | `process_frame()` | New `process_batch()` added; stage loop restructured |
+| `ReconstructionStage` ↔ `DltBackend` | `reconstruct_frame()` | Unchanged; DltBackend internals vectorized |
+| `AssociationStage` ↔ `score_all_pairs()` | Function call | Unchanged; scoring internals vectorized |
+| `ChunkOrchestrator` ↔ `VideoFrameSource` | `FrameSource` protocol | `BatchFrameSource` replaces `ChunkFrameSource` in `build_stages()` |
+| Stage ↔ `PipelineContext` | Direct field read/write | Fields unchanged |
+| `DltBackend` ↔ `RefractiveProjectionModel` | `.cast_ray()` / `.project()` | Already supports batched tensors — vectorization exploits existing capability |
 
----
+### Evaluation Infrastructure Compatibility
+
+| Infrastructure | Impact |
+|----------------|--------|
+| Per-chunk pickle caching | None — same `PipelineContext` structure |
+| `aquapose eval` | None — reads cached context, evaluators unchanged |
+| `aquapose tune` | None — evaluators unchanged; optimizations only reduce pipeline runtime |
+| `aquapose viz` | None — reads cached context |
+| Unit tests | Backend tests need coverage of batch methods; stage tests need coverage of restructured loops |
+
+## Recommended Project Structure Changes
+
+No new modules needed for association and reconstruction vectorization — changes are within existing files.
+
+New additions for inference batching and I/O:
+
+```
+src/aquapose/core/types/frame_source.py
+    + BatchFrameSource class (or inline in existing file)
+
+src/aquapose/core/detection/backends/yolo_obb.py
+    + detect_batch() method
+
+src/aquapose/core/midline/backends/segmentation.py
+    + process_batch() method
+
+src/aquapose/core/midline/backends/pose_estimation.py
+    + process_batch() method
+
+src/aquapose/core/association/scoring.py
+    + ray_ray_closest_point_batch() function (local helper)
+
+src/aquapose/calibration/projection.py  (optional)
+    + triangulate_rays_batched() function
+```
+
+No changes to `engine/`, `evaluation/`, or `io/`.
 
 ## Sources
 
-- PyTorch3D renderer architecture: [https://pytorch3d.org/docs/renderer](https://pytorch3d.org/docs/renderer) — HIGH confidence (official docs)
-- PyTorch3D rasterizer output tensors (zbuf, bary_coords, gradients): [https://pytorch3d.readthedocs.io/en/latest/modules/renderer/mesh/rasterizer.html](https://pytorch3d.readthedocs.io/en/latest/modules/renderer/mesh/rasterizer.html) — HIGH confidence (official docs)
-- PyTorch3D SoftSilhouetteShader: verified via official renderer getting started guide — HIGH confidence
-- AquaPose proposed pipeline (authoritative project spec): `.planning/proposed_pipeline.md` — HIGH confidence (project owner document)
-- Refractive underwater camera calibration (2024): [https://arxiv.org/abs/2405.18018](https://arxiv.org/abs/2405.18018) — MEDIUM confidence
-- Multi-view 3D pose estimation with triangulation + iterative refinement patterns (CVPR 2024): [MVGFormer](https://openaccess.thecvf.com/content/CVPR2024/papers/Liao_Multiple_View_Geometry_Transformers_for_3D_Human_Pose_Estimation_CVPR_2024_paper.pdf) — MEDIUM confidence
-- Multi-fish tracking with EKF + Hungarian: [SOD-SORT](https://arxiv.org/html/2507.06400v3) — MEDIUM confidence (confirms EKF + Hungarian as standard for fish tracking)
-- Analysis-by-synthesis with differentiable rendering: [VoGE](https://arxiv.org/abs/2205.15401), [SkelSplat](https://skelsplat.github.io/) — MEDIUM confidence (confirms pattern is well-established)
+- Direct analysis of `src/aquapose/core/detection/stage.py` — frame-by-frame detection loop structure
+- Direct analysis of `src/aquapose/core/detection/backends/yolo_obb.py` — single-frame `detect()` pattern
+- Direct analysis of `src/aquapose/core/midline/stage.py` — per-detection inference loop
+- Direct analysis of `src/aquapose/core/midline/backends/segmentation.py` and `pose_estimation.py` — per-crop `model.predict()` pattern
+- Direct analysis of `src/aquapose/core/reconstruction/backends/dlt.py` — body-point scalar loop, existing batched `cast_ray()` usage in spline residual step confirms `RefractiveProjectionModel` supports batched input
+- Direct analysis of `src/aquapose/core/association/scoring.py` — per-frame scalar ray-ray scoring loop
+- Direct analysis of `src/aquapose/core/types/frame_source.py` — `ChunkFrameSource` seek-based random-access pattern
+- Direct analysis of `src/aquapose/core/context.py` — `PipelineContext` field types and `Stage` protocol
+- Direct analysis of `src/aquapose/engine/pipeline.py` — `build_stages()` factory, stage ordering
 
 ---
-
-*Architecture research for: AquaPose — 3D fish pose estimation via multi-view analysis-by-synthesis*
-*Researched: 2026-02-19*
+*Architecture research for: AquaPose v3.4 Performance Optimization*
+*Researched: 2026-03-04*

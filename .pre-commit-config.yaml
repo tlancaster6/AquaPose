@@ -40,3 +40,11 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-push]
+
+      - id: import-boundary
+        name: Import boundary check
+        entry: bash .hooks/check-import-boundary.sh
+        language: system
+        files: ^src/aquapose/
+        types: [python]
+        stages: [pre-commit]

@@ -1,105 +1,192 @@
 # Roadmap: AquaPose
 
-## Overview
+## Milestones
 
-AquaPose is built in strict dependency order: the refractive camera model must be validated before any optimization code is written, segmentation masks must exist before initialization is possible, a working parametric mesh model must precede differentiable rendering, and single-fish reconstruction must be validated before tracking and identity layers are added. Six phases follow this natural dependency chain — each phase delivers a coherent, testable capability that the next phase depends on.
+- ✅ **v1.0 MVP** — Phases 1-9 (shipped 2026-02-25)
+- ✅ **v2.0 Alpha** — Phases 13-21 (shipped 2026-02-27)
+- ✅ **v2.1 Identity** — Phases 22-28 (shipped 2026-02-28)
+- ✅ **v2.2 Backends** — Phases 29-33.1 (shipped 2026-03-01)
+- ✅ **v3.0 Ultralytics Unification** — Phases 35-39 (shipped 2026-03-02)
+- ✅ **v3.1 Reconstruction** — Phases 40-45 (shipped 2026-03-03)
+- ✅ **v3.2 Evaluation Ecosystem** — Phases 46-50 (shipped 2026-03-03)
+- ✅ **v3.3 Chunk Mode** — Phases 51-55 (shipped 2026-03-05)
+- ✅ **v3.4 Performance Optimization** — Phases 56-60 (shipped 2026-03-05)
+- ✅ **v3.5 Pseudo-Labeling** — Phases 61-69 (shipped 2026-03-06)
 
 ## Phases
 
-**Phase Numbering:**
-- Integer phases (1, 2, 3): Planned milestone work
-- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+<details>
+<summary>✅ v1.0 MVP (Phases 1-9) — SHIPPED 2026-02-25</summary>
 
-Decimal phases appear between their surrounding integers in numeric order.
+- [x] Phase 1: Calibration and Refractive Geometry (2/2 plans) — complete
+- [x] Phase 2: Segmentation Pipeline (4/4 plans) — complete
+- [x] Phase 02.1: Segmentation Troubleshooting (3/3 plans) — complete (INSERTED)
+- [x] Phase 02.1.1: Object-detection alternative to MOG2 (3/3 plans) — complete (INSERTED)
+- [x] Phase 3: Fish Mesh Model and 3D Initialization (2/2 plans) — complete
+- [x] Phase 4: Per-Fish Reconstruction (3/3 plans) — shelved (ABS too slow)
+- [x] Phase 04.1: Isolate phase4-specific code (1/1 plan) — complete (INSERTED)
+- [x] Phase 5: Cross-View Identity and 3D Tracking (3/3 plans) — complete
+- [x] Phase 6: 2D Medial Axis and Arc-Length Sampling (1/1 plan) — complete
+- [x] Phase 7: Multi-View Triangulation (1/1 plan) — complete
+- [x] Phase 8: End-to-End Integration Testing (3 plans, 2 summaries) — complete
+- [x] Phase 9: Curve-Based Optimization (2/2 plans) — complete
 
-- [ ] **Phase 1: Calibration and Refractive Geometry** - Differentiable refractive projection validated and ready for use by all downstream phases
-- [ ] **Phase 2: Segmentation Pipeline** - Multi-view binary masks ready for every frame; annotation workflow established
-- [ ] **Phase 3: Fish Mesh Model and 3D Initialization** - Parametric fish mesh differentiable in PyTorch; first-frame cold-start working from coarse keypoints
-- [ ] **Phase 4: Single-Fish Reconstruction** - Per-frame pose optimization converges on real data; cross-view holdout IoU meets threshold
-- [ ] **Phase 5: Tracking and Sex Classification** - Frame-to-frame track continuity with temporal smoothness loss active; population constraint enforced
-- [ ] **Phase 6: Output and Visualization** - Per-frame trajectories written to HDF5; 2D overlay and 3D rerun visualization operational
+**12 phases, 28 plans total**
+Full details: `.planning/milestones/v1.0-ROADMAP.md`
 
-## Phase Details
+</details>
 
-### Phase 1: Calibration and Refractive Geometry
-**Goal**: A validated, differentiable refractive projection layer is available that downstream phases can import with confidence — errors here would silently corrupt every gradient in the system
-**Depends on**: Nothing (first phase)
-**Requirements**: CALIB-01, CALIB-02, CALIB-03, CALIB-04
-**Success Criteria** (what must be TRUE):
-  1. Given a known 3D point, the system reprojects it to pixel coordinates matching ground truth to within 1px for all 13 cameras across the full tank depth range
-  2. Gradients flow through the refractive projection (autograd backward pass completes without error; numerical gradient check passes for depth, x, y inputs)
-  3. Given a 2D pixel, ray casting produces a 3D underwater ray direction consistent with Snell's law at the air-water interface
-  4. A one-time Z-uncertainty characterization report exists for the 13-camera top-down geometry, quantifying expected X/Y/Z reconstruction error at 3+ tank depths separately
-**Plans**: TBD
+<details>
+<summary>✅ v2.0 Alpha (Phases 13-21) — SHIPPED 2026-02-27</summary>
 
-### Phase 2: Segmentation Pipeline
-**Goal**: The system can produce corrected binary fish masks for any input frame across all 13 cameras, achieving recall targets even for low-contrast females
-**Depends on**: Phase 1
-**Requirements**: SEG-01, SEG-02, SEG-03, SEG-04, SEG-05
-**Success Criteria** (what must be TRUE):
-  1. MOG2 detection produces padded bounding boxes with ≥95% per-camera recall measured on a held-out sample including female fish and stationary subjects
-  2. SAM pseudo-labels can be generated for any set of bounding boxes and imported into Label Studio as starting annotations for human correction
-  3. A trained Mask R-CNN model produces binary mask predictions on 256×256 crops achieving ≥0.90 mean mask IoU overall and ≥0.85 for female-only subsets
-  4. The segmentation pipeline accepts N fish as input (returning a list of masks) even in the single-fish v1 operating mode
-**Plans**: TBD
+- [x] Phase 13: Engine Core (4/4 plans) — completed 2026-02-25
+- [x] Phase 14: Golden Data and Verification Framework (2/2 plans) — completed 2026-02-25
+- [x] Phase 14.1: Fix Critical Mismatch (2/2 plans) — completed 2026-02-25 (INSERTED)
+- [x] Phase 15: Stage Migrations (5/5 plans) — completed 2026-02-26
+- [x] Phase 16: Numerical Verification and Legacy Cleanup (2/2 plans) — completed 2026-02-26
+- [x] Phase 17: Observers (5/5 plans) — completed 2026-02-26
+- [x] Phase 18: CLI and Execution Modes (3/3 plans) — completed 2026-02-26
+- [x] Phase 19: Alpha Refactor Audit (4/4 plans) — completed 2026-02-26
+- [x] Phase 20: Post-Refactor Loose Ends (5/5 plans) — completed 2026-02-27
+- [x] Phase 21: Retrospective, Prospective (2/2 plans) — completed 2026-02-27
 
-### Phase 3: Fish Mesh Model and 3D Initialization
-**Goal**: A fully differentiable parametric fish mesh model exists and can produce a plausible first-frame 3D state estimate from coarse keypoint detections, ready to be handed to the optimizer
-**Depends on**: Phase 1
-**Requirements**: MESH-01, MESH-02, MESH-03
-**Success Criteria** (what must be TRUE):
-  1. Given a fish state vector {p, ψ, κ, s}, the mesh builder produces a watertight triangle mesh and gradients flow back through all four state components
-  2. Free cross-section mode allows per-section height and width to be optimizable parameters (shape profile self-calibration runs without error)
-  3. Given coarse head/center/tail keypoints from at least 3 cameras, epipolar initialization produces a 3D state estimate within plausible range of the fish's actual position (visually reasonable when overlaid on camera views)
-  4. All mesh and initialization APIs accept lists of fish states (batch-first design) even when called with a single-element list
-**Plans**: TBD
+**10 phases, 34 plans total**
+Full details: `.planning/milestones/v2.0-ROADMAP.md`
 
-### Phase 4: Single-Fish Reconstruction
-**Goal**: The full analysis-by-synthesis loop works end-to-end on real data — a single fish's pose is recovered frame-by-frame with cross-view holdout IoU demonstrating the system generalizes beyond the cameras it was fit on
-**Depends on**: Phase 2, Phase 3
-**Requirements**: RECON-01, RECON-02, RECON-03, RECON-04, RECON-05
-**Success Criteria** (what must be TRUE):
-  1. Differentiable silhouettes of the fish mesh render correctly into each camera view via refractive projection + PyTorch3D rasterizer, with per-camera angular-diversity weighting applied
-  2. The multi-objective loss computes silhouette IoU + gravity prior + morphological constraint terms; temporal smoothness term activates once tracking associations are available (see Phase 5), but the loss is architecturally ready for it
-  3. First-frame optimization runs 2-start (forward + 180° flip) and selects the lower-loss result, resolving head-tail ambiguity on real footage
-  4. Frame-by-frame warm-start optimization converges in ≤100 Adam iterations on frames after the first, producing visually plausible reconstructions
-  5. Cross-view holdout validation achieves ≥0.80 mean IoU on held-out cameras across a representative clip
-**Plans**: TBD
+</details>
 
-### Phase 5: Tracking and Sex Classification
-**Goal**: Fish identities persist frame-to-frame, the temporal smoothness loss becomes active (completing the multi-objective loss), and the population constraint prevents track count from deviating from 9
-**Depends on**: Phase 4
-**Requirements**: TRACK-01, TRACK-02, TRACK-03, TRACK-04, SEX-01, SEX-02, SEX-03
-**Success Criteria** (what must be TRUE):
-  1. A 3D Extended Kalman Filter maintains position + velocity state per fish with anisotropic process noise; the filter's predicted bounding box is injected into detection for frame 2+ (tracker safety net active)
-  2. Hungarian assignment with Mahalanobis distance cost successfully links detections to tracks across a test clip; the sex-mismatch cost penalty visibly reduces male-female swap events compared to baseline
-  3. Temporal smoothness loss activates via the track associations provided by the EKF, and its gradient flows back through pose parameters without breaking the optimizer
-  4. Population constraint logic links a lost track to a new detection in the same frame window, keeping active track count at 9 throughout a test clip with no persistent occlusions
-  5. Each track carries a stable sex label derived from per-frame color histogram classifier votes aggregated across cameras and time
-**Plans**: TBD
+<details>
+<summary>✅ v2.1 Identity (Phases 22-28) — SHIPPED 2026-02-28</summary>
 
-### Phase 6: Output and Visualization
-**Goal**: Results are persisted in a machine-readable format and inspectable via 2D overlays and 3D visualization, making the system usable for downstream behavioral research
-**Depends on**: Phase 5
-**Requirements**: OUT-01, OUT-02, OUT-03
-**Success Criteria** (what must be TRUE):
-  1. An HDF5 file is written containing per-frame, per-fish records with all required fields: fish_id, position, heading, midline, curvature, scale, sex, confidence, n_cameras, silhouette_loss — and the file is readable by standard h5py code without custom schemas
-  2. 2D overlay video (projected 3D mesh on original camera frames) can be generated for any clip and any subset of cameras for visual QA
-  3. 3D rerun-sdk visualization shows fish meshes moving through the tank volume with trajectory trails and identity coloring, rendering in real time from the HDF5 output
-**Plans**: TBD
+- [x] Phase 22: Pipeline Scaffolding (2/2 plans) — completed 2026-02-27
+- [x] Phase 23: Refractive Lookup Tables (2/2 plans) — completed 2026-02-27
+- [x] Phase 24: Per-Camera 2D Tracking (1/1 plan) — completed 2026-02-27
+- [x] Phase 25: Association Scoring and Clustering (2/2 plans) — completed 2026-02-27
+- [x] Phase 26: Association Refinement and Pipeline Wiring (3/3 plans) — completed 2026-02-27
+- [x] Phase 27: Diagnostic Visualization (1/1 plan) — completed 2026-02-27
+- [x] Phase 28: E2E Testing (1/1 plan) — completed 2026-02-27
+
+**7 phases, 12 plans total**
+Full details: `.planning/milestones/v2.1-ROADMAP.md`
+
+</details>
+
+<details>
+<summary>✅ v2.2 Backends (Phases 29-33.1) — SHIPPED 2026-03-01</summary>
+
+- [x] **Phase 29: Guidebook Audit** — complete 2026-02-28
+- [x] **Phase 30: Config and Contracts** — complete 2026-02-28
+- [x] **Phase 31: Training Infrastructure** — complete 2026-02-28
+- [x] **Phase 32: YOLO-OBB Detection Backend** — complete 2026-02-28
+- [x] **Phase 33: Keypoint Midline Backend** — complete 2026-03-01
+- [x] **Phase 33.1: Keypoint Training Data Augmentation** — complete 2026-03-01
+
+**6 phases (including inserted 33.1), Phase 34 (Stabilization) deferred**
+Full details: `.planning/phases/29-*` through `.planning/phases/33.1-*`
+
+</details>
+
+<details>
+<summary>✅ v3.0 Ultralytics Unification (Phases 35-39) — SHIPPED 2026-03-02</summary>
+
+- [x] Phase 35: Codebase Cleanup (2/2 plans) — completed 2026-03-01
+- [x] Phase 36: Training Wrappers (2/2 plans) — completed 2026-03-01
+- [x] Phase 37: Pipeline Integration (2/2 plans) — completed 2026-03-01
+- [x] Phase 38: Stabilization and Tech Debt Cleanup (3/4 plans, 1 deferred) — completed 2026-03-02
+- [x] Phase 39: Core Reorganization (4/4 plans) — completed 2026-03-02
+
+**5 phases, 14 plans total**
+Full details: `.planning/milestones/v3.0-ROADMAP.md`
+
+</details>
+
+<details>
+<summary>✅ v3.1 Reconstruction (Phases 40-45) — SHIPPED 2026-03-03</summary>
+
+- [x] Phase 40: Diagnostic Capture (2/2 plans) — completed 2026-03-02
+- [x] Phase 41: Evaluation Harness (2/2 plans) — completed 2026-03-02
+- [x] Phase 42: Baseline Measurement (1/1 plan) — completed 2026-03-02
+- [x] Phase 43: Triangulation Rebuild (2/2 plans) — completed 2026-03-02
+- [x] Phase 43.1: Association Tuning (2/2 plans) — completed 2026-03-03 (INSERTED)
+- [x] Phase 44: Validation and Tuning (2/2 plans) — completed 2026-03-03
+- [x] Phase 45: Dead Code Cleanup (2/2 plans) — completed 2026-03-03
+
+**7 phases, 13 plans total**
+Full details: `.planning/milestones/v3.1-ROADMAP.md`
+
+</details>
+
+<details>
+<summary>✅ v3.2 Evaluation Ecosystem (Phases 46-50) — SHIPPED 2026-03-03</summary>
+
+- [x] Phase 46: Engine Primitives (3/3 plans) — completed 2026-03-03
+- [x] Phase 47: Evaluation Primitives (3/3 plans) — completed 2026-03-03
+- [x] Phase 48: EvalRunner and eval CLI (2/2 plans) — completed 2026-03-03
+- [x] Phase 49: TuningOrchestrator and tune CLI (2/2 plans) — completed 2026-03-03
+- [x] Phase 50: Cleanup and Replacement (1/1 plan) — completed 2026-03-03
+
+**5 phases, 11 plans total**
+Full details: `.planning/milestones/v3.2-ROADMAP.md`
+
+</details>
+
+<details>
+<summary>✅ v3.3 Chunk Mode (Phases 51-55) — SHIPPED 2026-03-05</summary>
+
+- [x] Phase 51: Frame Source Refactor (2/2 plans) — completed 2026-03-03
+- [x] Phase 52: Chunk Orchestrator and Handoff (3/3 plans) — completed 2026-03-03
+- [x] Phase 53: Integration and Validation (1/1 plan) — completed 2026-03-04
+- [x] Phase 54: Chunk-Aware Diagnostics and Eval Migration (4/4 plans) — completed 2026-03-04
+- [x] Phase 55: Chunk Validation and Gap Closure (1/1 plan) — completed 2026-03-05
+
+**5 phases, 11 plans total**
+Full details: `.planning/milestones/v3.3-ROADMAP.md`
+
+</details>
+
+<details>
+<summary>✅ v3.4 Performance Optimization (Phases 56-60) — SHIPPED 2026-03-05</summary>
+
+- [x] Phase 56: Vectorized Association Scoring (2/2 plans) — completed 2026-03-05
+- [x] Phase 57: Vectorized DLT Reconstruction (1/1 plan) — completed 2026-03-05
+- [x] Phase 58: Frame I/O Optimization (1/1 plan) — completed 2026-03-05
+- [x] Phase 59: Batched YOLO Inference (3/3 plans) — completed 2026-03-05
+- [x] Phase 60: End-to-End Performance Validation (1/1 plan) — completed 2026-03-05
+
+**5 phases, 8 plans total**
+Full details: `.planning/milestones/v3.4-ROADMAP.md`
+
+</details>
+
+<details>
+<summary>✅ v3.5 Pseudo-Labeling (Phases 61-69) — SHIPPED 2026-03-06</summary>
+
+- [x] Phase 61: Z-Denoising (2/2 plans) — completed 2026-03-05
+- [x] Phase 62: Prep Infrastructure (2/2 plans) — completed 2026-03-05
+- [x] Phase 63: Pseudo-Label Generation (2/2 plans) — completed 2026-03-05
+- [x] Phase 64: Gap Detection and Fill (2/2 plans) — completed 2026-03-05
+- [x] Phase 65: Frame Selection and Dataset Assembly (3/3 plans) — completed 2026-03-05
+- [x] Phase 66: Training Run Management (2/2 plans) — completed 2026-03-05
+- [x] Phase 67: Elastic Deformation Augmentation (2/2 plans) — completed 2026-03-06
+- [x] Phase 68: Training Data Storage (4/4 plans) — completed 2026-03-06
+- [x] Phase 69: CLI Workflow Cleanup (3/3 plans) — completed 2026-03-06
+
+**9 phases, 22 plans total**
+Full details: `.planning/milestones/v3.5-ROADMAP.md`
+
+</details>
 
 ## Progress
 
-**Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
-
-Note: Phase 3 depends only on Phase 1 (not Phase 2), so Phases 2 and 3 can develop in parallel if needed. Phase 4 requires both Phase 2 and Phase 3 to be complete.
-
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Calibration and Refractive Geometry | 0/TBD | Not started | - |
-| 2. Segmentation Pipeline | 0/TBD | Not started | - |
-| 3. Fish Mesh Model and 3D Initialization | 0/TBD | Not started | - |
-| 4. Single-Fish Reconstruction | 0/TBD | Not started | - |
-| 5. Tracking and Sex Classification | 0/TBD | Not started | - |
-| 6. Output and Visualization | 0/TBD | Not started | - |
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1-9 | v1.0 | 28/28 | Complete | 2026-02-25 |
+| 13-21 | v2.0 | 34/34 | Complete | 2026-02-27 |
+| 22-28 | v2.1 | 12/12 | Complete | 2026-02-28 |
+| 29-33.1 | v2.2 | 12/12 | Complete | 2026-03-01 |
+| 35-39 | v3.0 | 14/14 | Complete | 2026-03-02 |
+| 40-45 | v3.1 | 13/13 | Complete | 2026-03-03 |
+| 46-50 | v3.2 | 11/11 | Complete | 2026-03-03 |
+| 51-55 | v3.3 | 11/11 | Complete | 2026-03-05 |
+| 56-60 | v3.4 | 8/8 | Complete | 2026-03-05 |
+| 61-69 | v3.5 | 22/22 | Complete | 2026-03-06 |

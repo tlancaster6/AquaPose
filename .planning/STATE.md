@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.5
 milestone_name: Pseudo-Labeling
 status: unknown
-last_updated: "2026-03-06T17:33:11.554Z"
+last_updated: "2026-03-06T17:44:23.790Z"
 progress:
   total_phases: 9
   completed_phases: 7
   total_plans: 19
-  completed_plans: 16
+  completed_plans: 17
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-03-05)
 
 ## Current Position
 
-Phase: 68 (1 of 4 plans complete)
-Plan: 1/4 in current phase
-Status: Plan 68-01 complete. SampleStore implemented with TDD.
-Last activity: 2026-03-06 - Completed 68-01: SampleStore SQLite backend
+Phase: 68 (2 of 4 plans complete)
+Plan: 2/4 in current phase
+Status: Plan 68-02 complete. Data CLI import/convert commands implemented.
+Last activity: 2026-03-06 - Completed 68-02: Data CLI commands
 
-Progress: [██░░░░░░░░] 25%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -66,6 +66,10 @@ Recent decisions affecting current work:
 - Phase 68: JSON columns for tags/provenance/metadata with sqlite json_each for filtering
 - Phase 68: PRAGMA user_version for schema versioning with forward-compat check
 - Phase 68: Source priority manual(2) > corrected(1) > pseudo(0) for dedup upsert
+- Phase 68: Conversion functions moved from scripts/ to coco_convert.py module
+- Phase 68: Seg conversion (generate_seg_dataset) not migrated -- not in current workflow
+- [Phase 68]: Conversion functions moved from scripts/ to coco_convert.py module
+- [Phase 68]: Seg conversion not migrated -- not in current workflow
 
 ### Pending Todos
 
@@ -89,9 +93,10 @@ None active. Z-reconstruction noise resolved via z-flattening and temporal z smo
 | 18 | Fix pseudo-label pose output to use OBB-cropped images with crop-space keypoints | 2026-03-05 | 434b81b | Verified | [18-fix-pseudo-label-pose-output-to-use-obb-](./quick/18-fix-pseudo-label-pose-output-to-use-obb-/) |
 | 19 | Wire frame selection into pseudo-label assembly CLI | 2026-03-05 | 287a6a8 | Complete | [19-wire-frame-selection-into-pseudo-label-a](./quick/19-wire-frame-selection-into-pseudo-label-a/) |
 | 20 | Implement COCO interchange format for pseudo-labels | 2026-03-06 | d2e1195 | Complete | [20-implement-coco-interchange-format-for-ps](./quick/20-implement-coco-interchange-format-for-ps/) |
+| Phase 68 P02 | 8min | 1 tasks | 8 files |
 
 ## Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Completed 68-01-PLAN.md (SampleStore)
-Resume file: .planning/phases/68-improved-training-data-storage-and-tracking/68-01-SUMMARY.md
+Stopped at: Completed 68-02-PLAN.md (Data CLI)
+Resume file: .planning/phases/68-improved-training-data-storage-and-tracking/68-02-SUMMARY.md

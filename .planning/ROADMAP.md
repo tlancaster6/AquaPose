@@ -272,7 +272,7 @@ Plans:
 **Goal:** Centralized SQLite-backed sample store replacing ad-hoc directory-based training data management, with content-hash dedup, provenance tracking, symlink-based dataset assembly, model lineage, and config auto-update
 **Requirements**: STORE-01, STORE-02, STORE-03, STORE-04, STORE-05, STORE-06, STORE-07
 **Depends on:** Phase 67
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 
 Plans:
 - [ ] 68-01-PLAN.md — SampleStore core: SQLite schema, CRUD operations, dedup, upsert, cascade delete (TDD)
@@ -303,7 +303,7 @@ Phases execute in numeric order: 61 -> 62 -> 63 -> 64 -> 65 -> 66
 | 65. Frame Selection and Dataset Assembly | 3/3 | Complete    | 2026-03-05 | - |
 | 66. Training Run Management | 2/2 | Complete    | 2026-03-05 | - |
 | 67. Elastic Deformation Augmentation | 2/2 | Complete    | 2026-03-06 | - |
-| 68. Training Data Storage | 1/4 | In Progress|  | - |
+| 68. Training Data Storage | 2/4 | In Progress|  | - |
 
 ### Phase 69: CLI workflow cleanup
 

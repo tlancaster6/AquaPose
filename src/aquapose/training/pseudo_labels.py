@@ -127,7 +127,8 @@ def generate_fish_labels(
 
     Returns None if the camera did not contribute to the reconstruction,
     or if its per-camera residual exceeds the threshold, or if fewer than
-    *min_visible_keypoints* keypoints are visible after projection.
+    2 keypoints are visible after projection. The ``pose_line`` key is
+    only included when at least *min_visible_keypoints* are visible.
 
     Args:
         midline: 3D midline reconstruction for the fish.
@@ -138,12 +139,13 @@ def generate_fish_labels(
         lateral_pad: OBB lateral padding in pixels.
         max_camera_residual_px: Per-camera residual threshold in pixels.
         camera_id: Camera identifier.
-        min_visible_keypoints: Minimum visible keypoints to accept the label.
+        min_visible_keypoints: Minimum visible keypoints to include pose label.
 
     Returns:
-        Dict with keys ``obb_line``, ``pose_line``, ``confidence``,
-        ``raw_metrics``, ``keypoints_2d``, ``visibility``; or None if
-        the label should be skipped.
+        Dict with keys ``obb_line``, ``confidence``, ``raw_metrics``,
+        ``keypoints_2d``, ``visibility``, and optionally ``pose_line``
+        (only when ``n_visible >= min_visible_keypoints``); or None if
+        the label should be skipped entirely.
     """
     # Check camera contributed to reconstruction
     if (
@@ -170,52 +172,49 @@ def generate_fish_labels(
     )
     visibility = visibility & ~oob
 
-    if visibility.sum() < min_visible_keypoints:
+    # OBB needs at least 2 visible keypoints for PCA orientation
+    n_visible = int(visibility.sum())
+    if n_visible < 2:
         return None
 
     # OBB computation (no edge extrapolation for pseudo-labels)
     obb_corners = pca_obb(keypoints_2d, visibility, lateral_pad)
 
-    # Format OBB annotation line (format_obb_annotation clips to [0,1])
+    # Format OBB annotation line
     obb_row = format_obb_annotation(obb_corners, img_w, img_h)
     obb_line = " ".join(str(v) for v in obb_row)
-
-    # Compute AABB from OBB corners for pose bbox
-    x_min = float(obb_corners[:, 0].min())
-    x_max = float(obb_corners[:, 0].max())
-    y_min = float(obb_corners[:, 1].min())
-    y_max = float(obb_corners[:, 1].max())
-
-    cx = ((x_min + x_max) / 2.0) / img_w
-    cy = ((y_min + y_max) / 2.0) / img_h
-    w = (x_max - x_min) / img_w
-    h = (y_max - y_min) / img_h
-
-    # Clamp bbox to [0, 1]
-    cx = float(np.clip(cx, 0.0, 1.0))
-    cy = float(np.clip(cy, 0.0, 1.0))
-    w = float(np.clip(w, 0.0, 1.0))
-    h = float(np.clip(h, 0.0, 1.0))
-
-    # Format pose annotation line
-    pose_row = format_pose_annotation(
-        cx, cy, w, h, keypoints_2d, visibility, img_w, img_h
-    )
-    pose_line = " ".join(str(v) for v in pose_row)
 
     # Compute confidence score
     confidence, raw_metrics = compute_confidence_score(
         midline.mean_residual, midline.n_cameras, midline.per_camera_residuals
     )
 
-    return {
+    result: dict = {
         "obb_line": obb_line,
-        "pose_line": pose_line,
         "confidence": confidence,
         "raw_metrics": raw_metrics,
         "keypoints_2d": keypoints_2d,
         "visibility": visibility,
     }
+
+    # Pose label requires meeting the higher min_visible_keypoints threshold
+    if n_visible >= min_visible_keypoints:
+        x_min = float(obb_corners[:, 0].min())
+        x_max = float(obb_corners[:, 0].max())
+        y_min = float(obb_corners[:, 1].min())
+        y_max = float(obb_corners[:, 1].max())
+
+        cx = float(np.clip(((x_min + x_max) / 2.0) / img_w, 0.0, 1.0))
+        cy = float(np.clip(((y_min + y_max) / 2.0) / img_h, 0.0, 1.0))
+        w = float(np.clip((x_max - x_min) / img_w, 0.0, 1.0))
+        h = float(np.clip((y_max - y_min) / img_h, 0.0, 1.0))
+
+        pose_row = format_pose_annotation(
+            cx, cy, w, h, keypoints_2d, visibility, img_w, img_h
+        )
+        result["pose_line"] = " ".join(str(v) for v in pose_row)
+
+    return result
 
 
 def detect_gaps(
@@ -390,12 +389,13 @@ def generate_gap_fish_labels(
         img_h: Image height in pixels.
         keypoint_t_values: Arc-length fractions for keypoint evaluation.
         lateral_pad: OBB lateral padding in pixels.
-        min_visible_keypoints: Minimum visible keypoints to accept the label.
+        min_visible_keypoints: Minimum visible keypoints to include pose label.
 
     Returns:
-        Dict with keys ``obb_line``, ``pose_line``, ``confidence``,
-        ``raw_metrics``, ``keypoints_2d``, ``visibility``; or None if
-        fewer than *min_visible_keypoints* are visible or bounds check fails.
+        Dict with keys ``obb_line``, ``confidence``, ``raw_metrics``,
+        ``keypoints_2d``, ``visibility``, and optionally ``pose_line``
+        (only when ``n_visible >= min_visible_keypoints``); or None if
+        fewer than 2 keypoints are visible or bounds check fails.
     """
     # Reproject spline keypoints
     keypoints_2d, visibility = reproject_spline_keypoints(
@@ -411,7 +411,9 @@ def generate_gap_fish_labels(
     )
     visibility = visibility & ~oob
 
-    if visibility.sum() < min_visible_keypoints:
+    # OBB needs at least 2 visible keypoints for PCA orientation
+    n_visible = int(visibility.sum())
+    if n_visible < 2:
         return None
 
     # Bounds check
@@ -421,43 +423,38 @@ def generate_gap_fish_labels(
     # OBB computation (no edge extrapolation for pseudo-labels)
     obb_corners = pca_obb(keypoints_2d, visibility, lateral_pad)
 
-    # Format OBB annotation line (format_obb_annotation clips to [0,1])
+    # Format OBB annotation line
     obb_row = format_obb_annotation(obb_corners, img_w, img_h)
     obb_line = " ".join(str(v) for v in obb_row)
-
-    # Compute AABB from OBB corners for pose bbox
-    x_min = float(obb_corners[:, 0].min())
-    x_max = float(obb_corners[:, 0].max())
-    y_min = float(obb_corners[:, 1].min())
-    y_max = float(obb_corners[:, 1].max())
-
-    cx = ((x_min + x_max) / 2.0) / img_w
-    cy = ((y_min + y_max) / 2.0) / img_h
-    w = (x_max - x_min) / img_w
-    h = (y_max - y_min) / img_h
-
-    # Clamp bbox to [0, 1]
-    cx = float(np.clip(cx, 0.0, 1.0))
-    cy = float(np.clip(cy, 0.0, 1.0))
-    w = float(np.clip(w, 0.0, 1.0))
-    h = float(np.clip(h, 0.0, 1.0))
-
-    # Format pose annotation line
-    pose_row = format_pose_annotation(
-        cx, cy, w, h, keypoints_2d, visibility, img_w, img_h
-    )
-    pose_line = " ".join(str(v) for v in pose_row)
 
     # Compute confidence score (fish-level, no discount for gaps)
     confidence, raw_metrics = compute_confidence_score(
         midline.mean_residual, midline.n_cameras, midline.per_camera_residuals
     )
 
-    return {
+    result: dict = {
         "obb_line": obb_line,
-        "pose_line": pose_line,
         "confidence": confidence,
         "raw_metrics": raw_metrics,
         "keypoints_2d": keypoints_2d,
         "visibility": visibility,
     }
+
+    # Pose label requires meeting the higher min_visible_keypoints threshold
+    if n_visible >= min_visible_keypoints:
+        x_min = float(obb_corners[:, 0].min())
+        x_max = float(obb_corners[:, 0].max())
+        y_min = float(obb_corners[:, 1].min())
+        y_max = float(obb_corners[:, 1].max())
+
+        cx = float(np.clip(((x_min + x_max) / 2.0) / img_w, 0.0, 1.0))
+        cy = float(np.clip(((y_min + y_max) / 2.0) / img_h, 0.0, 1.0))
+        w = float(np.clip((x_max - x_min) / img_w, 0.0, 1.0))
+        h = float(np.clip((y_max - y_min) / img_h, 0.0, 1.0))
+
+        pose_row = format_pose_annotation(
+            cx, cy, w, h, keypoints_2d, visibility, img_w, img_h
+        )
+        result["pose_line"] = " ".join(str(v) for v in pose_row)
+
+    return result

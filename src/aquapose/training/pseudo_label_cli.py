@@ -119,6 +119,12 @@ def pseudo_label_group() -> None:
     show_default=True,
     help="Minimum fraction of keypoints that must be visible (rounded to nearest integer).",
 )
+@click.option(
+    "--viz",
+    is_flag=True,
+    default=False,
+    help="Generate inspection visualizations after label generation.",
+)
 def generate(
     config_path: str,
     lateral_pad: float,
@@ -129,6 +135,7 @@ def generate(
     crop_height: int,
     temporal_step: int,
     min_visible_ratio: float,
+    viz: bool,
 ) -> None:
     """Generate YOLO OBB and pose pseudo-labels from diagnostic caches.
 
@@ -350,15 +357,16 @@ def generate(
                             }
                         )
 
-                        cons_pose_data.setdefault(cam_id, []).append(
-                            {
-                                "keypoints_2d": result["keypoints_2d"],
-                                "visibility": result["visibility"],
-                                "fish_id": int(fish_id),
-                                "confidence": result["confidence"],
-                                "raw_metrics": result["raw_metrics"],
-                            }
-                        )
+                        if "pose_line" in result:
+                            cons_pose_data.setdefault(cam_id, []).append(
+                                {
+                                    "keypoints_2d": result["keypoints_2d"],
+                                    "visibility": result["visibility"],
+                                    "fish_id": int(fish_id),
+                                    "confidence": result["confidence"],
+                                    "raw_metrics": result["raw_metrics"],
+                                }
+                            )
 
                 # --- Gap path ---
                 if gaps and inverse_lut is not None:
@@ -421,17 +429,18 @@ def generate(
                             }
                         )
 
-                        gap_pose_data.setdefault(cam_id, []).append(
-                            {
-                                "keypoints_2d": gap_result["keypoints_2d"],
-                                "visibility": gap_result["visibility"],
-                                "fish_id": int(fish_id),
-                                "confidence": gap_result["confidence"],
-                                "raw_metrics": gap_result["raw_metrics"],
-                                "gap_reason": reason,
-                                "n_source_cameras": midline.n_cameras,
-                            }
-                        )
+                        if "pose_line" in gap_result:
+                            gap_pose_data.setdefault(cam_id, []).append(
+                                {
+                                    "keypoints_2d": gap_result["keypoints_2d"],
+                                    "visibility": gap_result["visibility"],
+                                    "fish_id": int(fish_id),
+                                    "confidence": gap_result["confidence"],
+                                    "raw_metrics": gap_result["raw_metrics"],
+                                    "gap_reason": reason,
+                                    "n_source_cameras": midline.n_cameras,
+                                }
+                            )
 
             # Determine which cameras need frame images
             cams_needing_frames = (
@@ -584,6 +593,28 @@ def generate(
     if gaps:
         click.echo(f"  Pose (gap): {gap_pose_count} crops")
     click.echo(f"  Output: {pseudo_dir}")
+
+    if viz:
+        viz_dir = pseudo_dir / "viz"
+        viz_targets: list[tuple[Path, Path]] = [
+            (pseudo_dir / "obb", viz_dir / "obb"),
+            (pseudo_dir / "pose" / "consensus", viz_dir / "pose" / "consensus"),
+        ]
+        if gaps:
+            viz_targets.append((pseudo_dir / "pose" / "gap", viz_dir / "pose" / "gap"))
+        click.echo("\nGenerating inspection visualizations...")
+        for data_path, out_path in viz_targets:
+            images_check = data_path / "images" / "train"
+            if not images_check.exists() or not any(images_check.iterdir()):
+                continue
+            ctx = click.Context(inspect)
+            ctx.invoke(
+                inspect,
+                data_dir=str(data_path),
+                output_dir=str(out_path),
+                n_samples=None,
+                seed=42,
+            )
 
 
 def _write_pose_crops(

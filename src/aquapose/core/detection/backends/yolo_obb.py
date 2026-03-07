@@ -16,10 +16,50 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+from shapely.geometry import Polygon as ShapelyPolygon
 
 from aquapose.core.types.detection import Detection
 
-__all__ = ["YOLOOBBBackend"]
+__all__ = ["YOLOOBBBackend", "polygon_nms"]
+
+
+def polygon_nms(detections: list[Detection], iou_threshold: float) -> list[Detection]:
+    """Greedy non-maximum suppression using exact polygon IoU.
+
+    Detections are sorted by confidence (descending). For each candidate,
+    if its polygon IoU with any already-kept detection exceeds
+    *iou_threshold*, it is suppressed.
+
+    Args:
+        detections: List of detections with populated ``obb_points``.
+        iou_threshold: IoU threshold above which a detection is suppressed.
+
+    Returns:
+        Filtered list of detections after NMS.
+    """
+    if not detections:
+        return []
+
+    sorted_dets = sorted(detections, key=lambda d: d.confidence, reverse=True)
+    kept: list[Detection] = []
+    kept_polys: list[ShapelyPolygon] = []
+
+    for det in sorted_dets:
+        poly = ShapelyPolygon(det.obb_points)
+        suppressed = False
+        for kept_poly in kept_polys:
+            if not poly.intersects(kept_poly):
+                continue
+            intersection = poly.intersection(kept_poly).area
+            union = poly.area + kept_poly.area - intersection
+            if union > 0 and intersection / union > iou_threshold:
+                suppressed = True
+                break
+        if not suppressed:
+            kept.append(det)
+            kept_polys.append(poly)
+
+    return kept
 
 
 class YOLOOBBBackend:
@@ -37,7 +77,10 @@ class YOLOOBBBackend:
     Args:
         weights_path: Path to trained YOLO-OBB ``.pt`` weights file.
         conf_threshold: Minimum confidence score to keep a detection.
-        iou_threshold: IoU threshold for non-max suppression.
+        iou_threshold: IoU threshold for geometric polygon NMS. Detections
+            with polygon IoU above this value are suppressed in favor of the
+            higher-confidence detection. YOLO's internal probiou NMS is
+            disabled (hardcoded to 0.95).
         device: Device string (e.g. ``"cuda"``, ``"cpu"``). Accepted for
             interface consistency but YOLO auto-selects the device internally.
 
@@ -80,9 +123,7 @@ class YOLOOBBBackend:
             List of :class:`~aquapose.core.types.detection.Detection` objects,
             one per detected fish, with ``angle`` and ``obb_points`` populated.
         """
-        results = self._model.predict(
-            frame, conf=self._conf, iou=self._iou, verbose=False
-        )
+        results = self._model.predict(frame, conf=self._conf, iou=0.95, verbose=False)
         return self._parse_results(results)[0] if results else []
 
     def detect_batch(self, frames: list[np.ndarray]) -> list[list[Detection]]:
@@ -102,7 +143,7 @@ class YOLOOBBBackend:
         results = self._model.predict(
             frames,
             conf=self._conf,
-            iou=self._iou,
+            iou=0.95,
             verbose=False,
             batch=len(frames),
         )
@@ -170,6 +211,6 @@ class YOLOOBBBackend:
                     )
                 )
 
-            all_detections.append(frame_dets)
+            all_detections.append(polygon_nms(frame_dets, self._iou))
 
         return all_detections

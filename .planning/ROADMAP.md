@@ -216,7 +216,7 @@ Plans:
   3. Baseline OBB and pose models are trained from store-assembled datasets and registered with model lineage
   4. Train/val split respects temporal holdout convention (no near-duplicate leakage between splits)
   5. `aquapose data exclude --reason TAG` applies reason-tagged exclusions and `data status` shows breakdown by reason
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
 - [ ] 71-01-PLAN.md — Temporal split, val tagging, tagged assemble, exclusion reasons, training defaults
 - [ ] 71-02-PLAN.md — End-to-end convert-import-assemble-train workflow execution
@@ -290,7 +290,7 @@ Phases execute in numeric order: 70 and 71 (parallel) -> 72 -> 73 -> 74 -> 75 (c
 | 56-60 | v3.4 | 8/8 | Complete | 2026-03-05 |
 | 61-69 | v3.5 | 22/22 | Complete | 2026-03-06 |
 | 70. Metrics & Comparison Infrastructure | v3.6 | Complete    | 2026-03-06 | 2026-03-06 |
-| 71. Data Store Bootstrap | v3.6 | 0/2 | Not started | - |
+| 71. Data Store Bootstrap | 1/2 | In Progress|  | - |
 | 72. Baseline Pipeline Run & Metrics | v3.6 | 0/TBD | Not started | - |
 | 73. Round 1 Pseudo-Labels & Retraining | v3.6 | 0/TBD | Not started | - |
 | 74. Round 1 Evaluation & Decision | v3.6 | 0/TBD | Not started | - |

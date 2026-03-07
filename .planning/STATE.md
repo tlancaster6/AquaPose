@@ -22,10 +22,10 @@ See: .planning/PROJECT.md (updated 2026-03-06)
 
 ## Current Position
 
-Phase: 70 of 76 (Metrics & Comparison Infrastructure) - COMPLETE
-Plan: 70-02 complete (2/2 plans done)
-Status: Phase complete
-Last activity: 2026-03-06 - Completed plan 70-02: Per-keypoint error and curvature-stratified quality
+Phase: 71 of 76 (Data Store Bootstrap) - IN PROGRESS
+Plan: 71-01 complete (1/2 plans done)
+Status: Plan 01 complete, Plan 02 next
+Last activity: 2026-03-07 - Completed plan 71-01: Temporal split, val tagging, tagged assemble, exclusion reasons, training defaults
 
 Progress: [█░░░░░░░░░] 14%
 
@@ -41,6 +41,7 @@ Progress: [█░░░░░░░░░] 14%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 70 | 2/2 | ~35min | ~18min |
+| 71 | 1/2 | ~9min | ~9min |
 
 ## Accumulated Context
 
@@ -66,6 +67,6 @@ v3.5 milestone decisions archived to milestones/v3.5-ROADMAP.md.
 
 ## Session Continuity
 
-Last session: 2026-03-06
-Stopped at: Phase 70 complete, ready for Phase 71
-Resume file: .planning/phases/70-metrics-comparison-infrastructure/70-02-SUMMARY.md
+Last session: 2026-03-07
+Stopped at: Completed 71-01-PLAN.md
+Resume file: .planning/phases/71-data-store-bootstrap/71-01-SUMMARY.md

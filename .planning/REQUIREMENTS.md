@@ -18,11 +18,11 @@ Requirements for v3.6 Model Iteration & QA. Each maps to roadmap phases.
 
 ### Data Bootstrap
 
-- [ ] **BOOT-01**: `aquapose data convert` CLI subcommand converts COCO-JSON annotations to YOLO-OBB and YOLO-pose formats via existing `coco_convert.py`
+- [x] **BOOT-01**: `aquapose data convert` CLI subcommand converts COCO-JSON annotations to YOLO-OBB and YOLO-pose formats via existing `coco_convert.py`
 - [ ] **BOOT-02**: Manual annotations imported into data store as `source=manual` with correct provenance
 - [ ] **BOOT-03**: Baseline OBB and pose models trained from store-assembled datasets and registered with model lineage
-- [ ] **BOOT-04**: Temporal split convention implemented — train/val split respects temporal holdout to prevent near-duplicate leakage
-- [ ] **BOOT-05**: `aquapose data exclude --reason TAG` adds reason tag to sample's tags JSON array alongside "excluded" tag; `data status` shows breakdown by reason tag; `SampleStore.exclude()` accepts optional `reason: str | None` parameter — no schema changes
+- [x] **BOOT-04**: Temporal split convention implemented — train/val split respects temporal holdout to prevent near-duplicate leakage
+- [x] **BOOT-05**: `aquapose data exclude --reason TAG` adds reason tag to sample's tags JSON array alongside "excluded" tag; `data status` shows breakdown by reason tag; `SampleStore.exclude()` accepts optional `reason: str | None` parameter — no schema changes
 
 ### Iteration Loop
 
@@ -75,11 +75,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EVAL-04 | Phase 70 | Complete |
 | EVAL-05 | Phase 70 | Complete |
 | EVAL-06 | Phase 70 | Complete |
-| BOOT-01 | Phase 71 | Pending |
+| BOOT-01 | Phase 71 | Complete |
 | BOOT-02 | Phase 71 | Pending |
 | BOOT-03 | Phase 71 | Pending |
-| BOOT-04 | Phase 71 | Pending |
-| BOOT-05 | Phase 71 | Pending |
+| BOOT-04 | Phase 71 | Complete |
+| BOOT-05 | Phase 71 | Complete |
 | ITER-01 | Phase 72 | Pending |
 | ITER-02 | Phase 73 | Pending |
 | ITER-03 | Phase 73 | Pending |

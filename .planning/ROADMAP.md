@@ -182,7 +182,7 @@ Full details: `.planning/milestones/v3.5-ROADMAP.md`
 **Milestone Goal:** Run the pseudo-label retraining loop end-to-end, producing demonstrably better OBB detection and pose estimation models with full provenance tracking.
 
 - [x] **Phase 70: Metrics & Comparison Infrastructure** - Extend evaluation with percentiles, per-keypoint breakdown, curvature-stratified quality, and track fragmentation
-- [ ] **Phase 71: Data Store Bootstrap** - Import manual annotations, train and register baseline models through store workflow
+- [x] **Phase 71: Data Store Bootstrap** - Import manual annotations, train and register baseline models through store workflow (completed 2026-03-07)
 - [ ] **Phase 72: Baseline Pipeline Run & Metrics** - Establish quantitative "before" snapshot on short iteration clip
 - [ ] **Phase 73: Round 1 Pseudo-Labels & Retraining** - Generate pseudo-labels, visually audit, train round 1 models with A/B curation comparison
 - [ ] **Phase 74: Round 1 Evaluation & Decision** - Compare round 1 pipeline metrics to baseline; decide whether to proceed to round 2
@@ -216,7 +216,7 @@ Plans:
   3. Baseline OBB and pose models are trained from store-assembled datasets and registered with model lineage
   4. Train/val split respects temporal holdout convention (no near-duplicate leakage between splits)
   5. `aquapose data exclude --reason TAG` applies reason-tagged exclusions and `data status` shows breakdown by reason
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 71-01-PLAN.md — Temporal split, val tagging, tagged assemble, exclusion reasons, training defaults
 - [ ] 71-02-PLAN.md — End-to-end convert-import-assemble-train workflow execution
@@ -292,7 +292,7 @@ Phases execute in numeric order: 70 and 71 (parallel) -> 72 -> 73 -> 74 -> 75 (c
 | 56-60 | v3.4 | 8/8 | Complete | 2026-03-05 |
 | 61-69 | v3.5 | 22/22 | Complete | 2026-03-06 |
 | 70. Metrics & Comparison Infrastructure | v3.6 | Complete    | 2026-03-06 | 2026-03-06 |
-| 71. Data Store Bootstrap | 1/2 | In Progress|  | - |
+| 71. Data Store Bootstrap | 2/2 | Complete   | 2026-03-07 | - |
 | 72. Baseline Pipeline Run & Metrics | v3.6 | 0/1 | Not started | - |
 | 73. Round 1 Pseudo-Labels & Retraining | v3.6 | 0/TBD | Not started | - |
 | 74. Round 1 Evaluation & Decision | v3.6 | 0/TBD | Not started | - |

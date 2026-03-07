@@ -600,6 +600,30 @@ class SampleStore:
             results.append(d)
         return results
 
+    def _detect_n_keypoints(self, samples: list[dict]) -> int | None:
+        """Detect keypoint count from a YOLO pose label file.
+
+        Parses the first available label to infer keypoint count from
+        the number of tokens: ``(tokens - 5) // 3``.
+
+        Args:
+            samples: List of sample dicts with ``label_path`` keys.
+
+        Returns:
+            Number of keypoints, or None if no label could be parsed.
+        """
+        for sample in samples:
+            label_path = self.root / sample["label_path"]
+            if label_path.exists():
+                text = label_path.read_text().strip()
+                if text:
+                    tokens = text.split("\n")[0].split()
+                    # YOLO pose: cls cx cy w h (x y v)*n_kpt
+                    n_kpt = (len(tokens) - 5) // 3
+                    if n_kpt > 0:
+                        return n_kpt
+        return None
+
     def assemble(
         self,
         name: str,
@@ -702,13 +726,21 @@ class SampleStore:
                 lbl_link.symlink_to(lbl_rel)
 
         # Write dataset.yaml
-        dataset_yaml = {
+        dataset_yaml: dict = {
+            "names": {0: "fish"},
+            "nc": 1,
             "path": str(ds_dir),
             "train": "images/train",
             "val": "images/val",
-            "names": {0: "fish"},
-            "nc": 1,
         }
+
+        # Add pose-specific fields by detecting keypoints from a label file
+        if self.root.name == "pose":
+            n_kpt = self._detect_n_keypoints(train_samples + val_samples)
+            if n_kpt is not None:
+                dataset_yaml["kpt_shape"] = [n_kpt, 3]
+                dataset_yaml["flip_idx"] = list(range(n_kpt))
+
         (ds_dir / "dataset.yaml").write_text(
             yaml.dump(dataset_yaml, default_flow_style=False)
         )

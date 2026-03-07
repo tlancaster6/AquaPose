@@ -223,8 +223,9 @@ def import_cmd(
             if action == "upserted" and pre_children > 0:
                 cascade_deleted += pre_children
 
-            # Augmentation for pose store
-            if augment_pose and action == "imported":
+            # Augmentation for pose store (skip val samples to avoid leakage)
+            is_val = len(rel.parts) > 1 and rel.parts[0] == "val"
+            if augment_pose and action == "imported" and not is_val:
                 img = cv2.imread(str(sample_store.images_dir / f"{sample_id}.jpg"))
                 if img is None:
                     continue

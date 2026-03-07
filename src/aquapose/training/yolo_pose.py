@@ -21,6 +21,7 @@ def train_yolo_pose(
     weights: Path | None = None,
     patience: int = 100,
     mosaic: float = 1.0,
+    rect: bool = True,
 ) -> Path:
     """Train a YOLO-pose keypoint estimation model on a standard Ultralytics txt+yaml dataset.
 
@@ -48,6 +49,8 @@ def train_yolo_pose(
         patience: Early-stopping patience in epochs.
         mosaic: Mosaic augmentation probability (0.0 to 1.0). Set to 0.0
             to disable mosaic, which can help when targets are small.
+        rect: If True, use rectangular training batches. Recommended for
+            non-square crops where padding waste is high.
 
     Returns:
         Path to the best model weights file (``output_dir/best_model.pt``).
@@ -83,6 +86,7 @@ def train_yolo_pose(
         imgsz=imgsz,
         patience=patience,
         mosaic=mosaic,
+        rect=rect,
     )
 
     # Copy weights to output_dir

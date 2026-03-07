@@ -912,6 +912,71 @@ class TestDataRemove:
             assert store.count() == 2  # 3 - 1
 
 
+class TestExcludeWithReasonCli:
+    """Tests for exclude --reason CLI option."""
+
+    def test_exclude_cmd_with_reason(
+        self,
+        runner: CliRunner,
+        yolo_dir: Path,
+        monkeypatch_project: Path,
+    ) -> None:
+        """Exclude with --reason adds both 'excluded' and reason tags."""
+        _import_samples(runner, yolo_dir, "obb", "manual")
+
+        store_db = monkeypatch_project / "training_data" / "obb" / "store.db"
+        with SampleStore(store_db) as store:
+            samples = store.query()
+            sid = samples[0]["id"]
+
+        result = runner.invoke(
+            cli,
+            [
+                "--project",
+                "test",
+                "data",
+                "exclude",
+                "--store",
+                "obb",
+                "--ids",
+                sid,
+                "--reason",
+                "bad_crop",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        with SampleStore(store_db) as store:
+            row = store.get(sid)
+            tags = json.loads(row["tags"])
+            assert "excluded" in tags
+            assert "bad_crop" in tags
+
+    def test_status_shows_reason_breakdown(
+        self,
+        runner: CliRunner,
+        yolo_dir: Path,
+        monkeypatch_project: Path,
+    ) -> None:
+        """Status command shows exclusion breakdown by reason."""
+        _import_samples(runner, yolo_dir, "obb", "manual")
+
+        store_db = monkeypatch_project / "training_data" / "obb" / "store.db"
+        with SampleStore(store_db) as store:
+            samples = store.query()
+            # Exclude 2 with different reasons
+            store.exclude([samples[0]["id"]], reason="bad_crop")
+            store.exclude([samples[1]["id"]], reason="occluded")
+
+        result = runner.invoke(
+            cli,
+            ["--project", "test", "data", "status"],
+        )
+        assert result.exit_code == 0, result.output
+        assert "bad_crop" in result.output
+        assert "occluded" in result.output
+
+
 class TestParseFrameIndex:
     """Tests for parse_frame_index and temporal_split functions."""
 

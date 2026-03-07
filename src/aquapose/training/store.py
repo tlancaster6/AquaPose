@@ -395,13 +395,16 @@ class SampleStore:
             row = conn.execute("SELECT COUNT(*) as cnt FROM samples").fetchone()
         return row["cnt"]
 
-    def exclude(self, sample_ids: list[str]) -> int:
+    def exclude(self, sample_ids: list[str], reason: str | None = None) -> int:
         """Soft-delete samples by adding the ``"excluded"`` tag.
 
         Also cascades to augmented children.
 
         Args:
             sample_ids: List of sample UUIDs to exclude.
+            reason: Optional reason tag (e.g. ``"bad_crop"``). When
+                provided, the reason string is added as a separate tag
+                alongside ``"excluded"``.
 
         Returns:
             Total number of samples modified (parents + children).
@@ -424,8 +427,14 @@ class SampleStore:
             if row is None:
                 continue
             tags = json.loads(row["tags"])
+            modified = False
             if "excluded" not in tags:
                 tags.append("excluded")
+                modified = True
+            if reason is not None and reason not in tags:
+                tags.append(reason)
+                modified = True
+            if modified:
                 now = datetime.now(tz=UTC).isoformat()
                 conn.execute(
                     "UPDATE samples SET tags = ?, updated_at = ? WHERE id = ?",

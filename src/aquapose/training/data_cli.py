@@ -587,9 +587,33 @@ def status_cmd(ctx: click.Context) -> None:
                 f"{count} {src}" for src, count in sorted(s["by_source"].items())
             )
             click.echo(f"{label} Store: {s['total']} samples ({source_parts})")
+
+            # Build exclusion breakdown by reason
+            excluded_str = str(s["excluded_count"])
+            if s["excluded_count"] > 0:
+                conn = store._connect()
+                excluded_rows = conn.execute(
+                    "SELECT tags FROM samples WHERE "
+                    "EXISTS (SELECT 1 FROM json_each(tags) "
+                    "WHERE json_each.value = 'excluded')"
+                ).fetchall()
+                reason_counts: dict[str, int] = {}
+                reserved_tags = {"excluded", "val", "augmented"}
+                for row in excluded_rows:
+                    tags = json.loads(row["tags"])
+                    for tag in tags:
+                        if tag not in reserved_tags:
+                            reason_counts[tag] = reason_counts.get(tag, 0) + 1
+                if reason_counts:
+                    parts = ", ".join(
+                        f"{cnt} {reason}"
+                        for reason, cnt in sorted(reason_counts.items())
+                    )
+                    excluded_str = f"{s['excluded_count']} ({parts})"
+
             click.echo(
                 f"  Augmented: {s['augmented_count']} | "
-                f"Excluded: {s['excluded_count']} | "
+                f"Excluded: {excluded_str} | "
                 f"Datasets: {s['dataset_count']} | "
                 f"Models: {s['model_count']}"
             )
@@ -652,9 +676,19 @@ def list_cmd(ctx: click.Context, store: str, verbose: bool) -> None:
 @click.option(
     "--source", type=str, default=None, help="Exclude all samples from this source."
 )
+@click.option(
+    "--reason",
+    type=str,
+    default=None,
+    help="Reason tag for exclusion (e.g. 'bad_crop', 'occluded').",
+)
 @click.pass_context
 def exclude_cmd(
-    ctx: click.Context, store: str, ids: tuple[str, ...], source: str | None
+    ctx: click.Context,
+    store: str,
+    ids: tuple[str, ...],
+    source: str | None,
+    reason: str | None,
 ) -> None:
     """Soft-delete samples (reversible via include)."""
     from .store import SampleStore
@@ -671,7 +705,7 @@ def exclude_cmd(
             click.echo("Error: Provide --ids or --source to select samples.")
             return
 
-        count = sample_store.exclude(sample_ids)
+        count = sample_store.exclude(sample_ids, reason=reason)
         click.echo(f"Excluded {count} samples")
 
 

@@ -823,6 +823,53 @@ class TestRegisterModel:
         assert store.get_model("nonexistent") is None
 
 
+class TestExcludeWithReason:
+    def test_exclude_with_reason(
+        self,
+        store: SampleStore,
+        sample_image: Path,
+        sample_label: Path,
+    ) -> None:
+        """Exclude with reason adds both 'excluded' and reason tags."""
+        sid, _ = store.import_sample(sample_image, sample_label, "manual")
+        store.exclude([sid], reason="bad_crop")
+
+        row = store.get(sid)
+        tags = json.loads(row["tags"])
+        assert "excluded" in tags
+        assert "bad_crop" in tags
+
+    def test_exclude_without_reason_backward_compat(
+        self,
+        store: SampleStore,
+        sample_image: Path,
+        sample_label: Path,
+    ) -> None:
+        """Exclude without reason adds only 'excluded' (backward compat)."""
+        sid, _ = store.import_sample(sample_image, sample_label, "manual")
+        store.exclude([sid])
+
+        row = store.get(sid)
+        tags = json.loads(row["tags"])
+        assert tags == ["excluded"]
+
+    def test_include_keeps_reason_tags(
+        self,
+        store: SampleStore,
+        sample_image: Path,
+        sample_label: Path,
+    ) -> None:
+        """Include removes 'excluded' but keeps reason tags as audit trail."""
+        sid, _ = store.import_sample(sample_image, sample_label, "manual")
+        store.exclude([sid], reason="bad_crop")
+        store.include([sid])
+
+        row = store.get(sid)
+        tags = json.loads(row["tags"])
+        assert "excluded" not in tags
+        assert "bad_crop" in tags
+
+
 class TestAssembleTaggedSplit:
     def test_assemble_tagged_split_uses_val_tag(
         self,

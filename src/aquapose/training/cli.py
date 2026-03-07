@@ -51,7 +51,7 @@ def train_group() -> None:
 )
 @click.option(
     "--mosaic",
-    default=1.0,
+    default=0.3,
     type=float,
     help="Mosaic augmentation probability (0.0 to disable).",
 )
@@ -336,7 +336,7 @@ def seg(
     "--device", default=None, type=str, help="Torch device (auto-detect if omitted)."
 )
 @click.option("--val-split", default=0.2, type=float, help="Validation split fraction.")
-@click.option("--imgsz", default=640, type=int, help="Training image size (square).")
+@click.option("--imgsz", default=128, type=int, help="Training image size (square).")
 @click.option(
     "--model",
     default="yolo26n-pose",
@@ -354,9 +354,14 @@ def seg(
 )
 @click.option(
     "--mosaic",
-    default=1.0,
+    default=0.1,
     type=float,
     help="Mosaic augmentation probability (0.0 to disable).",
+)
+@click.option(
+    "--rect/--no-rect",
+    default=True,
+    help="Use rectangular training batches.",
 )
 @click.pass_context
 def pose(
@@ -372,6 +377,7 @@ def pose(
     weights: str | None,
     patience: int,
     mosaic: float,
+    rect: bool,
 ) -> None:
     """Train YOLO-pose keypoint estimation model."""
     from aquapose.logging import setup_file_logging
@@ -405,6 +411,7 @@ def pose(
         "patience": patience,
         "data_dir": data_dir,
         "tag": tag,
+        "rect": rect,
     }
     snapshot_config(run_dir, cli_args, dataset_dir=Path(data_dir))
 
@@ -422,6 +429,7 @@ def pose(
         weights=Path(weights) if weights is not None else None,
         patience=patience,
         mosaic=mosaic,
+        rect=rect,
     )
 
     results_csv = run_dir / "_ultralytics" / "train" / "results.csv"

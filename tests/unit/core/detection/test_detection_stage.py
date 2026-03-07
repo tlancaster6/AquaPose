@@ -363,6 +363,82 @@ def test_batched_detection_handles_missing_cameras(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# polygon_nms tests
+# ---------------------------------------------------------------------------
+
+
+def _make_rect_detection(
+    x: float, y: float, w: float, h: float, confidence: float
+) -> Detection:
+    """Create a Detection with axis-aligned rectangular obb_points."""
+    corners = np.array(
+        [[x, y], [x + w, y], [x + w, y + h], [x, y + h]], dtype=np.float64
+    )
+    return Detection(
+        bbox=(int(x), int(y), int(w), int(h)),
+        mask=None,
+        area=int(w * h),
+        confidence=confidence,
+        obb_points=corners,
+    )
+
+
+class TestPolygonNms:
+    """Tests for the geometric polygon NMS function."""
+
+    def test_empty_list_returns_empty(self) -> None:
+        """polygon_nms with empty list returns empty list."""
+        from aquapose.core.detection.backends.yolo_obb import polygon_nms
+
+        assert polygon_nms([], 0.45) == []
+
+    def test_single_detection_returned_unchanged(self) -> None:
+        """polygon_nms with a single detection returns it unchanged."""
+        from aquapose.core.detection.backends.yolo_obb import polygon_nms
+
+        det = _make_rect_detection(0, 0, 100, 50, 0.9)
+        result = polygon_nms([det], 0.45)
+        assert len(result) == 1
+        assert result[0] is det
+
+    def test_overlapping_suppresses_lower_confidence(self) -> None:
+        """Two overlapping rectangles: lower-confidence one is suppressed."""
+        from aquapose.core.detection.backends.yolo_obb import polygon_nms
+
+        # Two 100x50 rectangles overlapping by 80x50 -> IoU = 80*50 / (2*100*50 - 80*50) = 4000/6000 = 0.667
+        det_high = _make_rect_detection(0, 0, 100, 50, 0.9)
+        det_low = _make_rect_detection(20, 0, 100, 50, 0.5)
+        result = polygon_nms([det_low, det_high], 0.45)
+        assert len(result) == 1
+        assert result[0].confidence == 0.9
+
+    def test_non_overlapping_keeps_both(self) -> None:
+        """Two non-overlapping rectangles are both kept."""
+        from aquapose.core.detection.backends.yolo_obb import polygon_nms
+
+        det_a = _make_rect_detection(0, 0, 50, 50, 0.9)
+        det_b = _make_rect_detection(200, 200, 50, 50, 0.5)
+        result = polygon_nms([det_a, det_b], 0.45)
+        assert len(result) == 2
+
+    def test_chain_suppression_three_detections(self) -> None:
+        """A overlaps B overlaps C; A highest conf suppresses B; C kept if no overlap with A."""
+        from aquapose.core.detection.backends.yolo_obb import polygon_nms
+
+        # A at x=0, B at x=20 (overlaps A), C at x=200 (no overlap with A)
+        det_a = _make_rect_detection(0, 0, 100, 50, 0.9)
+        det_b = _make_rect_detection(20, 0, 100, 50, 0.7)
+        det_c = _make_rect_detection(200, 0, 100, 50, 0.5)
+
+        result = polygon_nms([det_c, det_a, det_b], 0.45)
+        assert len(result) == 2
+        confidences = {d.confidence for d in result}
+        assert 0.9 in confidences  # A kept
+        assert 0.5 in confidences  # C kept
+        assert 0.7 not in confidences  # B suppressed
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

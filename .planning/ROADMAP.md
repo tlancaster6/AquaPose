@@ -242,7 +242,10 @@ Plans:
   2. Round 1 OBB and pose models are trained on manual + pseudo-label datasets (elastic augmentation on manual only) and registered with model lineage
   3. A/B comparison completed: model trained with human-curated exclusions vs model trained with full uncurated pseudo-labels, with the curation value quantified via training metrics
   4. `aquapose train compare` shows training metric comparison between baseline and round 1 models
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 73-01-PLAN.md — Generate pseudo-labels, diversity selection, import, visual audit
+- [ ] 73-02-PLAN.md — Assemble datasets, train 4 models, A/B curation comparison
 
 ### Phase 74: Round 1 Evaluation & Decision
 **Goal**: Round 1 models evaluated at pipeline level against baseline; informed decision on whether to proceed to round 2
@@ -294,7 +297,7 @@ Phases execute in numeric order: 70 and 71 (parallel) -> 72 -> 73 -> 74 -> 75 (c
 | 70. Metrics & Comparison Infrastructure | v3.6 | Complete    | 2026-03-06 | 2026-03-06 |
 | 71. Data Store Bootstrap | 2/2 | Complete    | 2026-03-07 | - |
 | 72. Baseline Pipeline Run & Metrics | v3.6 | 0/1 | Not started | - |
-| 73. Round 1 Pseudo-Labels & Retraining | v3.6 | 0/TBD | Not started | - |
+| 73. Round 1 Pseudo-Labels & Retraining | v3.6 | 0/2 | Not started | - |
 | 74. Round 1 Evaluation & Decision | v3.6 | 0/TBD | Not started | - |
 | 75. Round 2 (Conditional) | v3.6 | 0/TBD | Not started | - |
 | 76. Final Validation | v3.6 | 0/TBD | Not started | - |

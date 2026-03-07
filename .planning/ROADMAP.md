@@ -183,7 +183,7 @@ Full details: `.planning/milestones/v3.5-ROADMAP.md`
 
 - [x] **Phase 70: Metrics & Comparison Infrastructure** - Extend evaluation with percentiles, per-keypoint breakdown, curvature-stratified quality, and track fragmentation
 - [x] **Phase 71: Data Store Bootstrap** - Import manual annotations, train and register baseline models through store workflow (completed 2026-03-07)
-- [ ] **Phase 72: Baseline Pipeline Run & Metrics** - Establish quantitative "before" snapshot on short iteration clip
+- [x] **Phase 72: Baseline Pipeline Run & Metrics** - Establish quantitative "before" snapshot on short iteration clip (completed 2026-03-07)
 - [ ] **Phase 73: Round 1 Pseudo-Labels & Retraining** - Generate pseudo-labels, visually audit, train round 1 models with A/B curation comparison
 - [ ] **Phase 74: Round 1 Evaluation & Decision** - Compare round 1 pipeline metrics to baseline; decide whether to proceed to round 2
 - [ ] **Phase 75: Round 2 (Conditional)** - Second iteration if round 1 shows clear improvement with headroom remaining
@@ -229,7 +229,7 @@ Plans:
   1. Pipeline completes a diagnostic-mode run on a short clip (~1 min) using store-registered baseline models
   2. `aquapose eval` produces a full metric report including all Phase 70 extended metrics
   3. Baseline metric numbers (singleton rate, reprojection error percentiles, track continuity, per-keypoint breakdown) are recorded as the benchmark for improvement
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
 - [ ] 72-01-PLAN.md — Pre-flight checks, baseline pipeline run, evaluation, and metric snapshot review
 
@@ -296,7 +296,7 @@ Phases execute in numeric order: 70 and 71 (parallel) -> 72 -> 73 -> 74 -> 75 (c
 | 61-69 | v3.5 | 22/22 | Complete | 2026-03-06 |
 | 70. Metrics & Comparison Infrastructure | v3.6 | Complete    | 2026-03-06 | 2026-03-06 |
 | 71. Data Store Bootstrap | 2/2 | Complete    | 2026-03-07 | - |
-| 72. Baseline Pipeline Run & Metrics | v3.6 | 0/1 | Not started | - |
+| 72. Baseline Pipeline Run & Metrics | 1/1 | Complete   | 2026-03-07 | - |
 | 73. Round 1 Pseudo-Labels & Retraining | v3.6 | 0/2 | Not started | - |
 | 74. Round 1 Evaluation & Decision | v3.6 | 0/TBD | Not started | - |
 | 75. Round 2 (Conditional) | v3.6 | 0/TBD | Not started | - |

@@ -26,7 +26,7 @@ Requirements for v3.6 Model Iteration & QA. Each maps to roadmap phases.
 
 ### Iteration Loop
 
-- [ ] **ITER-01**: Baseline pipeline run on short clip (~1 min) with diagnostic caching produces baseline metric snapshot
+- [x] **ITER-01**: Baseline pipeline run on short clip (~1 min) with diagnostic caching produces baseline metric snapshot
 - [ ] **ITER-02**: Pseudo-labels generated from baseline run, visually audited, and imported into store as `source=pseudo, round=1`
 - [ ] **ITER-03**: Round 1 models trained on manual + pseudo-label datasets (elastic augmentation on manual only) and registered
 - [ ] **ITER-04**: Round 1 pipeline run evaluated against baseline metrics; decision checkpoint on whether to proceed to round 2
@@ -80,7 +80,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BOOT-03 | Phase 71 | Pending |
 | BOOT-04 | Phase 71 | Complete |
 | BOOT-05 | Phase 71 | Complete |
-| ITER-01 | Phase 72 | Pending |
+| ITER-01 | Phase 72 | Complete |
 | ITER-02 | Phase 73 | Pending |
 | ITER-03 | Phase 73 | Pending |
 | ITER-04 | Phase 74 | Pending |

@@ -6,9 +6,9 @@ status: unknown
 last_updated: "2026-03-07T17:12:30.999Z"
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 5
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State
@@ -18,23 +18,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-06)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 70 complete, Phase 71 next
+**Current focus:** Phase 72 complete, Phase 73 next
 
 ## Current Position
 
-Phase: 71 of 76 (Data Store Bootstrap) - IN PROGRESS
-Plan: 71-02 complete (2/2 plans done)
-Status: Both plans complete, awaiting phase verification
-Last activity: 2026-03-07 - Completed plan 71-02: Data store bootstrap workflow (convert, import, assemble, train baseline models)
+Phase: 72 of 76 (Baseline Pipeline Run & Metrics) - COMPLETE
+Plan: 72-01 complete (1/1 plans done)
+Status: Phase complete -- baseline metrics captured
+Last activity: 2026-03-07 - Completed plan 72-01: Baseline pipeline run and metric snapshot
 
 Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2
-- Average duration: ~18min
-- Total execution time: ~0.6 hours
+- Total plans completed: 3
+- Average duration: ~35min
+- Total execution time: ~1.6 hours
 
 **By Phase:**
 
@@ -42,6 +42,7 @@ Progress: [██████████] 100%
 |-------|-------|-------|----------|
 | 70 | 2/2 | ~35min | ~18min |
 | 71 | 1/2 | ~9min | ~9min |
+| 72 | 1/1 | ~60min | ~60min |
 
 ## Accumulated Context
 
@@ -49,6 +50,8 @@ Progress: [██████████] 100%
 
 Decisions are logged in PROJECT.md Key Decisions table.
 v3.5 milestone decisions archived to milestones/v3.5-ROADMAP.md.
+
+- Phase 72: Accepted 31.3% singleton rate as baseline benchmark (slightly above 30% threshold but reasonable for 9000 frames)
 
 ### Pending Todos
 
@@ -69,5 +72,5 @@ v3.5 milestone decisions archived to milestones/v3.5-ROADMAP.md.
 ## Session Continuity
 
 Last session: 2026-03-07
-Stopped at: Completed quick task 23
-Resume file: .planning/quick/23-replace-ultralytics-probiou-nms-with-geo/23-SUMMARY.md
+Stopped at: Completed 72-01-PLAN.md (baseline pipeline run & metrics)
+Resume file: .planning/phases/72-baseline-pipeline-run-metrics/72-01-SUMMARY.md

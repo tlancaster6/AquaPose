@@ -418,6 +418,8 @@ def build_stages(
         detector_kind=config.detection.detector_kind,
         detection_batch_frames=config.detection.detection_batch_frames,
         weights_path=config.detection.weights_path,
+        conf_threshold=config.detection.conf_threshold,
+        iou_threshold=config.detection.iou_threshold,
         device=config.device,
     )
 

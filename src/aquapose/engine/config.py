@@ -31,6 +31,8 @@ class DetectionConfig:
 
     Attributes:
         detector_kind: Detector backend to use (e.g. "yolo", "yolo_obb").
+        conf_threshold: Minimum detection confidence passed to the YOLO backend.
+            Detections below this score are discarded at inference time.
         weights_path: Path to model weights for the active detection backend.
             ``None`` means no path configured (caller must supply via
             ``detector_kwargs`` or construct the stage directly).
@@ -41,6 +43,9 @@ class DetectionConfig:
             body at standard frame resolutions. Stored as a list so that YAML
             round-trips cleanly (Python tuples serialize as ``!!python/tuple``
             which ``yaml.safe_load`` cannot parse).
+        iou_threshold: IoU threshold for geometric polygon NMS. Detections
+            with polygon IoU above this value are suppressed in favor of the
+            higher-confidence detection. Default 0.45.
         detection_batch_frames: Maximum number of frames per YOLO detection
             batch.  ``0`` means no limit (batch all frames in the chunk).
         extra: Catch-all dict for detector-specific kwargs not covered above.
@@ -53,6 +58,8 @@ class DetectionConfig:
     """
 
     detector_kind: str = "yolo"
+    conf_threshold: float = 0.2
+    iou_threshold: float = 0.45
     weights_path: str | None = None
     crop_size: list[int] = field(default_factory=lambda: [128, 64])
     detection_batch_frames: int = 0
@@ -83,6 +90,8 @@ class MidlineConfig:
     Attributes:
         confidence_threshold: Minimum confidence for mask acceptance by the
             segmentation backend.
+        conf_threshold: Minimum detection confidence passed to the YOLO backend.
+            Detections below this score are discarded at inference time.
         weights_path: Path to model weights for the active midline backend
             (segmentation or pose estimation).
         backend: Midline backend to use. ``"segmentation"`` (default) or
@@ -205,7 +214,7 @@ class TrackingConfig:
     max_coast_frames: int = 30
     n_init: int = 3
     iou_threshold: float = 0.3
-    det_thresh: float = 0.3
+    det_thresh: float = 0.5
 
 
 @dataclass(frozen=True)

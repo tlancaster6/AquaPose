@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v3.6
 milestone_name: Model Iteration & QA
 status: unknown
-last_updated: "2026-03-07T17:12:30.999Z"
+last_updated: "2026-03-07T20:07:09.894Z"
 progress:
-  total_phases: 3
+  total_phases: 5
   completed_phases: 3
-  total_plans: 5
+  total_plans: 8
   completed_plans: 5
 ---
 

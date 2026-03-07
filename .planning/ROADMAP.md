@@ -296,7 +296,7 @@ Phases execute in numeric order: 70 and 71 (parallel) -> 72 -> 73 -> 74 -> 75 (c
 | 61-69 | v3.5 | 22/22 | Complete | 2026-03-06 |
 | 70. Metrics & Comparison Infrastructure | v3.6 | Complete    | 2026-03-06 | 2026-03-06 |
 | 71. Data Store Bootstrap | 2/2 | Complete    | 2026-03-07 | - |
-| 72. Baseline Pipeline Run & Metrics | 1/1 | Complete   | 2026-03-07 | - |
+| 72. Baseline Pipeline Run & Metrics | 1/1 | Complete    | 2026-03-07 | - |
 | 73. Round 1 Pseudo-Labels & Retraining | v3.6 | 0/2 | Not started | - |
 | 74. Round 1 Evaluation & Decision | v3.6 | 0/TBD | Not started | - |
 | 75. Round 2 (Conditional) | v3.6 | 0/TBD | Not started | - |

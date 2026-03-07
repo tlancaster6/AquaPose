@@ -229,7 +229,9 @@ Plans:
   1. Pipeline completes a diagnostic-mode run on a short clip (~1 min) using store-registered baseline models
   2. `aquapose eval` produces a full metric report including all Phase 70 extended metrics
   3. Baseline metric numbers (singleton rate, reprojection error percentiles, track continuity, per-keypoint breakdown) are recorded as the benchmark for improvement
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 72-01-PLAN.md — Pre-flight checks, baseline pipeline run, evaluation, and metric snapshot review
 
 ### Phase 73: Round 1 Pseudo-Labels & Retraining
 **Goal**: Pseudo-labels generated from baseline run, visually audited, imported into store, and round 1 models trained with A/B curation comparison quantified
@@ -291,7 +293,7 @@ Phases execute in numeric order: 70 and 71 (parallel) -> 72 -> 73 -> 74 -> 75 (c
 | 61-69 | v3.5 | 22/22 | Complete | 2026-03-06 |
 | 70. Metrics & Comparison Infrastructure | v3.6 | Complete    | 2026-03-06 | 2026-03-06 |
 | 71. Data Store Bootstrap | 1/2 | In Progress|  | - |
-| 72. Baseline Pipeline Run & Metrics | v3.6 | 0/TBD | Not started | - |
+| 72. Baseline Pipeline Run & Metrics | v3.6 | 0/1 | Not started | - |
 | 73. Round 1 Pseudo-Labels & Retraining | v3.6 | 0/TBD | Not started | - |
 | 74. Round 1 Evaluation & Decision | v3.6 | 0/TBD | Not started | - |
 | 75. Round 2 (Conditional) | v3.6 | 0/TBD | Not started | - |

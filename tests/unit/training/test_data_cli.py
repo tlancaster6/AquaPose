@@ -912,6 +912,352 @@ class TestDataRemove:
             assert store.count() == 2  # 3 - 1
 
 
+class TestParseFrameIndex:
+    """Tests for parse_frame_index and temporal_split functions."""
+
+    def test_parse_frame_index_valid(self) -> None:
+        """Parse frame index from standard AquaPose filename."""
+        from aquapose.training.coco_convert import parse_frame_index
+
+        assert parse_frame_index("e3v82e0-20241005T130000_657000.png") == 657000
+
+    def test_parse_frame_index_valid_jpg(self) -> None:
+        """Parse frame index from .jpg filename."""
+        from aquapose.training.coco_convert import parse_frame_index
+
+        assert parse_frame_index("camera1_42.jpg") == 42
+
+    def test_parse_frame_index_invalid(self) -> None:
+        """Raise ValueError for filename without underscore-separated integer."""
+        from aquapose.training.coco_convert import parse_frame_index
+
+        with pytest.raises(ValueError, match="Cannot parse frame index"):
+            parse_frame_index("no_number_here.png")
+
+    def test_parse_frame_index_no_underscore(self) -> None:
+        """Raise ValueError for filename with no underscore."""
+        from aquapose.training.coco_convert import parse_frame_index
+
+        with pytest.raises(ValueError, match="Cannot parse frame index"):
+            parse_frame_index("filename.png")
+
+    def test_temporal_split_groups_by_frame(self) -> None:
+        """Temporal split keeps all cameras from same frame in same split."""
+        from aquapose.training.coco_convert import temporal_split
+
+        # 3 cameras x 5 frames = 15 images
+        image_lookup = {}
+        image_ids = []
+        for frame_idx in range(5):
+            for cam in range(3):
+                img_id = frame_idx * 3 + cam + 1
+                image_lookup[img_id] = {"file_name": f"cam{cam}_{frame_idx}.jpg"}
+                image_ids.append(img_id)
+
+        train_ids, val_ids = temporal_split(image_ids, image_lookup, val_fraction=0.2)
+
+        # val should be last 1 frame (20% of 5 = 1), so 3 images
+        assert len(val_ids) == 3
+        assert len(train_ids) == 12
+
+        # All val images should have the same frame index (the last one = 4)
+        val_frames = {
+            int(image_lookup[i]["file_name"].rsplit("_", 1)[-1].split(".")[0])
+            for i in val_ids
+        }
+        assert val_frames == {4}
+
+
+class TestConvertTemporalSplit:
+    """Tests for convert command with --split-mode temporal."""
+
+    def test_convert_temporal_split(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+    ) -> None:
+        """Convert with --split-mode temporal splits by frame index."""
+        images_dir = tmp_path / "temporal_images"
+        images_dir.mkdir()
+
+        # Create 10 images: 2 cameras x 5 frames
+        images = []
+        annotations = []
+        for frame_idx in range(5):
+            for cam_idx in range(2):
+                img_id = frame_idx * 2 + cam_idx + 1
+                fname = f"cam{cam_idx}_{frame_idx}.jpg"
+                img = np.zeros((200, 300, 3), dtype=np.uint8)
+                img[50 + frame_idx * 10, 100 + cam_idx * 10] = 255
+                cv2.imwrite(str(images_dir / fname), img)
+
+                images.append(
+                    {"id": img_id, "file_name": fname, "width": 300, "height": 200}
+                )
+
+                kps = []
+                for k in range(6):
+                    x = 50 + k * 30
+                    y = 100
+                    v = 2
+                    kps.extend([x, y, v])
+                annotations.append(
+                    {
+                        "id": img_id,
+                        "image_id": img_id,
+                        "category_id": 1,
+                        "keypoints": kps,
+                        "num_keypoints": 6,
+                        "bbox": [30, 80, 180, 40],
+                        "area": 7200,
+                        "iscrowd": 0,
+                    }
+                )
+
+        coco = {
+            "images": images,
+            "annotations": annotations,
+            "categories": [
+                {"id": 1, "name": "fish", "keypoints": [f"kp_{i}" for i in range(6)]}
+            ],
+        }
+        coco_path = tmp_path / "temporal_coco.json"
+        coco_path.write_text(json.dumps(coco))
+
+        output_dir = tmp_path / "temporal_output"
+        result = runner.invoke(
+            cli,
+            [
+                "data",
+                "convert",
+                "--coco-file",
+                str(coco_path),
+                "--images-dir",
+                str(images_dir),
+                "--output-dir",
+                str(output_dir),
+                "--type",
+                "obb",
+                "--split-mode",
+                "temporal",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        obb_dir = output_dir / "obb"
+        val_imgs = list((obb_dir / "images" / "val").iterdir())
+        train_imgs = list((obb_dir / "images" / "train").iterdir())
+        # Last 1 frame (20% of 5) = 2 images in val
+        assert len(val_imgs) == 2
+        assert len(train_imgs) == 8
+
+
+class TestImportValTagging:
+    """Tests for val tagging on import."""
+
+    def test_import_val_tagging(
+        self,
+        runner: CliRunner,
+        monkeypatch_project: Path,
+        tmp_path: Path,
+    ) -> None:
+        """Import from directory with val/ subdirectory tags samples with 'val'."""
+        # Create YOLO dir with train/ and val/ subdirectories
+        yolo_dir = tmp_path / "val_yolo"
+        for split in ("train", "val"):
+            img_dir = yolo_dir / "images" / split
+            lbl_dir = yolo_dir / "labels" / split
+            img_dir.mkdir(parents=True)
+            lbl_dir.mkdir(parents=True)
+
+        # 2 train images
+        for i in range(2):
+            img = np.zeros((64, 128, 3), dtype=np.uint8)
+            img[i, i] = 255
+            cv2.imwrite(str(yolo_dir / "images" / "train" / f"train_{i}.jpg"), img)
+            (yolo_dir / "labels" / "train" / f"train_{i}.txt").write_text(
+                "0 0.5 0.5 0.1 0.1\n"
+            )
+
+        # 1 val image
+        img = np.zeros((64, 128, 3), dtype=np.uint8)
+        img[10, 10] = 128
+        cv2.imwrite(str(yolo_dir / "images" / "val" / "val_0.jpg"), img)
+        (yolo_dir / "labels" / "val" / "val_0.txt").write_text("0 0.5 0.5 0.1 0.1\n")
+
+        result = runner.invoke(
+            cli,
+            [
+                "--project",
+                "test",
+                "data",
+                "import",
+                "--store",
+                "obb",
+                "--source",
+                "manual",
+                "--input-dir",
+                str(yolo_dir),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        store_db = monkeypatch_project / "training_data" / "obb" / "store.db"
+        with SampleStore(store_db) as store:
+            all_samples = store.query(exclude_excluded=False)
+            val_tagged = [s for s in all_samples if "val" in json.loads(s["tags"])]
+            non_val = [s for s in all_samples if "val" not in json.loads(s["tags"])]
+            assert len(val_tagged) == 1
+            assert len(non_val) == 2
+
+
+class TestAssembleSplitMode:
+    """Tests for assemble command with --split-mode and --val-candidates."""
+
+    def test_assemble_tagged_split_cli(
+        self,
+        runner: CliRunner,
+        monkeypatch_project: Path,
+        tmp_path: Path,
+    ) -> None:
+        """Assemble with --split-mode tagged uses val tags for splitting."""
+        # Create and import samples with val/ structure
+        yolo_dir = tmp_path / "tagged_yolo"
+        for split in ("train", "val"):
+            (yolo_dir / "images" / split).mkdir(parents=True)
+            (yolo_dir / "labels" / split).mkdir(parents=True)
+
+        for i in range(3):
+            img = np.zeros((64, 128, 3), dtype=np.uint8)
+            img[i, i] = 255
+            cv2.imwrite(str(yolo_dir / "images" / "train" / f"t_{i}.jpg"), img)
+            (yolo_dir / "labels" / "train" / f"t_{i}.txt").write_text(
+                "0 0.5 0.5 0.1 0.1\n"
+            )
+
+        img = np.zeros((64, 128, 3), dtype=np.uint8)
+        img[20, 20] = 128
+        cv2.imwrite(str(yolo_dir / "images" / "val" / "v_0.jpg"), img)
+        (yolo_dir / "labels" / "val" / "v_0.txt").write_text("0 0.5 0.5 0.1 0.1\n")
+
+        # Import (val/ samples get "val" tag)
+        runner.invoke(
+            cli,
+            [
+                "--project",
+                "test",
+                "data",
+                "import",
+                "--store",
+                "obb",
+                "--source",
+                "manual",
+                "--input-dir",
+                str(yolo_dir),
+            ],
+        )
+
+        # Assemble with tagged split
+        result = runner.invoke(
+            cli,
+            [
+                "--project",
+                "test",
+                "data",
+                "assemble",
+                "--store",
+                "obb",
+                "--name",
+                "tagged_ds",
+                "--split-mode",
+                "tagged",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        ds_dir = (
+            monkeypatch_project / "training_data" / "obb" / "datasets" / "tagged_ds"
+        )
+        val_imgs = list((ds_dir / "images" / "val").iterdir())
+        train_imgs = list((ds_dir / "images" / "train").iterdir())
+        assert len(val_imgs) == 1
+        assert len(train_imgs) == 3
+
+    def test_assemble_val_candidates_cli(
+        self,
+        runner: CliRunner,
+        monkeypatch_project: Path,
+        tmp_path: Path,
+    ) -> None:
+        """Assemble with --val-candidates filters val-eligible samples."""
+        yolo_dir = tmp_path / "cand_yolo"
+        (yolo_dir / "images" / "train").mkdir(parents=True)
+        (yolo_dir / "labels" / "train").mkdir(parents=True)
+
+        for i in range(6):
+            img = np.zeros((64, 128, 3), dtype=np.uint8)
+            img[i * 2, i * 2] = 200
+            cv2.imwrite(str(yolo_dir / "images" / "train" / f"c_{i}.jpg"), img)
+            (yolo_dir / "labels" / "train" / f"c_{i}.txt").write_text(
+                "0 0.5 0.5 0.1 0.1\n"
+            )
+
+        runner.invoke(
+            cli,
+            [
+                "--project",
+                "test",
+                "data",
+                "import",
+                "--store",
+                "obb",
+                "--source",
+                "manual",
+                "--input-dir",
+                str(yolo_dir),
+            ],
+        )
+
+        # Tag 2 samples as "curated"
+        store_db = monkeypatch_project / "training_data" / "obb" / "store.db"
+        with SampleStore(store_db) as store:
+            samples = store.query()
+            conn = store._connect()
+            for s in samples[:2]:
+                conn.execute(
+                    "UPDATE samples SET tags = ? WHERE id = ?",
+                    (json.dumps(["curated"]), s["id"]),
+                )
+            conn.commit()
+
+        result = runner.invoke(
+            cli,
+            [
+                "--project",
+                "test",
+                "data",
+                "assemble",
+                "--store",
+                "obb",
+                "--name",
+                "cand_ds",
+                "--val-candidates",
+                "curated",
+                "--val-fraction",
+                "0.5",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        ds_dir = monkeypatch_project / "training_data" / "obb" / "datasets" / "cand_ds"
+        val_imgs = list((ds_dir / "images" / "val").iterdir())
+        train_imgs = list((ds_dir / "images" / "train").iterdir())
+        # val = 50% of 2 curated = 1
+        assert len(val_imgs) == 1
+        # train = remaining 1 curated + 4 non-curated = 5
+        assert len(train_imgs) == 5
+
+
 class TestDataGroup:
     """Tests for the data CLI group registration."""
 

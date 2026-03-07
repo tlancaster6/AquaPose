@@ -204,6 +204,22 @@ def import_cmd(
             )
             counts[action] += 1
 
+            # Tag samples from val/ subdirectory
+            if len(rel.parts) > 1 and rel.parts[0] == "val":
+                conn = sample_store._connect()
+                row = conn.execute(
+                    "SELECT tags FROM samples WHERE id = ?", (sample_id,)
+                ).fetchone()
+                if row is not None:
+                    tags = json.loads(row["tags"])
+                    if "val" not in tags:
+                        tags.append("val")
+                        conn.execute(
+                            "UPDATE samples SET tags = ? WHERE id = ?",
+                            (json.dumps(tags), sample_id),
+                        )
+                        conn.commit()
+
             if action == "upserted" and pre_children > 0:
                 cascade_deleted += pre_children
 
@@ -342,6 +358,13 @@ def import_cmd(
     show_default=True,
     help="Multiplier for edge keypoint extrapolation.",
 )
+@click.option(
+    "--split-mode",
+    type=click.Choice(["temporal", "random"]),
+    default="random",
+    show_default=True,
+    help="Split strategy: 'temporal' groups by frame index, 'random' shuffles.",
+)
 def convert_cmd(
     coco_file: str,
     images_dir: str,
@@ -355,6 +378,7 @@ def convert_cmd(
     val_split: float,
     seed: int,
     edge_threshold_factor: float,
+    split_mode: str,
 ) -> None:
     """Convert COCO annotations to YOLO-OBB and/or YOLO-Pose format."""
     from .coco_convert import (
@@ -391,6 +415,7 @@ def convert_cmd(
             val_split=val_split,
             seed=seed,
             n_keypoints=n_keypoints,
+            split_mode=split_mode,
         )
         click.echo(f"OBB: {obb_train} train, {obb_val} val")
 
@@ -408,6 +433,7 @@ def convert_cmd(
             min_visible=min_visible,
             val_split=val_split,
             seed=seed,
+            split_mode=split_mode,
         )
         click.echo(f"Pose: {pose_train} train, {pose_val} val")
 
@@ -473,6 +499,19 @@ def _resolve_store_from_ctx(ctx: click.Context, store: str) -> Path:
     is_flag=True,
     help="Allow pseudo-labels in validation split.",
 )
+@click.option(
+    "--split-mode",
+    type=click.Choice(["tagged", "random"]),
+    default="random",
+    show_default=True,
+    help="Split strategy: 'tagged' uses val tag, 'random' shuffles.",
+)
+@click.option(
+    "--val-candidates",
+    type=str,
+    default=None,
+    help="Tag that marks val-eligible samples (random mode only).",
+)
 @click.pass_context
 def assemble_cmd(
     ctx: click.Context,
@@ -485,6 +524,8 @@ def assemble_cmd(
     val_fraction: float,
     seed: int,
     pseudo_in_val: bool,
+    split_mode: str,
+    val_candidates: str | None,
 ) -> None:
     """Assemble a training dataset with symlinks from store."""
     from .store import SampleStore
@@ -509,6 +550,8 @@ def assemble_cmd(
             val_fraction=val_fraction,
             seed=seed,
             pseudo_in_val=pseudo_in_val,
+            split_mode=split_mode,
+            val_candidates_tag=val_candidates,
         )
 
         # Count results

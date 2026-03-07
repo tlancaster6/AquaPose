@@ -823,6 +823,93 @@ class TestRegisterModel:
         assert store.get_model("nonexistent") is None
 
 
+class TestAssembleTaggedSplit:
+    def test_assemble_tagged_split_uses_val_tag(
+        self,
+        store: SampleStore,
+        tmp_path: Path,
+    ) -> None:
+        """Assemble with split_mode='tagged' puts val-tagged samples in val set."""
+        sids = []
+        for i in range(5):
+            img = _make_image(tmp_path, f"tagged_{i}", salt=i)
+            lbl = _make_label(tmp_path, f"tagged_lbl_{i}")
+            sid, _ = store.import_sample(img, lbl, "manual")
+            sids.append(sid)
+
+        # Tag last 2 samples with "val"
+        conn = store._connect()
+        for sid in sids[3:]:
+            conn.execute(
+                "UPDATE samples SET tags = ? WHERE id = ?",
+                (json.dumps(["val"]), sid),
+            )
+        conn.commit()
+
+        ds_path = store.assemble(
+            "tagged_test", {}, val_fraction=0.2, seed=42, split_mode="tagged"
+        )
+
+        val_imgs = list((ds_path / "images" / "val").iterdir())
+        train_imgs = list((ds_path / "images" / "train").iterdir())
+        assert len(val_imgs) == 2
+        assert len(train_imgs) == 3
+
+    def test_assemble_random_default_backward_compat(
+        self,
+        store: SampleStore,
+        tmp_path: Path,
+    ) -> None:
+        """Assemble with default split_mode='random' preserves existing behavior."""
+        for i in range(5):
+            img = _make_image(tmp_path, f"compat_{i}", salt=i)
+            lbl = _make_label(tmp_path, f"compat_lbl_{i}")
+            store.import_sample(img, lbl, "manual")
+
+        ds_path = store.assemble("compat_test", {}, val_fraction=0.2, seed=42)
+
+        val_imgs = list((ds_path / "images" / "val").iterdir())
+        train_imgs = list((ds_path / "images" / "train").iterdir())
+        assert len(val_imgs) + len(train_imgs) == 5
+
+    def test_assemble_val_candidates_tag(
+        self,
+        store: SampleStore,
+        tmp_path: Path,
+    ) -> None:
+        """Assemble with val_candidates_tag filters val-eligible samples in random mode."""
+        sids = []
+        for i in range(10):
+            img = _make_image(tmp_path, f"cand_{i}", salt=i)
+            lbl = _make_label(tmp_path, f"cand_lbl_{i}")
+            sid, _ = store.import_sample(img, lbl, "manual")
+            sids.append(sid)
+
+        # Tag 4 samples as "curated"
+        conn = store._connect()
+        for sid in sids[:4]:
+            conn.execute(
+                "UPDATE samples SET tags = ? WHERE id = ?",
+                (json.dumps(["curated"]), sid),
+            )
+        conn.commit()
+
+        ds_path = store.assemble(
+            "cand_test",
+            {},
+            val_fraction=0.5,
+            seed=42,
+            val_candidates_tag="curated",
+        )
+
+        val_imgs = list((ds_path / "images" / "val").iterdir())
+        train_imgs = list((ds_path / "images" / "train").iterdir())
+        # val should be 50% of 4 curated = 2
+        assert len(val_imgs) == 2
+        # train should be remaining 2 curated + 6 non-curated = 8
+        assert len(train_imgs) == 8
+
+
 class TestSummary:
     def test_summary_returns_counts(
         self,

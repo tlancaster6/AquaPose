@@ -231,6 +231,81 @@ def transform_keypoints(
 
 
 # ---------------------------------------------------------------------------
+# Temporal splitting
+# ---------------------------------------------------------------------------
+
+
+def parse_frame_index(filename: str) -> int:
+    """Extract the frame index from an AquaPose image filename.
+
+    The frame index is the integer after the last underscore in the
+    filename stem.  For example,
+    ``"e3v82e0-20241005T130000_657000.png"`` yields ``657000``.
+
+    Args:
+        filename: Image filename (with or without directory path).
+
+    Returns:
+        Integer frame index.
+
+    Raises:
+        ValueError: If the stem does not contain an underscore followed
+            by a parseable integer.
+    """
+    stem = Path(filename).stem
+    parts = stem.rsplit("_", 1)
+    if len(parts) < 2:
+        msg = f"Cannot parse frame index from filename: {filename!r}"
+        raise ValueError(msg)
+    try:
+        return int(parts[-1])
+    except ValueError:
+        msg = f"Cannot parse frame index from filename: {filename!r}"
+        raise ValueError(msg) from None
+
+
+def temporal_split(
+    image_ids: list[int],
+    image_lookup: dict[int, dict],
+    val_fraction: float = 0.2,
+) -> tuple[set[int], set[int]]:
+    """Split image IDs by frame index, putting the latest frames into val.
+
+    All cameras sharing a frame index stay in the same split.
+
+    Args:
+        image_ids: List of COCO image IDs.
+        image_lookup: Mapping from image ID to image info dict (must
+            contain ``"file_name"``).
+        val_fraction: Fraction of unique frame indices to put in val.
+
+    Returns:
+        Tuple of ``(train_ids, val_ids)`` as sets.
+    """
+    # Group image IDs by frame index
+    frame_to_ids: dict[int, list[int]] = {}
+    for img_id in image_ids:
+        file_name = image_lookup[img_id]["file_name"]
+        frame_idx = parse_frame_index(file_name)
+        frame_to_ids.setdefault(frame_idx, []).append(img_id)
+
+    sorted_frames = sorted(frame_to_ids.keys())
+    n_val = max(1, int(len(sorted_frames) * val_fraction))
+
+    val_frames = set(sorted_frames[-n_val:])
+    train_ids: set[int] = set()
+    val_ids: set[int] = set()
+
+    for frame_idx, ids in frame_to_ids.items():
+        if frame_idx in val_frames:
+            val_ids.update(ids)
+        else:
+            train_ids.update(ids)
+
+    return train_ids, val_ids
+
+
+# ---------------------------------------------------------------------------
 # Dataset generation
 # ---------------------------------------------------------------------------
 
@@ -245,6 +320,7 @@ def generate_obb_dataset(
     val_split: float,
     seed: int,
     n_keypoints: int = N_KEYPOINTS,
+    split_mode: str = "random",
 ) -> tuple[int, int]:
     """Generate a YOLO-OBB dataset from COCO keypoint annotations.
 
@@ -258,6 +334,9 @@ def generate_obb_dataset(
         val_split: Fraction of images for validation.
         seed: Random seed for reproducible split.
         n_keypoints: Number of keypoints.
+        split_mode: Split strategy. ``"random"`` (default) shuffles
+            images randomly. ``"temporal"`` groups by frame index and
+            puts the latest frames into val.
 
     Returns:
         Tuple of (n_train, n_val) image counts.
@@ -273,12 +352,17 @@ def generate_obb_dataset(
     ann_lookup: dict[int, list[dict]] = coco["_ann_lookup"]
 
     all_image_ids = list(image_lookup.keys())
-    rng = random.Random(seed)
-    rng.shuffle(all_image_ids)
 
-    n_val = max(1, int(len(all_image_ids) * val_split)) if len(all_image_ids) > 1 else 0
-    val_ids = set(all_image_ids[:n_val])
-    train_ids = set(all_image_ids[n_val:])
+    if split_mode == "temporal":
+        train_ids, val_ids = temporal_split(all_image_ids, image_lookup, val_split)
+    else:
+        rng = random.Random(seed)
+        rng.shuffle(all_image_ids)
+        n_val = (
+            max(1, int(len(all_image_ids) * val_split)) if len(all_image_ids) > 1 else 0
+        )
+        val_ids = set(all_image_ids[:n_val])
+        train_ids = set(all_image_ids[n_val:])
 
     counts: dict[str, int] = {"train": 0, "val": 0}
 
@@ -349,6 +433,7 @@ def generate_pose_dataset(
     min_visible: int,
     val_split: float,
     seed: int,
+    split_mode: str = "random",
 ) -> tuple[int, int]:
     """Generate a YOLO-Pose dataset with affine-warped crops.
 
@@ -364,6 +449,9 @@ def generate_pose_dataset(
         min_visible: Minimum number of visible keypoints to include.
         val_split: Fraction of crops for validation.
         seed: Random seed for reproducible split.
+        split_mode: Split strategy. ``"random"`` (default) shuffles
+            crops randomly. ``"temporal"`` groups source images by frame
+            index and puts crops from the latest frames into val.
 
     Returns:
         Tuple of (n_train, n_val) crop counts.
@@ -445,11 +533,30 @@ def generate_pose_dataset(
             cv2.imwrite(str(crop_img_path), warped)
             crop_entries.append((crop_stem, pose_rows, n_keypoints))
 
-    rng = random.Random(seed)
-    rng.shuffle(crop_entries)
+    if split_mode == "temporal":
+        # Group crops by frame index from their source image stem
+        frame_to_stems: dict[int, list[str]] = {}
+        for crop_stem, _, _ in crop_entries:
+            # crop_stem format: "{img_stem}_{ann_idx:03d}"
+            # We need the original image stem to extract frame index
+            # The ann_idx is always 3 digits, so rsplit on _ to get it
+            img_stem_part = crop_stem.rsplit("_", 1)[0]
+            frame_idx = parse_frame_index(img_stem_part + ".tmp")
+            frame_to_stems.setdefault(frame_idx, []).append(crop_stem)
 
-    n_val = max(1, int(len(crop_entries) * val_split)) if len(crop_entries) > 1 else 0
-    val_set = set(stem for stem, _, _ in crop_entries[:n_val])
+        sorted_frames = sorted(frame_to_stems.keys())
+        n_val_frames = max(1, int(len(sorted_frames) * val_split))
+        val_frames = set(sorted_frames[-n_val_frames:])
+        val_set: set[str] = set()
+        for frame_idx in val_frames:
+            val_set.update(frame_to_stems[frame_idx])
+    else:
+        rng = random.Random(seed)
+        rng.shuffle(crop_entries)
+        n_val = (
+            max(1, int(len(crop_entries) * val_split)) if len(crop_entries) > 1 else 0
+        )
+        val_set = set(stem for stem, _, _ in crop_entries[:n_val])
 
     counts: dict[str, int] = {"train": 0, "val": 0}
 

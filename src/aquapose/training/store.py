@@ -598,6 +598,8 @@ class SampleStore:
         val_fraction: float = 0.2,
         seed: int = 42,
         pseudo_in_val: bool = False,
+        split_mode: str = "random",
+        val_candidates_tag: str | None = None,
     ) -> Path:
         """Assemble a training dataset with symlinks in YOLO directory structure.
 
@@ -611,31 +613,57 @@ class SampleStore:
             seed: Random seed for deterministic splitting.
             pseudo_in_val: If False (default), pseudo-label samples are
                 excluded from the validation set.
+            split_mode: Split strategy. ``"random"`` (default) uses seeded
+                random shuffle. ``"tagged"`` puts samples with ``"val"``
+                tag into the validation set directly.
+            val_candidates_tag: When set in random mode, only samples with
+                this tag are eligible for the validation set. Others go
+                straight to train.
 
         Returns:
             Path to the assembled dataset directory.
         """
         samples = self.query(**query)
 
-        # Split into val-eligible and train-only
-        if pseudo_in_val:
-            val_eligible = list(samples)
-            train_only: list[dict] = []
-        else:
+        if split_mode == "tagged":
+            # Use "val" tag for splitting
+            val_samples = [s for s in samples if "val" in json.loads(s["tags"])]
+            train_samples = [s for s in samples if "val" not in json.loads(s["tags"])]
+        elif val_candidates_tag is not None:
+            # In random mode with val_candidates_tag: only tagged samples
+            # are val-eligible
             val_eligible = [
-                s for s in samples if s["source"] in ("manual", "corrected")
+                s for s in samples if val_candidates_tag in json.loads(s["tags"])
             ]
-            train_only = [
-                s for s in samples if s["source"] not in ("manual", "corrected")
+            train_only: list[dict] = [
+                s for s in samples if val_candidates_tag not in json.loads(s["tags"])
             ]
 
-        # Seeded shuffle for deterministic split
-        rng = random.Random(seed)
-        rng.shuffle(val_eligible)
+            rng = random.Random(seed)
+            rng.shuffle(val_eligible)
+            n_val = int(len(val_eligible) * val_fraction)
+            val_samples = val_eligible[:n_val]
+            train_samples = val_eligible[n_val:] + train_only
+        else:
+            # Original random split logic
+            if pseudo_in_val:
+                val_eligible = list(samples)
+                train_only = []
+            else:
+                val_eligible = [
+                    s for s in samples if s["source"] in ("manual", "corrected")
+                ]
+                train_only = [
+                    s for s in samples if s["source"] not in ("manual", "corrected")
+                ]
 
-        n_val = int(len(val_eligible) * val_fraction)
-        val_samples = val_eligible[:n_val]
-        train_samples = val_eligible[n_val:] + train_only
+            # Seeded shuffle for deterministic split
+            rng = random.Random(seed)
+            rng.shuffle(val_eligible)
+
+            n_val = int(len(val_eligible) * val_fraction)
+            val_samples = val_eligible[:n_val]
+            train_samples = val_eligible[n_val:] + train_only
 
         # Create dataset directory (clean if exists)
         ds_dir = self.root / "datasets" / name

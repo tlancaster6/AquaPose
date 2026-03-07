@@ -64,9 +64,10 @@ v3.5 milestone decisions archived to milestones/v3.5-ROADMAP.md.
 | # | Description | Date | Commit | Status | Directory |
 |---|-------------|------|--------|--------|-----------|
 | 22 | Update GUIDEBOOK.md to be current, focused, and trustworthy — remove stale repo-specific content | 2026-03-06 | 197b152 | Verified | [22-update-guidebook-md-to-be-current-focuse](./quick/22-update-guidebook-md-to-be-current-focuse/) |
+| 23 | Replace Ultralytics probiou NMS with geometric polygon NMS using Shapely | 2026-03-07 | 8b2ce6e | Complete | [23-replace-ultralytics-probiou-nms-with-geo](./quick/23-replace-ultralytics-probiou-nms-with-geo/) |
 
 ## Session Continuity
 
 Last session: 2026-03-07
-Stopped at: Completed 71-01-PLAN.md
-Resume file: .planning/phases/71-data-store-bootstrap/71-01-SUMMARY.md
+Stopped at: Completed quick task 23
+Resume file: .planning/quick/23-replace-ultralytics-probiou-nms-with-geo/23-SUMMARY.md

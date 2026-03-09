@@ -242,6 +242,10 @@ def import_cmd(
                     # Skip multi-fish crops for augmentation
                     continue
 
+                if len(coords) == 0:
+                    # No visible keypoints — nothing to deform
+                    continue
+
                 lateral_pad = crop_h * 0.18
 
                 variants = generate_variants(

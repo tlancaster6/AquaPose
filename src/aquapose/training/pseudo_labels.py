@@ -10,6 +10,7 @@ from aquapose.calibration.luts import InverseLUT, ghost_point_lookup
 from aquapose.calibration.projection import RefractiveProjectionModel
 from aquapose.core.types.reconstruction import Midline3D
 from aquapose.training.geometry import (
+    extrapolate_edge_keypoints,
     format_obb_annotation,
     format_pose_annotation,
     pca_obb,
@@ -141,16 +142,42 @@ def compute_confidence_score(
     return score, raw_metrics
 
 
+def _compute_arc_length(coords: np.ndarray, visible: np.ndarray) -> float:
+    """Sum Euclidean distances between consecutive visible keypoints.
+
+    Matches ``coco_convert.compute_arc_length`` for consistency with manual
+    annotation pipeline.
+
+    Args:
+        coords: float array of shape ``(N, 2)`` with (x, y) pixel coordinates.
+        visible: bool array of shape ``(N,)``, True if the keypoint is visible.
+
+    Returns:
+        Total arc length in pixels, or 0.0 if fewer than 2 visible keypoints.
+    """
+    total = 0.0
+    prev: np.ndarray | None = None
+    for i in range(len(coords)):
+        if not visible[i]:
+            continue
+        pt = coords[i]
+        if prev is not None:
+            total += float(np.linalg.norm(pt - prev))
+        prev = pt
+    return total
+
+
 def generate_fish_labels(
     midline: Midline3D,
     projection_model: RefractiveProjectionModel,
     img_w: int,
     img_h: int,
     keypoint_t_values: list[float],
-    lateral_pad: float,
+    lateral_ratio: float,
     max_camera_residual_px: float,
     camera_id: str,
     min_visible_keypoints: int = 2,
+    edge_factor: float = 2.0,
 ) -> dict | None:
     """Generate OBB and pose labels for one fish in one camera view.
 
@@ -165,16 +192,17 @@ def generate_fish_labels(
         img_w: Image width in pixels.
         img_h: Image height in pixels.
         keypoint_t_values: Arc-length fractions for keypoint evaluation.
-        lateral_pad: OBB lateral padding in pixels.
+        lateral_ratio: Fraction of arc length for lateral OBB padding.
         max_camera_residual_px: Per-camera residual threshold in pixels.
         camera_id: Camera identifier.
         min_visible_keypoints: Minimum visible keypoints to include pose label.
+        edge_factor: Multiplier on lateral_pad for edge extrapolation threshold.
 
     Returns:
         Dict with keys ``obb_line``, ``confidence``, ``raw_metrics``,
-        ``keypoints_2d``, ``visibility``, and optionally ``pose_line``
-        (only when ``n_visible >= min_visible_keypoints``); or None if
-        the label should be skipped entirely.
+        ``keypoints_2d``, ``visibility``, ``lateral_pad``, and optionally
+        ``pose_line`` (only when ``n_visible >= min_visible_keypoints``);
+        or None if the label should be skipped entirely.
     """
     # Check camera contributed to reconstruction
     if (
@@ -206,8 +234,17 @@ def generate_fish_labels(
     if n_visible < 2:
         return None
 
-    # OBB computation (no edge extrapolation for pseudo-labels)
-    obb_corners = pca_obb(keypoints_2d, visibility, lateral_pad)
+    # Compute data-driven lateral pad from arc length (matches manual pipeline)
+    arc_length = _compute_arc_length(keypoints_2d, visibility)
+    lateral_pad = max(arc_length * lateral_ratio, 5.0)  # floor at 5px
+
+    # Edge extrapolation (matches manual pipeline)
+    kp_ext, vis_ext = extrapolate_edge_keypoints(
+        keypoints_2d, visibility, img_w, img_h, lateral_pad, edge_factor
+    )
+
+    # OBB computation from edge-extrapolated keypoints
+    obb_corners = pca_obb(kp_ext, vis_ext, lateral_pad)
 
     # Format OBB annotation line
     obb_row = format_obb_annotation(obb_corners, img_w, img_h)
@@ -224,6 +261,7 @@ def generate_fish_labels(
         "raw_metrics": raw_metrics,
         "keypoints_2d": keypoints_2d,
         "visibility": visibility,
+        "lateral_pad": lateral_pad,
     }
 
     # Pose label requires meeting the higher min_visible_keypoints threshold
@@ -402,8 +440,9 @@ def generate_gap_fish_labels(
     img_w: int,
     img_h: int,
     keypoint_t_values: list[float],
-    lateral_pad: float,
+    lateral_ratio: float,
     min_visible_keypoints: int = 2,
+    edge_factor: float = 2.0,
 ) -> dict | None:
     """Generate OBB and pose labels for a gap camera.
 
@@ -417,14 +456,15 @@ def generate_gap_fish_labels(
         img_w: Image width in pixels.
         img_h: Image height in pixels.
         keypoint_t_values: Arc-length fractions for keypoint evaluation.
-        lateral_pad: OBB lateral padding in pixels.
+        lateral_ratio: Fraction of arc length for lateral OBB padding.
         min_visible_keypoints: Minimum visible keypoints to include pose label.
+        edge_factor: Multiplier on lateral_pad for edge extrapolation threshold.
 
     Returns:
         Dict with keys ``obb_line``, ``confidence``, ``raw_metrics``,
-        ``keypoints_2d``, ``visibility``, and optionally ``pose_line``
-        (only when ``n_visible >= min_visible_keypoints``); or None if
-        fewer than 2 keypoints are visible or bounds check fails.
+        ``keypoints_2d``, ``visibility``, ``lateral_pad``, and optionally
+        ``pose_line`` (only when ``n_visible >= min_visible_keypoints``);
+        or None if fewer than 2 keypoints are visible or bounds check fails.
     """
     # Reproject spline keypoints
     keypoints_2d, visibility = reproject_spline_keypoints(
@@ -449,8 +489,17 @@ def generate_gap_fish_labels(
     if not _passes_bounds_check(keypoints_2d, visibility, img_w, img_h):
         return None
 
-    # OBB computation (no edge extrapolation for pseudo-labels)
-    obb_corners = pca_obb(keypoints_2d, visibility, lateral_pad)
+    # Compute data-driven lateral pad from arc length (matches manual pipeline)
+    arc_length = _compute_arc_length(keypoints_2d, visibility)
+    lateral_pad = max(arc_length * lateral_ratio, 5.0)  # floor at 5px
+
+    # Edge extrapolation (matches manual pipeline)
+    kp_ext, vis_ext = extrapolate_edge_keypoints(
+        keypoints_2d, visibility, img_w, img_h, lateral_pad, edge_factor
+    )
+
+    # OBB computation from edge-extrapolated keypoints
+    obb_corners = pca_obb(kp_ext, vis_ext, lateral_pad)
 
     # Format OBB annotation line
     obb_row = format_obb_annotation(obb_corners, img_w, img_h)
@@ -467,6 +516,7 @@ def generate_gap_fish_labels(
         "raw_metrics": raw_metrics,
         "keypoints_2d": keypoints_2d,
         "visibility": visibility,
+        "lateral_pad": lateral_pad,
     }
 
     # Pose label requires meeting the higher min_visible_keypoints threshold

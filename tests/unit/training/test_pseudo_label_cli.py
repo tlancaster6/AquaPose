@@ -269,6 +269,7 @@ class TestGenerateCommand:
             "raw_metrics": {"mean_residual": 2.0, "n_cameras": 3},
             "keypoints_2d": np.zeros((5, 2)),
             "visibility": np.ones(5, dtype=bool),
+            "lateral_pad": 20.0,
         }
 
         with (
@@ -380,6 +381,7 @@ class TestGenerateCommand:
             "raw_metrics": {"mean_residual": 2.0, "n_cameras": 3},
             "keypoints_2d": np.zeros((5, 2)),
             "visibility": np.ones(5, dtype=bool),
+            "lateral_pad": 20.0,
         }
 
         with (
@@ -446,6 +448,7 @@ class TestGenerateCommand:
             "raw_metrics": {"mean_residual": 2.0, "n_cameras": 3},
             "keypoints_2d": np.zeros((5, 2)),
             "visibility": np.ones(5, dtype=bool),
+            "lateral_pad": 20.0,
         }
 
         with (
@@ -675,7 +678,7 @@ class TestGenerateCommand:
         result = runner.invoke(cli, ["pseudo-label", "generate", "--help"])
 
         assert result.exit_code == 0
-        assert "--lateral-pad" in result.output
+        assert "--lateral-ratio" in result.output
         assert "--max-camera-residual" in result.output
         assert "--skip-gaps" in result.output
         assert "--min-cameras" in result.output

@@ -181,7 +181,7 @@ class TestGenerateFishLabels:
             img_w=1920,
             img_h=1080,
             keypoint_t_values=[0.0, 0.5, 1.0],
-            lateral_pad=40.0,
+            lateral_ratio=0.18,
             max_camera_residual_px=15.0,
             camera_id="cam99",
         )
@@ -198,7 +198,7 @@ class TestGenerateFishLabels:
             img_w=1920,
             img_h=1080,
             keypoint_t_values=[0.0, 0.5, 1.0],
-            lateral_pad=40.0,
+            lateral_ratio=0.18,
             max_camera_residual_px=15.0,
             camera_id="cam0",
         )
@@ -216,7 +216,7 @@ class TestGenerateFishLabels:
             img_w=1920,
             img_h=1080,
             keypoint_t_values=[0.0, 0.5, 1.0],
-            lateral_pad=40.0,
+            lateral_ratio=0.18,
             max_camera_residual_px=15.0,
             camera_id="cam0",
         )
@@ -233,7 +233,7 @@ class TestGenerateFishLabels:
             img_w=1920,
             img_h=1080,
             keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0],
-            lateral_pad=40.0,
+            lateral_ratio=0.18,
             max_camera_residual_px=15.0,
             camera_id="cam0",
         )
@@ -246,6 +246,7 @@ class TestGenerateFishLabels:
             "raw_metrics",
             "keypoints_2d",
             "visibility",
+            "lateral_pad",
         }
         assert set(result.keys()) == expected_keys
         assert isinstance(result["obb_line"], str)
@@ -266,7 +267,7 @@ class TestGenerateFishLabels:
             img_w=1920,
             img_h=1080,
             keypoint_t_values=[0.0, 0.5, 1.0],
-            lateral_pad=40.0,
+            lateral_ratio=0.18,
             max_camera_residual_px=15.0,
             camera_id="cam0",
         )
@@ -288,7 +289,7 @@ class TestGenerateFishLabels:
             img_w=1920,
             img_h=1080,
             keypoint_t_values=t_values,
-            lateral_pad=40.0,
+            lateral_ratio=0.18,
             max_camera_residual_px=15.0,
             camera_id="cam0",
         )
@@ -486,7 +487,7 @@ class TestGenerateGapFishLabels:
             img_w=1920,
             img_h=1080,
             keypoint_t_values=[0.0, 0.25, 0.5, 0.75, 1.0],
-            lateral_pad=40.0,
+            lateral_ratio=0.18,
         )
         assert result is not None
         expected_keys = {
@@ -496,6 +497,7 @@ class TestGenerateGapFishLabels:
             "raw_metrics",
             "keypoints_2d",
             "visibility",
+            "lateral_pad",
         }
         assert set(result.keys()) == expected_keys
         assert 0.0 <= result["confidence"] <= 1.0
@@ -520,7 +522,7 @@ class TestGenerateGapFishLabels:
             img_w=1920,
             img_h=1080,
             keypoint_t_values=[0.0, 0.5, 1.0],
-            lateral_pad=40.0,
+            lateral_ratio=0.18,
         )
         assert result is None
 
@@ -543,7 +545,7 @@ class TestGenerateGapFishLabels:
             img_w=1920,
             img_h=1080,
             keypoint_t_values=[0.0, 0.5, 1.0],
-            lateral_pad=40.0,
+            lateral_ratio=0.18,
         )
         assert result is None
 
@@ -625,7 +627,7 @@ class TestPartialOobFish:
             img_w=1920,
             img_h=1080,
             keypoint_t_values=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
-            lateral_pad=40.0,
+            lateral_ratio=0.18,
             max_camera_residual_px=15.0,
             camera_id="cam0",
         )
@@ -664,7 +666,7 @@ class TestPartialOobFish:
             img_w=1920,
             img_h=1080,
             keypoint_t_values=[0.0, 0.33, 0.67, 1.0],
-            lateral_pad=40.0,
+            lateral_ratio=0.18,
             max_camera_residual_px=15.0,
             camera_id="cam0",
         )
@@ -694,7 +696,7 @@ class TestPartialOobFish:
             img_w=1920,
             img_h=1080,
             keypoint_t_values=[0.0, 0.5, 1.0],
-            lateral_pad=40.0,
+            lateral_ratio=0.18,
             max_camera_residual_px=15.0,
             camera_id="cam0",
         )
@@ -724,7 +726,7 @@ class TestPartialOobFish:
             img_w=1920,
             img_h=1080,
             keypoint_t_values=[0.0, 0.33, 0.67, 1.0],
-            lateral_pad=40.0,
+            lateral_ratio=0.18,
         )
 
         assert result is not None

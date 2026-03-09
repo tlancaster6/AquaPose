@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 class PseudoLabelConfig:
     """Configuration for pseudo-label generation."""
 
-    lateral_pad: float = 40.0
+    lateral_ratio: float = 0.18
     max_camera_residual_px: float = 15.0
 
 
@@ -60,11 +60,11 @@ def pseudo_label_group() -> None:
 @pseudo_label_group.command("generate")
 @click.argument("run", default=None, required=False)
 @click.option(
-    "--lateral-pad",
+    "--lateral-ratio",
     type=float,
-    default=40.0,
+    default=0.18,
     show_default=True,
-    help="OBB lateral padding in pixels.",
+    help="OBB lateral padding as fraction of fish arc length.",
 )
 @click.option(
     "--max-camera-residual",
@@ -110,7 +110,7 @@ def pseudo_label_group() -> None:
 @click.option(
     "--min-visible-ratio",
     type=float,
-    default=0.34,
+    default=0.67,
     show_default=True,
     help="Minimum fraction of keypoints that must be visible (rounded to nearest integer).",
 )
@@ -124,7 +124,7 @@ def pseudo_label_group() -> None:
 def generate(
     ctx: click.Context,
     run: str | None,
-    lateral_pad: float,
+    lateral_ratio: float,
     max_camera_residual: float,
     skip_gaps: bool,
     min_cameras: int,
@@ -336,7 +336,7 @@ def generate(
                             img_w=img_w,
                             img_h=img_h,
                             keypoint_t_values=keypoint_t_values,
-                            lateral_pad=lateral_pad,
+                            lateral_ratio=lateral_ratio,
                             max_camera_residual_px=max_camera_residual,
                             camera_id=cam_id,
                             min_visible_keypoints=min_visible,
@@ -368,6 +368,7 @@ def generate(
                                 {
                                     "keypoints_2d": result["keypoints_2d"],
                                     "visibility": result["visibility"],
+                                    "lateral_pad": result["lateral_pad"],
                                     "fish_id": int(fish_id),
                                     "confidence": result["confidence"],
                                     "raw_metrics": result["raw_metrics"],
@@ -411,7 +412,7 @@ def generate(
                             img_w=img_w,
                             img_h=img_h,
                             keypoint_t_values=keypoint_t_values,
-                            lateral_pad=lateral_pad,
+                            lateral_ratio=lateral_ratio,
                             min_visible_keypoints=min_visible,
                         )
 
@@ -443,6 +444,7 @@ def generate(
                                 {
                                     "keypoints_2d": gap_result["keypoints_2d"],
                                     "visibility": gap_result["visibility"],
+                                    "lateral_pad": gap_result["lateral_pad"],
                                     "fish_id": int(fish_id),
                                     "confidence": gap_result["confidence"],
                                     "raw_metrics": gap_result["raw_metrics"],
@@ -508,6 +510,7 @@ def generate(
                         {
                             "keypoints_2d": fd["keypoints_2d"],
                             "visibility": fd["visibility"],
+                            "lateral_pad": fd["lateral_pad"],
                             "fish_id": fd["fish_id"],
                         }
                         for fd in cons_pose_data[cam_id]
@@ -519,7 +522,6 @@ def generate(
                         cam_id=cam_id,
                         crop_w=crop_width,
                         crop_h=crop_height,
-                        lateral_pad=lateral_pad,
                         pose_images_dir=cons_pose_images,
                         pose_labels_dir=cons_pose_labels,
                         min_visible=min_visible,
@@ -528,11 +530,16 @@ def generate(
                         crop_stem = f"{frame_idx:06d}_{cam_id}"
                         if crop_stem not in cons_pose_confidence:
                             cons_pose_confidence[crop_stem] = {"labels": []}
+                        vis_mask = fd["visibility"] > 0
+                        vis_kpts = fd["keypoints_2d"][vis_mask]
                         cons_pose_confidence[crop_stem]["labels"].append(
                             {
                                 "fish_id": fd["fish_id"],
                                 "confidence": fd["confidence"],
                                 "raw_metrics": fd["raw_metrics"],
+                                "curvature_2d": float(compute_curvature(vis_kpts))
+                                if len(vis_kpts) >= 3
+                                else 0.0,
                             }
                         )
                     cons_pose_count += len(cons_pose_data[cam_id])
@@ -543,6 +550,7 @@ def generate(
                         {
                             "keypoints_2d": fd["keypoints_2d"],
                             "visibility": fd["visibility"],
+                            "lateral_pad": fd["lateral_pad"],
                             "fish_id": fd["fish_id"],
                         }
                         for fd in gap_pose_data[cam_id]
@@ -554,7 +562,6 @@ def generate(
                         cam_id=cam_id,
                         crop_w=crop_width,
                         crop_h=crop_height,
-                        lateral_pad=lateral_pad,
                         pose_images_dir=gap_pose_images,
                         pose_labels_dir=gap_pose_labels,
                         min_visible=min_visible,
@@ -628,27 +635,25 @@ def _write_pose_crops(
     cam_id: str,
     crop_w: int,
     crop_h: int,
-    lateral_pad: float,
     pose_images_dir: Path,
     pose_labels_dir: Path,
     min_visible: int = 2,
 ) -> None:
     """Write per-fish OBB crop images and crop-space pose labels.
 
-    For each fish (the "primary"), computes the OBB from its keypoints,
-    warps the frame to crop space, then collects pose annotations for ALL
-    fish visible in that crop (multi-fish-per-crop logic matching
-    ``scripts/build_yolo_training_data.py``).
+    For each fish (the "primary"), computes the OBB from its keypoints
+    using per-fish ``lateral_pad``, warps the frame to crop space, then
+    collects pose annotations for ALL fish visible in that crop
+    (multi-fish-per-crop logic matching the manual annotation pipeline).
 
     Args:
         frame: Full-frame BGR image.
         fish_data_list: List of dicts with ``keypoints_2d``, ``visibility``,
-            ``fish_id`` for each fish in this camera view.
+            ``lateral_pad``, ``fish_id`` for each fish in this camera view.
         frame_idx: Frame index (for filename).
         cam_id: Camera identifier (for filename).
         crop_w: Output crop width in pixels.
         crop_h: Output crop height in pixels.
-        lateral_pad: OBB lateral padding in pixels.
         pose_images_dir: Output directory for crop images.
         pose_labels_dir: Output directory for crop label files.
         min_visible: Minimum visible keypoints for a fish to appear in crop.
@@ -656,9 +661,10 @@ def _write_pose_crops(
     for fish_idx, primary in enumerate(fish_data_list):
         kp_primary = primary["keypoints_2d"]
         vis_primary = primary["visibility"]
+        primary_lateral_pad = primary["lateral_pad"]
 
         # Compute OBB for the primary fish in image space
-        obb_corners = pca_obb(kp_primary, vis_primary, lateral_pad)
+        obb_corners = pca_obb(kp_primary, vis_primary, primary_lateral_pad)
 
         # Warp frame to crop
         warped, affine_mat = affine_warp_crop(frame, obb_corners, crop_w, crop_h)
@@ -677,7 +683,8 @@ def _write_pose_crops(
                 continue
 
             # Compute PCA OBB on crop-space keypoints for the bbox
-            crop_obb = pca_obb(kp_crop, vis_crop, lateral_pad)
+            other_lateral_pad = other["lateral_pad"]
+            crop_obb = pca_obb(kp_crop, vis_crop, other_lateral_pad)
             crop_obb[:, 0] = np.clip(crop_obb[:, 0], 0, crop_w - 1)
             crop_obb[:, 1] = np.clip(crop_obb[:, 1], 0, crop_h - 1)
             x_min, y_min = crop_obb.min(axis=0)
@@ -775,13 +782,129 @@ def _yaml_dump(data: dict) -> str:
     return yaml.dump(data, default_flow_style=False, sort_keys=False)
 
 
+@pseudo_label_group.command("select")
+@click.argument("run", default=None, required=False)
+@click.option(
+    "--pseudo-dir",
+    default=None,
+    type=click.Path(exists=True, path_type=Path),
+    help="Pseudo-label directory. Overrides run resolution.",
+)
+@click.option(
+    "--output-dir",
+    required=True,
+    type=click.Path(path_type=Path),
+    help="Output directory for selected subset.",
+)
+@click.option(
+    "--obb-target",
+    type=int,
+    default=50,
+    show_default=True,
+    help="Target number of OBB images.",
+)
+@click.option(
+    "--pose-target",
+    type=int,
+    default=320,
+    show_default=True,
+    help="Target number of pose crops.",
+)
+@click.option(
+    "--val-fraction",
+    type=float,
+    default=0.2,
+    show_default=True,
+    help="Fraction of pose crops for secondary val set.",
+)
+@click.pass_context
+def select(
+    ctx: click.Context,
+    run: str | None,
+    pseudo_dir: Path | None,
+    output_dir: Path,
+    obb_target: int,
+    pose_target: int,
+    val_fraction: float,
+) -> None:
+    """Select a diversity-maximizing subset from generated pseudo-labels.
+
+    Uses 3-axis sampling for OBB (camera, temporal, fish-count) and 2-axis
+    sampling for pose (camera, 2D curvature). Pose crops are split into
+    train/val by temporal ordering.
+    """
+    from aquapose.training.select_diverse_subset import (
+        select_obb_subset,
+        select_pose_subset,
+    )
+
+    if pseudo_dir is None:
+        from aquapose.cli_utils import get_project_dir, resolve_run
+
+        run_dir = resolve_run(run, get_project_dir(ctx))
+        pseudo_dir = run_dir / "pseudo_labels"
+
+    if not pseudo_dir.exists():
+        raise click.ClickException(f"Pseudo-label directory not found: {pseudo_dir}")
+
+    # OBB selection
+    obb_src = pseudo_dir / "obb"
+    if (obb_src / "confidence.json").exists():
+        click.echo(
+            f"Selecting ~{obb_target} OBB images (val_fraction={val_fraction})..."
+        )
+        obb_stats = select_obb_subset(
+            pseudo_dir, output_dir / "obb", obb_target, val_fraction
+        )
+        click.echo(
+            f"  OBB: {obb_stats['total_selected']}/{obb_stats['total_available']} "
+            f"selected (train={obb_stats['train_count']}, val={obb_stats['val_count']})"
+        )
+        click.echo(f"  Across {obb_stats['n_cameras']} cameras:")
+        for cam_id, count in sorted(obb_stats["per_camera"].items()):
+            click.echo(f"    {cam_id}: {count}")
+    else:
+        click.echo("No OBB confidence.json found, skipping OBB selection.")
+
+    # Pose selection
+    pose_src = pseudo_dir / "pose" / "consensus"
+    if (pose_src / "confidence.json").exists():
+        click.echo(
+            f"\nSelecting ~{pose_target} pose crops (val_fraction={val_fraction})..."
+        )
+        pose_stats = select_pose_subset(
+            pseudo_dir, output_dir / "pose", pose_target, val_fraction
+        )
+        click.echo(
+            f"  Pose: {pose_stats['total_selected']}/{pose_stats['total_available']} "
+            f"selected (train={pose_stats['train_count']}, val={pose_stats['val_count']})"
+        )
+        click.echo(f"  Curvature quartiles: {pose_stats['curvature_quartiles']}")
+        click.echo("  Per curvature bin:")
+        for bin_id, count in sorted(pose_stats["per_curvature_bin"].items()):
+            click.echo(f"    Q{bin_id}: {count}")
+        click.echo("  Per camera:")
+        for cam_id, count in sorted(pose_stats["per_camera"].items()):
+            click.echo(f"    {cam_id}: {count}")
+    else:
+        click.echo("No pose consensus confidence.json found, skipping pose selection.")
+
+    click.echo(f"\nOutput: {output_dir}")
+
+
 @pseudo_label_group.command("inspect")
 @click.argument("run", default=None, required=False)
+@click.option(
+    "--input-dir",
+    default=None,
+    type=click.Path(exists=True, path_type=Path),
+    help="Inspect an arbitrary directory (with images/train/ + labels/train/) instead of a run.",
+)
 @click.option(
     "--output-dir",
     default=None,
     type=click.Path(),
-    help="Output directory for annotated PNGs. Defaults to {run_dir}/pseudo_labels/viz/.",
+    help="Output directory for annotated PNGs. Defaults to {run_dir}/pseudo_labels/viz/ or {input_dir}/viz/.",
 )
 @click.option(
     "-n",
@@ -801,18 +924,33 @@ def _yaml_dump(data: dict) -> str:
 def inspect(
     ctx: click.Context,
     run: str | None,
+    input_dir: Path | None,
     output_dir: str | None,
     n_samples: int | None,
     seed: int,
 ) -> None:
-    """Visualize all pseudo-label outputs from a pipeline run.
+    """Visualize pseudo-label outputs from a pipeline run or arbitrary directory.
 
-    Resolves a pipeline run directory (latest, timestamp, or path), then
-    inspects all pseudo-label subsets (consensus OBB, consensus pose,
-    gap OBB, gap pose). Draws OBB polygons or pose keypoints on images
-    and writes annotated PNGs. If a confidence.json sidecar is found,
-    overlays confidence scores, source type, and gap reasons as text.
+    When ``--input-dir`` is provided, inspects that single directory directly
+    (must contain ``images/train/`` and ``labels/train/``). Otherwise resolves
+    a pipeline run and inspects all pseudo-label subsets.
     """
+    if input_dir is not None:
+        # Single directory mode — inspect all splits (train, val)
+        base_out = Path(output_dir) if output_dir else input_dir / "viz"
+        total = 0
+        for split in ("train", "val"):
+            if (input_dir / "images" / split).exists():
+                count = _inspect_subset(
+                    input_dir, base_out / split, n_samples, seed, split=split
+                )
+                total += count
+        if total == 0:
+            # Fallback: try without split subdirectory
+            total = _inspect_subset(input_dir, base_out, n_samples, seed)
+        click.echo(f"Wrote {total} annotated images to {base_out}")
+        return
+
     from aquapose.cli_utils import get_project_dir, resolve_run
 
     run_dir = resolve_run(run, get_project_dir(ctx))
@@ -854,6 +992,7 @@ def _inspect_subset(
     out_path: Path,
     n_samples: int | None,
     seed: int,
+    split: str | None = None,
 ) -> int:
     """Inspect a single pseudo-label subset directory.
 
@@ -862,6 +1001,8 @@ def _inspect_subset(
         out_path: Output directory for annotated PNGs.
         n_samples: Number of images to sample randomly. None for all.
         seed: Random seed for sampling.
+        split: Specific split to inspect ("train", "val"). If None, tries
+            "train" then falls back to flat images/.
 
     Returns:
         Number of images written.
@@ -870,13 +1011,17 @@ def _inspect_subset(
 
     out_path.mkdir(parents=True, exist_ok=True)
 
-    # Find image/label directories (support both flat and train/ subdirectory)
-    images_dir = data_path / "images" / "train"
-    labels_dir = data_path / "labels" / "train"
-    if not images_dir.exists():
-        images_dir = data_path / "images"
-    if not labels_dir.exists():
-        labels_dir = data_path / "labels"
+    # Find image/label directories
+    if split is not None:
+        images_dir = data_path / "images" / split
+        labels_dir = data_path / "labels" / split
+    else:
+        images_dir = data_path / "images" / "train"
+        labels_dir = data_path / "labels" / "train"
+        if not images_dir.exists():
+            images_dir = data_path / "images"
+        if not labels_dir.exists():
+            labels_dir = data_path / "labels"
 
     if not images_dir.exists() or not labels_dir.exists():
         return 0

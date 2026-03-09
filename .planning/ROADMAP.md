@@ -257,7 +257,10 @@ Plans:
   1. Pipeline re-run on same short clip with round 1 models produces comparable eval report
   2. Round 0 vs round 1 metric comparison is documented (singleton rate, reprojection error, track continuity, per-keypoint breakdown)
   3. Decision checkpoint completed: proceed to round 2, or skip to final validation, with rationale recorded
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 74-01-PLAN.md — Build eval-compare CLI command (comparison module, tests, CLI registration)
+- [ ] 74-02-PLAN.md — Pipeline re-run with round 1 models, eval, compare, and decision checkpoint
 
 ### Phase 75: Round 2 (Conditional)
 **Goal**: Second iteration of the pseudo-label loop executed if round 1 showed clear improvement with remaining headroom

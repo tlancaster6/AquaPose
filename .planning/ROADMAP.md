@@ -185,7 +185,7 @@ Full details: `.planning/milestones/v3.5-ROADMAP.md`
 - [x] **Phase 71: Data Store Bootstrap** - Import manual annotations, train and register baseline models through store workflow (completed 2026-03-07)
 - [x] **Phase 72: Baseline Pipeline Run & Metrics** - Establish quantitative "before" snapshot on short iteration clip (completed 2026-03-07)
 - [x] **Phase 73: Round 1 Pseudo-Labels & Retraining** - Generate pseudo-labels, manually correct in CVAT, train round 1 models with A/B curation comparison (completed 2026-03-09)
-- [ ] **Phase 74: Round 1 Evaluation & Decision** - Compare round 1 pipeline metrics to baseline; decide whether to proceed to round 2
+- [x] **Phase 74: Round 1 Evaluation & Decision** - Compare round 1 pipeline metrics to baseline; decide whether to proceed to round 2 (completed 2026-03-09)
 - [ ] **Phase 75: Round 2 (Conditional)** - Second iteration if round 1 shows clear improvement with headroom remaining
 - [ ] **Phase 76: Final Validation** - Full 5-minute pipeline run with best models, showcase overlay videos, summary document
 
@@ -257,7 +257,7 @@ Plans:
   1. Pipeline re-run on same short clip with round 1 models produces comparable eval report
   2. Round 0 vs round 1 metric comparison is documented (singleton rate, reprojection error, track continuity, per-keypoint breakdown)
   3. Decision checkpoint completed: proceed to round 2, or skip to final validation, with rationale recorded
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 74-01-PLAN.md — Build eval-compare CLI command (comparison module, tests, CLI registration)
 - [ ] 74-02-PLAN.md — Pipeline re-run with round 1 models, eval, compare, and decision checkpoint
@@ -303,7 +303,7 @@ Phases execute in numeric order: 70 and 71 (parallel) -> 72 -> 73 -> 74 -> 75 (c
 | 71. Data Store Bootstrap | 2/2 | Complete    | 2026-03-07 | - |
 | 72. Baseline Pipeline Run & Metrics | 1/1 | Complete    | 2026-03-07 | - |
 | 73. Round 1 Pseudo-Labels & Retraining | v3.6 | Complete    | 2026-03-09 | - |
-| 74. Round 1 Evaluation & Decision | 1/2 | In Progress|  | - |
+| 74. Round 1 Evaluation & Decision | 2/2 | Complete   | 2026-03-09 | - |
 | 75. Round 2 (Conditional) | v3.6 | 0/TBD | Not started | - |
 | 76. Final Validation | v3.6 | 0/TBD | Not started | - |
 

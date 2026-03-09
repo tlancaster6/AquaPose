@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.6
 milestone_name: Model Iteration & QA
 status: in_progress
-last_updated: "2026-03-09T21:51:30Z"
+last_updated: "2026-03-09T22:10:00Z"
 progress:
   total_phases: 6
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 13
-  completed_plans: 11
+  completed_plans: 13
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-06)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 74 in progress -- round 1 evaluation & decision
+**Current focus:** Phase 74 complete -- round 1 models accepted as final, milestone v3.6 complete
 
 ## Current Position
 
-Phase: 74 (Round 1 Evaluation & Decision)
-Plan: 74-01 complete (1/2 plans done)
-Status: eval-compare CLI built and tested; ready for 74-02 (pipeline re-run and comparison)
-Last activity: 2026-03-09 - Completed 74-01, eval comparison module and CLI
+Phase: 74 (Round 1 Evaluation & Decision) -- COMPLETE
+Plan: 74-02 complete (2/2 plans done)
+Status: All phases complete. Round 1 models accepted as final. Phase 75 skipped.
+Last activity: 2026-03-09 - Completed 74-02, decision checkpoint: skip round 2
 
-Progress: [████████░░] 85% (5/6 phases, 11/13 plans)
+Progress: [██████████] 100% (6/6 phases, 13/13 plans)
 
 ## Performance Metrics
 
@@ -44,7 +44,7 @@ Progress: [████████░░] 85% (5/6 phases, 11/13 plans)
 | 71 | 1/2 | ~9min | ~9min |
 | 72 | 1/1 | ~60min | ~60min |
 | 77 | 2/2 | ~15min | ~8min |
-| 74 | 1/2 | ~3min | ~3min |
+| 74 | 2/2 | ~23min | ~12min |
 
 ## Accumulated Context
 
@@ -57,6 +57,7 @@ v3.5 milestone decisions archived to milestones/v3.5-ROADMAP.md.
 - Phase 77-01: compute_arc_length returns 0.0 (not None) for consistency; parse_pose_label with crop=1,1 for scale-invariant curvature
 - Phase 77-02: Removed test_yolo_pose.py/test_yolo_seg.py (superseded); patch ultralytics.YOLO at import source for lazy imports
 - Phase 74-01: eval-compare as top-level command (not refactoring eval into group); format_comparison_table kept out of __init__ exports to avoid collision with tuning module
+- Phase 74-02: Skip round 2, accept round 1 models as final -- all primary metrics improved (singleton -12.5%, p50 reproj -28.4%, p90 reproj -19.8%); Phase 75 skipped
 
 ### Pending Todos
 
@@ -64,7 +65,7 @@ v3.5 milestone decisions archived to milestones/v3.5-ROADMAP.md.
 
 ### Blockers/Concerns
 
-- Phase 75 is conditional on Phase 74 decision checkpoint (may be skipped)
+- Phase 75 skipped per 74-02 decision (round 2 not needed)
 - Algae domain shift between manual annotations (clean tank) and current conditions may cause false positives in pseudo-labels
 
 ### Roadmap Evolution
@@ -82,5 +83,5 @@ v3.5 milestone decisions archived to milestones/v3.5-ROADMAP.md.
 ## Session Continuity
 
 Last session: 2026-03-09
-Stopped at: Completed 74-01-PLAN.md — eval-compare CLI ready, 74-02 next (pipeline re-run)
-Resume file: .planning/phases/74-round-1-evaluation-decision/74-01-SUMMARY.md
+Stopped at: Completed 74-02-PLAN.md -- milestone v3.6 complete, all phases done
+Resume file: .planning/phases/74-round-1-evaluation-decision/74-02-SUMMARY.md

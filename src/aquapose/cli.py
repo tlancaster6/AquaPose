@@ -405,6 +405,11 @@ def tune_cmd(
     default=False,
     help="Enable per-segment alpha fading on trail lines (significantly slower).",
 )
+@click.option(
+    "--detections",
+    is_flag=True,
+    help="Generate detection overlay mosaic PNG (OBB boxes colored by confidence).",
+)
 @click.pass_context
 def viz(
     ctx: click.Context,
@@ -414,6 +419,7 @@ def viz(
     animation: bool,
     trails: bool,
     fade_trails: bool,
+    detections: bool,
 ) -> None:
     """Generate visualizations from diagnostic run caches.
 
@@ -422,6 +428,7 @@ def viz(
     """
     from aquapose.evaluation.viz import (
         generate_animation,
+        generate_detection_overlay,
         generate_overlay,
         generate_trails,
     )
@@ -434,6 +441,7 @@ def viz(
         "overlay": overlay,
         "animation": animation,
         "trails": trails,
+        "detections": detections,
     }
     if not any(selected.values()):
         selected = {k: True for k in selected}
@@ -441,6 +449,7 @@ def viz(
     generators: dict[str, Any] = {
         "overlay": lambda: generate_overlay(run_path, out_dir),
         "animation": lambda: generate_animation(run_path, out_dir),
+        "detections": lambda: generate_detection_overlay(run_path, out_dir),
         "trails": lambda: generate_trails(run_path, out_dir, fade_trails=fade_trails),
     }
 

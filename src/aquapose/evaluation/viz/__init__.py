@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 
 from aquapose.evaluation.viz.animation import generate_animation
+from aquapose.evaluation.viz.detections import generate_detection_overlay
 from aquapose.evaluation.viz.overlay import generate_overlay
 from aquapose.evaluation.viz.trails import generate_trails
 
@@ -54,6 +55,7 @@ def generate_all(
 __all__ = [
     "generate_all",
     "generate_animation",
+    "generate_detection_overlay",
     "generate_overlay",
     "generate_trails",
 ]

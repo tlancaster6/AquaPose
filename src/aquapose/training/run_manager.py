@@ -84,15 +84,17 @@ def snapshot_config(
                 shutil.copy2(src, run_dir / f"dataset_{sidecar}")
 
 
-def parse_best_metrics(results_csv: Path) -> dict:
+def parse_best_metrics(results_csv: Path, model_type: str = "obb") -> dict:
     """Extract best-epoch metrics from an Ultralytics results.csv.
 
-    Finds the epoch with the highest ``metrics/mAP50-95(B)`` value and returns
-    its key metrics. Strips whitespace from CSV headers to handle the
-    Ultralytics formatting quirk.
+    Finds the epoch with the highest mAP50-95 value and returns its key
+    metrics. For pose models, uses the ``(P)`` (pose) metric columns;
+    for all other model types, uses ``(B)`` (box) columns. Strips
+    whitespace from CSV headers to handle the Ultralytics formatting quirk.
 
     Args:
         results_csv: Path to the Ultralytics ``results.csv`` file.
+        model_type: Model type string (``"obb"``, ``"seg"``, or ``"pose"``).
 
     Returns:
         Dictionary with ``best_epoch``, ``mAP50``, ``mAP50-95``,
@@ -109,14 +111,16 @@ def parse_best_metrics(results_csv: Path) -> dict:
     if not rows:
         return {}
 
-    best_row = max(rows, key=lambda r: float(r.get("metrics/mAP50-95(B)", 0)))
+    suffix = "(P)" if model_type == "pose" else "(B)"
+
+    best_row = max(rows, key=lambda r: float(r.get(f"metrics/mAP50-95{suffix}", 0)))
 
     return {
         "best_epoch": int(float(best_row.get("epoch", 0))),
-        "mAP50": float(best_row.get("metrics/mAP50(B)", 0)),
-        "mAP50-95": float(best_row.get("metrics/mAP50-95(B)", 0)),
-        "precision": float(best_row.get("metrics/precision(B)", 0)),
-        "recall": float(best_row.get("metrics/recall(B)", 0)),
+        "mAP50": float(best_row.get(f"metrics/mAP50{suffix}", 0)),
+        "mAP50-95": float(best_row.get(f"metrics/mAP50-95{suffix}", 0)),
+        "precision": float(best_row.get(f"metrics/precision{suffix}", 0)),
+        "recall": float(best_row.get(f"metrics/recall{suffix}", 0)),
         "total_time": sum(float(r.get("time", 0)) for r in rows),
     }
 
@@ -181,7 +185,7 @@ def write_summary(
         tag: Optional human-readable tag for this run.
         dataset_dir: Optional dataset directory for provenance extraction.
     """
-    best_metrics = parse_best_metrics(results_csv_path)
+    best_metrics = parse_best_metrics(results_csv_path, model_type=model_type)
 
     dataset_sources: dict = {}
     if dataset_dir is not None:

@@ -357,8 +357,13 @@ def parse_pose_label(
         - coords: float64 array of shape ``(6, 2)`` with (x, y) in pixels.
         - visible: bool array of shape ``(6,)``, True if visibility flag >= 1.
     """
-    text = label_path.read_text().strip()
-    vals = [float(v) for v in text.split()]
+    lines = label_path.read_text().strip().split("\n")
+    if len(lines) > 1:
+        raise ValueError(
+            f"Multi-fish label ({len(lines)} lines) not supported for "
+            f"elastic deformation: {label_path}"
+        )
+    vals = [float(v) for v in lines[0].split()]
     # Skip cls, cx, cy, w, h (5 values), then read 6 keypoint triplets
     kp_vals = vals[5:]
     n_kpts = len(kp_vals) // 3

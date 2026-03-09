@@ -660,8 +660,13 @@ class SampleStore:
 
         if split_mode == "tagged":
             # Use "val" tag for splitting
-            val_samples = [s for s in samples if "val" in json.loads(s["tags"])]
+            val_tagged = [s for s in samples if "val" in json.loads(s["tags"])]
             train_samples = [s for s in samples if "val" not in json.loads(s["tags"])]
+            if pseudo_in_val:
+                val_samples = val_tagged
+            else:
+                # Only manual in val; pseudo/corrected val-tagged are excluded
+                val_samples = [s for s in val_tagged if s["source"] == "manual"]
         elif val_candidates_tag is not None:
             # In random mode with val_candidates_tag: only tagged samples
             # are val-eligible
@@ -740,6 +745,10 @@ class SampleStore:
             if n_kpt is not None:
                 dataset_yaml["kpt_shape"] = [n_kpt, 3]
                 dataset_yaml["flip_idx"] = list(range(n_kpt))
+                from aquapose.training.coco_convert import KEYPOINT_NAMES
+
+                if len(KEYPOINT_NAMES) == n_kpt:
+                    dataset_yaml["kpt_names"] = list(KEYPOINT_NAMES)
 
         (ds_dir / "dataset.yaml").write_text(
             yaml.dump(dataset_yaml, default_flow_style=False)

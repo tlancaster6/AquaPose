@@ -336,7 +336,7 @@ def seg(
     "--device", default=None, type=str, help="Torch device (auto-detect if omitted)."
 )
 @click.option("--val-split", default=0.2, type=float, help="Validation split fraction.")
-@click.option("--imgsz", default=128, type=int, help="Training image size (square).")
+@click.option("--imgsz", default=320, type=int, help="Training image size (square).")
 @click.option(
     "--model",
     default="yolo26n-pose",

@@ -6,10 +6,14 @@ import json
 import logging
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
 from aquapose.cli_utils import get_project_dir
+
+if TYPE_CHECKING:
+    from .store import SampleStore
 
 logger = logging.getLogger(__name__)
 
@@ -232,7 +236,11 @@ def import_cmd(
 
                 crop_h, crop_w = img.shape[:2]
                 label_store_path = sample_store.labels_dir / f"{sample_id}.txt"
-                coords, visible = parse_pose_label(label_store_path, crop_w, crop_h)
+                try:
+                    coords, visible = parse_pose_label(label_store_path, crop_w, crop_h)
+                except ValueError:
+                    # Skip multi-fish crops for augmentation
+                    continue
 
                 lateral_pad = crop_h * 0.18
 
@@ -455,6 +463,34 @@ def _resolve_store_from_ctx(ctx: click.Context, store: str) -> Path:
     return project_dir / "training_data" / store / "store.db"
 
 
+def _resolve_ids_by_filename(
+    sample_store: SampleStore,
+    filenames: list[str],
+) -> list[str]:
+    """Resolve original filenames (image stems) to sample IDs.
+
+    Args:
+        sample_store: Open sample store instance.
+        filenames: List of original image stems to look up.
+
+    Returns:
+        List of resolved sample IDs.
+    """
+    conn = sample_store._connect()
+    resolved: list[str] = []
+    for fname in filenames:
+        # Match against the stored image_path stem
+        rows = conn.execute(
+            "SELECT id, image_path FROM samples WHERE parent_id IS NULL"
+        ).fetchall()
+        matches = [r["id"] for r in rows if Path(r["image_path"]).stem == fname]
+        if not matches:
+            click.echo(f"Warning: no sample found for filename '{fname}'")
+        else:
+            resolved.extend(matches)
+    return resolved
+
+
 @data_group.command("assemble")
 @click.option(
     "--store",
@@ -513,6 +549,11 @@ def _resolve_store_from_ctx(ctx: click.Context, store: str) -> Path:
     default=None,
     help="Tag that marks val-eligible samples (random mode only).",
 )
+@click.option(
+    "--include-excluded",
+    is_flag=True,
+    help="Include excluded samples (for uncurated A/B comparison).",
+)
 @click.pass_context
 def assemble_cmd(
     ctx: click.Context,
@@ -527,6 +568,7 @@ def assemble_cmd(
     pseudo_in_val: bool,
     split_mode: str,
     val_candidates: str | None,
+    include_excluded: bool,
 ) -> None:
     """Assemble a training dataset with symlinks from store."""
     from .store import SampleStore
@@ -543,6 +585,8 @@ def assemble_cmd(
         query["tags_exclude"] = list(tags_exclude)
     if min_confidence is not None:
         query["min_confidence"] = min_confidence
+    if include_excluded:
+        query["exclude_excluded"] = False
 
     with SampleStore(store_db) as sample_store:
         ds_path = sample_store.assemble(
@@ -683,6 +727,11 @@ def list_cmd(ctx: click.Context, store: str, verbose: bool) -> None:
     default=None,
     help="Reason tag for exclusion (e.g. 'bad_crop', 'occluded').",
 )
+@click.option(
+    "--by-filename",
+    is_flag=True,
+    help="Treat --ids as original filenames (image stems) instead of sample IDs.",
+)
 @click.pass_context
 def exclude_cmd(
     ctx: click.Context,
@@ -690,6 +739,7 @@ def exclude_cmd(
     ids: tuple[str, ...],
     source: str | None,
     reason: str | None,
+    by_filename: bool,
 ) -> None:
     """Soft-delete samples (reversible via include)."""
     from .store import SampleStore
@@ -698,7 +748,10 @@ def exclude_cmd(
 
     with SampleStore(store_db) as sample_store:
         if ids:
-            sample_ids = list(ids)
+            if by_filename:
+                sample_ids = _resolve_ids_by_filename(sample_store, list(ids))
+            else:
+                sample_ids = list(ids)
         elif source:
             samples = sample_store.query(source=source)
             sample_ids = [s["id"] for s in samples]

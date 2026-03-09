@@ -10,7 +10,7 @@ Phase 73 is a workflow-heavy phase that orchestrates existing CLI tools through 
 
 The store's `import_sample()` already accepts `source="pseudo"` and `metadata` dict (for confidence, round, etc.). The `assemble()` method supports `split_mode="tagged"` and `pseudo_in_val=False` by default, which correctly routes pseudo-labels to training only. The `exclude()` method supports `--reason TAG` for typed exclusion tracking. The `train compare` command reads `summary.json` from all run directories and formats a side-by-side table.
 
-**Primary recommendation:** Structure this as 3 plans: (1) pseudo-label generation + diversity selection script + visual audit + exclusion marking, (2) dataset assembly + 4 training runs with proper tags, (3) comparison and checkpoint. Plan 1 requires a new `select_diverse_subset.py` script. Plans 2-3 are pure workflow using existing CLI.
+**Primary recommendation:** Structure this as 3 plans: (1) pseudo-label generation + diversity selection script + CLI enhancements (`--input-dir` for inspect, `--by-filename` for exclude) + visual audit + exclusion marking, (2) `--include-excluded` flag + dataset assembly, (3) training + secondary val evaluation + comparison and checkpoint. Plan 1 requires a new `select_diverse_subset.py` script and two CLI enhancements. Plan 2 requires one small CLI change. Plan 3 is pure workflow using existing CLI.
 
 <user_constraints>
 ## User Constraints (from CONTEXT.md)
@@ -134,8 +134,8 @@ aquapose data assemble --store obb --name round1-curated --split-mode tagged
 
 **Recommendation:** Option 1 is cleaner -- add a `--include-excluded` flag to `assemble_cmd` that passes `exclude_excluded=False` to the query dict.
 
-### Pattern 3: Secondary Val Set from Pseudo-Labels
-**What:** Hold out ~20% of curated pseudo-labels as a secondary validation set for post-training evaluation.
+### Pattern 3: Secondary Val Set from Pseudo-Labels (Pose Only)
+**What:** Hold out ~20% of curated pseudo-label pose crops as a secondary validation set for post-training evaluation. OBB budget (~50) is too small for a meaningful holdout.
 **When to use:** During assembly of the curated dataset.
 
 The `assemble()` method supports `pseudo_in_val=True` which allows pseudo-labels in the val split. For the secondary val set:

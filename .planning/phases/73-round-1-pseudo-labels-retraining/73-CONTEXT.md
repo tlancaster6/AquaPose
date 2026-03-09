@@ -19,16 +19,18 @@ Generate pseudo-labels from the Phase 72 baseline pipeline run, select a high-im
 - Pose selection uses 2-axis diversity: camera coverage and 3D curvature stratification (from confidence.json curvature_3d field)
 - All selection metadata is queryable from existing confidence.json sidecars and filenames
 
-### Visual audit process
-- Exhaustive review of the diversity-selected subset (not sampling)
-- Reject criteria: obvious failures only (wrong fish labeled, grossly misaligned keypoints, label on background)
-- Accept imprecise-but-reasonable labels -- the model learns from noisy supervision
+### Manual curation process (CVAT-based)
+- Load diversity-selected subset into CVAT for full manual correction (not just pass/fail exclusion)
+- User corrects OBB bounding boxes and pose keypoint positions directly in CVAT
+- User removes samples that are unsalvageable (wrong fish, background-only, etc.)
+- CVAT export produces corrected YOLO-format labels for re-import
 
 ### Curation A/B comparison
-- Both arms use the same diversity-selected subset
-- Arm A (curated): subset with bad labels excluded after review
-- Arm B (uncurated): same subset, no exclusions applied
-- Exclusion tracking via freeform failure-typed reason tags (e.g., 'misaligned-kpts', 'wrong-fish', 'bg-label') using `data exclude --reason TAG`
+- Both arms start from the same diversity-selected pseudo-label subset
+- Arm A (curated): manually corrected labels imported as source=manual (upserts over pseudo via priority), plus exclusions for removed samples
+- Arm B (uncurated): original pseudo-labels with no corrections or exclusions
+- **Sequencing**: uncurated dataset must be assembled BEFORE importing CVAT corrections, since store source priority (manual > pseudo) would otherwise replace originals in both arms
+- Correction quantification: compare original pseudo-labels vs CVAT exports to measure correction magnitude (OBB IoU delta, pose keypoint displacement, samples added/removed)
 - Primary comparison metric: training val metrics via `train compare`
 - Winner selection: user decides at checkpoint based on numbers and training curves
 
@@ -40,7 +42,7 @@ Generate pseudo-labels from the Phase 72 baseline pipeline run, select a high-im
 
 ### Validation sets
 - Primary val set: Phase 71 manual val set (unchanged, used during training for early stopping and metrics)
-- Secondary val set: ~20% holdout from curated pseudo-labels, split temporally (later frames to val)
+- Secondary val set (pose only): ~20% holdout from curated pseudo-label pose crops, split temporally (later frames to val). OBB budget (~50) is too small for a meaningful holdout.
 - Secondary set used for post-training evaluation only (not during training)
 - Baseline model also evaluated on secondary set to characterize improvement
 
@@ -60,7 +62,7 @@ Generate pseudo-labels from the Phase 72 baseline pipeline run, select a high-im
 <specifics>
 ## Specific Ideas
 
-- User wants to mark all bad images to enable proper A/B comparison of curated vs uncurated impact
+- User wants full manual correction in CVAT (not just exclusion marking) to maximize curated data quality
 - Selection strategy should maximize impact of the limited pseudo-label budget rather than using everything
 - Secondary pseudo-label val set enables characterizing generalization to new scenarios, not just held-out manual annotations
 - Baseline model should also be evaluated on pseudo-label holdout for full improvement characterization

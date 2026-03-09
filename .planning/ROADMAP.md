@@ -184,7 +184,7 @@ Full details: `.planning/milestones/v3.5-ROADMAP.md`
 - [x] **Phase 70: Metrics & Comparison Infrastructure** - Extend evaluation with percentiles, per-keypoint breakdown, curvature-stratified quality, and track fragmentation
 - [x] **Phase 71: Data Store Bootstrap** - Import manual annotations, train and register baseline models through store workflow (completed 2026-03-07)
 - [x] **Phase 72: Baseline Pipeline Run & Metrics** - Establish quantitative "before" snapshot on short iteration clip (completed 2026-03-07)
-- [ ] **Phase 73: Round 1 Pseudo-Labels & Retraining** - Generate pseudo-labels, visually audit, train round 1 models with A/B curation comparison
+- [ ] **Phase 73: Round 1 Pseudo-Labels & Retraining** - Generate pseudo-labels, manually correct in CVAT, train round 1 models with A/B curation comparison
 - [ ] **Phase 74: Round 1 Evaluation & Decision** - Compare round 1 pipeline metrics to baseline; decide whether to proceed to round 2
 - [ ] **Phase 75: Round 2 (Conditional)** - Second iteration if round 1 shows clear improvement with headroom remaining
 - [ ] **Phase 76: Final Validation** - Full 5-minute pipeline run with best models, showcase overlay videos, summary document
@@ -229,23 +229,25 @@ Plans:
   1. Pipeline completes a diagnostic-mode run on a short clip (~1 min) using store-registered baseline models
   2. `aquapose eval` produces a full metric report including all Phase 70 extended metrics
   3. Baseline metric numbers (singleton rate, reprojection error percentiles, track continuity, per-keypoint breakdown) are recorded as the benchmark for improvement
-**Plans:** 1/1 plans complete
+**Plans:** 1/1 plans complete 
 Plans:
 - [ ] 72-01-PLAN.md — Pre-flight checks, baseline pipeline run, evaluation, and metric snapshot review
 
 ### Phase 73: Round 1 Pseudo-Labels & Retraining
-**Goal**: Pseudo-labels generated from baseline run, visually audited, imported into store, and round 1 models trained with A/B curation comparison quantified
+**Goal**: Pseudo-labels generated from baseline run, manually corrected in CVAT, imported into store, and round 1 models trained with A/B curation comparison quantified
 **Depends on**: Phase 72
 **Requirements**: ITER-02, ITER-03, ITER-06
 **Success Criteria** (what must be TRUE):
-  1. Pseudo-labels (OBB + pose) generated from baseline run caches are visually audited and imported into store as `source=pseudo, round=1`
-  2. Round 1 OBB and pose models are trained on manual + pseudo-label datasets (elastic augmentation on manual only) and registered with model lineage
-  3. A/B comparison completed: model trained with human-curated exclusions vs model trained with full uncurated pseudo-labels, with the curation value quantified via training metrics
-  4. `aquapose train compare` shows training metric comparison between baseline and round 1 models
-**Plans:** 2 plans
+  1. Pseudo-labels (OBB + pose) generated from baseline run caches, diversity-selected, and imported into store as `source=pseudo, round=1`
+  2. Selected subset manually corrected in CVAT; corrected labels imported as `source=manual` with correction magnitude quantified
+  3. Round 1 OBB and pose models trained on manual + pseudo-label datasets (elastic augmentation on manual only) and registered with model lineage
+  4. A/B comparison completed: model trained on CVAT-corrected labels vs model trained on uncorrected pseudo-labels, with curation value quantified via training metrics
+  5. `aquapose train compare` shows training metric comparison between baseline and round 1 models
+**Plans:** 3 plans
 Plans:
-- [ ] 73-01-PLAN.md — Generate pseudo-labels, diversity selection, import, visual audit
-- [ ] 73-02-PLAN.md — Assemble datasets, train 4 models, A/B curation comparison
+- [ ] 73-01-PLAN.md — Generate pseudo-labels, diversity selection, label-studio curation checkpoint
+- [ ] 73-02-PLAN.md — Import corrections, quantify, assemble datasets (uncurated before corrections, curated after)
+- [ ] 73-03-PLAN.md — Train 4 models, A/B curation comparison
 
 ### Phase 74: Round 1 Evaluation & Decision
 **Goal**: Round 1 models evaluated at pipeline level against baseline; informed decision on whether to proceed to round 2

@@ -57,20 +57,22 @@
 |-------|-----|-----------|-------------|------------|--------------|
 | Baseline | baseline | 0.991 | 0.836 | 0.991 | 0.965 |
 | + Pseudo-labels | round1-uncurated | 0.991 | 0.859 | 0.991 | 0.966 |
-| + Corrected labels | round1-curated | 0.991 | 0.830 | 0.991 | 0.971 |
+| + Corrected + augmented | round1-curated-aug | — | — | — | *(pending)* |
 
 **Training runs**:
 - Baseline: `run_20260307_113057` (imgsz=320)
 - Uncurated: `run_20260309_105819` (imgsz=320)
-- Curated: `run_20260309_141554` (imgsz=320)
+- Curated+aug: *(pending — will include corrected keypoints + elastic augmentation)*
 
 **Note**: Earlier reports listed baseline pose mAP50-95 as 0.841 — that was actually box mAP50-95, due to `summary.json` storing box metrics. The correct baseline pose mAP50-95 is 0.965, obtained by re-running `model.val()` on the same val set. This means the pose improvements from pseudo-labels are much smaller than initially thought (+0.1 to +0.6 pts), while the main benefit is in box mAP50-95.
 
+**Note**: An earlier curated run (`run_20260309_141554`) was deleted — it was trained on labels imported with a bug that dropped all keypoints from corrected samples. Results appeared similar to uncurated (0.971 pose mAP50-95) but were unreliable.
+
 **Observations**:
-- Pose mAP50-95 was already strong at baseline (0.965); pseudo-labels provide marginal improvement (+0.6 pts curated)
-- Box mAP50-95 shows more movement: baseline 0.836, uncurated 0.859 (+2.3), curated 0.830 (-0.6)
+- Pose mAP50-95 was already strong at baseline (0.965); pseudo-labels provide marginal improvement (+0.1 pts uncurated)
+- Box mAP50-95 shows more movement: baseline 0.836, uncurated 0.859 (+2.3)
 - The large apparent "pose regression" in earlier runs was a compound error: imgsz=128 bug + summary.json storing box metrics instead of pose metrics
-- `summary.json` bug: pose training runs record box mAP50-95 as the primary metric, and best epoch is selected by box metric — should be fixed
+- `summary.json` bug fixed: pose training runs now use pose (P) columns for metrics and best-epoch selection
 
 ## Deleted Runs
 
@@ -79,6 +81,7 @@
 | `run_20260307_155559` | Pose | Failed/aborted, imgsz=128, no weights |
 | `run_20260309_093243` | Pose | imgsz=128 bug, misleading metrics |
 | `run_20260309_092843` | OBB | Validated on mixed val set (not comparable) |
+| `run_20260309_141554` | Pose | Corrected labels had no keypoints (import bug) |
 | `run_20260307_155556` | OBB | Failed/aborted, no summary |
 | `run_20260307_160907` | OBB | Failed/aborted, no summary |
 

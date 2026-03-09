@@ -10,7 +10,6 @@ import numpy as np
 import yaml
 
 from aquapose.training.coco_convert import (
-    compute_arc_length,
     compute_median_arc_length,
     generate_obb_dataset,
     generate_pose_dataset,
@@ -19,6 +18,7 @@ from aquapose.training.coco_convert import (
     transform_keypoints,
 )
 from aquapose.training.geometry import (
+    compute_arc_length,
     extrapolate_edge_keypoints,
     format_obb_annotation,
     format_pose_annotation,
@@ -108,25 +108,25 @@ class TestComputeArcLength:
         )
         visible = np.array([True, True, True, False, False, False])
         arc = compute_arc_length(coords, visible)
-        assert arc is not None
+        assert arc > 0.0
         np.testing.assert_allclose(arc, 20.0, atol=1e-6)
 
     def test_diagonal(self) -> None:
         coords = np.array([[0, 0], [3, 4], [0, 0], [0, 0], [0, 0], [0, 0]], dtype=float)
         visible = np.array([True, True, False, False, False, False])
         arc = compute_arc_length(coords, visible)
-        assert arc is not None
+        assert arc > 0.0
         np.testing.assert_allclose(arc, 5.0, atol=1e-6)
 
-    def test_fewer_than_2_visible_returns_none(self) -> None:
+    def test_fewer_than_2_visible_returns_zero(self) -> None:
         coords = np.zeros((N, 2))
         visible = np.array([True, False, False, False, False, False])
-        assert compute_arc_length(coords, visible) is None
+        assert compute_arc_length(coords, visible) == 0.0
 
-    def test_no_visible_returns_none(self) -> None:
+    def test_no_visible_returns_zero(self) -> None:
         coords = np.zeros((N, 2))
         visible = np.zeros(N, dtype=bool)
-        assert compute_arc_length(coords, visible) is None
+        assert compute_arc_length(coords, visible) == 0.0
 
 
 # ---------------------------------------------------------------------------

@@ -11,6 +11,22 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 
 
+class _LutConfigFromDict:
+    """Minimal LUT config satisfying the ``LutConfigLike`` protocol.
+
+    Built from a plain dict (YAML ``lut`` section) to avoid importing
+    ``aquapose.engine.config`` (which would violate the training->engine
+    import boundary).
+    """
+
+    def __init__(self, d: dict) -> None:
+        self.tank_diameter: float = float(d.get("tank_diameter", 1.0))
+        self.tank_height: float = float(d.get("tank_height", 0.5))
+        self.voxel_resolution_m: float = float(d.get("voxel_resolution_m", 0.01))
+        self.margin_fraction: float = float(d.get("margin_fraction", 0.1))
+        self.forward_grid_step: int = int(d.get("forward_grid_step", 4))
+
+
 class EarlyStopping:
     """Tracks metric history and signals when training should stop.
 

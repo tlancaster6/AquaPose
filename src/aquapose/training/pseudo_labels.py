@@ -10,6 +10,7 @@ from aquapose.calibration.luts import InverseLUT, ghost_point_lookup
 from aquapose.calibration.projection import RefractiveProjectionModel
 from aquapose.core.types.reconstruction import Midline3D
 from aquapose.training.geometry import (
+    compute_arc_length,
     extrapolate_edge_keypoints,
     format_obb_annotation,
     format_pose_annotation,
@@ -142,31 +143,6 @@ def compute_confidence_score(
     return score, raw_metrics
 
 
-def _compute_arc_length(coords: np.ndarray, visible: np.ndarray) -> float:
-    """Sum Euclidean distances between consecutive visible keypoints.
-
-    Matches ``coco_convert.compute_arc_length`` for consistency with manual
-    annotation pipeline.
-
-    Args:
-        coords: float array of shape ``(N, 2)`` with (x, y) pixel coordinates.
-        visible: bool array of shape ``(N,)``, True if the keypoint is visible.
-
-    Returns:
-        Total arc length in pixels, or 0.0 if fewer than 2 visible keypoints.
-    """
-    total = 0.0
-    prev: np.ndarray | None = None
-    for i in range(len(coords)):
-        if not visible[i]:
-            continue
-        pt = coords[i]
-        if prev is not None:
-            total += float(np.linalg.norm(pt - prev))
-        prev = pt
-    return total
-
-
 def generate_fish_labels(
     midline: Midline3D,
     projection_model: RefractiveProjectionModel,
@@ -235,7 +211,7 @@ def generate_fish_labels(
         return None
 
     # Compute data-driven lateral pad from arc length (matches manual pipeline)
-    arc_length = _compute_arc_length(keypoints_2d, visibility)
+    arc_length = compute_arc_length(keypoints_2d, visibility)
     lateral_pad = max(arc_length * lateral_ratio, 5.0)  # floor at 5px
 
     # Edge extrapolation (matches manual pipeline)
@@ -490,7 +466,7 @@ def generate_gap_fish_labels(
         return None
 
     # Compute data-driven lateral pad from arc length (matches manual pipeline)
-    arc_length = _compute_arc_length(keypoints_2d, visibility)
+    arc_length = compute_arc_length(keypoints_2d, visibility)
     lateral_pad = max(arc_length * lateral_ratio, 5.0)  # floor at 5px
 
     # Edge extrapolation (matches manual pipeline)

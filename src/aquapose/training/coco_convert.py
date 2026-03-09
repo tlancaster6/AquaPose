@@ -12,10 +12,13 @@ import numpy as np
 import yaml
 
 from .geometry import (
+    affine_warp_crop,
+    compute_arc_length,
     extrapolate_edge_keypoints,
     format_obb_annotation,
     format_pose_annotation,
     pca_obb,
+    transform_keypoints,
 )
 
 # ---------------------------------------------------------------------------
@@ -96,38 +99,6 @@ def parse_keypoints(
     return coords, visible
 
 
-# ---------------------------------------------------------------------------
-# Geometry utilities
-# ---------------------------------------------------------------------------
-
-
-def compute_arc_length(coords: np.ndarray, visible: np.ndarray) -> float | None:
-    """Sum Euclidean distances between consecutive visible keypoints.
-
-    Args:
-        coords: float array of shape ``(N, 2)`` with (x, y) pixel coordinates.
-        visible: bool array of shape ``(N,)``, True if the keypoint is visible.
-
-    Returns:
-        Total arc length in pixels, or None if fewer than 2 visible keypoints.
-    """
-    vis_pts = coords[visible]
-    if len(vis_pts) < 2:
-        return None
-
-    total = 0.0
-    prev: np.ndarray | None = None
-    for i in range(len(coords)):
-        if not visible[i]:
-            continue
-        pt = coords[i]
-        if prev is not None:
-            total += float(np.linalg.norm(pt - prev))
-        prev = pt
-
-    return total
-
-
 def compute_median_arc_length(
     annotations: list[dict], n_keypoints: int = N_KEYPOINTS
 ) -> float:
@@ -149,7 +120,7 @@ def compute_median_arc_length(
         if visible.sum() < n_keypoints:
             continue
         arc = compute_arc_length(coords, visible)
-        if arc is not None:
+        if arc > 0.0:
             lengths.append(arc)
 
     if not lengths:
@@ -160,74 +131,6 @@ def compute_median_arc_length(
         raise ValueError(msg)
 
     return float(np.median(lengths))
-
-
-def affine_warp_crop(
-    image: np.ndarray,
-    obb_corners: np.ndarray,
-    crop_w: int,
-    crop_h: int,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Warp OBB region to an axis-aligned rectangle.
-
-    Args:
-        image: BGR image array of shape ``(H, W, 3)``.
-        obb_corners: float64 array of shape ``(4, 2)`` with OBB corner
-            coordinates in image space (TL, TR, BR, BL).
-        crop_w: Output crop width in pixels.
-        crop_h: Output crop height in pixels.
-
-    Returns:
-        Tuple of:
-        - warped: uint8 BGR crop of shape ``(crop_h, crop_w, 3)``.
-        - affine: float64 affine matrix of shape ``(2, 3)``.
-    """
-    src = np.array([obb_corners[0], obb_corners[1], obb_corners[3]], dtype=np.float32)
-    dst = np.array([[0, 0], [crop_w - 1, 0], [0, crop_h - 1]], dtype=np.float32)
-
-    affine = cv2.getAffineTransform(src, dst)
-    warped = cv2.warpAffine(image, affine, (crop_w, crop_h))
-    return warped, affine.astype(np.float64)
-
-
-def transform_keypoints(
-    coords: np.ndarray,
-    visible: np.ndarray,
-    affine_matrix: np.ndarray,
-    crop_w: int,
-    crop_h: int,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Apply a 2x3 affine matrix to keypoint coordinates.
-
-    Args:
-        coords: float array of shape ``(N, 2)`` with (x, y) pixel coordinates.
-        visible: bool array of shape ``(N,)``, True if keypoint is visible.
-        affine_matrix: float64 affine transform matrix of shape ``(2, 3)``.
-        crop_w: Output crop width in pixels.
-        crop_h: Output crop height in pixels.
-
-    Returns:
-        Tuple of:
-        - coords_out: float64 array of shape ``(N, 2)``.
-        - visible_out: bool array of shape ``(N,)``.
-    """
-    n = len(coords)
-    ones = np.ones((n, 1), dtype=np.float64)
-    pts_h = np.hstack([coords, ones])
-
-    transformed = (affine_matrix @ pts_h.T).T
-
-    oob = (
-        (transformed[:, 0] < 0)
-        | (transformed[:, 0] >= crop_w)
-        | (transformed[:, 1] < 0)
-        | (transformed[:, 1] >= crop_h)
-    )
-
-    coords_out = np.clip(transformed, [0, 0], [crop_w - 1, crop_h - 1])
-    visible_out = visible & ~oob
-
-    return coords_out, visible_out
 
 
 # ---------------------------------------------------------------------------

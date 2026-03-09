@@ -173,27 +173,17 @@ def import_cmd(
 
             # 2D curvature computation (pose store only)
             if store == "pose" and label_path.exists():
-                label_text = label_path.read_text().strip()
-                if label_text:
-                    from .pseudo_labels import compute_curvature
+                from .elastic_deform import parse_pose_label
+                from .pseudo_labels import compute_curvature
 
-                    # Parse first pose label line to extract keypoints
-                    first_line = label_text.split("\n")[0].split()
-                    # YOLO pose format: cls cx cy w h x1 y1 v1 x2 y2 v2 ...
-                    kp_tokens = first_line[5:]
-                    if len(kp_tokens) >= 6:  # at least 2 keypoints
-                        pts = []
-                        for ki in range(0, len(kp_tokens), 3):
-                            if ki + 2 < len(kp_tokens):
-                                vis = float(kp_tokens[ki + 2])
-                                if vis > 0:
-                                    pts.append(
-                                        [float(kp_tokens[ki]), float(kp_tokens[ki + 1])]
-                                    )
-                        if len(pts) >= 3:  # need at least 3 points for curvature
-                            import numpy as np
-
-                            sample_meta["curvature"] = compute_curvature(np.array(pts))
+                try:
+                    # Use crop_w=crop_h=1 since curvature is scale-invariant
+                    kps, vis = parse_pose_label(label_path, 1, 1)
+                    vis_pts = kps[vis]
+                    if len(vis_pts) >= 3:
+                        sample_meta["curvature"] = compute_curvature(vis_pts)
+                except ValueError:
+                    pass  # multi-line label (multi-fish crop), skip curvature
 
             # Static metadata from --metadata-json overrides sidecar
             if metadata:

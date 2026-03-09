@@ -172,6 +172,38 @@ def transform_keypoints(
     return coords_out, visible_out
 
 
+def compute_arc_length(
+    coords: np.ndarray, visible: np.ndarray, min_visible: int = 2
+) -> float:
+    """Sum Euclidean distances between consecutive visible keypoints.
+
+    Args:
+        coords: float array of shape ``(N, 2)`` with (x, y) pixel coordinates.
+        visible: bool array of shape ``(N,)``, True if the keypoint is visible.
+        min_visible: Minimum number of visible keypoints required. Returns 0.0
+            when fewer than this many are visible.
+
+    Returns:
+        Total arc length in pixels, or 0.0 if fewer than ``min_visible``
+        keypoints are visible.
+    """
+    vis_pts = coords[visible]
+    if len(vis_pts) < min_visible:
+        return 0.0
+
+    total = 0.0
+    prev: np.ndarray | None = None
+    for i in range(len(coords)):
+        if not visible[i]:
+            continue
+        pt = coords[i]
+        if prev is not None:
+            total += float(np.linalg.norm(pt - prev))
+        prev = pt
+
+    return total
+
+
 def clip_obb_to_image(obb_corners: np.ndarray, img_w: int, img_h: int) -> np.ndarray:
     """Clip OBB corner coordinates to image bounds.
 

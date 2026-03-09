@@ -14,6 +14,99 @@ def train_group() -> None:
     """Train AquaPose models."""
 
 
+def _run_training(
+    ctx: click.Context,
+    model_type: str,
+    data_dir: str | None,
+    tag: str | None,
+    cli_args: dict,
+    *,
+    train_kwargs: dict | None = None,
+) -> None:
+    """Shared training orchestrator for all YOLO model types.
+
+    Handles the full lifecycle: run directory creation, config snapshot,
+    training, summary writing, model registration, and next-steps output.
+
+    Args:
+        ctx: Click context with project/config resolution.
+        model_type: One of ``"obb"``, ``"seg"``, ``"pose"``.
+        data_dir: Dataset directory path, or None to use project default.
+        tag: Human-readable run tag, or None.
+        cli_args: Dict of CLI option values for config snapshot.
+        train_kwargs: Additional keyword arguments forwarded to
+            :func:`~aquapose.training.yolo_training.train_yolo` beyond
+            those in ``cli_args``.
+    """
+    from aquapose.logging import setup_file_logging
+
+    from .run_manager import (
+        create_run_dir,
+        print_next_steps,
+        register_trained_model,
+        snapshot_config,
+        write_summary,
+    )
+    from .yolo_training import train_yolo
+
+    config_path = get_config_path(ctx)
+    project_dir = get_project_dir(ctx)
+
+    if data_dir is None:
+        data_dir = str(project_dir / "training_data" / model_type)
+
+    run_dir = create_run_dir(config_path, model_type)
+    setup_file_logging(run_dir, f"train-{model_type}")
+
+    cli_args["data_dir"] = data_dir
+    snapshot_config(run_dir, cli_args, dataset_dir=Path(data_dir))
+
+    # Build train_yolo kwargs from cli_args (exclude non-training keys)
+    excluded_keys = {"data_dir", "tag"}
+    kwargs = {k: v for k, v in cli_args.items() if k not in excluded_keys}
+    # Convert weights string to Path if present
+    if kwargs.get("weights") is not None:
+        kwargs["weights"] = Path(kwargs["weights"])
+    if train_kwargs:
+        kwargs.update(train_kwargs)
+
+    best_path = train_yolo(
+        data_dir=Path(data_dir),
+        output_dir=run_dir,
+        model_type=model_type,
+        **kwargs,
+    )
+
+    results_csv = run_dir / "_ultralytics" / "train" / "results.csv"
+    write_summary(
+        run_dir,
+        results_csv,
+        training_args=cli_args,
+        model_type=model_type,
+        tag=tag,
+        dataset_dir=Path(data_dir),
+    )
+
+    try:
+        register_trained_model(
+            config_path=config_path,
+            run_dir=run_dir,
+            model_type=model_type,
+            best_weights=best_path,
+            dataset_dir=Path(data_dir),
+            tag=tag,
+        )
+    except Exception as exc:
+        click.echo(
+            click.style(
+                f"Warning: Model registration failed: {exc}",
+                fg="yellow",
+            )
+        )
+
+    print_next_steps(run_dir, model_type, best_path)
+
+
 @train_group.command("obb")
 @click.option(
     "--data-dir",
@@ -71,25 +164,6 @@ def yolo_obb(
     mosaic: float,
 ) -> None:
     """Train YOLO-OBB oriented bounding-box detection model."""
-    from aquapose.logging import setup_file_logging
-
-    from .run_manager import (
-        create_run_dir,
-        print_next_steps,
-        snapshot_config,
-        write_summary,
-    )
-
-    config_path = get_config_path(ctx)
-    project_dir = get_project_dir(ctx)
-
-    if data_dir is None:
-        data_dir = str(project_dir / "training_data" / "obb")
-
-    model_type = "obb"
-    run_dir = create_run_dir(config_path, model_type)
-    setup_file_logging(run_dir, "train-yolo-obb")
-
     cli_args = {
         "epochs": epochs,
         "batch_size": batch_size,
@@ -100,57 +174,9 @@ def yolo_obb(
         "weights": str(weights) if weights else None,
         "mosaic": mosaic,
         "patience": patience,
-        "data_dir": data_dir,
         "tag": tag,
     }
-    snapshot_config(run_dir, cli_args, dataset_dir=Path(data_dir))
-
-    from .yolo_obb import train_yolo_obb
-
-    best_path = train_yolo_obb(
-        data_dir=Path(data_dir),
-        output_dir=run_dir,
-        epochs=epochs,
-        batch_size=batch_size,
-        device=device,
-        val_split=val_split,
-        imgsz=imgsz,
-        model=model,
-        weights=Path(weights) if weights is not None else None,
-        patience=patience,
-        mosaic=mosaic,
-    )
-
-    results_csv = run_dir / "_ultralytics" / "train" / "results.csv"
-    write_summary(
-        run_dir,
-        results_csv,
-        training_args=cli_args,
-        model_type=model_type,
-        tag=tag,
-        dataset_dir=Path(data_dir),
-    )
-
-    try:
-        from .run_manager import register_trained_model
-
-        register_trained_model(
-            config_path=config_path,
-            run_dir=run_dir,
-            model_type=model_type,
-            best_weights=best_path,
-            dataset_dir=Path(data_dir),
-            tag=tag,
-        )
-    except Exception as exc:
-        click.echo(
-            click.style(
-                f"Warning: Model registration failed: {exc}",
-                fg="yellow",
-            )
-        )
-
-    print_next_steps(run_dir, model_type, best_path)
+    _run_training(ctx, "obb", data_dir, tag, cli_args)
 
 
 @train_group.command("compare")
@@ -255,25 +281,6 @@ def seg(
     mosaic: float,
 ) -> None:
     """Train YOLO-seg instance segmentation model."""
-    from aquapose.logging import setup_file_logging
-
-    from .run_manager import (
-        create_run_dir,
-        print_next_steps,
-        snapshot_config,
-        write_summary,
-    )
-
-    config_path = get_config_path(ctx)
-    project_dir = get_project_dir(ctx)
-
-    if data_dir is None:
-        data_dir = str(project_dir / "training_data" / "seg")
-
-    model_type = "seg"
-    run_dir = create_run_dir(config_path, model_type)
-    setup_file_logging(run_dir, "train-seg")
-
     cli_args = {
         "epochs": epochs,
         "batch_size": batch_size,
@@ -284,37 +291,9 @@ def seg(
         "weights": str(weights) if weights else None,
         "mosaic": mosaic,
         "patience": patience,
-        "data_dir": data_dir,
         "tag": tag,
     }
-    snapshot_config(run_dir, cli_args, dataset_dir=Path(data_dir))
-
-    from .yolo_seg import train_yolo_seg
-
-    best_path = train_yolo_seg(
-        data_dir=Path(data_dir),
-        output_dir=run_dir,
-        epochs=epochs,
-        batch_size=batch_size,
-        device=device,
-        val_split=val_split,
-        imgsz=imgsz,
-        model=model,
-        weights=Path(weights) if weights is not None else None,
-        patience=patience,
-        mosaic=mosaic,
-    )
-
-    results_csv = run_dir / "_ultralytics" / "train" / "results.csv"
-    write_summary(
-        run_dir,
-        results_csv,
-        training_args=cli_args,
-        model_type=model_type,
-        tag=tag,
-        dataset_dir=Path(data_dir),
-    )
-    print_next_steps(run_dir, model_type, best_path)
+    _run_training(ctx, "seg", data_dir, tag, cli_args)
 
 
 @train_group.command("pose")
@@ -380,25 +359,6 @@ def pose(
     rect: bool,
 ) -> None:
     """Train YOLO-pose keypoint estimation model."""
-    from aquapose.logging import setup_file_logging
-
-    from .run_manager import (
-        create_run_dir,
-        print_next_steps,
-        snapshot_config,
-        write_summary,
-    )
-
-    config_path = get_config_path(ctx)
-    project_dir = get_project_dir(ctx)
-
-    if data_dir is None:
-        data_dir = str(project_dir / "training_data" / "pose")
-
-    model_type = "pose"
-    run_dir = create_run_dir(config_path, model_type)
-    setup_file_logging(run_dir, "train-pose")
-
     cli_args = {
         "epochs": epochs,
         "batch_size": batch_size,
@@ -409,56 +369,7 @@ def pose(
         "weights": str(weights) if weights else None,
         "mosaic": mosaic,
         "patience": patience,
-        "data_dir": data_dir,
         "tag": tag,
         "rect": rect,
     }
-    snapshot_config(run_dir, cli_args, dataset_dir=Path(data_dir))
-
-    from .yolo_pose import train_yolo_pose
-
-    best_path = train_yolo_pose(
-        data_dir=Path(data_dir),
-        output_dir=run_dir,
-        epochs=epochs,
-        batch_size=batch_size,
-        device=device,
-        val_split=val_split,
-        imgsz=imgsz,
-        model=model,
-        weights=Path(weights) if weights is not None else None,
-        patience=patience,
-        mosaic=mosaic,
-        rect=rect,
-    )
-
-    results_csv = run_dir / "_ultralytics" / "train" / "results.csv"
-    write_summary(
-        run_dir,
-        results_csv,
-        training_args=cli_args,
-        model_type=model_type,
-        tag=tag,
-        dataset_dir=Path(data_dir),
-    )
-
-    try:
-        from .run_manager import register_trained_model
-
-        register_trained_model(
-            config_path=config_path,
-            run_dir=run_dir,
-            model_type=model_type,
-            best_weights=best_path,
-            dataset_dir=Path(data_dir),
-            tag=tag,
-        )
-    except Exception as exc:
-        click.echo(
-            click.style(
-                f"Warning: Model registration failed: {exc}",
-                fg="yellow",
-            )
-        )
-
-    print_next_steps(run_dir, model_type, best_path)
+    _run_training(ctx, "pose", data_dir, tag, cli_args)

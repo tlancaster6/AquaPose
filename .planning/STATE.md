@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.6
 milestone_name: Model Iteration & QA
-status: unknown
-last_updated: "2026-03-07T20:07:09.894Z"
+status: executing
+last_updated: "2026-03-09T20:18:49Z"
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 8
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-06)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 72 complete, Phase 73 next
+**Current focus:** Phase 77 in progress -- training module code quality
 
 ## Current Position
 
-Phase: 72 of 76 (Baseline Pipeline Run & Metrics) - COMPLETE
-Plan: 72-01 complete (1/1 plans done)
-Status: Phase complete -- baseline metrics captured
-Last activity: 2026-03-09 - Completed quick task 24: Audit recent pseudo-label and training data code for quality improvements
+Phase: 77 (Training Module Code Quality)
+Plan: 77-01 complete (1/2 plans done)
+Status: Plan 77-01 complete -- YOLO wrappers consolidated, shared functions deduplicated, seg registration bug fixed
+Last activity: 2026-03-09 - Completed plan 77-01
 
-Progress: [██████████] 100%
+Progress: [█████████░] 50%
 
 ## Performance Metrics
 
@@ -43,6 +43,7 @@ Progress: [██████████] 100%
 | 70 | 2/2 | ~35min | ~18min |
 | 71 | 1/2 | ~9min | ~9min |
 | 72 | 1/1 | ~60min | ~60min |
+| 77 | 1/2 | ~9min | ~9min |
 
 ## Accumulated Context
 
@@ -52,6 +53,7 @@ Decisions are logged in PROJECT.md Key Decisions table.
 v3.5 milestone decisions archived to milestones/v3.5-ROADMAP.md.
 
 - Phase 72: Accepted 31.3% singleton rate as baseline benchmark (slightly above 30% threshold but reasonable for 9000 frames)
+- Phase 77-01: compute_arc_length returns 0.0 (not None) for consistency; parse_pose_label with crop=1,1 for scale-invariant curvature
 
 ### Pending Todos
 
@@ -77,5 +79,5 @@ v3.5 milestone decisions archived to milestones/v3.5-ROADMAP.md.
 ## Session Continuity
 
 Last session: 2026-03-09
-Stopped at: Completed quick task 24 (training module audit)
-Resume file: .planning/quick/24-audit-recent-pseudo-label-and-training-d/24-SUMMARY.md
+Stopped at: Completed 77-01-PLAN.md
+Resume file: .planning/phases/77-training-module-code-quality-deduplicate-yolo-wrappers-and-cli-commands-consolidate-shared-functions-fix-seg-registration-bug-add-tests-for-diverse-subset-selection-and-weight-copying/77-01-SUMMARY.md

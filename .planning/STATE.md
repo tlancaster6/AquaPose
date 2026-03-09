@@ -68,9 +68,10 @@ v3.5 milestone decisions archived to milestones/v3.5-ROADMAP.md.
 |---|-------------|------|--------|--------|-----------|
 | 22 | Update GUIDEBOOK.md to be current, focused, and trustworthy — remove stale repo-specific content | 2026-03-06 | 197b152 | Verified | [22-update-guidebook-md-to-be-current-focuse](./quick/22-update-guidebook-md-to-be-current-focuse/) |
 | 23 | Replace Ultralytics probiou NMS with geometric polygon NMS using Shapely | 2026-03-07 | 8b2ce6e | Complete | [23-replace-ultralytics-probiou-nms-with-geo](./quick/23-replace-ultralytics-probiou-nms-with-geo/) |
+| 24 | Audit training module for code quality improvements | 2026-03-09 | 54e166a | Complete | [24-audit-recent-pseudo-label-and-training-d](./quick/24-audit-recent-pseudo-label-and-training-d/) |
 
 ## Session Continuity
 
-Last session: 2026-03-07
-Stopped at: Completed 72-01-PLAN.md (baseline pipeline run & metrics)
-Resume file: .planning/phases/72-baseline-pipeline-run-metrics/72-01-SUMMARY.md
+Last session: 2026-03-09
+Stopped at: Completed quick task 24 (training module audit)
+Resume file: .planning/quick/24-audit-recent-pseudo-label-and-training-d/24-SUMMARY.md

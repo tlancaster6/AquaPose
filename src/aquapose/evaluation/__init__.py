@@ -8,6 +8,10 @@ full pipeline.
 Also exposes the viz sub-package for post-run visualization generation.
 """
 
+from aquapose.evaluation.compare import (
+    load_eval_results,
+    write_comparison_json,
+)
 from aquapose.evaluation.metrics import Tier1Result, Tier2Result, select_frames
 from aquapose.evaluation.output import (
     flag_outliers,
@@ -74,6 +78,8 @@ __all__ = [
     "generate_animation",
     "generate_overlay",
     "generate_trails",
+    "load_eval_results",
     "load_run_context",
     "select_frames",
+    "write_comparison_json",
 ]

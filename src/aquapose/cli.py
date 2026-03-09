@@ -272,6 +272,42 @@ def eval_cmd(
         _json.dump(result.to_dict(), f, cls=_NumpySafeEncoder, indent=2)
 
 
+@cli.command("eval-compare")
+@click.argument("run_a")
+@click.argument("run_b")
+@click.pass_context
+def eval_compare_cmd(ctx: click.Context, run_a: str, run_b: str) -> None:
+    """Compare pipeline evaluation metrics between two runs."""
+    from aquapose.evaluation.compare import (
+        format_comparison_table,
+        load_eval_results,
+        write_comparison_json,
+    )
+
+    project_dir = get_project_dir(ctx)
+    run_a_dir = resolve_run(run_a, project_dir)
+    run_b_dir = resolve_run(run_b, project_dir)
+
+    try:
+        results_a = load_eval_results(run_a_dir)
+    except FileNotFoundError as exc:
+        raise click.ClickException(str(exc)) from exc
+    try:
+        results_b = load_eval_results(run_b_dir)
+    except FileNotFoundError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    table = format_comparison_table(
+        results_a, results_b, run_a_dir.name, run_b_dir.name
+    )
+    click.echo(table)
+
+    out_path = write_comparison_json(
+        results_a, results_b, run_a_dir, run_b_dir, run_b_dir
+    )
+    click.echo(f"\nComparison written to {out_path}")
+
+
 @cli.command("tune")
 @click.argument("run", default=None, required=False)
 @click.option(

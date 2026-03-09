@@ -1,6 +1,6 @@
 # AquaPose
 
-3D fish pose estimation via refractive multi-view triangulation. Reconstructs fish 3D midlines from multi-view silhouettes using a 13-camera aquarium rig with refractive calibration.
+3D fish pose estimation via refractive multi-view triangulation. Reconstructs fish 3D midlines from multi-view pose/segmentation data using a 12-camera aquarium rig with refractive calibration.
 
 ## Quick Start
 
@@ -22,28 +22,6 @@ hatch run typecheck         # basedpyright
 hatch run check             # lint + typecheck
 hatch run docs:build        # sphinx docs
 hatch run pre-commit run --all-files  # all pre-commit hooks
-```
-
-## Architecture
-
-```
-src/aquapose/
-├── calibration/    # AquaCal loading, refractive projection, ray casting
-├── core/           # Core domain logic (types, stages, backends)
-│   ├── types/      # Cross-stage shared types (Detection, CropRegion, Midline2D, etc.)
-│   ├── detection/  # Detection stage + YOLO/OBB backends
-│   ├── midline/    # Midline extraction, crop utilities, backends (segmentation, pose_estimation)
-│   ├── reconstruction/ # Triangulation, curve optimizer, backends
-│   ├── tracking/   # 2D tracking stage + OC-SORT
-│   └── association/ # Cross-view association
-├── engine/         # PosePipeline, Stage protocol, PipelineContext, config
-├── io/             # HDF5 output, data loaders
-├── training/       # YOLO training wrappers
-└── visualization/  # Reprojection overlays, diagnostic video writers
-tests/
-├── unit/           # Per-module unit tests
-├── integration/    # Cross-module tests
-└── e2e/            # End-to-end pipeline tests
 ```
 
 ## Workflow Preferences

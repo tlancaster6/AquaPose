@@ -229,7 +229,7 @@ Plans:
   1. Pipeline completes a diagnostic-mode run on a short clip (~1 min) using store-registered baseline models
   2. `aquapose eval` produces a full metric report including all Phase 70 extended metrics
   3. Baseline metric numbers (singleton rate, reprojection error percentiles, track continuity, per-keypoint breakdown) are recorded as the benchmark for improvement
-**Plans:** 1/1 plans complete 
+**Plans:** 1/1 plans complete
 Plans:
 - [ ] 72-01-PLAN.md — Pre-flight checks, baseline pipeline run, evaluation, and metric snapshot review
 
@@ -303,3 +303,14 @@ Phases execute in numeric order: 70 and 71 (parallel) -> 72 -> 73 -> 74 -> 75 (c
 | 74. Round 1 Evaluation & Decision | v3.6 | 0/TBD | Not started | - |
 | 75. Round 2 (Conditional) | v3.6 | 0/TBD | Not started | - |
 | 76. Final Validation | v3.6 | 0/TBD | Not started | - |
+
+### Phase 77: Training module code quality: deduplicate YOLO wrappers and CLI commands, consolidate shared functions, fix seg registration bug, add tests for diverse subset selection and weight copying
+
+**Goal:** Eliminate code duplication in the training module, fix seg CLI registration bug, and add test coverage for untested critical paths
+**Requirements**: CQ-01, CQ-02, CQ-03, CQ-04, CQ-05, CQ-06, CQ-07, CQ-08
+**Depends on:** None (independent refactoring, can run anytime)
+**Plans:** 2 plans
+
+Plans:
+- [ ] 77-01-PLAN.md — Consolidate YOLO wrappers, CLI orchestrator, and deduplicate shared functions
+- [ ] 77-02-PLAN.md — Add tests for weight-copying logic and diverse subset selection

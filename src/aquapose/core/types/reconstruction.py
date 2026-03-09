@@ -60,3 +60,15 @@ class Midline3D:
     per_camera_residuals: dict[str, float] | None = None
     centroid_z: float | None = None
     z_offsets: np.ndarray | None = None
+    triangulated_points: np.ndarray | None = None
+    """Raw triangulated 3D body points before spline fitting.
+
+    Shape (n_body_points, 3), float32. NaN for body points that failed
+    triangulation. None when not populated (backward compatibility).
+    """
+    per_point_inlier_cameras: list[list[str]] | None = None
+    """Per-body-point inlier camera IDs after outlier rejection.
+
+    Length n_body_points. Empty list for body points that failed
+    triangulation. None when not populated (backward compatibility).
+    """

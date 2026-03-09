@@ -129,6 +129,7 @@ class MidlineStage:
                     mc.min_observed_keypoints if mc is not None else 3
                 ),
                 crop_size=crop_size,
+                conf=confidence_threshold,
             )
         else:
             self._backend = get_backend(
@@ -139,6 +140,7 @@ class MidlineStage:
                 min_area=min_area,
                 device=device,
                 crop_size=crop_size,
+                conf=confidence_threshold,
             )
 
     def run(self, context: PipelineContext) -> PipelineContext:

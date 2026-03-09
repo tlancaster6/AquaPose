@@ -393,6 +393,14 @@ class DltBackend:
             for vi, body_idx in enumerate(valid_indices):
                 z_off[body_idx] = float(z_offsets_valid[vi])
 
+        # Build raw triangulated points and inlier camera lists for all body
+        # points. Points that failed triangulation get NaN / empty list.
+        tri_pts = np.full((n_body_points, 3), np.nan, dtype=np.float32)
+        tri_inlier_cams: list[list[str]] = [[] for _ in range(n_body_points)]
+        for vi, body_idx in enumerate(valid_indices):
+            tri_pts[body_idx] = pts_3d_list[vi]
+            tri_inlier_cams[body_idx] = per_point_inlier_ids[vi]
+
         return Midline3D(
             fish_id=fish_id,
             frame_index=frame_idx,
@@ -408,6 +416,8 @@ class DltBackend:
             per_camera_residuals=cam_residuals,
             centroid_z=centroid_z,
             z_offsets=z_off,
+            triangulated_points=tri_pts,
+            per_point_inlier_cameras=tri_inlier_cams,
         )
 
     def _triangulate_fish_vectorized(

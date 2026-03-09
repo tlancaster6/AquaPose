@@ -238,7 +238,7 @@ class DiagnosticObserver:
         chunk_entry = {
             "index": self._chunk_idx,
             "start_frame": self._chunk_start,
-            "end_frame": frame_count,
+            "end_frame": self._chunk_start + frame_count if frame_count else None,
             "stages_cached": list(self.stages.keys()),
         }
 

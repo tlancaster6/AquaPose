@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.6
 milestone_name: Model Iteration & QA
-status: unknown
-last_updated: "2026-03-09T20:31:56.420Z"
+status: in_progress
+last_updated: "2026-03-09T21:14:57.247Z"
 progress:
   total_phases: 6
-  completed_phases: 4
-  total_plans: 10
-  completed_plans: 7
+  completed_phases: 5
+  total_plans: 13
+  completed_plans: 10
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-06)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 77 in progress -- training module code quality
+**Current focus:** Phase 73 complete, Phase 74 next -- round 1 evaluation & decision
 
 ## Current Position
 
-Phase: 77 (Training Module Code Quality)
-Plan: 77-02 complete (2/2 plans done)
-Status: Phase 77 complete -- all plans executed, training module fully tested
-Last activity: 2026-03-09 - Completed plan 77-02
+Phase: 73 (Round 1 Pseudo-Labels & Retraining) — COMPLETE
+Plan: 73-03 complete (3/3 plans done)
+Status: Phase 73 complete — round 1 models trained, A/B comparison done, curated+aug wins decisively
+Last activity: 2026-03-09 - Completed phase 73, secondary val evaluation
 
-Progress: [██████████] 100%
+Progress: [████████░░] 83% (5/6 phases)
 
 ## Performance Metrics
 
@@ -80,5 +80,5 @@ v3.5 milestone decisions archived to milestones/v3.5-ROADMAP.md.
 ## Session Continuity
 
 Last session: 2026-03-09
-Stopped at: Completed 77-02-PLAN.md (Phase 77 complete)
-Resume file: .planning/phases/77-training-module-code-quality-deduplicate-yolo-wrappers-and-cli-commands-consolidate-shared-functions-fix-seg-registration-bug-add-tests-for-diverse-subset-selection-and-weight-copying/77-02-SUMMARY.md
+Stopped at: Phase 73 complete — ready for Phase 74 (round 1 evaluation & decision)
+Resume file: .planning/phases/73-round-1-pseudo-labels-retraining/73-RESULTS.md

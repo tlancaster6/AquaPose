@@ -184,7 +184,7 @@ Full details: `.planning/milestones/v3.5-ROADMAP.md`
 - [x] **Phase 70: Metrics & Comparison Infrastructure** - Extend evaluation with percentiles, per-keypoint breakdown, curvature-stratified quality, and track fragmentation
 - [x] **Phase 71: Data Store Bootstrap** - Import manual annotations, train and register baseline models through store workflow (completed 2026-03-07)
 - [x] **Phase 72: Baseline Pipeline Run & Metrics** - Establish quantitative "before" snapshot on short iteration clip (completed 2026-03-07)
-- [ ] **Phase 73: Round 1 Pseudo-Labels & Retraining** - Generate pseudo-labels, manually correct in CVAT, train round 1 models with A/B curation comparison
+- [x] **Phase 73: Round 1 Pseudo-Labels & Retraining** - Generate pseudo-labels, manually correct in CVAT, train round 1 models with A/B curation comparison (completed 2026-03-09)
 - [ ] **Phase 74: Round 1 Evaluation & Decision** - Compare round 1 pipeline metrics to baseline; decide whether to proceed to round 2
 - [ ] **Phase 75: Round 2 (Conditional)** - Second iteration if round 1 shows clear improvement with headroom remaining
 - [ ] **Phase 76: Final Validation** - Full 5-minute pipeline run with best models, showcase overlay videos, summary document
@@ -243,11 +243,11 @@ Plans:
   3. Round 1 OBB and pose models trained on manual + pseudo-label datasets (elastic augmentation on manual only) and registered with model lineage
   4. A/B comparison completed: model trained on CVAT-corrected labels vs model trained on uncorrected pseudo-labels, with curation value quantified via training metrics
   5. `aquapose train compare` shows training metric comparison between baseline and round 1 models
-**Plans:** 3 plans
+**Plans:** 0/3 plans complete
 Plans:
-- [ ] 73-01-PLAN.md — Generate pseudo-labels, diversity selection, label-studio curation checkpoint
-- [ ] 73-02-PLAN.md — Import corrections, quantify, assemble datasets (uncurated before corrections, curated after)
-- [ ] 73-03-PLAN.md — Train 4 models, A/B curation comparison
+- [x] 73-01-PLAN.md — Generate pseudo-labels, diversity selection, label-studio curation checkpoint
+- [x] 73-02-PLAN.md — Import corrections, quantify, assemble datasets (uncurated before corrections, curated after)
+- [x] 73-03-PLAN.md — Train models, A/B curation comparison, secondary val evaluation
 
 ### Phase 74: Round 1 Evaluation & Decision
 **Goal**: Round 1 models evaluated at pipeline level against baseline; informed decision on whether to proceed to round 2
@@ -299,7 +299,7 @@ Phases execute in numeric order: 70 and 71 (parallel) -> 72 -> 73 -> 74 -> 75 (c
 | 70. Metrics & Comparison Infrastructure | v3.6 | Complete    | 2026-03-06 | 2026-03-06 |
 | 71. Data Store Bootstrap | 2/2 | Complete    | 2026-03-07 | - |
 | 72. Baseline Pipeline Run & Metrics | 1/1 | Complete    | 2026-03-07 | - |
-| 73. Round 1 Pseudo-Labels & Retraining | v3.6 | 0/2 | Not started | - |
+| 73. Round 1 Pseudo-Labels & Retraining | v3.6 | Complete    | 2026-03-09 | - |
 | 74. Round 1 Evaluation & Decision | v3.6 | 0/TBD | Not started | - |
 | 75. Round 2 (Conditional) | v3.6 | 0/TBD | Not started | - |
 | 76. Final Validation | v3.6 | 0/TBD | Not started | - |

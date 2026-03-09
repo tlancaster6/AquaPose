@@ -94,4 +94,13 @@ The Q4-Q1 gap narrowed from 0.35 px to 0.26 px (mean), confirming reduced curvat
 
 ## Go/No-Go Verdict
 
-_To be filled during decision checkpoint review._
+**Decision: Skip round 2 -- accept round 1 models as final.**
+
+**Rationale:** All primary metrics showed clear directional improvement in round 1:
+- Singleton rate decreased 12.5% (31.3% to 27.4%)
+- P50 reprojection error decreased 28.4% (3.02 to 2.16 px)
+- P90 reprojection error decreased 19.8% (5.20 to 4.17 px)
+
+Secondary metrics also improved across the board (yield +6.4%, continuity +3.6%, reconstructions +13%, jitter -67%). The improvements are substantial enough that further pseudo-label iteration is unlikely to yield proportional gains. Round 1 models are accepted as the production models for this milestone.
+
+**Implication:** Phase 75 (round 2 pseudo-labels & retraining) is skipped. The current round 1 models remain in `config.yaml` as the final model weights.

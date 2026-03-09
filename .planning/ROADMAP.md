@@ -303,7 +303,7 @@ Phases execute in numeric order: 70 and 71 (parallel) -> 72 -> 73 -> 74 -> 75 (c
 | 71. Data Store Bootstrap | 2/2 | Complete    | 2026-03-07 | - |
 | 72. Baseline Pipeline Run & Metrics | 1/1 | Complete    | 2026-03-07 | - |
 | 73. Round 1 Pseudo-Labels & Retraining | v3.6 | Complete    | 2026-03-09 | - |
-| 74. Round 1 Evaluation & Decision | 2/2 | Complete   | 2026-03-09 | - |
+| 74. Round 1 Evaluation & Decision | 2/2 | Complete    | 2026-03-09 | - |
 | 75. Round 2 (Conditional) | v3.6 | 0/TBD | Not started | - |
 | 76. Final Validation | v3.6 | 0/TBD | Not started | - |
 

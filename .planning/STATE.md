@@ -62,6 +62,10 @@ v3.5 milestone decisions archived to milestones/v3.5-ROADMAP.md.
 - Phase 75 is conditional on Phase 74 decision checkpoint (may be skipped)
 - Algae domain shift between manual annotations (clean tank) and current conditions may cause false positives in pseudo-labels
 
+### Roadmap Evolution
+
+- Phase 77 added: Training module code quality — deduplicate YOLO wrappers/CLI commands, consolidate shared functions, fix seg registration bug, add tests
+
 ### Quick Tasks Completed
 
 | # | Description | Date | Commit | Status | Directory |

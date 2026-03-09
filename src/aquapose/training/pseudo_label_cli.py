@@ -817,6 +817,16 @@ def _yaml_dump(data: dict) -> str:
     show_default=True,
     help="Fraction of pose crops for secondary val set.",
 )
+@click.option(
+    "--labelstudio-prefix",
+    default=None,
+    type=str,
+    help=(
+        "Generate Label Studio pre-annotation JSON. Value is the URL prefix "
+        "from the document root, e.g. 'round1_selected'. Output images/ path "
+        "is appended automatically."
+    ),
+)
 @click.pass_context
 def select(
     ctx: click.Context,
@@ -826,6 +836,7 @@ def select(
     obb_target: int,
     pose_target: int,
     val_fraction: float,
+    labelstudio_prefix: str | None,
 ) -> None:
     """Select a diversity-maximizing subset from generated pseudo-labels.
 
@@ -863,6 +874,15 @@ def select(
         click.echo(f"  Across {obb_stats['n_cameras']} cameras:")
         for cam_id, count in sorted(obb_stats["per_camera"].items()):
             click.echo(f"    {cam_id}: {count}")
+        if labelstudio_prefix is not None:
+            from aquapose.training.labelstudio_export import export_labelstudio_json
+
+            prefix = f"/data/local-files/?d={labelstudio_prefix}/obb/images/"
+            obb_out = output_dir / "obb" / "labelstudio.json"
+            n_tasks = export_labelstudio_json(
+                output_dir / "obb", obb_out, "obb", image_url_prefix=prefix
+            )
+            click.echo(f"  Label Studio JSON: {obb_out} ({n_tasks} tasks)")
     else:
         click.echo("No OBB confidence.json found, skipping OBB selection.")
 
@@ -886,10 +906,94 @@ def select(
         click.echo("  Per camera:")
         for cam_id, count in sorted(pose_stats["per_camera"].items()):
             click.echo(f"    {cam_id}: {count}")
+
+        # Write dataset.yaml with kpt_names for downstream tools
+        from aquapose.training.coco_convert import KEYPOINT_NAMES
+
+        pose_yaml = {
+            "names": {0: "fish"},
+            "kpt_shape": [len(KEYPOINT_NAMES), 3],
+            "kpt_names": list(KEYPOINT_NAMES),
+        }
+        import yaml
+
+        (output_dir / "pose" / "dataset.yaml").write_text(
+            yaml.dump(pose_yaml, default_flow_style=False)
+        )
+
+        if labelstudio_prefix is not None:
+            from aquapose.training.labelstudio_export import export_labelstudio_json
+
+            prefix = f"/data/local-files/?d={labelstudio_prefix}/pose/images/"
+            pose_out = output_dir / "pose" / "labelstudio.json"
+            n_tasks = export_labelstudio_json(
+                output_dir / "pose",
+                pose_out,
+                "pose",
+                image_url_prefix=prefix,
+            )
+            click.echo(f"  Label Studio JSON: {pose_out} ({n_tasks} tasks)")
     else:
         click.echo("No pose consensus confidence.json found, skipping pose selection.")
 
     click.echo(f"\nOutput: {output_dir}")
+
+
+@pseudo_label_group.command("from-labelstudio")
+@click.argument("json_path", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--output-dir",
+    required=True,
+    type=click.Path(path_type=Path),
+    help="Output YOLO-format directory (images/ and labels/).",
+)
+@click.option(
+    "-t",
+    "--task",
+    required=True,
+    type=click.Choice(["obb", "pose"]),
+    help="YOLO task type.",
+)
+@click.option(
+    "--images-dir",
+    default=None,
+    type=click.Path(exists=True, path_type=Path),
+    help="Directory containing original images. Searches train/ and val/ subdirs.",
+)
+@click.option(
+    "--num-kpts",
+    type=int,
+    default=6,
+    show_default=True,
+    help="Number of keypoints (pose only).",
+)
+def from_labelstudio(
+    json_path: Path,
+    output_dir: Path,
+    task: str,
+    images_dir: Path | None,
+    num_kpts: int,
+) -> None:
+    """Convert a Label Studio JSON export back to YOLO format.
+
+    The output directory can be passed directly to ``data import --input-dir``
+    with ``--source corrected``.
+    """
+    from aquapose.training.labelstudio_import import import_labelstudio_json
+
+    stats = import_labelstudio_json(
+        json_path,
+        output_dir,
+        task,
+        images_dir=images_dir,
+        num_kpts=num_kpts,
+    )
+    click.echo(
+        f"Converted {stats['tasks_converted']} tasks "
+        f"({stats['total_annotations']} annotations, "
+        f"{stats['skipped']} skipped)"
+    )
+    click.echo(f"Output: {output_dir}")
 
 
 @pseudo_label_group.command("inspect")

@@ -47,6 +47,8 @@ from .geometry import (
     pca_obb,
     transform_keypoints,
 )
+from .labelstudio_export import export_labelstudio_json
+from .labelstudio_import import import_labelstudio_json
 from .prep import prep_group
 from .pseudo_labels import (
     compute_confidence_score,
@@ -66,6 +68,7 @@ from .run_manager import (
     update_config_weights,
     write_summary,
 )
+from .select_diverse_subset import select_obb_subset, select_pose_subset
 from .store import SampleStore
 from .yolo_obb import train_yolo_obb
 from .yolo_pose import train_yolo_pose
@@ -89,6 +92,7 @@ __all__ = [
     "deform_keypoints_s_curve",
     "detect_gaps",
     "discover_runs",
+    "export_labelstudio_json",
     "extract_dataset_provenance",
     "extrapolate_edge_keypoints",
     "format_comparison_table",
@@ -100,6 +104,7 @@ __all__ = [
     "generate_obb_dataset",
     "generate_pose_dataset",
     "generate_variants",
+    "import_labelstudio_json",
     "load_coco",
     "load_run_summaries",
     "make_loader",
@@ -113,6 +118,8 @@ __all__ = [
     "register_trained_model",
     "reproject_spline_keypoints",
     "save_best_and_last",
+    "select_obb_subset",
+    "select_pose_subset",
     "snapshot_config",
     "stratified_split",
     "temporal_split",

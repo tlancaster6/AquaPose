@@ -36,6 +36,10 @@ def _keypoints_to_midline(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Interpolate visible keypoints to a dense midline via linear spline.
 
+    Points that fall outside the visible keypoint t-range are set to NaN with
+    confidence 0.0, so that cameras with dropped endpoints abstain from
+    triangulation rather than voting for a straight-line extrapolation.
+
     Args:
         kpts_xy: Keypoint coordinates in crop space, shape ``(K, 2)``, float32.
         t_values: Arc-fraction parameter values for each keypoint, shape ``(K,)``.
@@ -45,8 +49,10 @@ def _keypoints_to_midline(
 
     Returns:
         xy: Resampled midline coordinates, shape ``(n_points, 2)``, float32.
+            Points outside ``[t_values[0], t_values[-1]]`` are NaN.
         conf: Interpolated confidence values at each output point, shape
-            ``(n_points,)``, float32.
+            ``(n_points,)``, float32.  Points outside the visible range have
+            confidence 0.0.
     """
     t_eval = np.linspace(0.0, 1.0, n_points)
 
@@ -73,6 +79,16 @@ def _keypoints_to_midline(
     x_out = interp_x(t_eval).astype(np.float32)
     y_out = interp_y(t_eval).astype(np.float32)
     conf_out = interp_c(t_eval).astype(np.float32)
+
+    # NaN-out extrapolated points beyond the visible keypoint range.
+    # Cameras that didn't see the endpoint abstain from triangulation
+    # rather than voting for a straight-line extrapolation.
+    t_first = t_values[0]
+    t_last = t_values[-1]
+    extrapolated = (t_eval < t_first) | (t_eval > t_last)
+    x_out[extrapolated] = np.nan
+    y_out[extrapolated] = np.nan
+    conf_out[extrapolated] = 0.0
 
     xy = np.stack([x_out, y_out], axis=1)
     return xy, conf_out

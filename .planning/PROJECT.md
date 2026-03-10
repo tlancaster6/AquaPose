@@ -115,7 +115,17 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ### Active
 
-(No active requirements -- next milestone not yet defined)
+## Current Milestone: v3.7 Improved Tracking
+
+**Goal:** Replace OC-SORT on OBB centroids with a custom bidirectional keypoint tracker, reorder the pipeline so pose precedes tracking, drop the segmentation midline backend, and upgrade association to use anatomical keypoints.
+
+**Target features:**
+- Custom bidirectional batched keypoint tracker (OKS cost, OCM direction, forward+backward merge)
+- Pipeline reorder: Detection → Pose → Tracking → Association → Reconstruction
+- Segmentation midline backend removal
+- Association centroid upgrade from OBB center to mid-body keypoint
+- Occlusion investigation and remediation
+- Quantitative tracking baselines and evaluation
 
 ### Out of Scope
 
@@ -252,4 +262,4 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | A/B curation comparison as standard practice | Light human curation (+9.2pts mAP50-95 on held-out data) justified the CVAT review step | ✓ Good -- quantified value of human oversight |
 
 ---
-*Last updated: 2026-03-10 after v3.6 Model Iteration & QA milestone completed*
+*Last updated: 2026-03-10 after v3.7 Improved Tracking milestone started*

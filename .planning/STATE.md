@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.6
-milestone_name: Model Iteration & QA
-status: complete
+milestone: v3.7
+milestone_name: Improved Tracking
+status: requirements
 last_updated: "2026-03-10"
 progress:
-  total_phases: 8
-  completed_phases: 7
-  total_plans: 13
-  completed_plans: 13
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
@@ -18,15 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-10)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.6 complete -- planning next milestone
+**Current focus:** v3.7 Improved Tracking — defining requirements
 
 ## Current Position
 
-Milestone: v3.6 Model Iteration & QA -- SHIPPED 2026-03-10
-Status: All phases complete. Round 1 models accepted as production. Phase 75 skipped.
-Last activity: 2026-03-10 - Milestone v3.6 completed and archived
-
-Progress: [██████████] 100% (8 phases, 13 plans)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-10 — Milestone v3.7 started
 
 ## Accumulated Context
 
@@ -55,5 +54,5 @@ v3.6 milestone decisions archived to milestones/v3.6-ROADMAP.md.
 ## Session Continuity
 
 Last session: 2026-03-10
-Stopped at: Quick task 25 complete — NaN-out extrapolated midline points
-Resume file: N/A (milestone complete)
+Stopped at: Milestone v3.7 started — defining requirements
+Resume file: N/A

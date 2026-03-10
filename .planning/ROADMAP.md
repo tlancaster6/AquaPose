@@ -280,7 +280,9 @@ Plans:
   1. Full 5-minute pipeline run completes with best models and produces a complete `aquapose eval` report
   2. Overlay videos generated for all 12 cameras from the final run
   3. Summary document produced with metrics table (round 0 vs round 1 vs round 2 vs final), key observations, and known limitations
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 76-01-PLAN.md — Generate viz outputs (overlay, trails, detections) and write final validation report
 
 ## Progress
 
@@ -305,7 +307,7 @@ Phases execute in numeric order: 70 and 71 (parallel) -> 72 -> 73 -> 74 -> 75 (c
 | 73. Round 1 Pseudo-Labels & Retraining | v3.6 | Complete    | 2026-03-09 | - |
 | 74. Round 1 Evaluation & Decision | 2/2 | Complete    | 2026-03-09 | - |
 | 75. Round 2 (Conditional) | v3.6 | 0/TBD | Not started | - |
-| 76. Final Validation | v3.6 | 0/TBD | Not started | - |
+| 76. Final Validation | v3.6 | 0/1 | Not started | - |
 
 ### Phase 77: Training module code quality: deduplicate YOLO wrappers and CLI commands, consolidate shared functions, fix seg registration bug, add tests for diverse subset selection and weight copying
 

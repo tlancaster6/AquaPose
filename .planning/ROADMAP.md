@@ -187,7 +187,7 @@ Full details: `.planning/milestones/v3.5-ROADMAP.md`
 - [x] **Phase 73: Round 1 Pseudo-Labels & Retraining** - Generate pseudo-labels, manually correct in CVAT, train round 1 models with A/B curation comparison (completed 2026-03-09)
 - [x] **Phase 74: Round 1 Evaluation & Decision** - Compare round 1 pipeline metrics to baseline; decide whether to proceed to round 2 (completed 2026-03-09)
 - [ ] **Phase 75: Round 2 (Conditional)** - Second iteration if round 1 shows clear improvement with headroom remaining
-- [ ] **Phase 76: Final Validation** - Full 5-minute pipeline run with best models, showcase overlay videos, summary document
+- [x] **Phase 76: Final Validation** - Full 5-minute pipeline run with best models, showcase overlay videos, summary document (completed 2026-03-10)
 
 ## Phase Details
 
@@ -280,7 +280,7 @@ Plans:
   1. Full 5-minute pipeline run completes with best models and produces a complete `aquapose eval` report
   2. Overlay videos generated for all 12 cameras from the final run
   3. Summary document produced with metrics table (round 0 vs round 1 vs round 2 vs final), key observations, and known limitations
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
 - [ ] 76-01-PLAN.md — Generate viz outputs (overlay, trails, detections) and write final validation report
 
@@ -307,7 +307,7 @@ Phases execute in numeric order: 70 and 71 (parallel) -> 72 -> 73 -> 74 -> 75 (c
 | 73. Round 1 Pseudo-Labels & Retraining | v3.6 | Complete    | 2026-03-09 | - |
 | 74. Round 1 Evaluation & Decision | 2/2 | Complete    | 2026-03-09 | - |
 | 75. Round 2 (Conditional) | v3.6 | 0/TBD | Not started | - |
-| 76. Final Validation | v3.6 | 0/1 | Not started | - |
+| 76. Final Validation | v3.6 | Complete    | 2026-03-10 | - |
 
 ### Phase 77: Training module code quality: deduplicate YOLO wrappers and CLI commands, consolidate shared functions, fix seg registration bug, add tests for diverse subset selection and weight copying
 

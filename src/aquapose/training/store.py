@@ -670,8 +670,8 @@ class SampleStore:
             if pseudo_in_val:
                 val_samples = val_tagged
             else:
-                # Only manual in val; pseudo/corrected val-tagged are excluded
-                val_samples = [s for s in val_tagged if s["source"] == "manual"]
+                # Manual and corrected in val; only raw pseudo-labels excluded
+                val_samples = [s for s in val_tagged if s["source"] != "pseudo"]
         elif val_candidates_tag is not None:
             # In random mode with val_candidates_tag: only tagged samples
             # are val-eligible

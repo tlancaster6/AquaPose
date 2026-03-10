@@ -23,9 +23,9 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 ## Current Position
 
 Phase: 78.1 of v3.7 (OBB & Pose Production Retrain)
-Plan: — (not yet planned)
-Status: Ready to plan
-Last activity: 2026-03-10 — Phase 78 complete (GO), Phase 79 skipped, Phase 78.1 inserted
+Plan: 01 complete, 02 pending
+Status: In progress — Plan 01 complete, proceeding to Plan 02
+Last activity: 2026-03-10 — Plan 78.1-01 complete (dataset assembly + production training runs done)
 
 Progress: [█░░░░░░░░░] 10%
 
@@ -58,6 +58,10 @@ Recent decisions affecting current work:
 - [Phase 78]: Confidence threshold can drop to 0.1 with polygon NMS
 - [Phase 78]: White-wall detection dropout identified — Phase 78.1 inserted for production retrain
 - [Phase 78]: Multi-instance pose output is Gaussian NMS artifact, not cross-fish detection
+- [Phase 78.1-01]: Tagged split mode required — random split causes augmentation leakage (children split across train/val)
+- [Phase 78.1-01]: Val filter changed to source != pseudo — corrected labels are human-reviewed, eligible for val by default
+- [Phase 78.1-01]: 4:1 augmentation ratio confirmed important (0.926 mAP50-95 at 2:1 vs 0.972 at 4:1)
+- [Phase 78.1-01]: Production models: OBB run_20260310_115419 (mAP50-95=0.781), Pose production_retrain_4aug run (mAP50-95=0.972)
 
 ### Roadmap Evolution
 
@@ -75,5 +79,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-10
-Stopped at: Phase 78 complete, Phase 78.1 inserted — ready to plan Phase 78.1
+Stopped at: Phase 78.1 Plan 01 complete — production OBB and Pose models trained; proceed to Plan 02
 Resume file: N/A

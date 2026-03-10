@@ -200,7 +200,7 @@ Full details: `.planning/milestones/v3.6-ROADMAP.md`
 **Milestone Goal:** Replace OC-SORT on OBB centroids with a custom bidirectional keypoint tracker. Reorder the pipeline so pose estimation precedes tracking, drop the segmentation midline backend, and upgrade cross-view association to use anatomical keypoints. Target: 9-track, zero-fragmentation output on the 20-second perfect-tracking clip.
 
 - [x] **Phase 78: Occlusion Investigation** - Script + written findings characterizing detector/pose behavior under occlusion, with go/no-go recommendation — completed 2026-03-10, **GO**
-- [ ] **Phase 78.1: OBB & Pose Production Retrain** - Retrain detector/pose with corrected pseudo-labels in train/val split, more epochs for white-wall recall (INSERTED)
+- [~] **Phase 78.1: OBB & Pose Production Retrain** - Retrain detector/pose with corrected pseudo-labels in train/val split, more epochs for white-wall recall (INSERTED) — 1/2 plans complete
 - [x] **Phase 79: Occlusion Remediation (Conditional)** - skipped per Phase 78 GO decision
 - [ ] **Phase 80: Baseline Metrics** - Quantitative OC-SORT tracking metrics on the perfect-tracking clip, establishing numbers to beat
 - [ ] **Phase 81: Pipeline Reorder & Segmentation Removal** - Pose runs before tracking; segmentation backend removed; stage interfaces updated
@@ -235,7 +235,7 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 78.1-01-PLAN.md -- Assemble datasets and hand off training commands to user
+- [x] 78.1-01-PLAN.md -- Assemble datasets and hand off training commands to user (complete 2026-03-10)
 - [ ] 78.1-02-PLAN.md -- Evaluate new models, update config, visual white-wall check
 
 ### Phase 79: Occlusion Remediation (Conditional)
@@ -329,7 +329,7 @@ Phases execute in numeric order: 78 -> 79 (conditional) -> 80 -> 81 -> 82 -> 83 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 78. Occlusion Investigation | v3.7 | 2/2 | Complete | 2026-03-10 |
-| 78.1 OBB & Pose Production Retrain | v3.7 | 0/2 | Not started | - |
+| 78.1 OBB & Pose Production Retrain | v3.7 | 1/2 | In progress | - |
 | 79. Occlusion Remediation (Conditional) | v3.7 | 0/0 | Skipped | 2026-03-10 |
 | 80. Baseline Metrics | v3.7 | 0/TBD | Not started | - |
 | 81. Pipeline Reorder & Segmentation Removal | v3.7 | 0/TBD | Not started | - |

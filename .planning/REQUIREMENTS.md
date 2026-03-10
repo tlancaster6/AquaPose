@@ -18,6 +18,13 @@ Requirements for the Improved Tracking milestone. Each maps to roadmap phases.
 
 - [x] **REM-01**: Occlusion-related failure modes identified in INV-02 are addressed before tracker implementation (conditional — skip if INV-02 is go) — **SKIPPED: INV-02 yielded GO**
 
+### Production Retrain
+
+- [ ] **RETRAIN-01**: OBB dataset assembled with all-source stratified val split (manual + corrected pseudo-labels) for production training
+- [ ] **RETRAIN-02**: Pose dataset assembled with all-source stratified val split and elastic augmentation for production training
+- [ ] **RETRAIN-03**: Production OBB and Pose models trained with 300 epochs/patience=50 and evaluated against Round 1 winners
+- [ ] **RETRAIN-04**: Project config updated with production model weights; white-wall recall visually verified via investigation script
+
 ### Pipeline Architecture
 
 - [ ] **PIPE-01**: Pose estimation runs immediately after detection (Stage 2), before tracking
@@ -77,6 +84,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INV-03 | Phase 80 | Pending |
 | INV-04 | Phase 78 | Complete |
 | REM-01 | Phase 79 | Skipped (GO) |
+| RETRAIN-01 | Phase 78.1 | Pending |
+| RETRAIN-02 | Phase 78.1 | Pending |
+| RETRAIN-03 | Phase 78.1 | Pending |
+| RETRAIN-04 | Phase 78.1 | Pending |
 | PIPE-01 | Phase 81 | Pending |
 | PIPE-02 | Phase 81 | Pending |
 | PIPE-03 | Phase 81 | Pending |
@@ -97,10 +108,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INTEG-04 | Phase 85 | Pending |
 
 **Coverage:**
-- v3.7 requirements: 23 total
-- Mapped to phases: 23
-- Unmapped: 0 ✓
+- v3.7 requirements: 27 total
+- Mapped to phases: 27
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-10*
-*Last updated: 2026-03-10 after roadmap creation (v3.7)*
+*Last updated: 2026-03-10 after Phase 78.1 planning*

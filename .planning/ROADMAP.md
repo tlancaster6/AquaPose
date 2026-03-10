@@ -195,7 +195,7 @@ Full details: `.planning/milestones/v3.6-ROADMAP.md`
 
 </details>
 
-### 🚧 v3.7 Improved Tracking (In Progress)
+### v3.7 Improved Tracking (In Progress)
 
 **Milestone Goal:** Replace OC-SORT on OBB centroids with a custom bidirectional keypoint tracker. Reorder the pipeline so pose estimation precedes tracking, drop the segmentation midline backend, and upgrade cross-view association to use anatomical keypoints. Target: 9-track, zero-fragmentation output on the 20-second perfect-tracking clip.
 
@@ -229,13 +229,14 @@ Plans:
 
 ### Phase 78.1: OBB & Pose Production Retrain (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
+**Goal:** Retrain OBB detector and pose model with corrected pseudo-labels in all-source stratified train/val split, with 300 epochs and patience=50 for white-wall recall improvement. Terminal retrain producing production models for v3.7 tracker milestone.
+**Requirements**: RETRAIN-01, RETRAIN-02, RETRAIN-03, RETRAIN-04
 **Depends on:** Phase 78
-**Plans:** 0 plans
+**Plans:** 2 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 78.1 to break down)
+- [ ] 78.1-01-PLAN.md -- Assemble datasets and hand off training commands to user
+- [ ] 78.1-02-PLAN.md -- Evaluate new models, update config, visual white-wall check
 
 ### Phase 79: Occlusion Remediation (Conditional)
 **Goal**: Address occlusion-related failure modes identified in Phase 78 before building the tracker — this phase is skipped entirely if Phase 78 yields a go recommendation
@@ -260,7 +261,7 @@ Plans:
 **Depends on**: Phase 80
 **Requirements**: PIPE-01, PIPE-02, PIPE-03
 **Success Criteria** (what must be TRUE):
-  1. The pipeline executes in order Detection → Pose → Tracking → Association → Reconstruction without errors on a test clip
+  1. The pipeline executes in order Detection -> Pose -> Tracking -> Association -> Reconstruction without errors on a test clip
   2. `backends/segmentation.py`, skeletonization code, and orientation resolution logic that only applied to segmentation are gone from the codebase — no dead imports or stale references
   3. `PipelineContext` and all stage interfaces reflect the new stage ordering and accept pose outputs from Stage 2
   4. All existing unit tests pass; any tests that depended on the old stage order or segmentation backend are updated or removed
@@ -323,12 +324,12 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 78 → 79 (conditional) → 80 → 81 → 82 → 83 → 84 → 85 → 86 (conditional)
+Phases execute in numeric order: 78 -> 79 (conditional) -> 80 -> 81 -> 82 -> 83 -> 84 -> 85 -> 86 (conditional)
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 78. Occlusion Investigation | v3.7 | 2/2 | Complete | 2026-03-10 |
-| 78.1 OBB & Pose Production Retrain | v3.7 | 0/TBD | Not started | - |
+| 78.1 OBB & Pose Production Retrain | v3.7 | 0/2 | Not started | - |
 | 79. Occlusion Remediation (Conditional) | v3.7 | 0/0 | Skipped | 2026-03-10 |
 | 80. Baseline Metrics | v3.7 | 0/TBD | Not started | - |
 | 81. Pipeline Reorder & Segmentation Removal | v3.7 | 0/TBD | Not started | - |

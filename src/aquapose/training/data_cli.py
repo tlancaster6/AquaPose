@@ -548,6 +548,12 @@ def _resolve_ids_by_filename(
     is_flag=True,
     help="Include excluded samples (for uncurated A/B comparison).",
 )
+@click.option(
+    "--max-aug-per-parent",
+    type=int,
+    default=None,
+    help="Max augmented children per parent in train. None = all.",
+)
 @click.pass_context
 def assemble_cmd(
     ctx: click.Context,
@@ -563,6 +569,7 @@ def assemble_cmd(
     split_mode: str,
     val_candidates: str | None,
     include_excluded: bool,
+    max_aug_per_parent: int | None,
 ) -> None:
     """Assemble a training dataset with symlinks from store."""
     from .store import SampleStore
@@ -591,6 +598,7 @@ def assemble_cmd(
             pseudo_in_val=pseudo_in_val,
             split_mode=split_mode,
             val_candidates_tag=val_candidates,
+            max_aug_per_parent=max_aug_per_parent,
         )
 
         # Count results

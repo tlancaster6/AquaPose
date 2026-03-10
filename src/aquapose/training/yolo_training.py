@@ -29,6 +29,9 @@ def train_yolo(
     patience: int = 100,
     mosaic: float = 1.0,
     rect: bool | None = None,
+    flipud: float = 0.0,
+    degrees: float = 0.0,
+    scale: float = 0.5,
 ) -> Path:
     """Train a YOLO model on a standard Ultralytics txt+yaml dataset.
 
@@ -58,6 +61,12 @@ def train_yolo(
             to disable mosaic, which can help when targets are small.
         rect: If True, use rectangular training batches. When None, uses
             the model-type default (True for pose, not set for others).
+        flipud: Vertical flip probability (0.0 to 1.0). Useful for
+            top-down / birds-eye views where vertical orientation is arbitrary.
+        degrees: Maximum rotation augmentation in degrees (symmetric
+            range). Small values (e.g. 5.0) add heading variation.
+        scale: Scale augmentation factor (0.0 to 1.0). Controls the
+            range of random scaling applied during training (±scale).
 
     Returns:
         Path to the best model weights file (``output_dir/best_model.pt``).
@@ -105,6 +114,9 @@ def train_yolo(
         "imgsz": imgsz,
         "patience": patience,
         "mosaic": mosaic,
+        "flipud": flipud,
+        "degrees": degrees,
+        "scale": scale,
     }
     if rect:
         train_kwargs["rect"] = rect
@@ -219,6 +231,9 @@ def train_yolo_pose(
     patience: int = 100,
     mosaic: float = 1.0,
     rect: bool = True,
+    flipud: float = 0.5,
+    degrees: float = 5.0,
+    scale: float = 0.2,
 ) -> Path:
     """Train a YOLO-pose keypoint estimation model.
 
@@ -239,4 +254,7 @@ def train_yolo_pose(
         patience=patience,
         mosaic=mosaic,
         rect=rect,
+        flipud=flipud,
+        degrees=degrees,
+        scale=scale,
     )

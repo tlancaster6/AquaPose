@@ -144,9 +144,21 @@ def _run_training(
 )
 @click.option(
     "--mosaic",
-    default=0.3,
+    default=0.1,
     type=float,
     help="Mosaic augmentation probability (0.0 to disable).",
+)
+@click.option(
+    "--flipud",
+    default=0.5,
+    type=float,
+    help="Vertical flip probability (0.0 to disable). Useful for top-down views.",
+)
+@click.option(
+    "--scale",
+    default=0.2,
+    type=float,
+    help="Scale augmentation factor (0.0 to disable, default 0.2).",
 )
 @click.pass_context
 def yolo_obb(
@@ -162,6 +174,8 @@ def yolo_obb(
     weights: str | None,
     patience: int,
     mosaic: float,
+    flipud: float,
+    scale: float,
 ) -> None:
     """Train YOLO-OBB oriented bounding-box detection model."""
     cli_args = {
@@ -175,6 +189,8 @@ def yolo_obb(
         "mosaic": mosaic,
         "patience": patience,
         "tag": tag,
+        "flipud": flipud,
+        "scale": scale,
     }
     _run_training(ctx, "obb", data_dir, tag, cli_args)
 
@@ -342,6 +358,24 @@ def seg(
     default=True,
     help="Use rectangular training batches.",
 )
+@click.option(
+    "--flipud",
+    default=0.5,
+    type=float,
+    help="Vertical flip probability (0.0 to disable). Useful for top-down views.",
+)
+@click.option(
+    "--degrees",
+    default=5.0,
+    type=float,
+    help="Max rotation augmentation in degrees (0.0 to disable).",
+)
+@click.option(
+    "--scale",
+    default=0.2,
+    type=float,
+    help="Scale augmentation factor (0.0 to disable, default 0.2).",
+)
 @click.pass_context
 def pose(
     ctx: click.Context,
@@ -357,6 +391,9 @@ def pose(
     patience: int,
     mosaic: float,
     rect: bool,
+    flipud: float,
+    degrees: float,
+    scale: float,
 ) -> None:
     """Train YOLO-pose keypoint estimation model."""
     cli_args = {
@@ -371,5 +408,8 @@ def pose(
         "patience": patience,
         "tag": tag,
         "rect": rect,
+        "flipud": flipud,
+        "degrees": degrees,
+        "scale": scale,
     }
     _run_training(ctx, "pose", data_dir, tag, cli_args)

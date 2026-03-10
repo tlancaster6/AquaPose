@@ -633,6 +633,7 @@ class SampleStore:
         pseudo_in_val: bool = False,
         split_mode: str = "random",
         val_candidates_tag: str | None = None,
+        max_aug_per_parent: int | None = None,
     ) -> Path:
         """Assemble a training dataset with symlinks in YOLO directory structure.
 
@@ -652,6 +653,10 @@ class SampleStore:
             val_candidates_tag: When set in random mode, only samples with
                 this tag are eligible for the validation set. Others go
                 straight to train.
+            max_aug_per_parent: Maximum number of augmented children to
+                include per parent sample. ``None`` (default) includes all.
+                Only affects train split — augmented samples are never
+                placed in val.
 
         Returns:
             Path to the assembled dataset directory.
@@ -702,6 +707,26 @@ class SampleStore:
             n_val = int(len(val_eligible) * val_fraction)
             val_samples = val_eligible[:n_val]
             train_samples = val_eligible[n_val:] + train_only
+
+        # Limit augmented children per parent in train
+        if max_aug_per_parent is not None:
+            from collections import defaultdict
+
+            aug_by_parent: dict[str, list[dict]] = defaultdict(list)
+            non_aug_train = []
+            for s in train_samples:
+                if s["parent_id"] is not None:
+                    aug_by_parent[s["parent_id"]].append(s)
+                else:
+                    non_aug_train.append(s)
+
+            rng_aug = random.Random(seed)
+            kept_aug = []
+            for children in aug_by_parent.values():
+                rng_aug.shuffle(children)
+                kept_aug.extend(children[:max_aug_per_parent])
+
+            train_samples = non_aug_train + kept_aug
 
         # Create dataset directory (clean if exists)
         ds_dir = self.root / "datasets" / name

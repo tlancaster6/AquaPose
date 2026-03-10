@@ -1,20 +1,16 @@
 ---
 created: 2026-02-28T22:00:00.000Z
-title: Move LUT generation to pre-pipeline setup
+title: Pass pre-generated LUTs via PipelineContext instead of loading from disk in AssociationStage
 area: calibration
 files:
   - src/aquapose/core/association/stage.py
-  - src/aquapose/calibration/luts.py
   - src/aquapose/engine/pipeline.py
-  - src/aquapose/cli.py
 ---
 
-## Problem
+## Background
 
-LUT generation currently lives inside `AssociationStage.run()` as lazy initialization. Per GUIDEBOOK Section 5, LUTs are pre-pipeline input materialization — they should be resolved before the pipeline loop starts, alongside frame loading and calibration. Having them inside a stage violates the principle that stages are pure computation with no side effects (the current code uses `print()` for progress because the observer system can't reach it).
+LUT *generation* was moved out of the association stage into its own CLI command (`aquapose prep generate-luts`), so the performance concern is resolved. However, `AssociationStage.run()` still discovers and loads LUT files from disk itself rather than receiving them as input.
 
-## Solution
+## Remaining work
 
-Move LUT loading/generation to the CLI or pipeline setup layer (before the batch loop). LUTs should be loaded from cache or generated once, then passed into `PipelineContext` alongside calibration data. If LUTs are not present and cannot be generated (e.g. missing calibration), the pipeline should fail early with a clear error message rather than discovering the problem mid-run inside the association stage.
-
-The association stage should receive LUTs as a required input, not generate them internally.
+Load LUTs in the pipeline setup layer (alongside calibration) and pass them into `PipelineContext`. The association stage should receive LUTs as a required context field, not reach out to disk. This gives early failure if LUTs are missing and keeps stages as pure computation.

@@ -408,6 +408,103 @@ def test_none_angle_falls_back_to_zero(
 
 
 # ---------------------------------------------------------------------------
+# _keypoints_to_midline NaN-out extrapolation tests
+# ---------------------------------------------------------------------------
+
+
+def test_keypoints_to_midline_nan_outside_visible_range() -> None:
+    """Points outside the visible keypoint t-range are NaN with confidence 0."""
+    # 4 keypoints at t_values = [0.2, 0.4, 0.6, 0.8] (nose and tail dropped)
+    n_kpts = 4
+    n_points = 15
+    t_values = np.array([0.2, 0.4, 0.6, 0.8], dtype=np.float32)
+    kpts_xy = np.stack(
+        [np.linspace(20.0, 80.0, n_kpts), np.full(n_kpts, 32.0)], axis=1
+    ).astype(np.float32)
+    confidences = np.ones(n_kpts, dtype=np.float32)
+
+    xy, conf = _keypoints_to_midline(kpts_xy, t_values, confidences, n_points)
+
+    # t_eval = linspace(0, 1, 15): indices 0..14, step ~0.0714
+    # t < 0.2: indices where t_eval < 0.2 → indices 0, 1 (t=0.0, 0.0714)
+    # t > 0.8: indices where t_eval > 0.8 → indices 13, 14 (t=0.857, 1.0)
+    t_eval = np.linspace(0.0, 1.0, n_points)
+    outside = (t_eval < 0.2) | (t_eval > 0.8)
+    inside = ~outside
+
+    # Outside range: NaN xy and confidence 0
+    assert np.all(np.isnan(xy[outside, 0])), "x outside range should be NaN"
+    assert np.all(np.isnan(xy[outside, 1])), "y outside range should be NaN"
+    assert np.all(conf[outside] == 0.0), "confidence outside range should be 0"
+
+    # Inside range: finite values and positive confidence
+    assert np.all(np.isfinite(xy[inside, 0])), "x inside range should be finite"
+    assert np.all(np.isfinite(xy[inside, 1])), "y inside range should be finite"
+    assert np.all(conf[inside] > 0.0), "confidence inside range should be positive"
+
+
+def test_keypoints_to_midline_full_range_no_nan() -> None:
+    """When t spans [0, 1], no NaN in output — all points finite with positive confidence."""
+    n_kpts = 6
+    n_points = 15
+    t_values = np.linspace(0.0, 1.0, n_kpts, dtype=np.float32)
+    kpts_xy = np.stack(
+        [np.linspace(10.0, 100.0, n_kpts), np.full(n_kpts, 32.0)], axis=1
+    ).astype(np.float32)
+    confidences = np.ones(n_kpts, dtype=np.float32)
+
+    xy, conf = _keypoints_to_midline(kpts_xy, t_values, confidences, n_points)
+
+    assert not np.any(np.isnan(xy)), "No NaN expected when t spans [0, 1]"
+    assert np.all(np.isfinite(xy)), "All xy should be finite"
+    assert np.all(conf > 0.0), "All confidence should be positive"
+
+
+def test_keypoints_to_midline_tail_only_dropped() -> None:
+    """When tail is dropped (t spans [0.0, 0.6]), only points beyond t=0.6 are NaN."""
+    n_kpts = 4
+    n_points = 15
+    t_values = np.array([0.0, 0.2, 0.4, 0.6], dtype=np.float32)
+    kpts_xy = np.stack(
+        [np.linspace(10.0, 70.0, n_kpts), np.full(n_kpts, 32.0)], axis=1
+    ).astype(np.float32)
+    confidences = np.ones(n_kpts, dtype=np.float32)
+
+    xy, conf = _keypoints_to_midline(kpts_xy, t_values, confidences, n_points)
+
+    t_eval = np.linspace(0.0, 1.0, n_points)
+    outside = t_eval > 0.6
+    inside = ~outside
+
+    # Points beyond t=0.6 should be NaN
+    assert np.all(np.isnan(xy[outside, 0])), "x beyond t=0.6 should be NaN"
+    assert np.all(np.isnan(xy[outside, 1])), "y beyond t=0.6 should be NaN"
+    assert np.all(conf[outside] == 0.0), "confidence beyond t=0.6 should be 0"
+
+    # Points within [0.0, 0.6] should be finite
+    assert np.all(np.isfinite(xy[inside, 0])), "x within range should be finite"
+    assert np.all(np.isfinite(xy[inside, 1])), "y within range should be finite"
+
+
+def test_keypoints_to_midline_shape_preserved() -> None:
+    """Output shape is (n_points, 2) and (n_points,) regardless of NaN presence."""
+    n_kpts = 3
+    n_points = 11
+    t_values = np.array([0.3, 0.5, 0.7], dtype=np.float32)
+    kpts_xy = np.stack(
+        [np.linspace(30.0, 70.0, n_kpts), np.full(n_kpts, 32.0)], axis=1
+    ).astype(np.float32)
+    confidences = np.ones(n_kpts, dtype=np.float32)
+
+    xy, conf = _keypoints_to_midline(kpts_xy, t_values, confidences, n_points)
+
+    assert xy.shape == (n_points, 2), f"Expected ({n_points}, 2), got {xy.shape}"
+    assert conf.shape == (n_points,), f"Expected ({n_points},), got {conf.shape}"
+    assert xy.dtype == np.float32
+    assert conf.dtype == np.float32
+
+
+# ---------------------------------------------------------------------------
 # Import boundary test
 # ---------------------------------------------------------------------------
 

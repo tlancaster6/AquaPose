@@ -72,35 +72,35 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INV-01 | — | Pending |
-| INV-02 | — | Pending |
-| INV-03 | — | Pending |
-| INV-04 | — | Pending |
-| REM-01 | — | Pending |
-| PIPE-01 | — | Pending |
-| PIPE-02 | — | Pending |
-| PIPE-03 | — | Pending |
-| TRACK-01 | — | Pending |
-| TRACK-02 | — | Pending |
-| TRACK-03 | — | Pending |
-| TRACK-04 | — | Pending |
-| TRACK-05 | — | Pending |
-| TRACK-06 | — | Pending |
-| TRACK-07 | — | Pending |
-| TRACK-08 | — | Pending |
-| TRACK-09 | — | Pending |
-| TRACK-10 | — | Pending |
-| ASSOC-01 | — | Pending |
-| INTEG-01 | — | Pending |
-| INTEG-02 | — | Pending |
-| INTEG-03 | — | Pending |
-| INTEG-04 | — | Pending |
+| INV-01 | Phase 78 | Pending |
+| INV-02 | Phase 78 | Pending |
+| INV-03 | Phase 80 | Pending |
+| INV-04 | Phase 78 | Pending |
+| REM-01 | Phase 79 | Pending |
+| PIPE-01 | Phase 81 | Pending |
+| PIPE-02 | Phase 81 | Pending |
+| PIPE-03 | Phase 81 | Pending |
+| TRACK-01 | Phase 83 | Pending |
+| TRACK-02 | Phase 83 | Pending |
+| TRACK-03 | Phase 83 | Pending |
+| TRACK-04 | Phase 83 | Pending |
+| TRACK-05 | Phase 83 | Pending |
+| TRACK-06 | Phase 83 | Pending |
+| TRACK-07 | Phase 83 | Pending |
+| TRACK-08 | Phase 83 | Pending |
+| TRACK-09 | Phase 83 | Pending |
+| TRACK-10 | Phase 83 | Pending |
+| ASSOC-01 | Phase 82 | Pending |
+| INTEG-01 | Phase 84 | Pending |
+| INTEG-02 | Phase 84 | Pending |
+| INTEG-03 | Phase 85 | Pending |
+| INTEG-04 | Phase 85 | Pending |
 
 **Coverage:**
 - v3.7 requirements: 23 total
-- Mapped to phases: 0
-- Unmapped: 23 ⚠️
+- Mapped to phases: 23
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-10*
-*Last updated: 2026-03-10 after initial definition*
+*Last updated: 2026-03-10 after roadmap creation (v3.7)*

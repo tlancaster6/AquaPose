@@ -13,6 +13,7 @@
 - ✅ **v3.4 Performance Optimization** — Phases 56-60 (shipped 2026-03-05)
 - ✅ **v3.5 Pseudo-Labeling** — Phases 61-69 (shipped 2026-03-06)
 - ✅ **v3.6 Model Iteration & QA** — Phases 70-77 (shipped 2026-03-10)
+- 🚧 **v3.7 Improved Tracking** — Phases 78-86 (in progress)
 
 ## Phases
 
@@ -193,3 +194,131 @@ Full details: `.planning/milestones/v3.5-ROADMAP.md`
 Full details: `.planning/milestones/v3.6-ROADMAP.md`
 
 </details>
+
+### 🚧 v3.7 Improved Tracking (In Progress)
+
+**Milestone Goal:** Replace OC-SORT on OBB centroids with a custom bidirectional keypoint tracker. Reorder the pipeline so pose estimation precedes tracking, drop the segmentation midline backend, and upgrade cross-view association to use anatomical keypoints. Target: 9-track, zero-fragmentation output on the 20-second perfect-tracking clip.
+
+- [ ] **Phase 78: Occlusion Investigation** - Script + written findings characterizing detector/pose behavior under occlusion, with go/no-go recommendation
+- [ ] **Phase 79: Occlusion Remediation (Conditional)** - Address failure modes found in Phase 78 — skip if Phase 78 is go
+- [ ] **Phase 80: Baseline Metrics** - Quantitative OC-SORT tracking metrics on the perfect-tracking clip, establishing numbers to beat
+- [ ] **Phase 81: Pipeline Reorder & Segmentation Removal** - Pose runs before tracking; segmentation backend removed; stage interfaces updated
+- [ ] **Phase 82: Association Upgrade — Keypoint Centroid** - Cross-view association uses mid-body keypoint instead of OBB centroid
+- [ ] **Phase 83: Custom Tracker Implementation** - Bidirectional batched keypoint tracker with OKS cost, OCM direction, KF state, gap interpolation
+- [ ] **Phase 84: Integration & Evaluation** - New tracker wired into pipeline, evaluated against Phase 80 baselines
+- [ ] **Phase 85: Code Quality Audit & CLI Smoke Test** - Dead code removed, type errors fixed, pipeline runs end-to-end from CLI
+- [ ] **Phase 86: Cleanup (Conditional)** - Address issues found in Phase 85 — skip if Phase 85 is clean
+
+## Phase Details
+
+### Phase 78: Occlusion Investigation
+**Goal**: Understand how the OBB detector and pose model behave when fish partially occlude each other, and produce a go/no-go recommendation for proceeding to tracker implementation
+**Depends on**: Phase 77 (v3.6 complete)
+**Requirements**: INV-01, INV-02, INV-04
+**Success Criteria** (what must be TRUE):
+  1. A standalone script in `scripts/` runs detection + pose on a configurable camera/frame range and produces an annotated video with per-track-ID colors, gray/red untracked detections, and confidence-encoded keypoints
+  2. The video covers the occlusion events at the ~13-14 second mark of `e3v831e-20260218T145915-150429.mp4` in the crop region (263,225)-(613,525)
+  3. A written summary exists characterizing OBB and pose behavior under occlusion — specifically whether boxes merge, keypoints jump fish, and how per-keypoint confidence behaves
+  4. The summary includes a concrete go/no-go recommendation on whether occlusion handling is acceptable for proceeding to tracker implementation
+  5. A confidence threshold recommendation exists based on observed quality vs false-positive tradeoff across tested confidence levels
+**Plans**: TBD
+
+### Phase 79: Occlusion Remediation (Conditional)
+**Goal**: Address occlusion-related failure modes identified in Phase 78 before building the tracker — this phase is skipped entirely if Phase 78 yields a go recommendation
+**Depends on**: Phase 78
+**Requirements**: REM-01
+**Success Criteria** (what must be TRUE):
+  1. Each failure mode listed in the Phase 78 no-go finding has a corresponding fix (retraining, NMS tuning, filtering heuristic, or explicit deferral with justification)
+  2. Re-running the Phase 78 investigation script on the same clip shows the failure modes are resolved or reduced to an acceptable level
+**Plans**: TBD (scope set by Phase 78 findings)
+
+### Phase 80: Baseline Metrics
+**Goal**: Establish quantitative OC-SORT tracking baselines on the 20-second perfect-tracking target clip so post-overhaul improvements are measurable
+**Depends on**: Phase 78 (or Phase 79 if invoked)
+**Requirements**: INV-03
+**Success Criteria** (what must be TRUE):
+  1. A baseline metrics document exists recording track count, track duration distribution, fragmentation count, and total coverage for the current OC-SORT tracker on `e3v831e-20260218T145915-150429.mp4` first 20 seconds
+  2. The document states the gap to the zero-fragmentation, 9-track target explicitly as numbers (e.g., "8 tracks found, 3 ID switches, 94% coverage")
+**Plans**: TBD
+
+### Phase 81: Pipeline Reorder & Segmentation Removal
+**Goal**: Pose estimation runs immediately after detection (before tracking), and the segmentation midline backend is fully removed from the codebase
+**Depends on**: Phase 80
+**Requirements**: PIPE-01, PIPE-02, PIPE-03
+**Success Criteria** (what must be TRUE):
+  1. The pipeline executes in order Detection → Pose → Tracking → Association → Reconstruction without errors on a test clip
+  2. `backends/segmentation.py`, skeletonization code, and orientation resolution logic that only applied to segmentation are gone from the codebase — no dead imports or stale references
+  3. `PipelineContext` and all stage interfaces reflect the new stage ordering and accept pose outputs from Stage 2
+  4. All existing unit tests pass; any tests that depended on the old stage order or segmentation backend are updated or removed
+**Plans**: TBD
+
+### Phase 82: Association Upgrade — Keypoint Centroid
+**Goal**: Cross-view association uses the mid-body keypoint position instead of the OBB centroid, making ray-based matching more stable under partial occlusion and frame-edge clipping
+**Depends on**: Phase 81
+**Requirements**: ASSOC-01
+**Success Criteria** (what must be TRUE):
+  1. `Tracklet2D.centroids` is populated from the selected mid-body keypoint (empirically determined highest-confidence keypoint index) rather than OBB center
+  2. The association stage runs end-to-end without modification to the downstream LUT/ray-ray scoring/Leiden clustering machinery
+  3. A brief note documents which keypoint index was selected and why (confidence statistics)
+**Plans**: TBD
+
+### Phase 83: Custom Tracker Implementation
+**Goal**: A bidirectional batched keypoint tracker replaces OC-SORT, using OKS cost, OCM direction consistency, Kalman filter over keypoint positions, asymmetric birth/death, ORU/OCR mechanisms, bidirectional merge, chunk handoff, and gap interpolation
+**Depends on**: Phase 81
+**Requirements**: TRACK-01, TRACK-02, TRACK-03, TRACK-04, TRACK-05, TRACK-06, TRACK-07, TRACK-08, TRACK-09, TRACK-10
+**Success Criteria** (what must be TRUE):
+  1. The tracker runs a forward and backward OC-SORT pass over each chunk and merges the resulting tracklets
+  2. Association cost uses OKS (keypoint similarity) rather than IoU on OBBs, with OCM direction consistency as an additive term using the spine heading vector
+  3. The Kalman filter tracks keypoint positions and velocities; the state dimension (60-dim or 24-dim) is explicitly chosen and documented
+  4. Track birth and death apply asymmetric rules based on frame-edge proximity (edge tracks born/die more easily)
+  5. Chunk boundary handoff serializes and restores KF mean, covariance, and observation history so tracks survive chunk transitions
+  6. Small tracklet gaps are filled via spline interpolation
+  7. If INV-04 findings reveal significant low-confidence valid detections, a secondary BYTE-style pass for those detections is implemented; otherwise TRACK-10 is explicitly deferred
+**Plans**: TBD
+
+### Phase 84: Integration & Evaluation
+**Goal**: The new tracker is wired into the reordered pipeline and evaluated against the Phase 80 baselines, with iteration on parameters if needed
+**Depends on**: Phase 83, Phase 82
+**Requirements**: INTEG-01, INTEG-02
+**Success Criteria** (what must be TRUE):
+  1. `aquapose run` with the new pipeline order and custom tracker completes end-to-end on the perfect-tracking 20-second clip without errors
+  2. Post-run tracking metrics (track count, duration distribution, fragmentation, coverage) are compared directly against the Phase 80 OC-SORT baselines in a written evaluation note
+  3. The tracker shows measurable improvement on at least one primary metric (fragmentation count or track count closer to 9) compared to OC-SORT baseline
+**Plans**: TBD
+
+### Phase 85: Code Quality Audit & CLI Smoke Test
+**Goal**: The overhaul leaves no dead code, broken cross-references, or type errors; the full pipeline runs cleanly from the CLI with the new stage ordering
+**Depends on**: Phase 84
+**Requirements**: INTEG-03, INTEG-04
+**Success Criteria** (what must be TRUE):
+  1. A code quality audit finds zero dead code from the removed segmentation backend — no unused imports, unreachable functions, or stale references
+  2. `hatch run typecheck` produces no new type errors introduced by the v3.7 overhaul
+  3. `aquapose run` completes end-to-end on a test clip with the new pipeline, and all config options for the new tracker are documented
+  4. A documented decision exists on whether BoxMot is removed as a dependency or retained as an OC-SORT fallback
+**Plans**: TBD
+
+### Phase 86: Cleanup (Conditional)
+**Goal**: Address issues found during the Phase 85 audit — this phase is skipped entirely if Phase 85 finds nothing actionable
+**Depends on**: Phase 85
+**Requirements**: (none — scope set by Phase 85 findings)
+**Success Criteria** (what must be TRUE):
+  1. Each issue listed in the Phase 85 audit report has a corresponding fix or an explicit justification for deferral
+  2. `hatch run check` and `hatch run test` pass cleanly after all fixes
+**Plans**: TBD (scope set by Phase 85 findings)
+
+## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 78 → 79 (conditional) → 80 → 81 → 82 → 83 → 84 → 85 → 86 (conditional)
+
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 78. Occlusion Investigation | v3.7 | 0/TBD | Not started | - |
+| 79. Occlusion Remediation (Conditional) | v3.7 | 0/TBD | Not started | - |
+| 80. Baseline Metrics | v3.7 | 0/TBD | Not started | - |
+| 81. Pipeline Reorder & Segmentation Removal | v3.7 | 0/TBD | Not started | - |
+| 82. Association Upgrade — Keypoint Centroid | v3.7 | 0/TBD | Not started | - |
+| 83. Custom Tracker Implementation | v3.7 | 0/TBD | Not started | - |
+| 84. Integration & Evaluation | v3.7 | 0/TBD | Not started | - |
+| 85. Code Quality Audit & CLI Smoke Test | v3.7 | 0/TBD | Not started | - |
+| 86. Cleanup (Conditional) | v3.7 | 0/TBD | Not started | - |

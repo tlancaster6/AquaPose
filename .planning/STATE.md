@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v3.7
 milestone_name: Improved Tracking
-status: requirements
+status: roadmap
 last_updated: "2026-03-10"
 progress:
-  total_phases: 0
+  total_phases: 9
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -18,14 +18,29 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-10)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.7 Improved Tracking — defining requirements
+**Current focus:** v3.7 Improved Tracking — Phase 78 (Occlusion Investigation)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-10 — Milestone v3.7 started
+Phase: 78 of 9 in milestone (Occlusion Investigation)
+Plan: — (not yet planned)
+Status: Ready to plan
+Last activity: 2026-03-10 — Roadmap created for v3.7
+
+Progress: [░░░░░░░░░░] 0%
+
+## Performance Metrics
+
+**Velocity:**
+- Total plans completed: 0
+- Average duration: —
+- Total execution time: —
+
+**By Phase:**
+
+| Phase | Plans | Total | Avg/Plan |
+|-------|-------|-------|----------|
+| - | - | - | - |
 
 ## Accumulated Context
 
@@ -34,6 +49,11 @@ Last activity: 2026-03-10 — Milestone v3.7 started
 Decisions are logged in PROJECT.md Key Decisions table.
 v3.6 milestone decisions archived to milestones/v3.6-ROADMAP.md.
 
+Recent decisions affecting current work:
+- [v3.7 seed]: KF state dimension (60-dim vs 24-dim) to be resolved during Phase 83 planning
+- [v3.7 seed]: BoxMot dependency removal decision deferred to Phase 85
+- [v3.7 seed]: TRACK-10 (BYTE-style secondary pass) conditional on INV-04 findings in Phase 78
+
 ### Pending Todos
 
 10 pending todos -- see .planning/todos/pending/ (review for relevance)
@@ -41,18 +61,10 @@ v3.6 milestone decisions archived to milestones/v3.6-ROADMAP.md.
 ### Blockers/Concerns
 
 - Algae domain shift between manual annotations (clean tank) and current conditions may cause false positives in pseudo-labels
-
-### Quick Tasks Completed
-
-| # | Description | Date | Commit | Status | Directory |
-|---|-------------|------|--------|--------|-----------|
-| 22 | Update GUIDEBOOK.md to be current, focused, and trustworthy — remove stale repo-specific content | 2026-03-06 | 197b152 | Verified | [22-update-guidebook-md-to-be-current-focuse](./quick/22-update-guidebook-md-to-be-current-focuse/) |
-| 23 | Replace Ultralytics probiou NMS with geometric polygon NMS using Shapely | 2026-03-07 | 8b2ce6e | Complete | [23-replace-ultralytics-probiou-nms-with-geo](./quick/23-replace-ultralytics-probiou-nms-with-geo/) |
-| 24 | Audit training module for code quality improvements | 2026-03-09 | 54e166a | Verified | [24-audit-recent-pseudo-label-and-training-d](./quick/24-audit-recent-pseudo-label-and-training-d/) |
-| 25 | NaN-out extrapolated midline points to prevent rigid-looking 3D tails/noses | 2026-03-10 | e7b29a7 | Complete | [25-nan-out-extrapolated-midline-points-inst](./quick/25-nan-out-extrapolated-midline-points-inst/) |
+- Phases 79 and 86 are conditional — scope unknown until Phase 78 and Phase 85 complete respectively
 
 ## Session Continuity
 
 Last session: 2026-03-10
-Stopped at: Milestone v3.7 started — defining requirements
+Stopped at: Roadmap created for v3.7 Improved Tracking — ready to plan Phase 78
 Resume file: N/A

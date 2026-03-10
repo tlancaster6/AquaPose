@@ -9,14 +9,14 @@ Requirements for the Improved Tracking milestone. Each maps to roadmap phases.
 
 ### Investigation
 
-- [ ] **INV-01**: Occlusion investigation script generates per-detection pose overlay video with confidence visualization for a configurable camera/frame range
-- [ ] **INV-02**: Written summary characterizing OBB detector and pose model behavior under fish occlusion with go/no-go recommendation
+- [x] **INV-01**: Occlusion investigation script generates per-detection pose overlay video with confidence visualization for a configurable camera/frame range
+- [x] **INV-02**: Written summary characterizing OBB detector and pose model behavior under fish occlusion with go/no-go recommendation
 - [ ] **INV-03**: Baseline tracking metrics (track count, duration distribution, fragmentation, coverage) measured on perfect-tracking target clip with current OC-SORT
-- [ ] **INV-04**: Detection confidence threshold determined empirically — characterize the quality vs false-positive tradeoff across confidence levels
+- [x] **INV-04**: Detection confidence threshold determined empirically — characterize the quality vs false-positive tradeoff across confidence levels
 
 ### Remediation
 
-- [ ] **REM-01**: Occlusion-related failure modes identified in INV-02 are addressed before tracker implementation (conditional — skip if INV-02 is go)
+- [x] **REM-01**: Occlusion-related failure modes identified in INV-02 are addressed before tracker implementation (conditional — skip if INV-02 is go) — **SKIPPED: INV-02 yielded GO**
 
 ### Pipeline Architecture
 
@@ -72,11 +72,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INV-01 | Phase 78 | Pending |
-| INV-02 | Phase 78 | Pending |
+| INV-01 | Phase 78 | Complete |
+| INV-02 | Phase 78 | Complete |
 | INV-03 | Phase 80 | Pending |
-| INV-04 | Phase 78 | Pending |
-| REM-01 | Phase 79 | Pending |
+| INV-04 | Phase 78 | Complete |
+| REM-01 | Phase 79 | Skipped (GO) |
 | PIPE-01 | Phase 81 | Pending |
 | PIPE-02 | Phase 81 | Pending |
 | PIPE-03 | Phase 81 | Pending |

@@ -16,6 +16,8 @@ import cv2
 import numpy as np
 import yaml
 
+from aquapose.core.detection.backends.yolo_obb import polygon_nms
+
 # ---------------------------------------------------------------------------
 # Palette (reused from evaluation/viz/overlay.py)
 # ---------------------------------------------------------------------------
@@ -229,34 +231,36 @@ def _invert_affine_points(crop_points: np.ndarray, M: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 
-def _extract_all_pose_instances(results: list) -> list[dict]:
-    """Extract ALL pose instances from YOLO-pose results (not just [0]).
+def _extract_primary_pose(
+    results: list,
+) -> tuple[np.ndarray, np.ndarray] | tuple[None, None]:
+    """Extract the primary pose instance from YOLO-pose results.
+
+    Matches the production pipeline (PoseEstimationBackend._extract_keypoints):
+    takes only kp.xy[0], ignoring any duplicate detections from Gaussian NMS.
 
     Args:
         results: Ultralytics Results list from pose model.predict().
 
     Returns:
-        List of dicts, each with 'kpts_xy' (K,2) and 'kpts_conf' (K,) arrays.
+        Tuple of (kpts_xy, kpts_conf) arrays, or (None, None) if unavailable.
     """
-    instances = []
     if not results:
-        return instances
+        return None, None
     res = results[0]
     if res.keypoints is None:
-        return instances
-
+        return None, None
     kp = res.keypoints
-    n_instances = len(kp.xy)
+    if len(kp.xy) == 0:
+        return None, None
 
-    for i in range(n_instances):
-        kpts_xy = kp.xy[i].cpu().numpy().astype(np.float32)
-        if kp.conf is not None and len(kp.conf) > i:
-            kpts_conf = kp.conf[i].cpu().numpy().astype(np.float32)
-        else:
-            kpts_conf = np.ones(len(kpts_xy), dtype=np.float32)
-        instances.append({"kpts_xy": kpts_xy, "kpts_conf": kpts_conf})
+    kpts_xy = kp.xy[0].cpu().numpy().astype(np.float32)
+    if kp.conf is not None and len(kp.conf) > 0:
+        kpts_conf = kp.conf[0].cpu().numpy().astype(np.float32)
+    else:
+        kpts_conf = np.ones(len(kpts_xy), dtype=np.float32)
 
-    return instances
+    return kpts_xy, kpts_conf
 
 
 # ---------------------------------------------------------------------------
@@ -292,7 +296,6 @@ def _draw_keypoints(
     kpts_conf: np.ndarray,
     color: tuple[int, int, int],
     offset: tuple[int, int] = (0, 0),
-    dashed: bool = False,
 ) -> None:
     """Draw keypoints with connections on an image.
 
@@ -304,23 +307,15 @@ def _draw_keypoints(
         kpts_conf: Per-keypoint confidence, shape (K,).
         color: BGR color tuple.
         offset: (x, y) offset for crop region.
-        dashed: If True, draw connections as dotted lines (secondary instances).
     """
     ox, oy = offset
-
-    # Desaturate color for secondary instances
-    if dashed:
-        color = tuple(min(255, c + 80) for c in color)  # type: ignore[assignment]
 
     # Draw connections
     for i, j in _SKELETON:
         if i < len(kpts_xy) and j < len(kpts_xy):
             pt1 = (int(kpts_xy[i][0] - ox), int(kpts_xy[i][1] - oy))
             pt2 = (int(kpts_xy[j][0] - ox), int(kpts_xy[j][1] - oy))
-            if dashed:
-                _draw_dashed_line(img, pt1, pt2, color, thickness=1)
-            else:
-                cv2.line(img, pt1, pt2, color, 2)
+            cv2.line(img, pt1, pt2, color, 2)
 
     # Draw circles with confidence-encoded radius
     for k in range(len(kpts_xy)):
@@ -328,40 +323,6 @@ def _draw_keypoints(
         conf = float(kpts_conf[k]) if k < len(kpts_conf) else 0.5
         radius = max(2, int(conf * 10))
         cv2.circle(img, pt, radius, color, -1)
-
-
-def _draw_dashed_line(
-    img: np.ndarray,
-    pt1: tuple[int, int],
-    pt2: tuple[int, int],
-    color: tuple[int, int, int],
-    thickness: int = 1,
-    dash_length: int = 5,
-) -> None:
-    """Draw a dashed line between two points.
-
-    Args:
-        img: Image to draw on.
-        pt1: Start point (x, y).
-        pt2: End point (x, y).
-        color: BGR color.
-        thickness: Line thickness.
-        dash_length: Length of each dash segment in pixels.
-    """
-    x1, y1 = pt1
-    x2, y2 = pt2
-    dist = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-    if dist < 1:
-        return
-    n_dashes = max(1, int(dist / dash_length))
-    for i in range(0, n_dashes, 2):
-        t1 = i / n_dashes
-        t2 = min((i + 1) / n_dashes, 1.0)
-        sx = int(x1 + t1 * (x2 - x1))
-        sy = int(y1 + t1 * (y2 - y1))
-        ex = int(x1 + t2 * (x2 - x1))
-        ey = int(y1 + t2 * (y2 - y1))
-        cv2.line(img, (sx, sy), (ex, ey), color, thickness)
 
 
 # ---------------------------------------------------------------------------
@@ -377,6 +338,7 @@ def run_single_threshold(
     crop_region: tuple[int, int, int, int],
     output_dir: Path,
     conf_threshold: float,
+    nms_threshold: float = 0.45,
 ) -> None:
     """Run OBB detection + tracking + pose estimation, produce annotated video and stats.
 
@@ -418,13 +380,13 @@ def run_single_threshold(
         if not ret:
             break
 
-        # OBB detection
+        # OBB detection with polygon NMS (matching production pipeline)
         obb_results = obb_model.predict(
             frame, conf=conf_threshold, iou=0.95, verbose=False
         )
         dets = _parse_obb_results(obb_results)
 
-        # Build Detection objects for tracker
+        # Build Detection objects and apply polygon NMS
         from aquapose.core.types.detection import Detection
 
         det_objects = [
@@ -438,6 +400,20 @@ def run_single_threshold(
             )
             for d in dets
         ]
+        det_objects = polygon_nms(det_objects, iou_threshold=nms_threshold)
+
+        # Rebuild dets list to match filtered det_objects
+        dets = [
+            {
+                "bbox": d.bbox,
+                "confidence": d.confidence,
+                "angle": d.angle,
+                "obb_points": d.obb_points,
+                "area": d.area,
+            }
+            for d in det_objects
+        ]
+
         tracker.update(fidx, det_objects)
 
         # Get per-frame track assignments from tracker output
@@ -445,45 +421,34 @@ def run_single_threshold(
         # Build a mapping from bbox overlap to track assignment
         track_assignments = _get_frame_track_assignments(tracker, dets, fidx)
 
-        # Pose estimation for each detection
-        all_poses: list[list[dict]] = []
-        all_poses_frame: list[list[dict]] = []  # poses in frame coords
-        affine_Ms: list[np.ndarray | None] = []
+        # Pose estimation for each detection (primary instance only)
+        poses_frame: list[dict | None] = []
 
         for d in dets:
             if d["obb_points"] is not None:
                 try:
                     crop_img, M = _extract_crop(d, frame)
                     pose_results = pose_model.predict(crop_img, conf=0.1, verbose=False)
-                    instances = _extract_all_pose_instances(pose_results)
-                    all_poses.append(instances)
-
-                    # Transform keypoints to frame coords
-                    frame_instances = []
-                    for inst in instances:
-                        frame_kpts = _invert_affine_points(inst["kpts_xy"], M)
-                        frame_instances.append(
-                            {"kpts_xy": frame_kpts, "kpts_conf": inst["kpts_conf"]}
+                    kpts_xy, kpts_conf = _extract_primary_pose(pose_results)
+                    if kpts_xy is not None:
+                        frame_kpts = _invert_affine_points(kpts_xy, M)
+                        poses_frame.append(
+                            {"kpts_xy": frame_kpts, "kpts_conf": kpts_conf}
                         )
-                    all_poses_frame.append(frame_instances)
-                    affine_Ms.append(M)
+                    else:
+                        poses_frame.append(None)
                 except Exception as e:
                     print(f"  Frame {fidx}: crop/pose error: {e}")
-                    all_poses.append([])
-                    all_poses_frame.append([])
-                    affine_Ms.append(None)
+                    poses_frame.append(None)
             else:
-                all_poses.append([])
-                all_poses_frame.append([])
-                affine_Ms.append(None)
+                poses_frame.append(None)
 
         frame_data.append(
             {
                 "frame_idx": fidx,
                 "detections": dets,
                 "track_assignments": track_assignments,
-                "poses_frame": all_poses_frame,
-                "poses_crop": all_poses,
+                "poses_frame": poses_frame,
                 "frame_image": frame,
             }
         )
@@ -528,17 +493,15 @@ def run_single_threshold(
             # Draw OBB
             _draw_obb(crop, det["obb_points"], color, thickness=2, offset=offset)
 
-            # Draw keypoints
-            poses = fd["poses_frame"][di] if di < len(fd["poses_frame"]) else []
-            for pi, pose in enumerate(poses):
-                is_secondary = pi > 0
+            # Draw keypoints (primary instance only)
+            pose = fd["poses_frame"][di] if di < len(fd["poses_frame"]) else None
+            if pose is not None:
                 _draw_keypoints(
                     crop,
                     pose["kpts_xy"],
                     pose["kpts_conf"],
                     color,
                     offset=offset,
-                    dashed=is_secondary,
                 )
 
         # Frame number annotation (small, top-left)
@@ -562,19 +525,12 @@ def run_single_threshold(
     for fd in frame_data:
         n_dets = len(fd["detections"])
         n_tracked = sum(1 for v in fd["track_assignments"].values() if v is not None)
-        multi_instance_flags = []
-        per_det_instances = []
         per_det_kp_confs = []
 
         for di, _det in enumerate(fd["detections"]):
-            poses = fd["poses_frame"][di] if di < len(fd["poses_frame"]) else []
-            n_instances = len(poses)
-            per_det_instances.append(n_instances)
-            multi_instance_flags.append(n_instances > 1)
-
-            # Per-keypoint confidences for primary instance
-            if poses:
-                per_det_kp_confs.append(poses[0]["kpts_conf"].tolist())
+            pose = fd["poses_frame"][di] if di < len(fd["poses_frame"]) else None
+            if pose is not None:
+                per_det_kp_confs.append(pose["kpts_conf"].tolist())
             else:
                 per_det_kp_confs.append([])
 
@@ -583,8 +539,6 @@ def run_single_threshold(
                 "frame_idx": fd["frame_idx"],
                 "n_detections": n_dets,
                 "n_tracked": n_tracked,
-                "per_det_n_instances": per_det_instances,
-                "has_multi_instance": any(multi_instance_flags),
                 "per_det_kp_confidences": per_det_kp_confs,
             }
         )
@@ -848,6 +802,12 @@ def main() -> None:
         help="Detection confidence threshold (default: 0.2)",
     )
     parser.add_argument(
+        "--nms-threshold",
+        type=float,
+        default=0.45,
+        help="Polygon NMS IoU threshold (default: 0.45, higher = more permissive)",
+    )
+    parser.add_argument(
         "--conf-sweep",
         action="store_true",
         help="Run confidence sweep mode instead of single-threshold video",
@@ -876,6 +836,7 @@ def main() -> None:
             crop_region=args.crop_region,
             output_dir=output_dir,
             conf_threshold=args.conf_threshold,
+            nms_threshold=args.nms_threshold,
         )
 
 

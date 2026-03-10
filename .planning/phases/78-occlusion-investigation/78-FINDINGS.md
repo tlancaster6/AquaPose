@@ -16,23 +16,30 @@ Frame-to-frame detection count changes of +/- 2 occur near the occlusion window 
 ### Frames with fewer than expected detections
 19 frames across the 200-frame range show fewer than 9 detections, concentrated in the post-occlusion region (F416-F418, F427, F444). These appear to be fish partially leaving the crop region rather than detection failures.
 
+### Detection dropout on white tank wall background
+In the full-frame 20-second video, an isolated fish swimming against the white tank wall (as opposed to the sandy floor) is intermittently undetected even at conf=0.1. This is not an NMS issue — the fish has no nearby detections to compete with. The white-wall background is under-represented in training data; the round 1 pseudo-label augmentation did not resolve this gap, likely because the baseline model that generated pseudo-labels also missed these cases. This is a detection reliability issue that could cause tracker fragmentation in wall-adjacent regions.
+
 ### Tracking continuity
 Tracking coverage is excellent: 99.4% of all detections (2161/2175) are tracked. Only 14 detections across 200 frames failed to receive track IDs, and these appear to be transient low-confidence detections.
 
 ## Keypoint Behavior Observations
 
-### Multi-instance pose detection during occlusion
-The YOLO-pose model detects multiple pose instances within single OBB crops during the occlusion window. This is the most interesting finding:
+### Duplicate pose detections during occlusion (Gaussian NMS artifact)
+The YOLO-pose model produces multiple near-identical pose instances within single OBB crops during the occlusion window:
 
 - **9 of 10 occlusion frames** (F394-F403) have at least one detection with multi-instance pose output
 - Peak at **F400**: one detection produces **6 pose instances** within a single OBB crop
 - F399: 4 instances; F401 and F403: 3 instances each
 - Outside the occlusion window, multi-instance frames are sporadic (23 out of 190 remaining frames = 12%)
 
-This confirms the pose model detects both the primary fish and secondary overlapping fish within an OBB crop, which could be leveraged as an occlusion signal.
+These are **not** detections of the intruding fish — the secondary keypoints overlap the focal fish in nearly identical positions, and the duplicate bounding boxes have near-perfect overlap. This is a Gaussian NMS artifact: YOLO-pose uses Gaussian NMS internally, which is known to fail for bounding boxes with long aspect ratios (the same issue we addressed in the OBB detection stage with custom geometric NMS). On the 128×64 pose crop, near-duplicate detections survive Gaussian NMS when their centers are even slightly offset.
+
+The pose model was run with `conf=0.1`, which is very permissive and allows weak duplicates through. The intruding fish is never detected as a separate instance, likely because the training data rarely contains two fish in a single crop.
+
+**Note:** The production pipeline only uses `kp.xy[0]` (primary instance), so these duplicates are invisible in normal operation. Addressing this in the pose stage would be more challenging than the OBB fix, since NMS happens between detection and keypoint regression within the model.
 
 ### Endpoint confidence collapse during occlusion
-During multi-instance detections, the **primary instance** shows a distinctive confidence pattern:
+During occlusion, the **primary instance** shows a distinctive confidence pattern:
 - **Nose:** Drops to 0.00-0.08 (vs mean 0.927 across all frames)
 - **Tail:** Drops to 0.00-0.33 (vs mean 0.662 across all frames)
 - **Mid-body keypoints (spine1-spine3):** Remain high at 0.65-0.99
@@ -40,9 +47,7 @@ During multi-instance detections, the **primary instance** shows a distinctive c
 This "endpoint collapse" pattern is consistent: when two fish overlap, the pose model cannot resolve which endpoints belong to which fish, but the mid-body keypoints remain well-localized. The confidence collapse at nose and tail provides a reliable **occlusion detection signal** for the tracker.
 
 ### No keypoint identity jumps observed
-Critically, there is **no evidence of single-frame keypoint identity jumps** (keypoints from fish A being assigned to fish B's detection). The multi-instance detection mechanism appears to cleanly separate the two fish's poses rather than producing a chimeric pose with some keypoints from each fish.
-
-The primary instance in each multi-instance detection consistently maintains high confidence on the mid-body keypoints belonging to the OBB's target fish, while the secondary instances capture the overlapping fish's pose with generally lower confidence.
+Critically, there is **no evidence of single-frame keypoint identity jumps** (keypoints from fish A being assigned to fish B's detection). The pose model does not produce chimeric poses with some keypoints from each fish — the primary detection's keypoints consistently belong to the focal fish, even during occlusion.
 
 ## Confidence Patterns
 
@@ -68,7 +73,7 @@ During occlusion, the confidence pattern becomes bimodal:
 - **Isolated fish:** All 6 keypoints at 0.8-1.0
 - **Overlapping fish:** Endpoints (nose, tail) drop to ~0.0, mid-body stays at 0.65-0.99
 
-This bimodal pattern makes confidence a useful feature for the tracker to detect and handle occlusion events.
+This bimodal pattern makes per-keypoint confidence a useful feature for the tracker to detect occlusion and down-weight uncertain endpoints.
 
 ## Confidence Sweep Results
 
@@ -93,6 +98,8 @@ The sweep shows a smooth tradeoff without a sharp elbow:
 - At **0.25**: 10.2 mean — ~1 false positive per frame
 - At **0.35**: 9.2 mean — close to the expected 9 fish
 - At **0.50**: 7.9 mean — starts dropping below 9, losing real fish
+
+**Note:** The confidence sweep was run without polygon NMS. With polygon NMS applied (as in the production pipeline), false positives at conf=0.1 are minimal — the full-frame 20-second video shows clean detections with very few spurious boxes. This suggests the confidence threshold can be dropped to 0.1 with polygon NMS without meaningful false positive cost, improving recall for difficult cases (e.g., white-wall background).
 
 ### Recommended threshold: 0.25
 
@@ -127,13 +134,24 @@ The current pipeline default of 0.2 is also reasonable. The difference between 0
 The OBB detector and pose model behave well during occlusion events in this clip:
 1. No box merging — each fish maintains its own OBB
 2. No keypoint identity jumps — the pose model does not produce chimeric poses
-3. Multi-instance detection works — secondary instances detected in 90% of occlusion frames
-4. Confidence patterns are informative — endpoint collapse provides a reliable occlusion signal
+3. Confidence patterns are informative — endpoint collapse provides a reliable occlusion signal
+
+**Tracking performance better than expected:** In the full 20-second clip, OC-SORT tracking shows fragmentation but only one persistent ID swap (fish A and B enter occlusion, B exits with A's ID). This suggests tracking is less of a bottleneck than anticipated — the bigger opportunity may be improving cross-view association by switching from bbox centroid association to anatomical keypoint association. The keypoint-based approach addresses both: OKS matching resists ID swaps (pose similarity is harder to confuse than box overlap), and keypoint-derived 3D points provide more geometrically stable association features than bbox centroids for elongated fish.
 
 The OKS-based keypoint tracker (Phase 83) is viable. The tracker should:
-- Use per-keypoint confidence weighting (down-weight low-confidence endpoints)
-- Consider leveraging multi-instance pose detection as an auxiliary signal for occlusion awareness
-- The confidence threshold of 0.20-0.25 is appropriate for the OBB detector
+- Use per-keypoint confidence weighting (down-weight low-confidence endpoints during occlusion)
+- The confidence threshold can be dropped to 0.1 with polygon NMS (minimal false positives, better recall)
+
+**Known limitations:**
+- The pose model's Gaussian NMS produces duplicate detections during occlusion (same fish detected multiple times). This is invisible in production (only `kp.xy[0]` is used) but worth noting. The intruding fish is never detected within the focal fish's crop.
+- Detection dropout on white-wall background persists even at conf=0.1 (see OBB Behavior Observations above).
+
+## Recommended Follow-Up (Phase 79)
+
+**Retrain OBB detector before proceeding to tracker work.** The current model was trained on the original manual annotations plus uncurated pseudo-labels, with train/val split drawn only from manual annotations. A production retrain should:
+1. Include corrected pseudo-labels in the train/val split (not just the original manual set) — the manual-only val was useful for fine-grained accuracy comparisons during the pseudo-label milestone, but for production the model should see the full data distribution
+2. Train for more epochs to improve recall on under-represented cases (white-wall background)
+3. This is a quick win that could reduce tracker fragmentation from missed detections before investing in the keypoint-based tracker
 
 ## Screenshots
 

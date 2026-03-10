@@ -199,8 +199,9 @@ Full details: `.planning/milestones/v3.6-ROADMAP.md`
 
 **Milestone Goal:** Replace OC-SORT on OBB centroids with a custom bidirectional keypoint tracker. Reorder the pipeline so pose estimation precedes tracking, drop the segmentation midline backend, and upgrade cross-view association to use anatomical keypoints. Target: 9-track, zero-fragmentation output on the 20-second perfect-tracking clip.
 
-- [ ] **Phase 78: Occlusion Investigation** - Script + written findings characterizing detector/pose behavior under occlusion, with go/no-go recommendation
-- [ ] **Phase 79: Occlusion Remediation (Conditional)** - Address failure modes found in Phase 78 — skip if Phase 78 is go
+- [x] **Phase 78: Occlusion Investigation** - Script + written findings characterizing detector/pose behavior under occlusion, with go/no-go recommendation — completed 2026-03-10, **GO**
+- [ ] **Phase 78.1: OBB & Pose Production Retrain** - Retrain detector/pose with corrected pseudo-labels in train/val split, more epochs for white-wall recall (INSERTED)
+- [x] **Phase 79: Occlusion Remediation (Conditional)** - skipped per Phase 78 GO decision
 - [ ] **Phase 80: Baseline Metrics** - Quantitative OC-SORT tracking metrics on the perfect-tracking clip, establishing numbers to beat
 - [ ] **Phase 81: Pipeline Reorder & Segmentation Removal** - Pose runs before tracking; segmentation backend removed; stage interfaces updated
 - [ ] **Phase 82: Association Upgrade — Keypoint Centroid** - Cross-view association uses mid-body keypoint instead of OBB centroid
@@ -221,10 +222,20 @@ Full details: `.planning/milestones/v3.6-ROADMAP.md`
   3. A written summary exists characterizing OBB and pose behavior under occlusion — specifically whether boxes merge, keypoints jump fish, and how per-keypoint confidence behaves
   4. The summary includes a concrete go/no-go recommendation on whether occlusion handling is acceptable for proceeding to tracker implementation
   5. A confidence threshold recommendation exists based on observed quality vs false-positive tradeoff across tested confidence levels
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
-- [ ] 78-01-PLAN.md -- Build occlusion investigation script
-- [ ] 78-02-PLAN.md -- Execute investigation and produce findings
+- [x] 78-01-PLAN.md -- Build occlusion investigation script
+- [x] 78-02-PLAN.md -- Execute investigation and produce findings
+
+### Phase 78.1: OBB & Pose Production Retrain (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 78
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 78.1 to break down)
 
 ### Phase 79: Occlusion Remediation (Conditional)
 **Goal**: Address occlusion-related failure modes identified in Phase 78 before building the tracker — this phase is skipped entirely if Phase 78 yields a go recommendation
@@ -237,7 +248,7 @@ Plans:
 
 ### Phase 80: Baseline Metrics
 **Goal**: Establish quantitative OC-SORT tracking baselines on the 20-second perfect-tracking target clip so post-overhaul improvements are measurable
-**Depends on**: Phase 78 (or Phase 79 if invoked)
+**Depends on**: Phase 78.1
 **Requirements**: INV-03
 **Success Criteria** (what must be TRUE):
   1. A baseline metrics document exists recording track count, track duration distribution, fragmentation count, and total coverage for the current OC-SORT tracker on `e3v831e-20260218T145915-150429.mp4` first 20 seconds
@@ -316,8 +327,9 @@ Phases execute in numeric order: 78 → 79 (conditional) → 80 → 81 → 82 �
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 78. Occlusion Investigation | 1/2 | In Progress|  | - |
-| 79. Occlusion Remediation (Conditional) | v3.7 | 0/TBD | Not started | - |
+| 78. Occlusion Investigation | v3.7 | 2/2 | Complete | 2026-03-10 |
+| 78.1 OBB & Pose Production Retrain | v3.7 | 0/TBD | Not started | - |
+| 79. Occlusion Remediation (Conditional) | v3.7 | 0/0 | Skipped | 2026-03-10 |
 | 80. Baseline Metrics | v3.7 | 0/TBD | Not started | - |
 | 81. Pipeline Reorder & Segmentation Removal | v3.7 | 0/TBD | Not started | - |
 | 82. Association Upgrade — Keypoint Centroid | v3.7 | 0/TBD | Not started | - |

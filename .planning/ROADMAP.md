@@ -329,7 +329,7 @@ Phases execute in numeric order: 78 -> 79 (conditional) -> 80 -> 81 -> 82 -> 83 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 78. Occlusion Investigation | v3.7 | 2/2 | Complete | 2026-03-10 |
-| 78.1 OBB & Pose Production Retrain | 2/2 | Complete   | 2026-03-10 | - |
+| 78.1 OBB & Pose Production Retrain | 2/2 | Complete    | 2026-03-10 | - |
 | 79. Occlusion Remediation (Conditional) | v3.7 | 0/0 | Skipped | 2026-03-10 |
 | 80. Baseline Metrics | v3.7 | 0/TBD | Not started | - |
 | 81. Pipeline Reorder & Segmentation Removal | v3.7 | 0/TBD | Not started | - |

@@ -221,7 +221,10 @@ Full details: `.planning/milestones/v3.6-ROADMAP.md`
   3. A written summary exists characterizing OBB and pose behavior under occlusion — specifically whether boxes merge, keypoints jump fish, and how per-keypoint confidence behaves
   4. The summary includes a concrete go/no-go recommendation on whether occlusion handling is acceptable for proceeding to tracker implementation
   5. A confidence threshold recommendation exists based on observed quality vs false-positive tradeoff across tested confidence levels
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 78-01-PLAN.md -- Build occlusion investigation script
+- [ ] 78-02-PLAN.md -- Execute investigation and produce findings
 
 ### Phase 79: Occlusion Remediation (Conditional)
 **Goal**: Address occlusion-related failure modes identified in Phase 78 before building the tracker — this phase is skipped entirely if Phase 78 yields a go recommendation

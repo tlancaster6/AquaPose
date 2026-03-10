@@ -1,5 +1,29 @@
 # Milestones
 
+## v3.6 Model Iteration & QA (Shipped: 2026-03-10)
+
+**Phases completed:** 8 phases (70-77), 13 plans
+**Timeline:** 5 days (2026-03-06 -> 2026-03-10)
+**Codebase:** 30,480 LOC source
+**Git range:** 1151 commits since v3.5, 130 files changed (+16,595 / -2,761)
+
+**Key accomplishments:**
+1. Extended evaluation metrics — percentiles (reprojection, confidence, camera count), per-keypoint breakdown, curvature-stratified quality, and 3D track fragmentation analysis
+2. Data store bootstrap — temporal split, tagged exclusions, baseline OBB (mAP50=0.931) and pose (mAP50=0.991) models trained and registered
+3. Full pseudo-label iteration loop — generate pseudo-labels, diversity-select, correct in CVAT, retrain, evaluate at pipeline level
+4. A/B curation comparison — curated+augmented pose model improved +9.2pts mAP50-95 on held-out data, quantifying the value of light human curation
+5. eval-compare CLI — round-over-round pipeline metric comparison with directional highlighting and structured JSON output
+6. Training module consolidation — deduplicated YOLO wrappers, fixed seg registration bug, added test coverage for weight-copying and subset selection
+
+**Delivered:** Complete pseudo-label retraining loop executed end-to-end, producing round 1 models with improved primary metrics (singleton rate -12.5%, p50 reprojection error -28.4%, p90 reprojection error -19.8%). Full provenance chain from baseline through pseudo-labels to final validation documented with showcase overlay videos.
+
+**Known gaps (accepted as tech debt):**
+- ITER-02: Store provenance uses source=corrected instead of source=pseudo with round=1 metadata
+- ITER-05: Round 2 skipped per Phase 74 decision checkpoint (round 1 improvements sufficient)
+- FINAL-02: 11/12 trail videos (e3v83f1 missing; overlay mosaic covers all 12 cameras)
+
+---
+
 ## v3.5 Pseudo-Labeling (Shipped: 2026-03-06)
 
 **Phases completed:** 9 phases (61-69), 22 plans

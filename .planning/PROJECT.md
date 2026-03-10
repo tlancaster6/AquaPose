@@ -106,17 +106,16 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - SQLite sample store: content-hash dedup, provenance tracking, symlink-based dataset assembly, model lineage with config auto-update -- v3.5
 - Workflow-oriented CLI: project-aware path resolution (`--project`), run shorthand (latest, timestamp, negative index), deprecated command removal -- v3.5
 
+- ✓ Extended evaluation metrics: percentiles (reprojection, confidence, camera count), per-keypoint breakdown, curvature-stratified quality, track fragmentation -- v3.6
+- ✓ Data store bootstrap: temporal split, tagged exclusions, baseline model training and registration -- v3.6
+- ✓ Pseudo-label iteration loop: generate, diversity-select, CVAT correct, retrain, evaluate with A/B curation comparison -- v3.6
+- ✓ eval-compare CLI for round-over-round pipeline metric comparison with directional highlighting -- v3.6
+- ✓ Training module consolidation: unified train_yolo(), shared _run_training() orchestrator, seg registration fix -- v3.6
+- ✓ Final validation: 5-minute pipeline run with round 1 models, overlay mosaic, metrics comparison report -- v3.6
+
 ### Active
 
-## Current Milestone: v3.6 Model Iteration & QA
-
-**Goal:** Run the pseudo-label retraining loop end-to-end, producing demonstrably better OBB detection and pose estimation models with full provenance tracking.
-
-**Target features:**
-- Extended evaluation metrics (percentiles, per-keypoint breakdown, curvature-stratified quality, track fragmentation)
-- Data store bootstrap (manual annotation import, baseline model training and registration)
-- 1-2 rounds of pseudo-label generation, retraining, and pipeline-level evaluation
-- Final full-scale validation run with showcase overlay videos and metrics comparison
+(No active requirements -- next milestone not yet defined)
 
 ### Out of Scope
 
@@ -133,9 +132,9 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ## Context
 
-### Current State (v3.5 shipped)
+### Current State (v3.6 shipped)
 
-- **Codebase:** 28,033 LOC source across `src/aquapose/` (calibration, core/, engine/, io, evaluation, training, visualization)
+- **Codebase:** 30,480 LOC source across `src/aquapose/` (calibration, core/, engine/, io, evaluation, training, visualization)
 - **Architecture:** Event-driven 3-layer — Core Computation (5 stages) -> PosePipeline (orchestrator) -> Observers (3: console, timing, diagnostic). ChunkOrchestrator sits above PosePipeline managing chunk loop, identity stitching, and HDF5 output.
 - **Pipeline order:** Detection (YOLO-OBB) -> 2D Tracking (OC-SORT) -> Association (Leiden) -> Midline (YOLO-seg or YOLO-pose) -> Reconstruction (DLT triangulation + B-spline + z-denoising)
 - **Chunk processing:** ChunkOrchestrator processes video in fixed-size temporal chunks (default 200 frames). ChunkHandoff carries tracker state + identity map across boundaries. Per-chunk HDF5 flush with global frame offsets.
@@ -148,7 +147,8 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - **Training infrastructure:** `aquapose train {obb, seg, pose}` CLI subcommands; SQLite sample store with content-hash dedup, symlink-based assembly, model lineage tracking
 - **CLI:** Workflow-oriented command groups (`run`, `eval`, `viz`, `tune`, `data`, `prep`, `pseudo-label`, `train`), project-aware path resolution (`--project`), run shorthand (latest, timestamp, negative index)
 - **Core organization:** Shared types in `core/types/`, implementations in `core/<stage>/`, legacy top-level dirs eliminated
-- **Known limitation:** Z-reconstruction uncertainty 132x larger than XY due to top-down camera geometry; ~22% singleton rate in association (down from 86% after LUT coordinate space fix)
+- **Model iteration:** Round 1 pseudo-label retraining completed; round 1 models are current production models (singleton rate 27.4%, p50 reprojection 2.16px)
+- **Known limitation:** Z-reconstruction uncertainty 132x larger than XY due to top-down camera geometry; ~27% singleton rate in association (down from 86% after LUT fix, further improved from 31% baseline via pseudo-label retraining)
 - **Import boundary:** Automated AST-based checker enforced via pre-commit hook -- core/ never imports engine/ at runtime
 
 ### Rig Geometry
@@ -245,6 +245,11 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Elastic TPS deformation for curvature augmentation | C-curve/S-curve variants reduce straight-fish training bias | ✓ Good -- OKS slope improved -0.71 to -0.30 |
 | Workflow-oriented CLI over module-oriented | `--project` resolution replaces per-command `--config`; run shorthand | ✓ Good -- cleaner UX, less boilerplate |
 | Source priority upsert (manual > corrected > pseudo) | Higher-quality labels always win in dedup | ✓ Good -- correct precedence |
+| Skip round 2, accept round 1 models | All primary metrics improved (singleton -12.5%, p50 reproj -28.4%); diminishing returns expected | ✓ Good -- shipped faster without quality compromise |
+| eval-compare as top-level CLI command | Avoids refactoring eval into a group; keeps format_comparison_table out of __init__ to prevent collision | ✓ Good -- clean CLI surface |
+| Consolidated train_yolo() replacing 3 wrappers | Eliminates duplication; seg registration bug fixed by shared _run_training() orchestrator | ✓ Good -- 3 files deleted, single entry point |
+| CVAT for pseudo-label curation (not Label Studio) | CVAT has better OBB editing tools; Label Studio integration built but not used for final workflow | — Pending |
+| A/B curation comparison as standard practice | Light human curation (+9.2pts mAP50-95 on held-out data) justified the CVAT review step | ✓ Good -- quantified value of human oversight |
 
 ---
-*Last updated: 2026-03-06 after v3.6 Model Iteration & QA milestone started*
+*Last updated: 2026-03-10 after v3.6 Model Iteration & QA milestone completed*

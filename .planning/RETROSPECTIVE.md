@@ -362,6 +362,54 @@
 
 ---
 
+## Milestone: v3.6 — Model Iteration & QA
+
+**Shipped:** 2026-03-10
+**Phases:** 8 (1 skipped) | **Plans:** 13 | **Timeline:** 5 days
+
+### What Was Built
+- Extended evaluation metrics: percentiles, per-keypoint breakdown, curvature-stratified quality, track fragmentation
+- Data store bootstrap: temporal split, tagged exclusions, baseline OBB and pose models trained and registered
+- Full pseudo-label iteration loop: generate, diversity-select, CVAT correct, retrain, evaluate
+- A/B curation comparison quantifying the value of light human curation (+9.2pts mAP50-95)
+- eval-compare CLI for round-over-round pipeline metric comparison
+- Training module consolidation: unified train_yolo(), seg registration fix, test coverage
+
+### What Worked
+- **Decision checkpoint pattern:** Phase 74's go/no-go on round 2 was the right structure — quantitative comparison with clear rationale prevented unnecessary work
+- **A/B curation comparison:** Quantifying curation value (+9.2pts) made the CVAT review step data-driven rather than faith-based
+- **Phase 77 as code quality phase:** Running independently of the iteration loop kept the main workflow unblocked while improving the training module
+- **Quick task for NMS fix:** Replacing Ultralytics probiou with geometric polygon NMS (quick task 23) was cleanly scoped and immediately beneficial
+- **Diversity selection for pseudo-labels:** Curvature-stratified and camera-balanced selection produced representative training subsets without manual curation of the selection process
+
+### What Was Inefficient
+- **SUMMARY one_liner fields still not populated:** Ninth consecutive milestone — confirmed as permanent process gap that milestone tooling cannot rely on
+- **Phase 73 executed manually without SUMMARYs:** CVAT curation workflow was human-driven; plan execution artifacts (SUMMARYs) were never written. Verification still passed but audit required manual reconstruction of what happened
+- **REQUIREMENTS.md checkboxes stale:** 8 requirements unchecked despite being satisfied — dual bookkeeping between checkboxes and traceability table continues to drift
+- **Store provenance deviated from plan:** Phase 73 used source=corrected instead of source=pseudo with round=1 metadata — the manual execution skipped the planned import commands. Future iterations can't filter by round
+- **correction_report.json never created:** Phase 73 planned per-sample correction magnitude quantification (IoU, displacement) but the artifact was never produced during CVAT curation
+
+### Patterns Established
+- Decision checkpoint after each iteration round: quantitative comparison → documented rationale → go/no-go
+- Diversity selection via curvature-stratified + camera-balanced sampling for pseudo-label subsets
+- eval-compare as standard post-run comparison tool (distinct from train compare for training metrics)
+- Consolidated YOLO training: single train_yolo() entry point with model_type dispatch
+- Shared _run_training() CLI orchestrator handling registration for all model types
+
+### Key Lessons
+1. **Human-in-the-loop phases need explicit artifact requirements** — Phase 73 CVAT curation was done manually but plan execution infrastructure (SUMMARY writing, store provenance) was skipped; manual phases should have a "re-entry checklist" for returning to GSD workflow
+2. **Quantify human curation value before committing to review workflows** — the A/B comparison justified CVAT review; without it, the effort would have been faith-based
+3. **Conditional phases work well with decision checkpoints** — skipping Phase 75 was clean because Phase 74 had a structured decision framework
+4. **Code quality phases pay for themselves** — Phase 77 fixed the seg registration bug that would have caused silent data loss in future training runs
+5. **SUMMARY frontmatter is permanently unfilled** — nine milestones of empty one_liner fields; either enforce in tooling or remove from templates
+
+### Cost Observations
+- Model mix: ~60% sonnet (executors), ~30% opus (orchestrator), ~10% haiku (verifiers)
+- Sessions: ~8-10 across 5 days (includes significant human CVAT time)
+- Notable: Phase 73 was the most human-intensive — CVAT curation was the bottleneck, not AI execution
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -376,6 +424,7 @@
 | v3.3 | 2 days | 5 | Chunk processing; frame source abstraction + viz migration |
 | v3.4 | 1 day | 5 | Performance optimization; 8.2x speedup via batching + vectorization |
 | v3.5 | 2 days | 9 | Pseudo-labeling infrastructure; sample store; CLI cleanup |
+| v3.6 | 5 days | 8 | Model iteration loop; A/B curation comparison; code quality |
 
 ### Cumulative Quality
 
@@ -389,6 +438,7 @@
 | v3.3 | 21,634 source | ~807 | 0 |
 | v3.4 | 22,754 source | ~840 | 0 |
 | v3.5 | 28,033 source | - | 4 |
+| v3.6 | 30,480 source | ~1142 | 3 |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -404,3 +454,5 @@
 10. Capture baselines before starting optimization work — deferred comparisons create verification gaps (v3.4)
 11. Establish verification workflow before first phase — missing VERIFICATION.md creates audit gaps (v3.5)
 12. Validate experimental features with A/B experiments before building infrastructure (v3.5)
+13. Human-in-the-loop phases need explicit artifact re-entry checklists — manual execution skips GSD workflow artifacts (v3.6)
+14. Quantify human curation value before committing to review workflows — A/B comparison justified CVAT review (v3.6)

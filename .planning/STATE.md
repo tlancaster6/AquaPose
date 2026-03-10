@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 ## Current Position
 
 Phase: 78.1 of v3.7 (OBB & Pose Production Retrain)
-Plan: 01 complete, 02 pending
-Status: In progress — Plan 01 complete, proceeding to Plan 02
-Last activity: 2026-03-10 — Plan 78.1-01 complete (dataset assembly + production training runs done)
+Plan: 02 complete — Phase 78.1 COMPLETE
+Status: Phase 78.1 complete — proceed to Phase 80 (tracker)
+Last activity: 2026-03-10 — Plan 78.1-02 complete (production models approved and deployed to config)
 
-Progress: [█░░░░░░░░░] 10%
+Progress: [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
@@ -62,6 +62,11 @@ Recent decisions affecting current work:
 - [Phase 78.1-01]: Val filter changed to source != pseudo — corrected labels are human-reviewed, eligible for val by default
 - [Phase 78.1-01]: 4:1 augmentation ratio confirmed important (0.926 mAP50-95 at 2:1 vs 0.972 at 4:1)
 - [Phase 78.1-01]: Production models: OBB run_20260310_115419 (mAP50-95=0.781), Pose production_retrain_4aug run (mAP50-95=0.972)
+- [Phase 78.1-02]: OBB production model approved: mAP50-95=0.781 (+7.4 pts vs Round 1 0.707)
+- [Phase 78.1-02]: Pose production model approved: mAP50-95=0.974 (+0.6 pts on harder all-source 128-image val)
+- [Phase 78.1-02]: White-wall recall deferred — no systematic dropout, marginal cases remain, not blocking Phase 80+
+- [Phase 78.1-02]: False positive above tank (conf=0.618) accepted — filtered by triangulation geometry; tank ROI mask deferred
+- [Phase 78.1-02]: Both models deployed to config.yaml as production defaults (run_20260310_115419 OBB, run_20260310_171543 Pose)
 
 ### Roadmap Evolution
 
@@ -79,5 +84,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-10
-Stopped at: Phase 78.1 Plan 01 complete — production OBB and Pose models trained; proceed to Plan 02
+Stopped at: Phase 78.1 Plan 02 complete — production models approved and deployed; Phase 78.1 COMPLETE; proceed to Phase 80 (tracker)
 Resume file: N/A

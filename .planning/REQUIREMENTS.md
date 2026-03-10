@@ -22,8 +22,8 @@ Requirements for the Improved Tracking milestone. Each maps to roadmap phases.
 
 - [x] **RETRAIN-01**: OBB dataset assembled with all-source stratified val split (manual + corrected pseudo-labels) for production training
 - [x] **RETRAIN-02**: Pose dataset assembled with all-source stratified val split and elastic augmentation for production training
-- [ ] **RETRAIN-03**: Production OBB and Pose models trained with 300 epochs/patience=50 and evaluated against Round 1 winners
-- [ ] **RETRAIN-04**: Project config updated with production model weights; white-wall recall visually verified via investigation script
+- [x] **RETRAIN-03**: Production OBB and Pose models trained with 300 epochs/patience=50 and evaluated against Round 1 winners
+- [x] **RETRAIN-04**: Project config updated with production model weights; white-wall recall visually verified via investigation script
 
 ### Pipeline Architecture
 
@@ -86,8 +86,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REM-01 | Phase 79 | Skipped (GO) |
 | RETRAIN-01 | Phase 78.1 | Complete |
 | RETRAIN-02 | Phase 78.1 | Complete |
-| RETRAIN-03 | Phase 78.1 | Pending |
-| RETRAIN-04 | Phase 78.1 | Pending |
+| RETRAIN-03 | Phase 78.1 | Complete |
+| RETRAIN-04 | Phase 78.1 | Complete |
 | PIPE-01 | Phase 81 | Pending |
 | PIPE-02 | Phase 81 | Pending |
 | PIPE-03 | Phase 81 | Pending |

@@ -232,7 +232,7 @@ Plans:
 **Goal:** Retrain OBB detector and pose model with corrected pseudo-labels in all-source stratified train/val split, with 300 epochs and patience=50 for white-wall recall improvement. Terminal retrain producing production models for v3.7 tracker milestone.
 **Requirements**: RETRAIN-01, RETRAIN-02, RETRAIN-03, RETRAIN-04
 **Depends on:** Phase 78
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 78.1-01-PLAN.md -- Assemble datasets and hand off training commands to user (complete 2026-03-10)
@@ -329,7 +329,7 @@ Phases execute in numeric order: 78 -> 79 (conditional) -> 80 -> 81 -> 82 -> 83 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 78. Occlusion Investigation | v3.7 | 2/2 | Complete | 2026-03-10 |
-| 78.1 OBB & Pose Production Retrain | v3.7 | 1/2 | In progress | - |
+| 78.1 OBB & Pose Production Retrain | 2/2 | Complete   | 2026-03-10 | - |
 | 79. Occlusion Remediation (Conditional) | v3.7 | 0/0 | Skipped | 2026-03-10 |
 | 80. Baseline Metrics | v3.7 | 0/TBD | Not started | - |
 | 81. Pipeline Reorder & Segmentation Removal | v3.7 | 0/TBD | Not started | - |

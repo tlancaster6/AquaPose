@@ -2,7 +2,7 @@
 
 ## What This Is
 
-AquaPose is a 3D fish pose estimation system that reconstructs the position, orientation, and body shape of cichlids from a 13-camera aquarium rig. Built as an event-driven computation engine with strict 3-layer architecture (Core Computation → PosePipeline → Observers), the pipeline executes 5 stages — Detection (YOLO-OBB), 2D Tracking (OC-SORT per-camera), Association (ray-ray scoring + Leiden clustering), Midline (YOLO-seg or YOLO-pose backends), and Reconstruction (confidence-weighted DLT triangulation + B-spline fitting) — producing dense 3D trajectories and midline kinematics for behavioral research. Precomputed refractive lookup tables (forward pixel→ray and inverse voxel→pixel) eliminate per-frame refraction math during association. Per-stage pickle caching enables offline evaluation via `aquapose eval` (multi-stage quality reports) and `aquapose tune` (parameter sweeps with two-tier validation). Invoked via `aquapose run --config path.yaml` with production, diagnostic, synthetic, and benchmark execution modes.
+AquaPose is a 3D fish pose estimation system that reconstructs the position, orientation, and body shape of cichlids from a 13-camera aquarium rig. Built as an event-driven computation engine with strict 3-layer architecture (Core Computation → PosePipeline → Observers), the pipeline executes 5 stages — Detection (YOLO-OBB), Pose Estimation (YOLO-pose with 6 keypoints), 2D Tracking (custom OKS-based keypoint tracker per-camera), Association (ray-ray scoring + Leiden clustering), and Reconstruction (confidence-weighted DLT triangulation + B-spline fitting) — producing dense 3D trajectories and midline kinematics for behavioral research. The keypoint tracker uses a 24-dim Kalman filter over keypoint positions and velocities, with OKS cost, OCM direction consistency, ORU/OCR recovery mechanisms, and cubic spline gap interpolation. Precomputed refractive lookup tables (forward pixel→ray and inverse voxel→pixel) eliminate per-frame refraction math during association. Per-stage pickle caching enables offline evaluation via `aquapose eval` (multi-stage quality reports) and `aquapose tune` (parameter sweeps with two-tier validation). Invoked via `aquapose run --config path.yaml` with production, diagnostic, synthetic, and benchmark execution modes.
 
 ## Core Value
 
@@ -113,19 +113,18 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - ✓ Training module consolidation: unified train_yolo(), shared _run_training() orchestrator, seg registration fix -- v3.6
 - ✓ Final validation: 5-minute pipeline run with round 1 models, overlay mosaic, metrics comparison report -- v3.6
 
+- ✓ Occlusion investigation: GO recommendation — no keypoint identity jumps, no OBB merging, confidence threshold 0.25 — v3.7
+- ✓ Production OBB and Pose models retrained with all-source stratified data (OBB +7.4pts, Pose +0.6pts mAP50-95) — v3.7
+- ✓ Pipeline reordered: Detection → Pose → Tracking → Association → Reconstruction — v3.7
+- ✓ Segmentation midline backend fully removed (backends/segmentation.py, skeletonization, orientation) — v3.7
+- ✓ Custom OKS-based keypoint tracker: 24-dim KF, OCM direction, ORU/OCR recovery, gap interpolation, chunk handoff — v3.7
+- ✓ OC-SORT/BoxMot dependency completely removed — v3.7
+- ✓ Tracker tuned to 27 tracks (vs OC-SORT 30) with 95% coverage on benchmark clip — v3.7
+- ✓ Zero type errors, 1,159 tests passing, full CLI smoke test — v3.7
+
 ### Active
 
-## Current Milestone: v3.7 Improved Tracking
-
-**Goal:** Replace OC-SORT on OBB centroids with a custom bidirectional keypoint tracker, reorder the pipeline so pose precedes tracking, drop the segmentation midline backend, and upgrade association to use anatomical keypoints.
-
-**Target features:**
-- Custom bidirectional batched keypoint tracker (OKS cost, OCM direction, forward+backward merge)
-- Pipeline reorder: Detection → Pose → Tracking → Association → Reconstruction
-- Segmentation midline backend removal
-- Association centroid upgrade from OBB center to mid-body keypoint
-- Occlusion investigation and remediation
-- Quantitative tracking baselines and evaluation
+(No active milestone — use `/gsd:new-milestone` to start next)
 
 ### Out of Scope
 
@@ -142,23 +141,24 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ## Context
 
-### Current State (v3.6 shipped)
+### Current State (v3.7 shipped)
 
-- **Codebase:** 30,480 LOC source across `src/aquapose/` (calibration, core/, engine/, io, evaluation, training, visualization)
+- **Codebase:** 29,525 LOC source across `src/aquapose/` (calibration, core/, engine/, io, evaluation, training, visualization)
 - **Architecture:** Event-driven 3-layer — Core Computation (5 stages) -> PosePipeline (orchestrator) -> Observers (3: console, timing, diagnostic). ChunkOrchestrator sits above PosePipeline managing chunk loop, identity stitching, and HDF5 output.
-- **Pipeline order:** Detection (YOLO-OBB) -> 2D Tracking (OC-SORT) -> Association (Leiden) -> Midline (YOLO-seg or YOLO-pose) -> Reconstruction (DLT triangulation + B-spline + z-denoising)
+- **Pipeline order:** Detection (YOLO-OBB) -> Pose Estimation (YOLO-pose, 6 keypoints) -> 2D Tracking (custom OKS keypoint tracker) -> Association (Leiden) -> Reconstruction (DLT triangulation + B-spline + z-denoising)
+- **Tracker:** Custom `KeypointTracker` with 24-dim KF (6 kpts x 2D pos+vel), OKS cost matrix, OCM direction consistency, ORU/OCR recovery, cubic spline gap interpolation, chunk handoff via serialized KF state. Configurable via `TrackingConfig` (base_r, lambda_ocm, max_gap_frames, match_cost_threshold, ocr_threshold, det_thresh, max_age).
 - **Chunk processing:** ChunkOrchestrator processes video in fixed-size temporal chunks (default 200 frames). ChunkHandoff carries tracker state + identity map across boundaries. Per-chunk HDF5 flush with global frame offsets.
-- **Performance:** 8.2x total pipeline speedup (914s -> 112s per chunk). Batched YOLO inference (detection 11.5x, midline 8.1x), background-thread frame prefetch, vectorized DLT reconstruction (7.0x), vectorized association scoring (3.8x). OOM retry with automatic batch halving.
-- **Tech stack:** Python 3.11, PyTorch, PyTorch3D, scikit-image, OpenCV, h5py, ultralytics (YOLO), Click (CLI), Plotly (3D viz), boxmot (OC-SORT), leidenalg/igraph, hatch build system
-- **Midline backends:** SegmentationBackend (YOLO-seg + skeletonization) and PoseEstimationBackend (YOLO-pose + spline), selectable via `midline.backend` config field
-- **Reconstruction:** Single DLT backend -- vectorized confidence-weighted triangulation with outlier rejection (threshold=10.0), B-spline fitting (7 control points), z-denoising via centroid z-flattening + temporal Gaussian smoothing
+- **Performance:** 8.2x total pipeline speedup (914s -> 112s per chunk). Batched YOLO inference (detection 11.5x, pose 8.1x), background-thread frame prefetch, vectorized DLT reconstruction (7.0x), vectorized association scoring (3.8x). OOM retry with automatic batch halving.
+- **Tech stack:** Python 3.11, PyTorch, PyTorch3D, scikit-image, OpenCV, h5py, ultralytics (YOLO), Click (CLI), Plotly (3D viz), scipy (CubicSpline), leidenalg/igraph, hatch build system
+- **Reconstruction:** Single DLT backend -- vectorized confidence-weighted triangulation with outlier rejection (threshold=10.0), B-spline fitting (7 control points), z-denoising via centroid z-flattening + temporal Gaussian smoothing. Reads 6-keypoint poses and interpolates to 15-point midlines.
 - **Evaluation:** Per-chunk pickle caching (chunk_NNN/cache.pkl + manifest.json), five typed stage evaluators, `aquapose eval` (quality reports), `aquapose tune` (parameter sweeps with two-tier validation), `aquapose viz` (overlay, animation, trails from cached data)
 - **Pseudo-labeling:** Source A (consensus reprojection) + Source B (gap-fill) pseudo-labels with confidence scoring, elastic augmentation for curvature bias reduction
-- **Training infrastructure:** `aquapose train {obb, seg, pose}` CLI subcommands; SQLite sample store with content-hash dedup, symlink-based assembly, model lineage tracking
+- **Training infrastructure:** `aquapose train {obb, pose}` CLI subcommands; SQLite sample store with content-hash dedup, symlink-based assembly, model lineage tracking
 - **CLI:** Workflow-oriented command groups (`run`, `eval`, `viz`, `tune`, `data`, `prep`, `pseudo-label`, `train`), project-aware path resolution (`--project`), run shorthand (latest, timestamp, negative index)
 - **Core organization:** Shared types in `core/types/`, implementations in `core/<stage>/`, legacy top-level dirs eliminated
-- **Model iteration:** Round 1 pseudo-label retraining completed; round 1 models are current production models (singleton rate 27.4%, p50 reprojection 2.16px)
-- **Known limitation:** Z-reconstruction uncertainty 132x larger than XY due to top-down camera geometry; ~27% singleton rate in association (down from 86% after LUT fix, further improved from 31% baseline via pseudo-label retraining)
+- **Production models:** OBB (mAP50-95=0.781, run_20260310_115419), Pose (mAP50-95=0.974, run_20260310_171543) — retrained with all-source stratified data
+- **Tracking metrics:** 27 tracks on benchmark clip (vs 9-fish target, vs OC-SORT 30), 95% detection coverage, 0 gaps, continuity=1.000
+- **Known limitation:** Z-reconstruction uncertainty 132x larger than XY due to top-down camera geometry; ~27% singleton rate in association; ASSOC-01 keypoint centroid not active in current tracker (deferred to TRACK-V2-04)
 - **Import boundary:** Automated AST-based checker enforced via pre-commit hook -- core/ never imports engine/ at runtime
 
 ### Rig Geometry
@@ -262,4 +262,14 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | A/B curation comparison as standard practice | Light human curation (+9.2pts mAP50-95 on held-out data) justified the CVAT review step | ✓ Good -- quantified value of human oversight |
 
 ---
-*Last updated: 2026-03-10 after v3.7 Improved Tracking milestone started*
+| Pose before tracking (not after) | Keypoints needed for OKS-based tracker; reorder eliminates AnnotatedDetection wrapper | ✓ Good — simpler data flow, Detection enriched in-place |
+| Custom OKS tracker over OC-SORT/BoxMot | OC-SORT uses IoU on OBBs which fails under occlusion; OKS on keypoints is anatomically meaningful | ✓ Good — 27 tracks vs OC-SORT 30, with better cost model |
+| 24-dim KF state (not 60-dim) | 6 kpts x (x,y,vx,vy) = 24; conceptual "60-dim" was over-specification | ✓ Good — tractable state dimension |
+| BoxMot fully removed (not retained as fallback) | Single tracker backend simplifies maintenance; OC-SORT can be reimplemented if needed | ✓ Good — ~1,200 lines removed, zero external tracker dependency |
+| Segmentation backend removed (not kept selectable) | YOLO-pose is sole midline source; segmentation/skeletonization path unused since v3.0 | ✓ Good — cleaner codebase, no dead backends |
+| BYTE-style secondary pass deferred (TRACK-10) | Coverage 93.6% above 90% trigger; root cause is occlusion reacquisition, not low-conf misses | ✓ Good — avoided premature complexity |
+| ASSOC-01 keypoint centroid deferred | Implemented in ocsort_wrapper, deleted with BoxMot; fix would be throwaway before TRACK-V2-04 | — Deferred to next milestone |
+| Bidirectional merge removed | Forward+backward merge added complexity without reducing fragmentation (44 vs 42 tracks) | ✓ Good — simpler single-pass architecture |
+
+---
+*Last updated: 2026-03-11 after v3.7 Improved Tracking milestone completed*

@@ -1,5 +1,27 @@
 # Milestones
 
+## v3.7 Improved Tracking (Shipped: 2026-03-11)
+
+**Phases completed:** 10 phases (78-86, including 2 inserted, 1 skipped), 18 plans
+**Timeline:** 2 days (2026-03-10 → 2026-03-11)
+**Codebase:** 29,525 LOC source
+**Git range:** 34 commits, 90 files changed (+7,542 / -6,316)
+
+**Key accomplishments:**
+1. Custom OKS-based keypoint tracker replacing OC-SORT/BoxMot — 24-dim Kalman filter, OCM direction consistency, ORU/OCR recovery, gap interpolation, chunk handoff serialization
+2. Pipeline reordered: Detection → Pose → Tracking → Association → Reconstruction — pose runs immediately after detection, enabling keypoint-aware tracking
+3. Segmentation midline backend fully removed — `backends/segmentation.py`, skeletonization, orientation resolution deleted; codebase simplified
+4. Production OBB and Pose models retrained with all-source stratified data — OBB +7.4pts mAP50-95, Pose +0.6pts on harder val set
+5. BoxMot dependency completely removed — `ocsort_wrapper.py` deleted, zero type errors, 1,159 tests passing
+6. Tracker tuned to 27 tracks (down from 42 initial, beating OC-SORT's 30) with 95% detection coverage on benchmark clip
+
+**Delivered:** Complete tracking overhaul from third-party OC-SORT on OBB centroids to custom OKS-based keypoint tracker with production-retrained models and reordered pipeline. Clean codebase with zero type errors and full CLI smoke test.
+
+**Known gaps (accepted as tech debt):**
+- ASSOC-01: Keypoint centroid for cross-view association functionally absent — implemented in Phase 82 targeting `ocsort_wrapper._TrackletBuilder`, deleted in Phase 85 (BoxMot removal). `KeypointTracker` stores config but doesn't use it. Deferred — superseded by full multi-keypoint association (TRACK-V2-04) in next milestone.
+
+---
+
 ## v3.6 Model Iteration & QA (Shipped: 2026-03-10)
 
 **Phases completed:** 8 phases (70-77), 13 plans

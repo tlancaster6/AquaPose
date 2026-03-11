@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.7
 milestone_name: Improved Tracking
 status: unknown
-last_updated: "2026-03-11T12:02:37.249Z"
+last_updated: "2026-03-11T13:28:47.388Z"
 progress:
   total_phases: 7
   completed_phases: 7
-  total_plans: 11
-  completed_plans: 11
+  total_plans: 12
+  completed_plans: 12
 ---
 
 # Project State
@@ -23,9 +23,9 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 ## Current Position
 
 Phase: 84 of v3.7 (Integration & Evaluation)
-Plan: 01 complete (checkpoint:human-verify pending)
-Status: Phase 84-01 Tasks 1+2 complete — TrackingStage dual-backend dispatch, evaluation script, metrics comparison document; awaiting human review of 84-EVALUATION.md
-Last activity: 2026-03-11 — Phase 84-01 Tasks 1+2 complete; keypoint_bidi vs OC-SORT evaluated (44 vs 30 tracks; BYTE trigger fired)
+Plan: 02 Tasks 1-3 complete (Task 4 checkpoint:human-verify pending)
+Status: Phase 84-02 Tasks 1-3 complete — bidi comment cleanup, eval script OOM+exclusive-assignment fix, re-evaluation (42 tracks 93.6% coverage); awaiting human review of updated 84-EVALUATION.md
+Last activity: 2026-03-11 — Phase 84-02 Tasks 1-3 complete; single-pass keypoint_bidi 42 tracks vs bidi 44 tracks; BYTE trigger no longer fires
 
 Progress: [█████████░] 90%
 
@@ -88,6 +88,8 @@ Recent decisions affecting current work:
 - [Phase 83]: oks_sigmas not in TrackingConfig — loaded from DEFAULT_SIGMAS at construction time to avoid config/sigma coupling
 - [Phase 84-integration-evaluation]: keypoint_bidi produces 44 tracks vs OC-SORT 30 vs target 9 — both over-fragment at occlusion; root cause is identity-breaking at occlusion events, not temporal gaps (both trackers have 0 gaps, continuity=1.000)
 - [Phase 84-integration-evaluation]: BYTE-style pass (TRACK-10) triggered by coverage=0.898 < 0.90; deferred — root cause is occlusion reacquisition, not low-confidence detection misses; a BYTE pass would not fix 44-track fragmentation
+- [Phase 84-integration-evaluation]: Bidi merge was already stripped before plan 84-02 ran; only stale comments remained
+- [Phase 84-integration-evaluation]: Single-pass keypoint_bidi: 42 tracks 93.6% coverage; bidi was 44 tracks 89.8%; BYTE trigger no longer fires
 
 ### Roadmap Evolution
 
@@ -105,5 +107,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-11
-Stopped at: Completed 83-02-PLAN.md — bidirectional merge, gap interpolation, KeypointTracker, TrackingConfig extension, all 1179 tests passing
+Stopped at: Phase 84-02 Tasks 1-3 complete — awaiting Task 4 checkpoint:human-verify of updated 84-EVALUATION.md and annotated video
 Resume file: N/A

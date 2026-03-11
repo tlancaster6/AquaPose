@@ -309,7 +309,7 @@ Plans:
   1. `aquapose run` with the new pipeline order and custom tracker completes end-to-end on the perfect-tracking 20-second clip without errors
   2. Post-run tracking metrics (track count, duration distribution, fragmentation, coverage) are compared directly against the Phase 80 OC-SORT baselines in a written evaluation note
   3. The tracker shows measurable improvement on at least one primary metric (fragmentation count or track count closer to 9) compared to OC-SORT baseline
-**Plans:** 1/1 plans complete
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 84-01-PLAN.md — Pipeline wiring, evaluation script, metrics comparison
 
@@ -348,6 +348,6 @@ Phases execute in numeric order: 78 -> 79 (conditional) -> 80 -> 81 -> 82 -> 83 
 | 81. Pipeline Reorder & Segmentation Removal | 2/2 | Complete    | 2026-03-11 | - |
 | 82. Association Upgrade — Keypoint Centroid | 1/1 | Complete    | 2026-03-11 | - |
 | 83. Custom Tracker Implementation | 2/2 | Complete    | 2026-03-11 | - |
-| 84. Integration & Evaluation | 1/1 | Complete   | 2026-03-11 | - |
+| 84. Integration & Evaluation | 2/2 | Complete   | 2026-03-11 | - |
 | 85. Code Quality Audit & CLI Smoke Test | v3.7 | 0/TBD | Not started | - |
 | 86. Cleanup (Conditional) | v3.7 | 0/TBD | Not started | - |

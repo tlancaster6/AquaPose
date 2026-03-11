@@ -87,6 +87,8 @@ class PoseConfig:
     anatomical keypoints directly onto Detection objects before tracking.
 
     Attributes:
+        backend: Pose backend name. Only ``"pose_estimation"`` is supported.
+            Retained for config file compatibility.
         confidence_threshold: YOLO detection confidence threshold for
             model.predict(). Detections below this score are discarded at
             inference time. Default 0.5.
@@ -104,6 +106,7 @@ class PoseConfig:
             ``0`` means no limit (batch all crops in the chunk).
     """
 
+    backend: str = "pose_estimation"
     confidence_threshold: float = 0.5
     weights_path: str | None = None
     detection_tolerance: float = 50.0

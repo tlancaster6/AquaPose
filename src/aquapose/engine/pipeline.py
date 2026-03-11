@@ -428,7 +428,7 @@ def build_stages(
         confidence_threshold=config.pose.confidence_threshold,
         device=config.device,
         pose_config=config.pose,
-        crop_size=tuple(config.detection.crop_size),
+        crop_size=tuple(config.detection.crop_size),  # type: ignore[arg-type]
         pose_batch_crops=config.pose.pose_batch_crops,
     )
 

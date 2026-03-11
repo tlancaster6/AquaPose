@@ -85,8 +85,9 @@ def _install_excepthook(logger: logging.Logger) -> None:
     ) -> None:
         if not issubclass(exc_type, KeyboardInterrupt):
             logger.critical(
-                "Uncaught exception", exc_info=(exc_type, exc_value, exc_tb)
-            )  # type: ignore[arg-type]
+                "Uncaught exception",
+                exc_info=(exc_type, exc_value, exc_tb),  # type: ignore[arg-type]
+            )
         _original_hook(exc_type, exc_value, exc_tb)  # type: ignore[arg-type]
 
     sys.excepthook = _hook  # type: ignore[assignment]

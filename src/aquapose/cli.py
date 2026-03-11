@@ -637,6 +637,7 @@ def smooth_z_cmd(
 
     with h5py.File(str(input_path), "r+") as f:
         grp = f["midlines"]
+        assert isinstance(grp, h5py.Group)
 
         if "smoothed_centroid_z" in grp:
             del grp["smoothed_centroid_z"]
@@ -647,7 +648,9 @@ def smooth_z_cmd(
             compression_opts=4,
         )
 
-        grp["control_points"][...] = shifted_cp
+        cp_ds = grp["control_points"]
+        assert isinstance(cp_ds, h5py.Dataset)
+        cp_ds[...] = shifted_cp
 
     click.echo(f"Written to {input_path}")
 

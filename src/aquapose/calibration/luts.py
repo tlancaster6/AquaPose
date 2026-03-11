@@ -34,11 +34,20 @@ class LutConfigLike(Protocol):
         forward_grid_step: Pixel step size for forward LUT grid.
     """
 
-    tank_diameter: float
-    tank_height: float
-    voxel_resolution_m: float
-    margin_fraction: float
-    forward_grid_step: int
+    @property
+    def tank_diameter(self) -> float: ...
+
+    @property
+    def tank_height(self) -> float: ...
+
+    @property
+    def voxel_resolution_m(self) -> float: ...
+
+    @property
+    def margin_fraction(self) -> float: ...
+
+    @property
+    def forward_grid_step(self) -> int: ...
 
 
 @dataclass

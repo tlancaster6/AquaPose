@@ -101,7 +101,7 @@ class YOLOOBBBackend:
                 f"YOLO-OBB weights not found: {weights_path}. "
                 "Provide a valid path to a trained .pt weights file."
             )
-        from ultralytics import YOLO  # lazy import — ultralytics may not be installed
+        from ultralytics import YOLO  # type: ignore[attr-defined]  # lazy import
 
         self._model = YOLO(str(weights_path))
         self._conf = conf_threshold

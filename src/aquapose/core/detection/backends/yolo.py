@@ -83,7 +83,7 @@ class YOLODetector:
         iou_threshold: float = 0.45,
         padding_fraction: float = 0.15,
     ) -> None:
-        from ultralytics import YOLO  # lazy import — ultralytics may not be installed
+        from ultralytics import YOLO  # type: ignore[attr-defined]  # lazy import
 
         self._model = YOLO(str(model_path))
         self._conf = conf_threshold

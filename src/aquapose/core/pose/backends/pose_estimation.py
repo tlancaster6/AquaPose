@@ -86,7 +86,7 @@ class PoseEstimationBackend:
                     f"PoseEstimationBackend weights not found: {weights_path}. "
                     "Provide a valid path to a trained .pt weights file."
                 )
-            from ultralytics import YOLO
+            from ultralytics import YOLO  # type: ignore[attr-defined]
 
             self._model: object | None = YOLO(str(weights_path))
             logger.info("PoseEstimationBackend: loaded model from %s", weights_path)
@@ -260,9 +260,9 @@ class PoseEstimationBackend:
         if not results:
             return None, None
         res = results[0]
-        if res.keypoints is None:
+        if res.keypoints is None:  # type: ignore[attr-defined]
             return None, None
-        kp = res.keypoints
+        kp = res.keypoints  # type: ignore[attr-defined]
         if len(kp.xy) == 0:
             return None, None
 

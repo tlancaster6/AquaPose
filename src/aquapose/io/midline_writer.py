@@ -227,7 +227,7 @@ class Midline3DWriter:
         """Return self for use as a context manager."""
         return self
 
-    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+    def __exit__(self, exc_type: object, _exc_val: object, exc_tb: object) -> None:
         """Close the file on context manager exit."""
         self.close()
 

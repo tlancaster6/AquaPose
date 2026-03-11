@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from aquapose.core.context import PipelineContext
+from aquapose.core.tracking.types import Tracklet2D
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ class AssociationStage:
         )
         from aquapose.core.association.scoring import score_all_pairs
 
-        tracks_2d = context.get("tracks_2d")
+        tracks_2d = cast("dict[str, list[Tracklet2D]]", context.get("tracks_2d"))
         detections = context.detections
 
         calibration_path = self._config.calibration_path

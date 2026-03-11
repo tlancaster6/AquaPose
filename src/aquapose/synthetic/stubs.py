@@ -42,7 +42,7 @@ def generate_synthetic_detections(
     return generate_detection_dataset(trajectory, models, **kwargs)
 
 
-def generate_synthetic_tracks(*args: object, **kwargs: object) -> object:
+def generate_synthetic_tracks(*_args: object, **_kwargs: object) -> object:
     """Generate synthetic FishTrack objects for testing midline extraction.
 
     Track generation is a tracker output, not a synthetic input — FishTrack
@@ -50,8 +50,8 @@ def generate_synthetic_tracks(*args: object, **kwargs: object) -> object:
     This stub is retained for API compatibility but is not implemented.
 
     Args:
-        *args: Placeholder positional arguments.
-        **kwargs: Placeholder keyword arguments.
+        *_args: Placeholder positional arguments.
+        **_kwargs: Placeholder keyword arguments.
 
     Returns:
         Not implemented.

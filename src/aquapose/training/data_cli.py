@@ -73,7 +73,7 @@ def import_cmd(
     source: str,
     input_dir: str,
     augment: bool,
-    augment_count: int,
+    augment_count: int,  # reserved for generate_variants n_variants
     augment_angle_range: float,
     batch_id: str | None,
     metadata_json: str | None,

@@ -327,6 +327,8 @@ def generate_overlay(
         raise RuntimeError(f"No chunk caches found in {run_dir}")
 
     out_dir = output_dir or run_dir / "viz"
+    _ = show_fish_id  # reserved for future use
+
     out_dir.mkdir(parents=True, exist_ok=True)
     output_path = out_dir / "overlay_mosaic.mp4"
 
@@ -430,7 +432,7 @@ def generate_overlay(
     out_w = max(1, int(frame_w * scale)) if frame_w > 0 else 0
     out_h = max(1, int(frame_h * scale)) if frame_h > 0 else 0
 
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
     writer: cv2.VideoWriter | None = None
 
     sys.stderr.write("Generating overlay mosaic video...\n")

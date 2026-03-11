@@ -622,7 +622,7 @@ def _write_per_camera_trails(
         else:
             continue
 
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
         writer: cv2.VideoWriter | None = None
 
         try:
@@ -699,7 +699,7 @@ def _write_association_mosaic(
         assert frame_source is not None
         ctx_mgr = frame_source  # type: ignore[assignment]
 
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
     writer: cv2.VideoWriter | None = None
     tile_w: int = 0
     tile_h: int = 0

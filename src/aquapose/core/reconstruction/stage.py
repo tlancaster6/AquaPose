@@ -309,7 +309,7 @@ class ReconstructionStage:
                     continue
 
                 midline_set = {fish_id: cam_midlines}
-                frame_results = self._backend.reconstruct_frame(
+                frame_results = self._backend.reconstruct_frame(  # type: ignore[union-attr]
                     frame_idx=frame_idx,
                     midline_set=midline_set,
                 )

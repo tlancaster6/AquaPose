@@ -214,6 +214,7 @@ class ChunkOrchestrator:
         with contextlib.ExitStack() as stack:
             if self._frame_source is not None:
                 video_source = self._frame_source
+                assert isinstance(video_source, VideoFrameSource)
             else:
                 video_source = stack.enter_context(
                     VideoFrameSource(

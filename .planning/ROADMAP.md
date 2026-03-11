@@ -280,7 +280,9 @@ Plans:
   1. `Tracklet2D.centroids` is populated from the selected mid-body keypoint (empirically determined highest-confidence keypoint index) rather than OBB center
   2. The association stage runs end-to-end without modification to the downstream LUT/ray-ray scoring/Leiden clustering machinery
   3. A brief note documents which keypoint index was selected and why (confidence statistics)
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 82-01-PLAN.md — Add keypoint centroid config, implement extraction in tracker, document selection
 
 ### Phase 83: Custom Tracker Implementation
 **Goal**: A bidirectional batched keypoint tracker replaces OC-SORT, using OKS cost, OCM direction consistency, Kalman filter over keypoint positions, asymmetric birth/death, ORU/OCR mechanisms, bidirectional merge, chunk handoff, and gap interpolation
@@ -294,7 +296,9 @@ Plans:
   5. Chunk boundary handoff serializes and restores KF mean, covariance, and observation history so tracks survive chunk transitions
   6. Small tracklet gaps are filled via spline interpolation
   7. If INV-04 findings reveal significant low-confidence valid detections, a secondary BYTE-style pass for those detections is implemented; otherwise TRACK-10 is explicitly deferred
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 82-01-PLAN.md — Add keypoint centroid config, implement extraction in tracker, document selection
 
 ### Phase 84: Integration & Evaluation
 **Goal**: The new tracker is wired into the reordered pipeline and evaluated against the Phase 80 baselines, with iteration on parameters if needed
@@ -304,7 +308,9 @@ Plans:
   1. `aquapose run` with the new pipeline order and custom tracker completes end-to-end on the perfect-tracking 20-second clip without errors
   2. Post-run tracking metrics (track count, duration distribution, fragmentation, coverage) are compared directly against the Phase 80 OC-SORT baselines in a written evaluation note
   3. The tracker shows measurable improvement on at least one primary metric (fragmentation count or track count closer to 9) compared to OC-SORT baseline
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 82-01-PLAN.md — Add keypoint centroid config, implement extraction in tracker, document selection
 
 ### Phase 85: Code Quality Audit & CLI Smoke Test
 **Goal**: The overhaul leaves no dead code, broken cross-references, or type errors; the full pipeline runs cleanly from the CLI with the new stage ordering
@@ -315,7 +321,9 @@ Plans:
   2. `hatch run typecheck` produces no new type errors introduced by the v3.7 overhaul
   3. `aquapose run` completes end-to-end on a test clip with the new pipeline, and all config options for the new tracker are documented
   4. A documented decision exists on whether BoxMot is removed as a dependency or retained as an OC-SORT fallback
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 82-01-PLAN.md — Add keypoint centroid config, implement extraction in tracker, document selection
 
 ### Phase 86: Cleanup (Conditional)
 **Goal**: Address issues found during the Phase 85 audit — this phase is skipped entirely if Phase 85 finds nothing actionable
@@ -338,7 +346,7 @@ Phases execute in numeric order: 78 -> 79 (conditional) -> 80 -> 81 -> 82 -> 83 
 | 79. Occlusion Remediation (Conditional) | v3.7 | 0/0 | Skipped | 2026-03-10 |
 | 80. Baseline Metrics | 1/1 | Complete    | 2026-03-11 | - |
 | 81. Pipeline Reorder & Segmentation Removal | 2/2 | Complete    | 2026-03-11 | - |
-| 82. Association Upgrade — Keypoint Centroid | v3.7 | 0/TBD | Not started | - |
+| 82. Association Upgrade — Keypoint Centroid | v3.7 | 0/1 | Planned | - |
 | 83. Custom Tracker Implementation | v3.7 | 0/TBD | Not started | - |
 | 84. Integration & Evaluation | v3.7 | 0/TBD | Not started | - |
 | 85. Code Quality Audit & CLI Smoke Test | v3.7 | 0/TBD | Not started | - |

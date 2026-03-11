@@ -1,9 +1,8 @@
 """2D Tracking stage (Stage 2) domain types for the AquaPose pipeline.
 
 Exports Tracklet2D -- the per-camera temporal tracklet produced by Stage 2 --
-and FishTrack/TrackState for downstream reconstruction compatibility.
-Also exports TrackingStage and KeypointTracker (single-pass keypoint tracker
-with ORU/OCR occlusion recovery).
+and TrackingStage/KeypointTracker (single-pass keypoint tracker with ORU/OCR
+occlusion recovery).
 """
 
 from aquapose.core.tracking.keypoint_sigmas import (
@@ -21,14 +20,11 @@ from aquapose.core.tracking.keypoint_tracker import (
     interpolate_gaps,
 )
 from aquapose.core.tracking.stage import TrackingStage
-from aquapose.core.tracking.types import FishTrack, TrackHealth, Tracklet2D, TrackState
+from aquapose.core.tracking.types import Tracklet2D
 
 __all__ = [
     "DEFAULT_SIGMAS",
-    "FishTrack",
     "KeypointTracker",
-    "TrackHealth",
-    "TrackState",
     "TrackingStage",
     "Tracklet2D",
     "_KalmanFilter",

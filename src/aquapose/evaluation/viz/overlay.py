@@ -137,26 +137,6 @@ def _batch_reproject(
     return results
 
 
-def _reproject_3d_midline(
-    spline: object,
-    model: RefractiveProjectionModel,
-) -> np.ndarray | None:
-    """Evaluate a B-spline at 50 points and project each to 2D pixel coordinates.
-
-    Args:
-        spline: Spline3D object with control_points, knots, and degree attributes.
-        model: Per-camera RefractiveProjectionModel with a project() method.
-
-    Returns:
-        (N, 2) float32 array of valid pixel coordinates, or None on failure.
-    """
-    pts_3d = _eval_spline_pts(spline)
-    if pts_3d is None:
-        return None
-    results = _batch_reproject([pts_3d], model)
-    return results[0]
-
-
 def _draw_midline(
     frame: np.ndarray,
     points_2d: np.ndarray,

@@ -43,10 +43,10 @@ def generate_synthetic_detections(
 
 
 def generate_synthetic_tracks(*_args: object, **_kwargs: object) -> object:
-    """Generate synthetic FishTrack objects for testing midline extraction.
+    """Generate synthetic track objects for testing midline extraction.
 
-    Track generation is a tracker output, not a synthetic input — FishTrack
-    objects are produced by FishTracker.update() consuming detection streams.
+    Track generation is a tracker output, not a synthetic input — tracklets
+    are produced by KeypointTracker.update() consuming detection streams.
     This stub is retained for API compatibility but is not implemented.
 
     Args:

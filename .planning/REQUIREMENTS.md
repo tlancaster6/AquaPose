@@ -28,10 +28,10 @@ Requirements for the Improved Association milestone. Each maps to roadmap phases
 
 ### Singleton Recovery
 
-- [ ] **RECOV-01**: Each singleton is scored against all existing groups using multi-keypoint residuals
-- [ ] **RECOV-02**: Singletons with strong overall match to one group are assigned to that group
-- [ ] **RECOV-03**: Singletons with no overall match but a temporal split matching two different groups are split and assigned (swap-aware recovery)
-- [ ] **RECOV-04**: Same-camera overlap constraint is enforced during singleton assignment (no two tracklets from same camera with overlapping frames in one group)
+- [x] **RECOV-01**: Each singleton is scored against all existing groups using multi-keypoint residuals
+- [x] **RECOV-02**: Singletons with strong overall match to one group are assigned to that group
+- [x] **RECOV-03**: Singletons with no overall match but a temporal split matching two different groups are split and assigned (swap-aware recovery)
+- [x] **RECOV-04**: Same-camera overlap constraint is enforced during singleton assignment (no two tracklets from same camera with overlapping frames in one group)
 
 ### Cleanup
 
@@ -77,10 +77,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | VALID-03 | Phase 90 | Complete |
 | VALID-04 | Phase 90 | Complete |
 | CLEAN-02 | Phase 90 | Complete |
-| RECOV-01 | Phase 91 | Pending |
-| RECOV-02 | Phase 91 | Pending |
-| RECOV-03 | Phase 91 | Pending |
-| RECOV-04 | Phase 91 | Pending |
+| RECOV-01 | Phase 91 | Complete |
+| RECOV-02 | Phase 91 | Complete |
+| RECOV-03 | Phase 91 | Complete |
+| RECOV-04 | Phase 91 | Complete |
 | EVAL-01 | Phase 92 | Pending |
 | EVAL-02 | Phase 92 | Pending |
 

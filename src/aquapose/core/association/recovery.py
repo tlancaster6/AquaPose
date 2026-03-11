@@ -16,7 +16,9 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 import numpy as np
 import torch
 
-from aquapose.core.association.scoring import ray_ray_closest_point
+from aquapose.core.association.scoring import (
+    ray_ray_closest_point,
+)
 from aquapose.core.association.types import TrackletGroup
 
 if TYPE_CHECKING:
@@ -382,62 +384,77 @@ def _score_singleton_against_group(
         assert singleton.keypoint_conf is not None
         n_kpts = singleton.keypoints.shape[1]
 
+        # Collect ALL confident singleton keypoint pixels across ALL shared frames
+        all_pixels: list[np.ndarray] = []
+        pixel_meta: list[tuple[int, int]] = []  # (frame, kpt_idx)
         for frame in shared:
             idx_s = singleton_frame_map[frame]
-            kpts_s = singleton.keypoints[idx_s]  # (K, 2)
-            conf_s = singleton.keypoint_conf[idx_s]  # (K,)
-
-            # Triangulate group keypoints for this frame on-demand
-            group_3d = _triangulate_group_keypoints_for_frame(
-                frame,
-                group.tracklets,
-                forward_luts,
-                config.keypoint_confidence_floor,
-                n_kpts,
-            )
-            if group_3d is None:
-                continue
-
-            # For each confident singleton keypoint, compute ray-to-3D distance
+            conf_s = singleton.keypoint_conf[idx_s]
+            kpts_s = singleton.keypoints[idx_s]
             for k in range(n_kpts):
                 if conf_s[k] < config.keypoint_confidence_floor:
                     continue
-                pt_3d = group_3d[k]
-                if pt_3d is None:
-                    continue
-                pix = torch.tensor(
-                    [[float(kpts_s[k, 0]), float(kpts_s[k, 1])]],
-                    dtype=torch.float32,
-                )
-                origins, dirs = lut_singleton.cast_ray(pix)
-                origin = origins[0].cpu().numpy().astype(np.float64)
-                direction = dirs[0].cpu().numpy().astype(np.float64)
+                all_pixels.append(np.array([float(kpts_s[k, 0]), float(kpts_s[k, 1])]))
+                pixel_meta.append((frame, k))
 
-                dist = _point_to_ray_distance(pt_3d, origin, direction)
-                all_residuals.append(dist)
+        if not all_pixels:
+            return None
+
+        # Batch cast_ray for ALL singleton pixels at once
+        pixels_batch = np.array(all_pixels, dtype=np.float64)
+        pix_t = torch.tensor(pixels_batch, dtype=torch.float32)
+        s_origins, s_dirs = lut_singleton.cast_ray(pix_t)
+        s_o = s_origins.cpu().numpy().astype(np.float64)
+        s_d = s_dirs.cpu().numpy().astype(np.float64)
+
+        # Cache group 3D triangulations per frame
+        frame_3d_cache: dict[int, list[np.ndarray | None] | None] = {}
+        for i, (frame, k) in enumerate(pixel_meta):
+            if frame not in frame_3d_cache:
+                frame_3d_cache[frame] = _triangulate_group_keypoints_for_frame(
+                    frame,
+                    group.tracklets,
+                    forward_luts,
+                    config.keypoint_confidence_floor,
+                    n_kpts,
+                )
+            group_3d = frame_3d_cache[frame]
+            if group_3d is None:
+                continue
+            pt_3d = group_3d[k]
+            if pt_3d is None:
+                continue
+            dist = _point_to_ray_distance(pt_3d, s_o[i], s_d[i])
+            all_residuals.append(dist)
 
     else:
-        # Centroid-only fallback
+        # Centroid-only fallback — batch all singleton centroid pixels
+        centroid_pixels: list[np.ndarray] = []
+        centroid_frames: list[int] = []
         for frame in shared:
             idx_s = singleton_frame_map[frame]
             centroid_s = singleton.centroids[idx_s]
-
-            pix = torch.tensor(
-                [[float(centroid_s[0]), float(centroid_s[1])]],
-                dtype=torch.float32,
+            centroid_pixels.append(
+                np.array([float(centroid_s[0]), float(centroid_s[1])])
             )
-            origins, dirs = lut_singleton.cast_ray(pix)
-            origin = origins[0].cpu().numpy().astype(np.float64)
-            direction = dirs[0].cpu().numpy().astype(np.float64)
+            centroid_frames.append(frame)
 
-            # Get group consensus centroid for this frame via centroid rays
+        if not centroid_pixels:
+            return None
+
+        pixels_batch = np.array(centroid_pixels, dtype=np.float64)
+        pix_t = torch.tensor(pixels_batch, dtype=torch.float32)
+        s_origins, s_dirs = lut_singleton.cast_ray(pix_t)
+        s_o = s_origins.cpu().numpy().astype(np.float64)
+        s_d = s_dirs.cpu().numpy().astype(np.float64)
+
+        for i, frame in enumerate(centroid_frames):
             group_centroid = _triangulate_group_centroid_for_frame(
                 frame, group.tracklets, forward_luts
             )
             if group_centroid is None:
                 continue
-
-            dist = _point_to_ray_distance(group_centroid, origin, direction)
+            dist = _point_to_ray_distance(group_centroid, s_o[i], s_d[i])
             all_residuals.append(dist)
 
     if not all_residuals:
@@ -485,38 +502,41 @@ def _triangulate_group_keypoints_for_frame(
     if cameras_in_frame < 2:
         return None
 
+    # Batch cast_ray per camera: collect (camera, keypoint_idx, pixel) tuples
+    cam_kpt_entries: dict[str, list[tuple[int, np.ndarray]]] = {}
+    for t, fm in zip(group_tracklets, tracklet_frame_maps, strict=True):
+        if frame not in fm:
+            continue
+        if t.keypoints is None or t.keypoint_conf is None:
+            continue
+        if t.camera_id not in forward_luts:
+            continue
+        idx = fm[frame]
+        for k in range(n_keypoints):
+            if t.keypoint_conf[idx, k] < keypoint_confidence_floor:
+                continue
+            cam_kpt_entries.setdefault(t.camera_id, []).append((k, t.keypoints[idx, k]))
+
+    # Batch cast_ray per camera
+    kpt_rays: dict[int, list[tuple[np.ndarray, np.ndarray]]] = {}  # k -> [(o, d)]
+    for cam_id, entries in cam_kpt_entries.items():
+        pixels = np.array([e[1] for e in entries], dtype=np.float64)
+        pix_t = torch.tensor(pixels, dtype=torch.float32)
+        origins, dirs = forward_luts[cam_id].cast_ray(pix_t)
+        origins_np = origins.cpu().numpy().astype(np.float64)
+        dirs_np = dirs.cpu().numpy().astype(np.float64)
+        for i, (k, _) in enumerate(entries):
+            kpt_rays.setdefault(k, []).append((origins_np[i], dirs_np[i]))
+
     result: list[np.ndarray | None] = [None] * n_keypoints
 
     for k in range(n_keypoints):
-        rays: list[tuple[np.ndarray, np.ndarray]] = []
-
-        for t, fm in zip(group_tracklets, tracklet_frame_maps, strict=True):
-            if frame not in fm:
-                continue
-            if t.keypoints is None or t.keypoint_conf is None:
-                continue
-            if t.camera_id not in forward_luts:
-                continue
-
-            idx = fm[frame]
-            if t.keypoint_conf[idx, k] < keypoint_confidence_floor:
-                continue
-
-            kpt = t.keypoints[idx, k]  # (2,)
-            pix = torch.tensor(
-                [[float(kpt[0]), float(kpt[1])]],
-                dtype=torch.float32,
-            )
-            lut = forward_luts[t.camera_id]
-            origins, dirs = lut.cast_ray(pix)
-            o = origins[0].cpu().numpy().astype(np.float64)
-            d = dirs[0].cpu().numpy().astype(np.float64)
-            rays.append((o, d))
-
+        rays = kpt_rays.get(k, [])
         if len(rays) < 2:
             result[k] = None
             continue
 
+        # Pairwise midpoints — small count (C(cameras,2)), needs midpoints
         midpoints: list[np.ndarray] = []
         for i in range(len(rays)):
             for j in range(i + 1, len(rays)):
@@ -548,8 +568,8 @@ def _triangulate_group_centroid_for_frame(
         Consensus centroid as (3,) array, or None if fewer than 2 cameras
         contribute a ray for this frame.
     """
-    rays: list[tuple[np.ndarray, np.ndarray]] = []
-
+    # Collect centroid pixels grouped by camera for batch cast_ray
+    cam_centroids: dict[str, list[np.ndarray]] = {}
     for t in group_tracklets:
         frame_map = {f: i for i, f in enumerate(t.frames)}
         if frame not in frame_map:
@@ -558,15 +578,19 @@ def _triangulate_group_centroid_for_frame(
             continue
         idx = frame_map[frame]
         centroid = t.centroids[idx]
-        pix = torch.tensor(
-            [[float(centroid[0]), float(centroid[1])]],
-            dtype=torch.float32,
+        cam_centroids.setdefault(t.camera_id, []).append(
+            np.array([float(centroid[0]), float(centroid[1])])
         )
-        lut = forward_luts[t.camera_id]
-        origins, dirs = lut.cast_ray(pix)
-        o = origins[0].cpu().numpy().astype(np.float64)
-        d = dirs[0].cpu().numpy().astype(np.float64)
-        rays.append((o, d))
+
+    rays: list[tuple[np.ndarray, np.ndarray]] = []
+    for cam_id, centroids in cam_centroids.items():
+        pixels = np.array(centroids, dtype=np.float64)
+        pix_t = torch.tensor(pixels, dtype=torch.float32)
+        origins, dirs = forward_luts[cam_id].cast_ray(pix_t)
+        origins_np = origins.cpu().numpy().astype(np.float64)
+        dirs_np = dirs.cpu().numpy().astype(np.float64)
+        for i in range(len(centroids)):
+            rays.append((origins_np[i], dirs_np[i]))
 
     if len(rays) < 2:
         return None
@@ -776,3 +800,24 @@ def _point_to_ray_distance(
     t = float(np.dot(w, direction))
     closest = origin + t * direction
     return float(np.linalg.norm(point - closest))
+
+
+def _point_to_ray_distance_batch(
+    points: np.ndarray,
+    origins: np.ndarray,
+    directions: np.ndarray,
+) -> np.ndarray:
+    """Batch perpendicular distance from N 3D points to N rays.
+
+    Args:
+        points: 3D points, shape (N, 3).
+        origins: Ray origins, shape (N, 3).
+        directions: Unit directions of rays, shape (N, 3).
+
+    Returns:
+        Perpendicular distances, shape (N,).
+    """
+    w = points - origins  # (N, 3)
+    t = np.sum(w * directions, axis=1, keepdims=True)  # (N, 1)
+    closest = origins + t * directions  # (N, 3)
+    return np.linalg.norm(points - closest, axis=1)  # (N,)

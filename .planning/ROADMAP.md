@@ -313,15 +313,22 @@ Plans:
 Plans:
 - [ ] 84-01-PLAN.md — Pipeline wiring, evaluation script, metrics comparison
 
-### Phase 84.1: tracker tuning (INSERTED)
+### Phase 84.1: Tracker Tuning (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
+**Goal:** Tune the custom keypoint tracker parameters to reduce over-fragmentation from 42 tracks toward OC-SORT parity (~30 tracks). Promote hardcoded thresholds to config, add eval script CLI flags, then systematically sweep parameters.
+**Requirements**: (none — inserted urgent phase, no formal requirement IDs)
 **Depends on:** Phase 84
-**Plans:** 0 plans
+**Success Criteria** (what must be TRUE):
+  1. `match_cost_threshold` and `ocr_threshold` are configurable via `TrackingConfig` fields (not hardcoded module constants)
+  2. All 6 tunable params are accepted as CLI flags by the eval script
+  3. Best achievable parameter set is committed as `TrackingConfig` defaults
+  4. Track count is at OC-SORT parity (~30) or gap is documented with analysis
+  5. Detection coverage remains >= 90%
+**Plans:** 1/2 plans executed
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 84.1 to break down)
+- [ ] 84.1-01-PLAN.md -- Config plumbing: promote constants to config, add CLI flags
+- [ ] 84.1-02-PLAN.md -- Parameter sweeps and commit winning defaults
 
 ### Phase 85: Code Quality Audit & CLI Smoke Test
 **Goal**: The overhaul leaves no dead code, broken cross-references, or type errors; the full pipeline runs cleanly from the CLI with the new stage ordering

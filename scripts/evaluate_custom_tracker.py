@@ -17,9 +17,13 @@ Usage::
 
 Tuning knobs (adjust if track count does not improve over 27-track baseline)::
 
-    --max-age INT        Max coast frames before dropping a track (default 15)
-    --det-thresh FLOAT   Minimum detection confidence forwarded to tracker (default 0.1)
-    --n-init INT         Minimum hits before track is confirmed (default 1)
+    --max-age INT               Max coast frames before dropping a track (default 15)
+    --det-thresh FLOAT          Minimum detection confidence forwarded to tracker (default 0.1)
+    --n-init INT                Minimum hits before track is confirmed (default 1)
+    --base-r FLOAT              KF base measurement noise variance (default 10.0)
+    --lambda-ocm FLOAT          OCM weight in cost matrix (default 0.2)
+    --match-cost-threshold FLOAT  Max cost for Hungarian match acceptance (default 1.0)
+    --ocr-threshold FLOAT       Min OKS for observation-centric recovery (default 0.5)
 """
 
 from __future__ import annotations
@@ -412,6 +416,10 @@ def run_evaluation(
     max_age: int,
     det_thresh: float,
     n_init: int,
+    base_r: float = 10.0,
+    lambda_ocm: float = 0.2,
+    match_cost_threshold: float = 1.0,
+    ocr_threshold: float = 0.5,
 ) -> None:
     """Run dual-tracker evaluation on the specified frame range.
 
@@ -429,6 +437,10 @@ def run_evaluation(
         max_age: Maximum coast frames before dropping a track.
         det_thresh: Minimum detection confidence for trackers.
         n_init: Minimum confirmed hits before track appears in output.
+        base_r: KF base measurement noise variance.
+        lambda_ocm: OCM weight in cost matrix.
+        match_cost_threshold: Max cost for Hungarian assignment match acceptance.
+        ocr_threshold: Min OKS for observation-centric recovery.
     """
     from ultralytics import YOLO
 
@@ -545,9 +557,11 @@ def run_evaluation(
         max_age=max_age,
         n_init=n_init,
         det_thresh=det_thresh,
-        base_r=10.0,
-        lambda_ocm=0.2,
+        base_r=base_r,
+        lambda_ocm=lambda_ocm,
         max_gap_frames=5,
+        match_cost_threshold=match_cost_threshold,
+        ocr_threshold=ocr_threshold,
     )
     for frame_offset, det_objects in enumerate(all_frame_dets):
         fidx = start_frame + frame_offset
@@ -701,6 +715,10 @@ def run_evaluation(
             "max_age": max_age,
             "det_thresh": det_thresh,
             "n_init": n_init,
+            "base_r": base_r,
+            "lambda_ocm": lambda_ocm,
+            "match_cost_threshold": match_cost_threshold,
+            "ocr_threshold": ocr_threshold,
         },
         "ocsort": {
             "tracking": ocsort_tracking.to_dict(),
@@ -883,6 +901,30 @@ def main() -> None:
         default=1,
         help="Minimum hits before track is confirmed (default: 1, matching Phase 80 baseline)",
     )
+    parser.add_argument(
+        "--base-r",
+        type=float,
+        default=None,
+        help="KF base measurement noise variance for keypoint_bidi (default: 10.0)",
+    )
+    parser.add_argument(
+        "--lambda-ocm",
+        type=float,
+        default=None,
+        help="OCM weight in cost matrix for keypoint_bidi (default: 0.2)",
+    )
+    parser.add_argument(
+        "--match-cost-threshold",
+        type=float,
+        default=None,
+        help="Max cost for Hungarian assignment match acceptance (default: 1.0)",
+    )
+    parser.add_argument(
+        "--ocr-threshold",
+        type=float,
+        default=None,
+        help="Min OKS for observation-centric recovery (default: 0.5)",
+    )
 
     args = parser.parse_args()
     output_dir = Path(args.output_dir).expanduser()
@@ -899,6 +941,12 @@ def main() -> None:
         max_age=args.max_age,
         det_thresh=args.det_thresh,
         n_init=args.n_init,
+        base_r=args.base_r if args.base_r is not None else 10.0,
+        lambda_ocm=args.lambda_ocm if args.lambda_ocm is not None else 0.2,
+        match_cost_threshold=args.match_cost_threshold
+        if args.match_cost_threshold is not None
+        else 1.0,
+        ocr_threshold=args.ocr_threshold if args.ocr_threshold is not None else 0.5,
     )
 
 

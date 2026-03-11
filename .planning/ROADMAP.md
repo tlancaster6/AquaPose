@@ -225,6 +225,7 @@ Full details: `.planning/milestones/v3.7-ROADMAP.md`
 - [x] **Phase 89: Fragment Merging Removal** - Delete merge_fragments and max_merge_gap; pipeline still runs end-to-end (completed 2026-03-11)
 - [x] **Phase 90: Group Validation with Changepoint Detection** - Add validation.py replacing refinement.py; temporal ID swap splitting and outlier eviction (completed 2026-03-11)
 - [x] **Phase 91: Singleton Recovery** - Assign or split-assign singletons to existing groups; enforce same-camera overlap constraint (completed 2026-03-11)
+- [ ] **Phase 91.1: Association Bottleneck Investigation & Remediation** - Fix association stage wall-time (452s to <30s per chunk) via vectorization (INSERTED)
 - [ ] **Phase 92: Parameter Tuning Pass** - Calibrate new config parameters on real data; confirm improvement over v3.7 baseline
 
 ## Phase Details
@@ -296,13 +297,15 @@ Plans:
 
 ### Phase 91.1: Association Bottleneck Investigation & Remediation (INSERTED)
 
-**Goal:** Fix association stage wall-time performance (452s → <30s per chunk). Add per-step timing instrumentation, vectorize all scalar ray-casting loops in validation.py and recovery.py, restructure split-assign to precompute residuals. Fix timing observer append behavior.
-**Requirements**: TBD
+**Goal:** Fix association stage wall-time performance (452s to <30s per chunk). Add per-step timing instrumentation, vectorize all scalar ray-casting loops in validation.py and recovery.py, restructure split-assign to precompute residuals. Fix timing observer append behavior.
+**Requirements**: PERF-INSTRUMENT, PERF-TIMING-FIX, PERF-VALIDATION, PERF-RECOVERY
 **Depends on:** Phase 91
-**Plans:** 0 plans
+**Plans:** 3 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 91.1 to break down)
+- [ ] 91.1-01-PLAN.md — Per-step timing instrumentation in stage.py and timing observer append fix
+- [ ] 91.1-02-PLAN.md — Vectorize all 4 scalar functions in validation.py
+- [ ] 91.1-03-PLAN.md — Vectorize recovery.py and restructure split-assign with precompute-then-sweep
 
 ### Phase 92: Parameter Tuning Pass
 **Goal**: New config parameters are empirically calibrated on real data; the final v3.8 association configuration is documented and validated against the v3.7 baseline
@@ -318,7 +321,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 87 → 88 → 89 → 90 → 91 → 92
+Phases execute in numeric order: 87 → 88 → 89 → 90 → 91 → 91.1 → 92
 Note: Phases 88 and 89 depend only on Phase 87 and can be executed in either order (they touch different files).
 
 | Phase | Plans Complete | Status | Completed |
@@ -328,4 +331,5 @@ Note: Phases 88 and 89 depend only on Phase 87 and can be executed in either ord
 | 89. Fragment Merging Removal | 1/1 | Complete    | 2026-03-11 |
 | 90. Group Validation with Changepoint Detection | 2/2 | Complete    | 2026-03-11 |
 | 91. Singleton Recovery | 2/2 | Complete    | 2026-03-11 |
+| 91.1. Association Bottleneck Remediation | 0/3 | Planned    |  |
 | 92. Parameter Tuning Pass | 1/2 | In Progress|  |

@@ -230,6 +230,30 @@ class TestMultipleCameras:
         assert tracklets_b[0].camera_id == "cam_b"
 
 
+class TestCentroidConfigThreading:
+    """TrackingStage passes centroid config fields to OcSortTracker."""
+
+    def test_tracking_stage_passes_centroid_config_to_tracker(self) -> None:
+        """TrackingStage with centroid params threads them into OcSortTracker."""
+        from aquapose.core.tracking.stage import TrackingStage
+
+        stage = TrackingStage(
+            config=_FakeTrackingConfig(),
+            centroid_keypoint_index=3,
+            centroid_confidence_floor=0.5,
+        )
+        assert stage._centroid_keypoint_index == 3
+        assert stage._centroid_confidence_floor == 0.5
+
+    def test_tracking_stage_default_centroid_config(self) -> None:
+        """TrackingStage defaults to centroid_keypoint_index=2, centroid_confidence_floor=0.3."""
+        from aquapose.core.tracking.stage import TrackingStage
+
+        stage = TrackingStage(config=_FakeTrackingConfig())
+        assert stage._centroid_keypoint_index == 2
+        assert stage._centroid_confidence_floor == 0.3
+
+
 class TestTrackletFieldsSpec:
     """Tracklet2D fields conform to the spec."""
 

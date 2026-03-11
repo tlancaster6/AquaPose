@@ -23,6 +23,12 @@ Reorder the pipeline so pose estimation runs immediately after detection (before
 - `annotated_detections` field is removed from PipelineContext entirely (clean break, no dead fields)
 - All code referencing `annotated_detections` must be updated to read from `detections` directly
 
+### Raw keypoints through the pipeline
+- PoseStage outputs the raw 6 anatomical keypoints (nose, head, spine1-3, tail) with per-keypoint confidence — no upsampling to 15 points
+- The 6→15 point spline interpolation (`_keypoints_to_midline`) moves into ReconstructionStage, which is the only consumer that needs dense midline points
+- Tracking and association operate on the direct 6-keypoint pose output — better for OKS cost (Phase 83) and keypoint centroid (Phase 82)
+- Detection.midline (or equivalent field) carries the raw keypoints, not interpolated points
+
 ### Tracking passthrough
 - Tracking (OC-SORT) remains OBB-only — pose data is present on detections but tracking ignores it
 - Wiring keypoints into tracking cost is Phase 83's job

@@ -12,6 +12,7 @@ from aquapose.core.types.reconstruction import MidlineSet
 DEFAULT_GRID: dict[str, list[float]] = {
     "ray_distance_threshold": [0.01, 0.02, 0.03],
     "score_min": [0.03, 0.15, 0.30],
+    "keypoint_confidence_floor": [0.2, 0.3, 0.4],
     "eviction_reproj_threshold": [0.02, 0.03, 0.05],
     "leiden_resolution": [0.5, 1.0, 2.0],
     "early_k": [5.0, 10.0, 30.0],

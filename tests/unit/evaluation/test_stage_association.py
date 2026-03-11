@@ -215,11 +215,12 @@ def test_evaluate_association_camera_distribution() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_default_grid_has_exactly_five_keys() -> None:
-    """DEFAULT_GRID has exactly 5 keys."""
+def test_default_grid_has_exactly_six_keys() -> None:
+    """DEFAULT_GRID has exactly 6 keys (includes keypoint_confidence_floor)."""
     expected_keys = {
         "ray_distance_threshold",
         "score_min",
+        "keypoint_confidence_floor",
         "eviction_reproj_threshold",
         "leiden_resolution",
         "early_k",
@@ -235,6 +236,11 @@ def test_default_grid_ray_distance_threshold_values() -> None:
 def test_default_grid_score_min_values() -> None:
     """DEFAULT_GRID score_min has expected values."""
     assert DEFAULT_GRID["score_min"] == pytest.approx([0.03, 0.15, 0.30])
+
+
+def test_default_grid_keypoint_confidence_floor_values() -> None:
+    """DEFAULT_GRID keypoint_confidence_floor has expected values."""
+    assert DEFAULT_GRID["keypoint_confidence_floor"] == pytest.approx([0.2, 0.3, 0.4])
 
 
 def test_default_grid_eviction_reproj_threshold_values() -> None:

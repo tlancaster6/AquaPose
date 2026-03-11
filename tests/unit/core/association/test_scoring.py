@@ -944,3 +944,109 @@ class TestScoreAllPairs:
         assert len(scored) == 0, (
             "Divergent rays should produce 0 score, filtered by score_min"
         )
+
+
+# ---------------------------------------------------------------------------
+# Centroid-only scoring tests (Phase 92-01)
+# ---------------------------------------------------------------------------
+
+
+class TestCentroidOnlyScoring:
+    """Tests for use_multi_keypoint_scoring=False (v3.7 centroid path)."""
+
+    def test_centroid_only_returns_nonzero_for_converging_rays(self) -> None:
+        """score_tracklet_pair with use_multi_keypoint_scoring=False returns nonzero.
+
+        Tracklets have centroids but NO keypoints. Multi-kpt scoring would return
+        0 (keypoints=None). Centroid-only path should return a nonzero score.
+        """
+        frames = tuple(range(10))
+        ta = _make_tracklet(
+            "cam_a",
+            1,
+            frames,
+            centroid=(100.0, 100.0),
+            keypoints=None,
+            keypoint_conf=None,
+        )
+        tb = _make_tracklet(
+            "cam_b",
+            1,
+            frames,
+            centroid=(100.0, 100.0),
+            keypoints=None,
+            keypoint_conf=None,
+        )
+
+        # Converging rays
+        lut_a = MockForwardLUT(
+            "cam_a", np.array([0.0, 0.0, 0.0]), np.array([1.0, 0.0, 1.0])
+        )
+        lut_b = MockForwardLUT(
+            "cam_b", np.array([1.0, 0.0, 0.0]), np.array([-1.0, 0.0, 1.0])
+        )
+        forward_luts = {"cam_a": lut_a, "cam_b": lut_b}
+
+        config = MockAssociationConfig(use_multi_keypoint_scoring=False, t_min=3)
+        score = score_tracklet_pair(ta, tb, forward_luts, config)
+
+        assert score > 0.0, (
+            f"Expected nonzero score for centroid-only path, got {score}"
+        )
+        assert score <= 1.0, f"Score must be in [0,1], got {score}"
+
+    def test_centroid_only_score_in_unit_interval(self) -> None:
+        """Centroid-only score is in [0, 1]."""
+        frames = tuple(range(10))
+        ta = _make_tracklet("cam_a", 1, frames)
+        tb = _make_tracklet("cam_b", 1, frames)
+
+        lut_a = MockForwardLUT(
+            "cam_a", np.array([0.0, 0.0, 0.0]), np.array([1.0, 0.0, 1.0])
+        )
+        lut_b = MockForwardLUT(
+            "cam_b", np.array([1.0, 0.0, 0.0]), np.array([-1.0, 0.0, 1.0])
+        )
+        forward_luts = {"cam_a": lut_a, "cam_b": lut_b}
+
+        config = MockAssociationConfig(use_multi_keypoint_scoring=False, t_min=3)
+        score = score_tracklet_pair(ta, tb, forward_luts, config)
+
+        assert 0.0 <= score <= 1.0
+
+    def test_multi_kpt_toggle_true_returns_nonzero(self) -> None:
+        """score_tracklet_pair with use_multi_keypoint_scoring=True (default) is nonzero."""
+        frames = tuple(range(10))
+        ta = _make_tracklet("cam_a", 1, frames)
+        tb = _make_tracklet("cam_b", 1, frames)
+
+        lut_a = MockForwardLUT(
+            "cam_a", np.array([0.0, 0.0, 0.0]), np.array([1.0, 0.0, 1.0])
+        )
+        lut_b = MockForwardLUT(
+            "cam_b", np.array([1.0, 0.0, 0.0]), np.array([-1.0, 0.0, 1.0])
+        )
+        forward_luts = {"cam_a": lut_a, "cam_b": lut_b}
+
+        config = MockAssociationConfig(use_multi_keypoint_scoring=True, t_min=3)
+        score = score_tracklet_pair(ta, tb, forward_luts, config)
+
+        assert score > 0.0
+        assert score <= 1.0
+
+    def test_centroid_only_divergent_returns_zero(self) -> None:
+        """Centroid-only scoring with divergent rays returns 0."""
+        frames = tuple(range(10))
+        ta = _make_tracklet("cam_a", 1, frames)
+        tb = _make_tracklet("cam_b", 1, frames)
+
+        lut_a = MockDivergentForwardLUT("cam_a")
+        lut_b = MockDivergentForwardLUT("cam_b")
+        forward_luts = {"cam_a": lut_a, "cam_b": lut_b}
+
+        config = MockAssociationConfig(
+            use_multi_keypoint_scoring=False, early_k=3, t_min=3
+        )
+        score = score_tracklet_pair(ta, tb, forward_luts, config)
+
+        assert score == 0.0

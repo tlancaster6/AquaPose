@@ -449,8 +449,12 @@ class TuningOrchestrator:
         )
         _compute_association_score(baseline_assoc, baseline_recon)
 
-        # Phase 1: Joint 2D grid over ray_distance_threshold x score_min
-        joint_params = ["ray_distance_threshold", "score_min"]
+        # Phase 1: Joint 3D grid over ray_distance_threshold x score_min x keypoint_confidence_floor
+        joint_params = [
+            "ray_distance_threshold",
+            "score_min",
+            "keypoint_confidence_floor",
+        ]
         joint_values = [grid[p] for p in joint_params]
         joint_combos = list(itertools.product(*joint_values))
 
@@ -484,7 +488,8 @@ class TuningOrchestrator:
             joint_grid_results.append(entry)
             print(
                 f"  ray_dist={params['ray_distance_threshold']:.3f} "
-                f"score_min={params['score_min']:.3f} -> "
+                f"score_min={params['score_min']:.3f} "
+                f"kpt_floor={params['keypoint_confidence_floor']:.2f} -> "
                 f"yield={assoc_m.fish_yield_ratio:.1%} "
                 f"error={recon_m.mean_reprojection_error:.2f}px"
             )

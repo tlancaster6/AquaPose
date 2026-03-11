@@ -193,6 +193,114 @@ def ray_ray_closest_point_batch(
 # ---------------------------------------------------------------------------
 
 
+def _score_pair_centroid_only(
+    tracklet_a: Tracklet2D,
+    tracklet_b: Tracklet2D,
+    forward_luts: dict[str, ForwardLUT],
+    config: AssociationConfigLike,
+    *,
+    frame_count: int | None = None,
+) -> float:
+    """Score a cross-camera tracklet pair using single centroid rays (v3.7 baseline).
+
+    Casts one ray per tracklet per frame from the tracklet centroid pixel,
+    computes the ray-ray closest-point distance, and applies the same soft
+    linear kernel as the multi-keypoint path.  Serves as a v3.7 baseline for
+    apples-to-apples comparison when ``use_multi_keypoint_scoring=False``.
+
+    Args:
+        tracklet_a: First tracklet (from camera A).
+        tracklet_b: Second tracklet (from camera B).
+        forward_luts: Per-camera ForwardLUT dict.
+        config: Scoring configuration.
+        frame_count: Total frames in chunk (for overlap reliability).
+
+    Returns:
+        Affinity score in [0, 1]. Zero if insufficient overlap or early
+        termination triggered.
+    """
+    cam_a = tracklet_a.camera_id
+    cam_b = tracklet_b.camera_id
+
+    frames_a = {f: i for i, f in enumerate(tracklet_a.frames)}
+    frames_b = {f: i for i, f in enumerate(tracklet_b.frames)}
+
+    shared_frames = sorted(set(tracklet_a.frames) & set(tracklet_b.frames))
+    t_shared = len(shared_frames)
+
+    if t_shared < config.t_min:
+        return 0.0
+
+    lut_a = forward_luts[cam_a]
+    lut_b = forward_luts[cam_b]
+
+    # Gather centroid pixels for shared frames
+    idx_a = [frames_a[f] for f in shared_frames]
+    idx_b = [frames_b[f] for f in shared_frames]
+
+    cents_a = np.array(
+        [tracklet_a.centroids[i] for i in idx_a], dtype=np.float64
+    )  # (N, 2)
+    cents_b = np.array(
+        [tracklet_b.centroids[i] for i in idx_b], dtype=np.float64
+    )  # (N, 2)
+
+    # Determine early-termination split
+    early_k = config.early_k
+    if t_shared <= early_k:
+        early_idx = slice(None)
+        remaining_slice: slice | None = None
+    else:
+        early_idx = slice(0, early_k)
+        remaining_slice = slice(early_k, None)
+
+    def _score_centroid_batch(pix_a: np.ndarray, pix_b: np.ndarray) -> float:
+        """Score a batch of centroid pairs, returns sum of soft contributions."""
+        pix_a_t = torch.tensor(pix_a, dtype=torch.float32)
+        pix_b_t = torch.tensor(pix_b, dtype=torch.float32)
+
+        origins_a, dirs_a = lut_a.cast_ray(pix_a_t)
+        origins_b, dirs_b = lut_b.cast_ray(pix_b_t)
+
+        oa = origins_a.cpu().numpy().astype(np.float64)
+        da = dirs_a.cpu().numpy().astype(np.float64)
+        ob = origins_b.cpu().numpy().astype(np.float64)
+        db = dirs_b.cpu().numpy().astype(np.float64)
+
+        dists = ray_ray_closest_point_batch(oa, da, ob, db)  # (N,)
+        contributions = np.where(
+            dists < config.ray_distance_threshold,
+            1.0 - dists / config.ray_distance_threshold,
+            0.0,
+        )
+        return float(contributions.sum())
+
+    # Phase 1: score early frames
+    early_sum = _score_centroid_batch(cents_a[early_idx], cents_b[early_idx])
+
+    # Early termination: no inliers in first early_k frames
+    if t_shared >= early_k and early_sum == 0.0:
+        return 0.0
+
+    # Phase 2: remaining frames
+    total_sum = early_sum
+    if remaining_slice is not None:
+        total_sum += _score_centroid_batch(
+            cents_a[remaining_slice], cents_b[remaining_slice]
+        )
+
+    # Soft inlier fraction
+    f = total_sum / t_shared
+
+    # Overlap reliability
+    effective_saturate = (
+        min(config.t_saturate, frame_count) if frame_count else config.t_saturate
+    )
+    w = min(t_shared, effective_saturate) / effective_saturate
+
+    return f * w
+
+
 def score_tracklet_pair(
     tracklet_a: Tracklet2D,
     tracklet_b: Tracklet2D,
@@ -207,6 +315,9 @@ def score_tracklet_pair(
     matched keypoint ray-ray distances (nose-to-nose, head-to-head, etc.),
     aggregates per-frame via arithmetic mean, and applies a soft linear kernel.
 
+    When ``config.use_multi_keypoint_scoring`` is ``False``, falls back to the
+    v3.7 centroid-only path (single ray per frame) for baseline comparison.
+
     Args:
         tracklet_a: First tracklet (from camera A).
         tracklet_b: Second tracklet (from camera B).
@@ -218,6 +329,12 @@ def score_tracklet_pair(
         Affinity score in [0, 1]. Zero if insufficient overlap, missing
         keypoints, or early termination triggered.
     """
+    # v3.7 baseline: centroid-only scoring (toggle before keypoints check)
+    if not config.use_multi_keypoint_scoring:
+        return _score_pair_centroid_only(
+            tracklet_a, tracklet_b, forward_luts, config, frame_count=frame_count
+        )
+
     # No centroid fallback: keypoints required
     if tracklet_a.keypoints is None or tracklet_b.keypoints is None:
         return 0.0

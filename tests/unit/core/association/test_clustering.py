@@ -1,4 +1,4 @@
-"""Unit tests for Leiden-based tracklet clustering and fragment merging."""
+"""Unit tests for Leiden-based tracklet clustering."""
 
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ leidenalg = pytest.importorskip("leidenalg")
 from aquapose.core.association.clustering import (  # noqa: E402
     build_must_not_link,
     cluster_tracklets,
-    merge_fragments,
 )
 
 # ---------------------------------------------------------------------------
@@ -29,7 +28,6 @@ class MockClusteringConfig:
     score_min: float = 0.3
     expected_fish_count: int = 2
     leiden_resolution: float = 1.0
-    max_merge_gap: int = 30
 
 
 def _make_tracklet(
@@ -225,107 +223,6 @@ class TestClusterTracklets:
 
         assert any("cluster count" in msg.lower() for msg in caplog.messages)
         assert len(groups) != 5
-
-
-# ---------------------------------------------------------------------------
-# merge_fragments tests
-# ---------------------------------------------------------------------------
-
-
-class TestMergeFragments:
-    """Tests for same-camera fragment merging."""
-
-    def test_non_overlapping_merge(self) -> None:
-        """Two non-overlapping same-camera tracklets merge with interpolation."""
-        from aquapose.core.association.types import TrackletGroup
-
-        t1 = _make_tracklet("cam_a", 1, (0, 1, 2), centroid=(100.0, 100.0))
-        t2 = _make_tracklet("cam_a", 2, (5, 6, 7), centroid=(200.0, 200.0))
-
-        group = TrackletGroup(fish_id=0, tracklets=(t1, t2), confidence=0.5)
-        config = MockClusteringConfig(max_merge_gap=30)
-
-        result = merge_fragments([group], config)
-
-        assert len(result) == 1
-        merged_group = result[0]
-        # Should have 1 tracklet (merged) instead of 2
-        assert len(merged_group.tracklets) == 1
-
-        merged = merged_group.tracklets[0]
-        # Should contain frames 0-7 (with 3,4 interpolated)
-        assert "interpolated" in merged.frame_status
-
-    def test_coasted_overlap_merge(self) -> None:
-        """Two tracklets with coasted overlap: trim and merge."""
-        from aquapose.core.association.types import TrackletGroup
-
-        t1 = _make_tracklet(
-            "cam_a",
-            1,
-            (0, 1, 2, 3, 4),
-            centroid=(100.0, 100.0),
-            statuses=("detected", "detected", "detected", "coasted", "coasted"),
-        )
-        t2 = _make_tracklet(
-            "cam_a",
-            2,
-            (3, 4, 5, 6, 7),
-            centroid=(200.0, 200.0),
-            statuses=("coasted", "coasted", "detected", "detected", "detected"),
-        )
-
-        group = TrackletGroup(fish_id=0, tracklets=(t1, t2), confidence=0.5)
-        config = MockClusteringConfig(max_merge_gap=30)
-
-        result = merge_fragments([group], config)
-
-        assert len(result) == 1
-        # Should merge since no detection-backed overlap
-        merged_group = result[0]
-        assert len(merged_group.tracklets) == 1
-
-        merged = merged_group.tracklets[0]
-        # Should have detected frames from both
-        detected_frames = [
-            f
-            for f, s in zip(merged.frames, merged.frame_status, strict=False)
-            if s == "detected"
-        ]
-        assert 0 in detected_frames
-        assert 5 in detected_frames
-
-    def test_exceeds_max_gap(self) -> None:
-        """Fragments separated by more than max_merge_gap are NOT merged."""
-        from aquapose.core.association.types import TrackletGroup
-
-        t1 = _make_tracklet("cam_a", 1, (0, 1, 2), centroid=(100.0, 100.0))
-        t2 = _make_tracklet("cam_a", 2, (100, 101, 102), centroid=(200.0, 200.0))
-
-        group = TrackletGroup(fish_id=0, tracklets=(t1, t2), confidence=0.5)
-        config = MockClusteringConfig(max_merge_gap=5)
-
-        result = merge_fragments([group], config)
-
-        assert len(result) == 1
-        # Both tracklets should remain separate
-        assert len(result[0].tracklets) == 2
-
-    def test_cross_camera_not_merged(self) -> None:
-        """Tracklets from different cameras are never merged."""
-        from aquapose.core.association.types import TrackletGroup
-
-        t1 = _make_tracklet("cam_a", 1, (0, 1, 2), centroid=(100.0, 100.0))
-        t2 = _make_tracklet("cam_b", 1, (0, 1, 2), centroid=(200.0, 200.0))
-
-        group = TrackletGroup(fish_id=0, tracklets=(t1, t2), confidence=0.5)
-        config = MockClusteringConfig(max_merge_gap=30)
-
-        result = merge_fragments([group], config)
-
-        assert len(result) == 1
-        # 2 tracklets remain (different cameras)
-        assert len(result[0].tracklets) == 2
 
 
 # ---------------------------------------------------------------------------

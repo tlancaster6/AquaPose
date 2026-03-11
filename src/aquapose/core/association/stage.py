@@ -60,7 +60,6 @@ class AssociationStage:
         from aquapose.core.association.clustering import (
             build_must_not_link,
             cluster_tracklets,
-            merge_fragments,
         )
         from aquapose.core.association.scoring import score_all_pairs
 
@@ -98,10 +97,7 @@ class AssociationStage:
         mnl = build_must_not_link(tracks_2d)
         groups = cluster_tracklets(scores, tracks_2d, mnl, self._config.association)
 
-        # Step 4: Merge fragments
-        groups = merge_fragments(groups, self._config.association)
-
-        # Step 5: Geometric refinement via 3D triangulation
+        # Step 4: Geometric refinement via 3D triangulation
         if forward_luts is not None:
             from aquapose.core.association.refinement import refine_clusters
 

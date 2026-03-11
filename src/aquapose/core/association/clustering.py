@@ -1,8 +1,7 @@
-"""Leiden-based tracklet clustering with must-not-link constraints and fragment merging.
+"""Leiden-based tracklet clustering with must-not-link constraints.
 
-Implements SPECSEED Steps 2-4: graph construction from scored edges, Leiden
-community detection, must-not-link enforcement for same-camera conflicts, and
-same-camera fragment merging with interpolated gap frames.
+Implements SPECSEED Steps 2-3: graph construction from scored edges, Leiden
+community detection, and must-not-link enforcement for same-camera conflicts.
 """
 
 from __future__ import annotations
@@ -21,7 +20,6 @@ __all__ = [
     "ClusteringConfigLike",
     "build_must_not_link",
     "cluster_tracklets",
-    "merge_fragments",
 ]
 
 
@@ -42,13 +40,11 @@ class ClusteringConfigLike(Protocol):
         score_min: Minimum affinity score for an edge.
         expected_fish_count: Expected number of fish clusters.
         leiden_resolution: Leiden resolution parameter.
-        max_merge_gap: Maximum frame gap for fragment merging.
     """
 
     score_min: float
     expected_fish_count: int
     leiden_resolution: float
-    max_merge_gap: int
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +59,7 @@ def build_must_not_link(
 
     Two tracklets from the same camera are must-not-link if they share any
     frames where both have ``frame_status == "detected"``. Coasted-only
-    overlap is NOT a constraint (those are fragment merge candidates).
+    overlap does not create a must-not-link constraint.
 
     Args:
         tracks_2d: Per-camera tracklet lists.
@@ -282,224 +278,3 @@ def cluster_tracklets(
         )
 
     return groups
-
-
-# ---------------------------------------------------------------------------
-# Fragment merging (SPECSEED Step 4)
-# ---------------------------------------------------------------------------
-
-
-def merge_fragments(
-    groups: list[TrackletGroup],
-    config: ClusteringConfigLike,
-) -> list[TrackletGroup]:
-    """Merge same-camera non-overlapping fragments within each cluster.
-
-    For each TrackletGroup, identifies same-camera tracklets that can be
-    merged (non-overlapping, within ``max_merge_gap`` frames). Gap frames
-    are filled with linearly interpolated centroids tagged as
-    ``"interpolated"``.
-
-    Args:
-        groups: TrackletGroup list from ``cluster_tracklets()``.
-        config: Clustering configuration with max_merge_gap.
-
-    Returns:
-        Updated TrackletGroup list with merged fragments.
-    """
-    merged_groups: list[TrackletGroup] = []
-
-    for group in groups:
-        tracklets_by_cam: dict[str, list[Tracklet2D]] = {}
-        for t in group.tracklets:
-            tracklets_by_cam.setdefault(t.camera_id, []).append(t)
-
-        new_tracklets: list[Tracklet2D] = []
-
-        for _cam_id, cam_tracklets in tracklets_by_cam.items():
-            # Sort by first frame
-            cam_tracklets = sorted(cam_tracklets, key=lambda t: t.frames[0])
-
-            merged_cam = _merge_cam_fragments(cam_tracklets, config.max_merge_gap)
-            new_tracklets.extend(merged_cam)
-
-        merged_groups.append(
-            TrackletGroup(
-                fish_id=group.fish_id,
-                tracklets=tuple(new_tracklets),
-                confidence=group.confidence,
-            )
-        )
-
-    return merged_groups
-
-
-def _merge_cam_fragments(
-    tracklets: list[Tracklet2D],
-    max_merge_gap: int,
-) -> list[Tracklet2D]:
-    """Merge a sorted list of same-camera tracklets where possible.
-
-    Args:
-        tracklets: Same-camera tracklets sorted by first frame.
-        max_merge_gap: Maximum gap in frames to allow merging.
-
-    Returns:
-        Merged tracklet list (may be shorter than input).
-    """
-    if len(tracklets) <= 1:
-        return list(tracklets)
-
-    result: list[Tracklet2D] = []
-    current = tracklets[0]
-
-    for next_t in tracklets[1:]:
-        merged = _try_merge_pair(current, next_t, max_merge_gap)
-        if merged is not None:
-            current = merged
-        else:
-            result.append(current)
-            current = next_t
-
-    result.append(current)
-    return result
-
-
-def _try_merge_pair(
-    earlier: Tracklet2D,
-    later: Tracklet2D,
-    max_merge_gap: int,
-) -> Tracklet2D | None:
-    """Try to merge two same-camera tracklets.
-
-    Returns merged Tracklet2D or None if merge is not possible.
-    """
-    from aquapose.core.tracking.types import Tracklet2D
-
-    # Check for detection-backed overlap
-    det_earlier = {
-        f
-        for f, s in zip(earlier.frames, earlier.frame_status, strict=False)
-        if s == "detected"
-    }
-    det_later = {
-        f
-        for f, s in zip(later.frames, later.frame_status, strict=False)
-        if s == "detected"
-    }
-
-    if det_earlier & det_later:
-        logger.debug(
-            "Detection-backed overlap between tracklets %s-%d and %s-%d; skipping merge",
-            earlier.camera_id,
-            earlier.track_id,
-            later.camera_id,
-            later.track_id,
-        )
-        return None
-
-    # Get the last detected frame of earlier and first detected frame of later
-    earlier_det_frames = sorted(det_earlier)
-    later_det_frames = sorted(det_later)
-
-    if not earlier_det_frames or not later_det_frames:
-        # Can't merge without detected frames
-        return None
-
-    last_det_earlier = earlier_det_frames[-1]
-    first_det_later = later_det_frames[0]
-
-    gap = first_det_later - last_det_earlier - 1
-
-    if gap > max_merge_gap:
-        return None
-
-    # Build merged tracklet:
-    # 1. Keep all detected frames from both tracklets
-    # 2. Discard coasted frames
-    # 3. Interpolate the gap
-
-    frames_list: list[int] = []
-    centroids_list: list[tuple[float, float]] = []
-    bboxes_list: list[tuple[float, float, float, float]] = []
-    status_list: list[str] = []
-
-    # Add detected frames from earlier
-    for f, c, b, s in zip(
-        earlier.frames,
-        earlier.centroids,
-        earlier.bboxes,
-        earlier.frame_status,
-        strict=False,
-    ):
-        if s == "detected":
-            frames_list.append(f)
-            centroids_list.append(c)
-            bboxes_list.append(b)
-            status_list.append("detected")
-
-    # Get last detected centroid and bbox from earlier for interpolation
-    last_centroid = centroids_list[-1]
-    last_bbox = bboxes_list[-1]
-
-    # Get first detected centroid and bbox from later for interpolation
-    first_later_idx = later_det_frames[0]
-    first_later_pos = None
-    first_later_bbox_val = None
-    for f, c, b, s in zip(
-        later.frames,
-        later.centroids,
-        later.bboxes,
-        later.frame_status,
-        strict=False,
-    ):
-        if f == first_later_idx and s == "detected":
-            first_later_pos = c
-            first_later_bbox_val = b
-            break
-
-    if first_later_pos is None or first_later_bbox_val is None:
-        return None
-
-    # Interpolate gap frames
-    if gap > 0:
-        for g_idx in range(1, gap + 1):
-            alpha = g_idx / (gap + 1)
-            interp_u = last_centroid[0] + alpha * (
-                first_later_pos[0] - last_centroid[0]
-            )
-            interp_v = last_centroid[1] + alpha * (
-                first_later_pos[1] - last_centroid[1]
-            )
-            interp_bx = last_bbox[0] + alpha * (first_later_bbox_val[0] - last_bbox[0])
-            interp_by = last_bbox[1] + alpha * (first_later_bbox_val[1] - last_bbox[1])
-            interp_bw = last_bbox[2] + alpha * (first_later_bbox_val[2] - last_bbox[2])
-            interp_bh = last_bbox[3] + alpha * (first_later_bbox_val[3] - last_bbox[3])
-
-            frames_list.append(last_det_earlier + g_idx)
-            centroids_list.append((interp_u, interp_v))
-            bboxes_list.append((interp_bx, interp_by, interp_bw, interp_bh))
-            status_list.append("interpolated")
-
-    # Add detected frames from later
-    for f, c, b, s in zip(
-        later.frames,
-        later.centroids,
-        later.bboxes,
-        later.frame_status,
-        strict=False,
-    ):
-        if s == "detected":
-            frames_list.append(f)
-            centroids_list.append(c)
-            bboxes_list.append(b)
-            status_list.append("detected")
-
-    return Tracklet2D(
-        camera_id=earlier.camera_id,
-        track_id=earlier.track_id,
-        frames=tuple(frames_list),
-        centroids=tuple(centroids_list),
-        bboxes=tuple(bboxes_list),
-        frame_status=tuple(status_list),
-    )

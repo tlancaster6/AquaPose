@@ -140,7 +140,6 @@ class AssociationConfig:
         min_shared_voxels: Minimum shared voxels for camera pair adjacency.
             Default 100.
         leiden_resolution: Resolution parameter for Leiden clustering. Default 1.0.
-        max_merge_gap: Maximum frame gap for fragment merging. Default 30.
         eviction_reproj_threshold: Maximum median ray-to-consensus-point distance
             (metres) for a tracklet to remain in its cluster. Default 0.025
             (2.5 cm -- fish are ~10 cm long, ~2 cm wide).
@@ -170,7 +169,6 @@ class AssociationConfig:
     expected_fish_count: int = 9
     min_shared_voxels: int = 100
     leiden_resolution: float = 1.0
-    max_merge_gap: int = 30
     eviction_reproj_threshold: float = 0.025
     min_cameras_refine: int = 3
     refinement_enabled: bool = True

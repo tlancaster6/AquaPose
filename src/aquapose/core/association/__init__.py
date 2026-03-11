@@ -8,7 +8,6 @@ from aquapose.core.association.clustering import (
     ClusteringConfigLike,
     build_must_not_link,
     cluster_tracklets,
-    merge_fragments,
 )
 from aquapose.core.association.refinement import (
     RefinementConfigLike,
@@ -38,7 +37,6 @@ __all__ = [
     "TrackletGroup",
     "build_must_not_link",
     "cluster_tracklets",
-    "merge_fragments",
     "ray_ray_closest_point",
     "ray_ray_closest_point_batch",
     "refine_clusters",

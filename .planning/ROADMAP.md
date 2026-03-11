@@ -294,6 +294,16 @@ Plans:
 - [ ] 91-01-PLAN.md — Create recovery.py with scoring, assignment, split-assign, and same-camera constraint logic
 - [ ] 91-02-PLAN.md — Add config fields, wire into stage.py, update __init__.py exports
 
+### Phase 91.1: Association Bottleneck Investigation & Remediation (INSERTED)
+
+**Goal:** Fix association stage wall-time performance (452s → <30s per chunk). Add per-step timing instrumentation, vectorize all scalar ray-casting loops in validation.py and recovery.py, restructure split-assign to precompute residuals. Fix timing observer append behavior.
+**Requirements**: TBD
+**Depends on:** Phase 91
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 91.1 to break down)
+
 ### Phase 92: Parameter Tuning Pass
 **Goal**: New config parameters are empirically calibrated on real data; the final v3.8 association configuration is documented and validated against the v3.7 baseline
 **Depends on**: Phase 91

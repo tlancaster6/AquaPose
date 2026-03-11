@@ -24,6 +24,7 @@ import scipy.interpolate
 
 from aquapose.core.context import PipelineContext
 from aquapose.core.reconstruction.backends import get_backend
+from aquapose.core.types.detection import Detection
 from aquapose.core.types.midline import Midline2D
 from aquapose.core.types.reconstruction import Midline3D
 
@@ -413,10 +414,10 @@ class ReconstructionStage:
 
 
 def _find_matching_detection(
-    detection_list: list,
+    detection_list: list[Detection],
     centroid: tuple[float, float],
     tolerance: float = 10.0,
-) -> object | None:
+) -> Detection | None:
     """Find the Detection closest to a tracklet centroid.
 
     Args:

@@ -174,6 +174,9 @@ class AssociationConfig:
             split-assign sweep. Singletons shorter than
             2 * recovery_min_segment_length skip the sweep. Default 10
             (same as min_segment_length).
+        use_multi_keypoint_scoring: Toggle scoring method. ``True`` (default) uses
+            multi-keypoint ray distances (v3.8). ``False`` uses single centroid rays
+            (v3.7 behavior) for baseline comparison.
     """
 
     ray_distance_threshold: float = 0.03
@@ -196,6 +199,7 @@ class AssociationConfig:
     recovery_residual_threshold: float = 0.025
     recovery_min_shared_frames: int = 3
     recovery_min_segment_length: int = 10
+    use_multi_keypoint_scoring: bool = True
 
 
 @dataclass(frozen=True)

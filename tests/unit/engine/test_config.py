@@ -465,3 +465,24 @@ def test_midline_config_default_keypoint_confidence_floor() -> None:
 
     cfg = PoseConfig()
     assert cfg.keypoint_confidence_floor == pytest.approx(0.3)
+
+
+# ---------------------------------------------------------------------------
+# 13. AssociationConfig.use_multi_keypoint_scoring (Phase 92-01)
+# ---------------------------------------------------------------------------
+
+
+def test_association_config_use_multi_keypoint_scoring_defaults_true() -> None:
+    """AssociationConfig.use_multi_keypoint_scoring defaults to True."""
+    from aquapose.engine.config import AssociationConfig
+
+    cfg = AssociationConfig()
+    assert cfg.use_multi_keypoint_scoring is True
+
+
+def test_association_config_use_multi_keypoint_scoring_false() -> None:
+    """AssociationConfig with use_multi_keypoint_scoring=False can be constructed."""
+    from aquapose.engine.config import AssociationConfig
+
+    cfg = AssociationConfig(use_multi_keypoint_scoring=False)
+    assert cfg.use_multi_keypoint_scoring is False

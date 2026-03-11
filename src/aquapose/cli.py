@@ -359,9 +359,11 @@ def tune_cmd(
     run_dir = resolve_run(run, get_project_dir(ctx))
     config_path = run_dir / "config_exhaustive.yaml"
     if not config_path.exists():
+        config_path = run_dir / "config.yaml"
+    if not config_path.exists():
         raise click.ClickException(
-            f"config_exhaustive.yaml not found in {run_dir}. "
-            "Run the pipeline with --add-observer diagnostic to generate it."
+            f"No config found in {run_dir}. "
+            "Run the pipeline first to generate a run directory."
         )
 
     setup_file_logging(run_dir, "tune")

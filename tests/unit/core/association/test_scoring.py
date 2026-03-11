@@ -36,6 +36,7 @@ class MockAssociationConfig:
     min_shared_voxels: int = 1
     keypoint_confidence_floor: float = 0.3
     aggregation_method: str = "mean"
+    use_multi_keypoint_scoring: bool = True
 
 
 class MockForwardLUT:

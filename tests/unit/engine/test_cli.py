@@ -338,3 +338,83 @@ class TestSyntheticMode:
             "cli_overrides", {}
         )
         assert overrides.get("mode") == "synthetic"
+
+
+class TestTuneCLI:
+    """Tests for the tune subcommand config fallback (Phase 92-01)."""
+
+    def test_tune_falls_back_to_config_yaml_when_exhaustive_absent(
+        self,
+        runner: click.testing.CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """tune resolves config.yaml when config_exhaustive.yaml is absent.
+
+        The CLI should NOT raise "config_exhaustive.yaml not found" when only
+        config.yaml exists in the run dir. Instead it falls through to attempt
+        TuningOrchestrator construction (which may fail for other reasons —
+        we only verify the error message is NOT the old gating error).
+        """
+        # Create run dir with only config.yaml (no config_exhaustive.yaml)
+        run_dir = tmp_path / "runs" / "run_20260101_000000"
+        run_dir.mkdir(parents=True)
+        (run_dir / "config.yaml").write_text("n_animals: 3\n")
+
+        proj_dir = tmp_path
+        (proj_dir / "config.yaml").write_text("n_animals: 3\n")
+
+        monkeypatch.setattr(
+            "aquapose.cli_utils.resolve_project",
+            lambda name: proj_dir,
+        )
+
+        result = runner.invoke(
+            cli,
+            [
+                "--project",
+                "test",
+                "tune",
+                "run_20260101_000000",
+                "--stage",
+                "association",
+            ],
+        )
+
+        # Should NOT fail with the old "config_exhaustive.yaml not found" gate
+        assert "config_exhaustive.yaml not found" not in result.output, result.output
+
+    def test_tune_fails_when_no_config_at_all(
+        self,
+        runner: click.testing.CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """tune raises ClickException when neither config file exists."""
+        # Create run dir with NO config files
+        run_dir = tmp_path / "runs" / "run_empty"
+        run_dir.mkdir(parents=True)
+
+        proj_dir = tmp_path
+        (proj_dir / "config.yaml").write_text("n_animals: 3\n")
+
+        monkeypatch.setattr(
+            "aquapose.cli_utils.resolve_project",
+            lambda name: proj_dir,
+        )
+
+        result = runner.invoke(
+            cli,
+            [
+                "--project",
+                "test",
+                "tune",
+                "run_empty",
+                "--stage",
+                "association",
+            ],
+        )
+
+        # Should fail with non-zero exit and "No config found" message
+        assert result.exit_code != 0
+        assert "No config found" in result.output

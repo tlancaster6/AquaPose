@@ -54,6 +54,9 @@ class AssociationConfigLike(Protocol):
             from the frame's distance computation.
         aggregation_method: Method to aggregate per-keypoint distances within a
             frame. Currently only ``"mean"`` is supported.
+        use_multi_keypoint_scoring: Toggle scoring method. ``True`` uses
+            multi-keypoint ray distances (v3.8). ``False`` uses single centroid
+            rays (v3.7 baseline).
     """
 
     ray_distance_threshold: float
@@ -64,6 +67,7 @@ class AssociationConfigLike(Protocol):
     min_shared_voxels: int
     keypoint_confidence_floor: float
     aggregation_method: str
+    use_multi_keypoint_scoring: bool
 
 
 # ---------------------------------------------------------------------------

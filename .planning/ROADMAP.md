@@ -267,7 +267,10 @@ Plans:
   2. `backends/segmentation.py`, skeletonization code, and orientation resolution logic that only applied to segmentation are gone from the codebase — no dead imports or stale references
   3. `PipelineContext` and all stage interfaces reflect the new stage ordering and accept pose outputs from Stage 2
   4. All existing unit tests pass; any tests that depended on the old stage order or segmentation backend are updated or removed
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 81-01-PLAN.md — Rename core/midline to core/pose, reorder pipeline, update PipelineContext and Detection type
+- [ ] 81-02-PLAN.md — Delete segmentation/orientation code, update consumers, fix all tests
 
 ### Phase 82: Association Upgrade — Keypoint Centroid
 **Goal**: Cross-view association uses the mid-body keypoint position instead of the OBB centroid, making ray-based matching more stable under partial occlusion and frame-edge clipping
@@ -334,7 +337,7 @@ Phases execute in numeric order: 78 -> 79 (conditional) -> 80 -> 81 -> 82 -> 83 
 | 78.1 OBB & Pose Production Retrain | 2/2 | Complete    | 2026-03-10 | - |
 | 79. Occlusion Remediation (Conditional) | v3.7 | 0/0 | Skipped | 2026-03-10 |
 | 80. Baseline Metrics | 1/1 | Complete   | 2026-03-11 | - |
-| 81. Pipeline Reorder & Segmentation Removal | v3.7 | 0/TBD | Not started | - |
+| 81. Pipeline Reorder & Segmentation Removal | v3.7 | 0/2 | Planned | - |
 | 82. Association Upgrade — Keypoint Centroid | v3.7 | 0/TBD | Not started | - |
 | 83. Custom Tracker Implementation | v3.7 | 0/TBD | Not started | - |
 | 84. Integration & Evaluation | v3.7 | 0/TBD | Not started | - |

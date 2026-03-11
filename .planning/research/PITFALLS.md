@@ -1,295 +1,212 @@
 # Pitfalls Research
 
-**Domain:** Iterative pseudo-label retraining, curvature-stratified evaluation, and mixed-source training data management for multi-view fish pose estimation
-**Researched:** 2026-03-06
-**Confidence:** HIGH — pitfalls derived from codebase inspection (store.py, pseudo_labels.py, elastic_deform.py, evaluation stages), project memory (association tuning, augmentation experiment), and verified semi-supervised learning literature.
+**Domain:** Adding multi-keypoint association scoring, temporal changepoint detection, and singleton recovery to an existing multi-view fish tracking pipeline (v3.8 Improved Association milestone)
+**Researched:** 2026-03-11
+**Confidence:** HIGH — pitfalls derived from direct codebase inspection of scoring.py, refinement.py, keypoint_tracker.py, and tracking/types.py; v3.7 project memory (ForwardLUT coordinate-space mismatch post-mortem); design document in association_multikey_rework.md; and structural analysis of the vectorized broadcasting patterns already in production.
 
-> **Scope note:** This file covers pitfalls specific to v3.6 Model Iteration & QA: running the pseudo-label retraining loop end-to-end, adding curvature-stratified and per-keypoint evaluation metrics, bootstrapping the data store from manual annotations, and mixing manual + pseudo + augmented labels. Prior milestone pitfalls (v3.4) are preserved below the milestone-specific section.
-
----
-
-## v3.6 Model Iteration & QA Pitfalls
-
-The primary risk sources for this milestone are:
-
-1. **Confirmation bias in pseudo-label retraining** — the model reinforces its own errors across rounds, especially for underrepresented body poses.
-2. **Train/val contamination from shared image sources** — pseudo-labels generated from the same video frames used for validation create information leakage.
-3. **Elastic augmentation double-counting with pseudo-labels** — augmented samples of pseudo-labeled data compound noise without increasing effective diversity.
-4. **Curvature-stratified evaluation with insufficient bin counts** — small sample sizes per bin produce unstable metrics that look like real signals.
-5. **Short-run vs full-run behavioral differences** — models and metrics tuned on 1-minute clips may not generalize to full 5-minute runs.
-6. **Algae domain shift between manual annotations and current conditions** — clean-tank training labels vs. algae-laden current conditions.
-7. **OBB corner order mismatch between training and pseudo-label generation** — `pca_obb` returns [TL, TR, BR, BL] but Ultralytics inference returns [RB, RT, LT, LB].
-8. **Store dedup silently dropping pseudo-labels that match manual annotation images** — content-hash dedup means same-frame pseudo-labels are skipped if a manual annotation exists.
+> **Scope note:** This file covers pitfalls specific to the v3.8 milestone: extending vectorized centroid scoring to multi-keypoint scoring, adding changepoint-based group validation, singleton recovery with swap splitting, and removing refinement. Prior milestone pitfalls (v3.6, v3.4) are preserved in the git history of PITFALLS.md and are not repeated here.
 
 ---
 
-### Pitfall P1: Confirmation Bias Amplifies Errors Across Retraining Rounds
+## Critical Pitfalls
+
+### Pitfall P1: Tracklet2D Does Not Carry Keypoints — Silent Data Loss
 
 **What goes wrong:**
-Round 0 model produces pseudo-labels that reflect its systematic biases (e.g., underestimating curvature, missing low-contrast females, hallucinating detections on algae). Round 1 model trains on these biased labels. When round 1 generates pseudo-labels, those same biases are now reinforced with higher confidence. By round 2, the model has "learned" that curved fish are rare and algae patches are fish. The confidence scores in `compute_confidence_score` (pseudo_labels.py) measure reconstruction quality, not detection correctness — a confidently-wrong detection of algae at 3-camera consensus still gets score > 0.5.
+The `KeypointTracker` builder accumulates per-frame keypoints (`shape (6, 2)`) in `_TrackletBuilder.keypoints`, but `_TrackletBuilder.to_tracklet2d()` constructs `Tracklet2D` with only `frames`, `centroids`, `bboxes`, and `frame_status`. Keypoints are dropped. `Tracklet2D` has no `keypoints` attribute.
+
+Multi-keypoint scoring requires `K` keypoints per frame per tracklet. If the implementation reads `tracklet.keypoints` or tries to build a `(T, K, 2)` array from tracklets, it will get an `AttributeError` or silently use only centroids.
 
 **Why it happens:**
-The confidence scoring formula (50% residual + 30% camera count + 20% variance) measures geometric consistency of the 3D reconstruction. An algae patch visible from multiple cameras can produce a geometrically consistent but semantically wrong reconstruction. The confidence score cannot distinguish "well-reconstructed wrong object" from "well-reconstructed fish." Additionally, the ~22% singleton rate means reconstructions come from a biased subset of fish appearances (those visible to 3+ cameras in good conditions), underrepresenting hard cases.
+`Tracklet2D` was designed when centroid-only scoring was the contract. The builder always had keypoints for internal OKS cost computation, but `to_tracklet2d()` was never updated to expose them. The design document acknowledges the multi-keypoint requirement but does not mention that `Tracklet2D` must be extended first.
 
 **How to avoid:**
-- After each pseudo-label generation round, use `pseudo-label inspect` to visually audit at least 50 labels, specifically looking for: (a) non-fish objects with high confidence, (b) curved fish with low confidence being filtered out, (c) repeated detection of the same background feature across frames.
-- Track per-round statistics: if the curvature distribution of pseudo-labels shifts toward straighter fish across rounds, confirmation bias is occurring.
-- Use a fixed held-out validation set of manual annotations only (`pseudo_in_val=False` in `assemble()` — this is already the default). Never let pseudo-labels contaminate val.
-- Consider capping pseudo-label contribution at a fixed ratio (e.g., no more than 3:1 pseudo:manual) to prevent the training signal from being dominated by self-generated labels.
-- Compare round N metrics to round 0 baseline on the exact same val set. If val metrics plateau or degrade, stop iterating.
+Extend `Tracklet2D` with a `keypoints` field (e.g., `tuple[tuple[tuple[float, float], ...], ...]` — one tuple of `(u, v)` per keypoint per frame) and a matching `keypoint_confidences` field (one float per keypoint per frame, from the detection confidence). Update `_TrackletBuilder.to_tracklet2d()` to populate both from `builder.keypoints` and the per-frame detection confidence arrays. This is a prerequisite change that must be done before any multi-keypoint scoring code runs. Also extend `ChunkHandoff` serialization if it round-trips `Tracklet2D` state across chunk boundaries.
 
 **Warning signs:**
-- Val loss or mAP improves on pseudo-label-heavy training metrics but stagnates or regresses on manual-only val.
-- Curvature distribution of pseudo-labels in round N is narrower (more straight-fish biased) than round N-1.
-- Algae false positive rate does not decrease across rounds despite appearing to be filtered by confidence threshold.
-- Detection count per frame increases across rounds (model becomes less selective, hallucinating more detections).
+- `AttributeError: 'Tracklet2D' object has no attribute 'keypoints'` in association stage
+- Tests pass with centroid-only scoring but integration tests fail when switching to multi-keypoint
+- Multi-keypoint scoring silently falls back to single-centroid if it reads `centroids` as a proxy without asserting the keypoints field exists
 
 **Phase to address:**
-Phase 73 (Round 1 Pseudo-Label Generation). Must establish monitoring before first retraining. Phase 74 decision checkpoint should explicitly check for these signs.
+First implementation phase — extend `Tracklet2D` before writing any scoring code. This is a contract-breaking change that will require updating all test fixtures, golden data checks, and any code that constructs `Tracklet2D` directly.
 
 ---
 
-### Pitfall P2: Train/Val Leakage Through Temporal Proximity of Pseudo-Labeled Frames
+### Pitfall P2: LUT Coordinate Space Mismatch — The Exact Prior Bug Returns
 
 **What goes wrong:**
-Pseudo-labels are generated from pipeline diagnostic caches that process continuous video (200-frame chunks at 30fps). Temporal subsampling selects frames for the training set, but adjacent frames (even 1 second apart) contain nearly identical fish positions, poses, and backgrounds. If frame 100 ends up in training and frame 103 ends up in validation (both from the same chunk), the model memorizes the near-identical scene and val metrics are inflated. The `assemble()` method in `store.py` splits by shuffled sample order, not by temporal block — it has no awareness of frame temporal proximity.
+This bug already destroyed the v3.7 association quality (86% singleton rate before fix). `ForwardLUT.cast_ray()` expects pixel coordinates in the undistorted space (K_new, fx~1364). If keypoint pixel coordinates from `Tracklet2D` are in distorted space (K, fx~1587), the ~14% focal length mismatch inflates ray-ray distances by a factor that prevents most associations, producing near-100% singletons.
 
-Additionally, manual annotations (~50 full-frame images) come from the same video sequences. If any manual annotation frames overlap temporally with pseudo-label frames, train-val split can place a manual frame in val and a pseudo-labeled near-duplicate in train.
+With multi-keypoint scoring, the risk multiplies: there are now 6 pixel coordinates per frame instead of 1. Any one of those keypoints being in the wrong coordinate space will corrupt the per-keypoint ray and contaminate the aggregate score. Keypoints from coasted frames (interpolated by the KF) are in KF state space, which is undistorted. Keypoints from directly-observed frames come from `detection.keypoints`, which must be verified to be in undistorted space.
 
 **Why it happens:**
-The `SampleStore.assemble()` uses a random split of val-eligible samples. The content-hash dedup prevents exact duplicates, but near-duplicates (adjacent frames) have different pixel content and different hashes. The store has no temporal metadata (frame index, timestamp) in its split logic. The `pseudo_in_val=False` flag correctly keeps pseudo-labels out of val, but if a pseudo-labeled frame is 1 second from a manual val frame, the model has effectively seen the val scene during training.
+The original bug was that `generate_forward_luts` was called without `undistortion_maps`, so it used the raw distorted K matrix. The fix passed `undistortion_maps`. But when keypoints are added to `Tracklet2D`, any new code path that obtains pixel positions from `Detection.keypoints` and stores them in the tracklet must ensure those positions are already in undistorted space. If `DetectionStage` or `PoseEstimationStage` returns keypoints in raw camera/distorted pixel coordinates, and the undistortion only happens inside `ForwardLUT.cast_ray()`, then there is no mismatch. But if the detection pipeline applies distortion correction internally and keypoints are already corrected to a different K, casting them through the LUT again will double-correct.
 
 **How to avoid:**
-- For the short iteration clip (~1 min), use a temporal holdout: reserve the first or last 15 seconds as val-only. No pseudo-labels from those frames enter training. This is a stronger guarantee than random splitting.
-- Add `frame_index` and `camera_id` to pseudo-label metadata at import time (the metadata dict in `import_sample` supports arbitrary keys). Use these to enforce temporal separation in dataset assembly.
-- For this milestone's 1-2 rounds, the practical mitigation is simple: generate pseudo-labels only from the training temporal window, not the val window. Run pipeline on the full clip but exclude val-window frames from pseudo-label export.
-- At minimum, verify: no pseudo-label sample ID shares the same `(camera_id, frame_index)` as any val sample. A post-assembly sanity check script should enforce this.
+- Before implementing multi-keypoint scoring, document the coordinate space of `Detection.keypoints` at the output of the `PoseEstimationStage`. Trace the YOLO inference output through to `Detection.keypoints` and confirm whether these are raw (distorted) or undistorted pixel coordinates.
+- Write a unit test that: takes a known 3D keypoint, projects it to 2D via the calibration forward model, stores it as a fake `Tracklet2D` keypoint, calls `ForwardLUT.cast_ray()`, and verifies the back-cast ray passes within 2mm of the original 3D point. This tests the full keypoint→ray round-trip for multi-keypoint scoring.
+- Add a bounds check: keypoints from a 1600x1200 camera with valid undistorted K should fall within [0, 1600] x [0, 1200]. Keypoints outside this range (or outside the OBB bbox) at rate > 1% indicate coordinate space confusion.
 
 **Warning signs:**
-- Val mAP or OKS is suspiciously high (> 0.95 on a dataset with known hard cases like low-contrast females).
-- Val metrics improve dramatically when pseudo-labels are added to training, even though pseudo-labels are not in val — this suggests the pseudo-labels contain near-duplicates of val frames.
-- Model performs well on val but poorly on the full 5-minute validation run (Phase 76), indicating overfitting to the short clip's temporal neighborhood.
+- Singleton rate after v3.8 implementation is > 40% on the benchmark clip (expect target ~15% vs v3.7 ~27%)
+- Per-keypoint ray-ray distances are uniformly 14% larger than expected (same pattern as the original LUT bug)
+- Association quality degrades on keypoints further from centroid (head, tail) while spine keypoints perform better — inconsistent spatial scaling is a sign of coordinate mismatch
 
 **Phase to address:**
-Phase 71 (Data Store Bootstrap) — establish temporal split convention before any data enters the store. Phase 72 (Baseline Pipeline Run) — confirm val set is temporally disjoint from training region.
+Multi-keypoint scoring implementation phase — write and run the round-trip test before any end-to-end evaluation.
 
 ---
 
-### Pitfall P3: Elastic Augmentation Applied to Pseudo-Labels Compounds Noise
+### Pitfall P3: Broadcasting Shape Mismatch When Extending to K Keypoints
 
 **What goes wrong:**
-The seed document (v3.6-SEED.md Phase 73, step 5) specifies "Pose: manual + elastic augmentation + pseudo (Source A with confidence filtering)." If elastic augmentation (`generate_variants` in elastic_deform.py) is applied to pseudo-labeled samples, the TPS warp deforms images whose keypoint labels already have sub-pixel errors from the reprojection chain (3D spline -> refractive projection -> pixel). The deformation assumes ground-truth keypoint positions are accurate control points for the TPS warp. Pseudo-label keypoint errors of 2-5 pixels propagate through the TPS warp, producing misaligned deformed images where the fish body is warped but the keypoints do not match the warped anatomy. This creates training samples where the model learns to associate incorrect keypoint positions with the fish appearance.
+The current `_batch_score_frames` vectorizes across `N` shared frames: `pix_a` is `(N, 2)`, `origins_a` is `(N, 3)`, `dists` is `(N,)`. Extending to `K` keypoints changes the shape to `(N, K, 2)` pixels, `(N, K, 3)` origins and directions, and `(N, K)` distances. If the implementation naively reshapes to `(N*K, 2)` before `cast_ray`, the LUT call works, but masking by keypoint confidence (not all K keypoints are valid on every frame) must happen before the reshape. Doing it after would require inverse-mapping masked indices back to `(frame, keypoint)` pairs — complex and error-prone.
+
+The confidence filtering also introduces a ragged structure: some frames contribute 2 keypoints, some contribute 6. A dense `(N, K, 2)` representation requires filling invalid slots with sentinel values and masking after the fact. `ray_ray_closest_point_batch` is correct for any input shape but will compute ray-ray distances for sentinel pixels and produce valid-looking but meaningless distance values unless the mask is applied before aggregation.
 
 **Why it happens:**
-Elastic augmentation was designed and tested on manual annotations (v3.5 experiment: OKS slope improvement from -0.71 to -0.30). Manual annotations have sub-pixel accuracy. Pseudo-labels from 3D reprojection have residual errors of ~3 pixels (the per-camera residual threshold). The `generate_variants` function takes coordinates and visibility arrays at face value; it has no notion of label confidence or uncertainty. Applying the same augmentation pipeline to both manual (high quality) and pseudo (medium quality) labels without differentiation treats all labels as equally trustworthy.
+NumPy broadcasting makes it easy to write code that runs without error but operates on the wrong elements. Confidence masks that are computed correctly but applied one step too late (after ray casting instead of before) will pass all shape checks and produce numerical outputs — just wrong ones. This is especially dangerous because the failure mode (slightly inflated ray distances for low-confidence keypoints) will look like a modest degradation rather than a crash.
 
 **How to avoid:**
-- Apply elastic augmentation only to manual-source samples, not pseudo-labeled samples. The `parent_id` and `source` fields in the store make this query straightforward: `store.query(source="manual")` for augmentation, then `store.query()` for assembly.
-- The v3.6-SEED.md already suggests evaluating "whether elastic augmentation is still needed in round 2 — pseudo-label curvature diversity sampling may make it redundant." Take this seriously: if round 1 pseudo-labels already contain diverse curvatures (check with `compute_curvature` from pseudo_labels.py), elastic augmentation adds noise without adding diversity.
-- If augmenting pseudo-labels is ever desired, restrict to high-confidence samples only (confidence > 0.8) and reduce the deformation angle range to (2.0, 5.0) degrees to limit the TPS warp magnitude.
+- Decide on representation before writing code: either flatten to `(N*K_valid, 2)` with a frame+keypoint index array tracking which `(frame, kpt)` each ray belongs to, or keep the dense `(N, K, 2)` representation with NaN-filled invalid slots and mask after distance computation. The flattened approach is simpler to reason about but requires building the index arrays.
+- Write a reference implementation using per-frame Python loops first, verify it produces the correct output on a synthetic example with known ground truth, then vectorize and compare. The loop version is the correctness oracle; the vectorized version is the performance optimization.
+- Unit-test the shape transitions explicitly: for `N=5` frames with `K=6` keypoints and `confidence=[1,1,0,1,0,0]` on one frame, verify that the per-frame score correctly uses only the 4 valid keypoints on that frame, not 6.
 
 **Warning signs:**
-- OKS scores on curved fish decrease after adding augmented pseudo-labels, despite improving on the original augmented-manual experiment.
-- Visual inspection of augmented pseudo-label crops shows misalignment between fish body and keypoint positions (keypoints floating off the fish midline).
-- Training loss for pose model does not converge as cleanly as the baseline (noisy loss curve indicates conflicting gradient signals from misaligned labels).
+- Score values increase uniformly when K is increased from 1 to 6 — if low-confidence keypoints are not filtered, every extra keypoint adds noise that should not contribute
+- Association quality improves with K=3 but degrades with K=6 — more keypoints adding noise, indicating confidence filtering is not working
+- Unit tests on synthetic data pass but real-data association quality is worse than single-centroid baseline
 
 **Phase to address:**
-Phase 73 (Round 1 dataset assembly). Decision: apply augmentation only to manual samples. Phase 75 (Round 2) — re-evaluate whether pseudo-label curvature diversity makes augmentation redundant.
+Multi-keypoint scoring implementation phase — write unit tests against synthetic ground truth before touching real data.
 
 ---
 
-### Pitfall P4: Curvature-Stratified Evaluation With Unstable Bin Statistics
+### Pitfall P4: Aggregation Function Choices Across K Keypoints Are Load-Bearing
 
 **What goes wrong:**
-Phase 70 adds curvature-stratified reconstruction quality: "compute curvature from 3D spline, bin reconstructions into curvature quantiles, report reprojection error per bin." On a 1-minute clip (1800 frames, 9 fish, ~22% singleton rate), the reconstruction yield is roughly 1800 * 9 * 0.78 = ~12,600 fish-frame reconstructions. If binned into 5 curvature quantiles, each bin has ~2,500 samples — sufficient. But if binned into 10 quantiles, the extreme curvature bins (very straight and very curved) may have only 200-400 samples due to the non-uniform curvature distribution. Reporting mean reprojection error per bin with N=200 gives a standard error of ~0.2 px (assuming 3 px std), which is comparable to the differences between bins you are trying to measure. Worse: on a short clip, a single fish that swims in circles for 5 seconds dominates the high-curvature bin, making the metric a measurement of one individual, not a population statistic.
+The design document specifies "aggregate per-keypoint ray-ray distances into a richer affinity score" but does not specify the aggregation function. The current single-centroid scoring uses a soft linear kernel `1 - dist / threshold` summed across frames and normalized. With K keypoints, a natural extension sums the soft kernel across all `(frame, keypoint)` pairs and normalizes by the total number of valid pairs. But this treats all keypoints equally, and the design document notes that "mid-body keypoints (head, spine1, spine2) are expected to carry most of the signal; nose and tail are noisy."
 
-**Why it happens:**
-Curvature-stratified evaluation is conceptually appealing but the sample sizes within extreme bins are small by nature — most fish are approximately straight most of the time, so the high-curvature bins are inherently data-poor. Using quantile binning (rather than fixed-threshold binning) ensures equal counts per bin, but the extreme-curvature bin still measures a narrow curvature range that may not be representative of the curvature range that matters for evaluation.
+If equal-weight aggregation is used, a fish pair where tail keypoints give high distance but spine keypoints give low distance will score poorly even though the spine evidence is strong. Per-keypoint weighting requires either learned weights (too complex) or anatomically motivated priors (tail has higher variance → lower weight). Using the wrong aggregation will not crash — it will silently produce weaker discrimination than single-centroid, defeating the purpose of the entire milestone.
+
+Separately, the reliability-weighting factor `w = min(t_shared, t_saturate) / t_saturate` is computed once per pair at the frame level. With multi-keypoint scoring, each frame now contributes up to K evidence points. The overlap window `t_shared` counts frames, not frame×keypoint pairs. Reusing the same `w` is correct if aggregation is per-frame (average K keypoints per frame, then sum frames). If aggregation is across all `(frame, keypoint)` pairs without per-frame averaging, the effective `t_shared` should be weighted by average keypoints-per-frame, not raw frame count. Using raw frame count with flat aggregation will overweight frames with high keypoint coverage relative to frames where only 2 keypoints were visible.
 
 **How to avoid:**
-- Use quantile binning (not fixed thresholds) to guarantee minimum sample count per bin. Report N per bin alongside mean and p90 error.
-- Use 3-5 bins maximum for the short iteration clip. Reserve finer binning (10+) for the full 5-minute validation run in Phase 76.
-- Report bootstrap confidence intervals (95% CI) per bin, not just point estimates. A 95% CI that overlaps between round 0 and round 1 means the difference is not significant — do not claim improvement.
-- For the short clip, use the metric directionally (does the trend improve?) rather than as an absolute measurement. The Phase 76 full-run evaluation is where fine-grained curvature analysis becomes statistically meaningful.
+- Start with mean-of-valid-keypoints per frame, then sum frames and normalize by `t_shared`. This is the direct extension of the current per-frame soft kernel and preserves the `w` weighting semantics exactly. Every frame contributes exactly 1 aggregated score regardless of how many keypoints were valid on that frame.
+- After the mean-per-frame baseline is working and evaluated against v3.7, consider per-keypoint weighting as a tuning step. Do not implement weighting before establishing the baseline multi-keypoint result.
+- Keep the old single-centroid scoring path runnable via config flag during the transition, so A/B comparison is possible without re-running the full pipeline from scratch.
 
 **Warning signs:**
-- Extreme curvature bins have fewer than 100 samples — any per-bin metric is noise.
-- Mean error per bin fluctuates wildly between runs on the same clip (unstable due to small N).
-- One bin shows dramatic improvement but visual inspection reveals it is dominated by one fish in one temporal segment.
+- Multi-keypoint scoring gives worse association quality than single-centroid on the benchmark clip — indicates aggregation is compounding noise rather than averaging it out
+- Score distribution shifts right (higher scores for all pairs) with K=6 vs K=1 — indicates valid and invalid keypoints are being counted equally
+- Head-end pairs score differently from tail-end pairs for the same ground-truth fish pair — indicates tail keypoint noise is dominating
 
 **Phase to address:**
-Phase 70 (Metrics & Comparison Infrastructure). Choose bin count and document minimum sample size requirements before implementation.
+Multi-keypoint scoring implementation phase — establish aggregation approach before implementation and document the choice.
 
 ---
 
-### Pitfall P5: Per-Keypoint Reprojection Error Conflates Z-Uncertainty With Pose Error
+### Pitfall P5: Changepoint Detection False Positives on Short Tracklets
 
 **What goes wrong:**
-Phase 70 adds per-keypoint reprojection breakdown (head through tail). The tail keypoint will systematically show higher reprojection error than the head keypoint, and this will be interpreted as "the model is less accurate at the tail." But the true cause is different: the tail occupies a larger z-range during swimming (tail oscillation amplitude > head oscillation amplitude), and z-reconstruction uncertainty is 132x larger than XY. The tail's higher reprojection error reflects z-reconstruction noise propagated through refractive projection, not pose model inaccuracy. The head may actually be less accurate in the model (harder to localize on a featureless fish head) but appear better due to smaller z-oscillation.
+The design document's changepoint detection "finds the split point that maximizes the difference in mean residual between the two halves, subject to a minimum segment length." On a 200-frame chunk, a typical tracklet spans 50-150 frames. The residual series for a correctly associated tracklet has non-zero variance from keypoint jitter, partial occlusion, and fish proximity events. A "best split" search over a 50-frame residual series will always find some split that looks like a local mean difference — even for random noise, the expected maximum mean difference is O(σ / sqrt(min_segment)). With min_segment=5 frames and σ≈0.5 threshold units, the expected false-positive maximum is ~0.22 threshold units. If the significance threshold is set too permissively, correctly associated tracklets will be split in half.
+
+The consequences are worse than missed swaps: a false split evicts a valid tracklet segment to singleton status. In singleton recovery, this orphaned segment must compete against all groups. If it matches back to its original group (which it should, since it was correct), the round-trip adds no value and the group is identical to before splitting. But if singleton recovery is less sensitive than group validation (as stated in the design document: "stricter threshold"), the orphaned segment may fail to rejoin and become a permanent singleton, reducing the group's temporal coverage.
 
 **Why it happens:**
-Reprojection error conflates two sources: (a) model localization error in 2D, and (b) 3D reconstruction error propagated back to 2D. For the AquaPose rig with top-down cameras, z-error is the dominant reconstruction error source. The tail moves more in z (swimming oscillation), amplifying source (b) for tail keypoints. A naive per-keypoint breakdown attributes all reprojection error to model quality, when the dominant variance is actually geometric.
+The CUSUM-style "maximum mean difference split" is a naive changepoint test. It has no null distribution calibration — it always returns a "best" split point regardless of whether any split is statistically significant. The significance threshold (the minimum acceptable mean difference between halves) must be calibrated against the expected residual noise on a correctly-associated tracklet, which depends on the number of keypoints used, the fish density, and the distance threshold. Using a fixed threshold without calibration guarantees either too many false splits (permissive) or too few true detections (conservative).
 
 **How to avoid:**
-- Report per-keypoint error alongside per-keypoint z-range (standard deviation of z-coordinate across frames for each keypoint index). If high-error keypoints also have high z-variance, note that the error is z-dominated, not model-dominated.
-- Consider XY-only reprojection error as a supplementary metric: project only the XY components of 3D points to 2D (ignoring z) and compare to observed keypoints. This isolates model accuracy from z-reconstruction noise.
-- When comparing round 0 vs round 1, look at the relative change per keypoint, not absolute values. If the tail error decreases proportionally to the head error, the model improved uniformly; if the tail does not improve, the bottleneck is z-uncertainty, not the model.
+- Compute an expected noise baseline: for 100 confirmed-correct tracklets from the v3.7 benchmark run, compute the per-frame residual series and measure the typical within-tracklet residual variance. Use 2×σ_noise as the minimum mean-difference threshold for changepoint detection.
+- Enforce a minimum segment length of at least 10 frames (not the design document's unspecified "minimum segment length"). With 30fps video and typical fish swap events lasting ~1-3 seconds, a 10-frame minimum filters noise while still catching swaps.
+- After implementing, measure the false positive rate explicitly: count how many segments produced by changepoint splitting successfully rejoin their original group in singleton recovery. A rate > 30% indicates too many false splits.
+- Consider using a permutation test on the residual series: shuffle the per-frame residuals, compute the best split for 1000 shuffles, and only accept a split if the observed max-mean-difference exceeds the 95th percentile of the shuffled distribution. This is more expensive but provides proper statistical calibration.
 
 **Warning signs:**
-- Tail keypoints consistently show 2-3x higher reprojection error than head keypoints, independent of model version — this is the z-uncertainty baseline, not a model deficiency.
-- Per-keypoint improvement from retraining is concentrated in the middle keypoints (spine1-spine3) and absent at head/tail — suggests the improvement is in body pose, not localization.
-- Per-keypoint error is interpreted as a reason to add more training data for tail keypoints when the real bottleneck is z-reconstruction geometry.
+- Group count increases dramatically after group validation (e.g., from 9 groups to 25 post-validation) — indicates mass false splitting
+- Short tracklets (< 20 frames) are split more often than long tracklets — short series are more susceptible to noise-driven apparent changepoints
+- After full pipeline, more singletons exist post-v3.8 than post-v3.7 — net effect is negative despite the intended improvement
 
 **Phase to address:**
-Phase 70 (Metrics & Comparison Infrastructure). Document the z-uncertainty confound when implementing per-keypoint analysis.
+Group validation implementation phase — calibrate significance threshold against confirmed-correct tracklets before deploying.
 
 ---
 
-### Pitfall P6: Short-Run Metrics Do Not Predict Full-Run Performance
+### Pitfall P6: Singleton Recovery Assigns Singletons to Wrong Group Under Fish Proximity
 
 **What goes wrong:**
-The iteration loop (Phases 72-75) uses ~1 minute clips (~1800 frames, ~9 chunks). The final validation (Phase 76) uses the full 5-minute clip (~9450 frames, ~47 chunks). Several pipeline behaviors change at longer durations:
+The design document acknowledges: "Fish swimming in close parallel for an extended period produce ambiguous residuals against both groups throughout." This is not the only ambiguous case. A singleton tracklet from a camera with narrow field of view angle to two fish may produce similar ray-ray distances to both fish groups because the projection geometry is poor (near-parallel rays from that camera to both fish). The singleton recovery assigns the singleton to the group with the lowest median residual — which may be determined by 2-3 frames where the fish briefly separated, not by the full-tracklet evidence.
 
-- **OC-SORT tracker state accumulation**: Track IDs are carried across chunks via ChunkHandoff. In short runs, few track births/deaths occur. In long runs, ID swaps from tracker drift accumulate, and the association stage may see more fragmented tracklets.
-- **Chunk boundary artifacts**: Identity stitching at chunk boundaries is tested 8 times in a short run vs 46 times in a full run. Rare stitching bugs that occur 1-in-20 boundaries are invisible in short runs but produce 2-3 visible artifacts in the full run.
-- **Temporal variation in fish behavior**: A 1-minute clip may capture fish in a limited behavioral repertoire (e.g., all swimming slowly). The full clip may contain bursts of fast swimming, territorial interactions, or occlusion events that the short clip never samples.
-- **Algae visibility is time-varying**: Suspended particles settle over time; lighting conditions shift slightly. The short clip's algae false positive rate may not represent the full clip.
+If singleton recovery assigns a tracklet to the wrong group, reconstruction for that group in those frames gets a cross-keypoint signal from a different fish. The error propagates through DLT triangulation as outlier measurements, reducing reconstruction confidence and potentially shifting the estimated midline toward the wrong fish. This is worse than leaving the tracklet as a singleton (no contribution to reconstruction) because a wrong assignment actively corrupts reconstruction.
 
 **Why it happens:**
-The seed document explicitly chose short clips for "fast loop turnaround" (~12 min runtime vs ~12 hours). This is a reasonable engineering tradeoff, but the risk is that iteration decisions are made on unrepresentative data. Pipeline stages that have O(T) or O(T^2) failure modes (tracking drift, association graph complexity) are masked in short runs.
+The "strong overall match to one group" criterion requires computing per-frame residuals against all groups and identifying a clear winner. The threshold for "strong match" is set per the design document without specifying calibration. If the threshold is too loose, a singleton with moderately low residuals to two different groups (due to geometric ambiguity) gets assigned to whichever group happens to have slightly lower average residual — a statistically meaningless distinction.
 
 **How to avoid:**
-- Treat short-run iteration metrics as directional (better/worse than baseline) not absolute (final quality). State this explicitly in Phase 72 output.
-- In Phase 76 (Full Validation), prepare for metrics that are worse than the short-run numbers. If reprojection error on the full run is 20% higher than the short run, that is expected — do not re-iterate based on this.
-- Run `aquapose eval` on at least 3 non-overlapping 1-minute segments of the full clip to check for temporal stability. If metrics vary >30% across segments, the short run was unrepresentative.
-- Use the short run to validate that models are not catastrophically worse, and the full run to validate that they are production-ready.
+- Add a gap criterion: only assign a singleton to a group if the best-group residual is significantly lower than the second-best-group residual (e.g., the margin exceeds 30% of the threshold). If two groups are within 30% of each other, leave the singleton unassigned.
+- Measure the rate of "competitive assignments" (singleton has residuals within 30% to two groups) on the benchmark clip. If this rate is > 10%, the geometry of this rig makes singleton recovery ambiguous for many tracklets and a more conservative threshold is warranted.
+- After implementing singleton recovery, verify reconstruction quality does not degrade: compare per-frame reprojection error for groups with recovered singletons vs. groups without. If groups with recovered singletons have worse reprojection, singleton recovery is adding more noise than signal and the threshold should be tightened.
 
 **Warning signs:**
-- Short-run singleton rate is 18% but full-run singleton rate is 28% (tracker drift creates more fragmented tracklets → more association failures).
-- Short-run overlay videos look clean but full-run overlay videos show ID swaps in the second half.
-- Per-round improvement measured on short clips does not transfer to the full validation run.
+- Reprojection error increases in groups that gained singletons vs. groups that did not
+- The same camera-tracklet is recovered into different groups on different benchmark runs (instability under noise)
+- Reconstruction shows brief "jumps" in the 3D midline at frame boundaries that correspond to frames covered by a recovered singleton
 
 **Phase to address:**
-Phase 72 (Baseline Pipeline Run) — document that metrics are short-run-specific. Phase 76 (Final Validation) — expect and plan for metric regression from short-run numbers.
+Singleton recovery implementation phase — verify reconstruction quality before and after recovery via the existing `aquapose eval` infrastructure.
 
 ---
 
-### Pitfall P7: Manual Annotation Domain Shift (Clean Tank vs. Algae Conditions)
+### Pitfall P7: Removing Refinement Without an Equivalent Gate Breaks Downstream Confidence
 
 **What goes wrong:**
-The ~50 manual annotation images were created "when tank was freshly cleaned" (v3.6-SEED.md). Current conditions include "algae on tank walls causing persistent false positives." The OBB detection model's training data shows a clean background; the pseudo-labels come from a pipeline running on algae-contaminated video. If the baseline model (trained on clean-tank manual annotations) produces many algae false positives, those false detections propagate through tracking, association, and potentially into pseudo-labels (if the algae patch is visible from enough cameras to form a plausible 3D reconstruction). The confidence scoring will filter some but not all: a stationary algae blob visible from 4+ cameras with consistent reprojection will score above typical confidence thresholds.
+The current `refine_clusters()` in `refinement.py` produces three outputs consumed downstream: (1) evicted tracklets are made singletons (group membership change), (2) `per_frame_confidence` is populated for each group, and (3) `consensus_centroids` are set. The reconstruction stage and evaluation stage may read `per_frame_confidence` and `consensus_centroids` from `TrackletGroup`. If refinement is removed but no equivalent computation fills these fields, downstream code sees `None` where it previously saw valid data.
+
+The design document says refinement is "replaced by group validation in step 4," but group validation produces evicted singletons, not per-frame confidence or consensus centroids. If reconstruction reads `consensus_centroids` to weight DLT triangulation inputs (or uses `per_frame_confidence` to filter frames), setting these to `None` in all groups will silently degrade reconstruction.
 
 **Why it happens:**
-The domain gap between training data (clean tank) and inference data (algae present) is a classic distribution shift. The model has never seen algae-on-glass textures during training, so it cannot distinguish them from low-contrast fish. The confidence scoring measures geometric reconstruction quality, which is unrelated to semantic correctness — a well-triangulated algae patch scores just like a well-triangulated fish.
+The design document focuses on the algorithmic replacement (group validation subsumes refinement's eviction function) but does not address the data contract. `TrackletGroup` is a frozen dataclass with optional `per_frame_confidence` and `consensus_centroids` fields that were populated by refinement. Removing the computation without tracing all consumers of those fields creates a silent API break.
 
 **How to avoid:**
-- After Phase 72 (baseline pipeline run), manually count false positives in the overlay video. If algae FPs are significant (>5% of detections), add negative examples: crop algae regions, create empty-label files, and import into the store as `source=manual` with tag `negative_example`.
-- Pseudo-label filtering should include a temporal consistency check: real fish move; algae patches are stationary. If a pseudo-labeled "fish" has centroid displacement < 1 pixel across 10+ consecutive frames, flag it for exclusion.
-- For OBB pseudo-labels specifically, consider excluding labels whose 3D centroid is within 2cm of the tank wall (using the known tank geometry: cylindrical, 2m diameter, 1m tall). Algae grows on walls; fish do not rest against walls for extended periods.
+- Before removing `refinement.py`, grep the codebase for all reads of `TrackletGroup.per_frame_confidence` and `TrackletGroup.consensus_centroids`. Determine whether any downstream code has conditional logic on these fields being non-None.
+- If reconstruction or evaluation uses these fields, group validation must populate equivalent values. The design document's "fresh ray casting for each group" in step 4 could produce `per_frame_confidence` as a side effect without a separate pass.
+- Consider deprecating but not removing refinement first (set `refinement_enabled=False` as the default config) to confirm the downstream impact before deleting the code.
 
 **Warning signs:**
-- Detection count per frame is higher than expected (9 fish, but model detects 12-15 per camera consistently).
-- Pseudo-label generation produces labels at fixed positions across many frames (same pixel location, frame after frame — this is background, not a fish).
-- After round 1 retraining, false positive rate does not decrease because the pseudo-labels themselves contained algae false positives that trained the round 1 model to detect algae.
+- Reconstruction quality degrades after removing refinement, even when group membership is equivalent
+- `aquapose eval` association evaluator produces different metrics (not just singleton rate) compared to v3.7 baseline — indicates downstream consumers of refinement outputs changed behavior
+- `TrackletGroup.consensus_centroids` is None for all groups and code that previously branched on this shows unexpected None-path behavior
 
 **Phase to address:**
-Phase 72 (Baseline Pipeline Run) — quantify algae FP rate before generating pseudo-labels. Phase 73 — add temporal-consistency and wall-proximity filters before importing pseudo-labels.
+Refinement removal phase — audit all consumers of `TrackletGroup.per_frame_confidence` and `consensus_centroids` before deletion.
 
 ---
 
-### Pitfall P8: OBB Corner Order Mismatch Between Training and Inference
+### Pitfall P8: Must-Not-Link Constraints Break When Tracklets Are Split
 
 **What goes wrong:**
-This is a known project pitfall (CLAUDE.md): "Ultralytics OBB `obb.xyxyxyxy` returns corners as `[right-bottom, right-top, left-top, left-bottom]` — not `[TL, TR, BR, BL]`." The pseudo-label generation code (`pca_obb` in geometry.py) computes OBB corners and formats them via `format_obb_annotation`. If the corner order from `pca_obb` does not match what Ultralytics expects during training, the model learns a different corner convention than what it predicts at inference. The YOLO OBB format is `class x1 y1 x2 y2 x3 y3 x4 y4` with normalized coordinates, and Ultralytics internally converts to xywhr. If corners are provided in a different winding order, the internal xywhr conversion produces a different rotation angle, and the model trains on incorrect box rotations.
+Must-not-link constraints prevent same-camera tracklets with overlapping frames from sharing a Leiden cluster. The constraints are stored as a set of `(key_a, key_b)` pairs where each key is `(camera_id, track_id)`. If group validation splits a tracklet into two segments (each becoming a new tracklet with its own ID), the must-not-link constraints from the original split tracklet do not automatically propagate to both fragments.
+
+Two scenarios: (a) The split produces two fragments from the same camera. They now share a camera and may have overlapping-frame windows from the original tracklet's neighbors. They should inherit the same must-not-link constraints as the original. (b) The split tracklet's key `(cam, track_id)` was in a must-not-link pair with another tracklet. Both new fragments should inherit this constraint. If neither case is handled, the Leiden graph used in singleton recovery will be missing edges that should block incorrect cluster merges.
 
 **Why it happens:**
-`pca_obb` returns [TL, TR, BR, BL] order (consistent with training data convention). `format_obb_annotation` normalizes and formats for YOLO OBB. This path has been used for manual annotation conversion (`generate_obb_dataset` in coco_convert.py) and presumably works correctly there. The risk is in the pseudo-label path: `generate_fish_labels` and `generate_gap_fish_labels` in pseudo_labels.py call the same `pca_obb` and `format_obb_annotation`, so the corner order should be consistent. But any new code that constructs OBB annotations from Ultralytics inference results (e.g., converting detections back to training labels) must reverse the Ultralytics corner order, not use it directly.
+Must-not-link constraints are computed once in `score_all_pairs` (or its equivalent) based on the original tracklet set. The design document says "constraints and clustering are unchanged" but that refers to the initial clustering pass. Group validation happens after Leiden clustering and creates new tracklet objects (fragments). These new objects were not part of the original constraint computation and have no entries in the scored pairs dictionary.
+
+However, the design document says singleton recovery does not re-run Leiden — it assigns singletons to existing groups directly via residual comparison. In that case, must-not-link constraints are not explicitly enforced during singleton recovery. This means a fragment from camera C could be assigned to a group that already has a tracklet from camera C for the same frames — violating the fundamental constraint.
 
 **How to avoid:**
-- Verify that `format_obb_annotation` produces the same corner order for both manual COCO conversion and pseudo-label generation. A unit test that round-trips a known OBB through `pca_obb` -> `format_obb_annotation` -> Ultralytics training -> Ultralytics inference -> compare should catch mismatches.
-- Never use Ultralytics `obb.xyxyxyxy` directly for training labels. Always go through `pca_obb` which produces the training convention.
-- When visualizing pseudo-labels for inspection, draw the OBB corners as a numbered polygon (corner 0, 1, 2, 3) to visually confirm the winding order matches the fish orientation (corner 0 should be at the head end, consistent with how `pca_obb` orients the box along the midline principal component).
+- Track the origin of each fragment: when splitting tracklet `(cam, old_id)` into segments, the new fragments should carry `origin_camera = cam` and `origin_frames` so that the singleton recovery step can check the same-camera overlap constraint directly before assigning.
+- In singleton recovery, before assigning a singleton to a group, verify that no tracklet in that group has the same `camera_id` and overlapping `frames`. This check is O(cameras × frames) and cheap.
+- Unit-test this: construct a scenario where a split fragment from camera C is offered to a group that already has a different tracklet from camera C with overlapping frames. Verify it is not assigned.
 
 **Warning signs:**
-- OBB predictions at inference are rotated 90 degrees or 180 degrees from expected orientation.
-- Training mAP for OBB is unusually low despite correct labels when visualized.
-- Pseudo-labeled OBB boxes look correct when drawn as rectangles (position/size right) but the rotation angle disagrees with the fish body axis.
+- Post-recovery groups have two tracklets from the same camera with overlapping frames
+- `TrackletGroup.tracklets` contains pairs `(cam_id, frame_set)` that overlap — detectable with a group validity check
+- 3D reconstruction errors spike on frames where two same-camera tracklets are active in the same group
 
 **Phase to address:**
-Phase 71 (Data Store Bootstrap) — verify corner order consistency between manual conversion and pseudo-label paths.
-
----
-
-### Pitfall P9: Store Content-Hash Dedup Silently Drops Same-Frame Pseudo-Labels
-
-**What goes wrong:**
-The `SampleStore.import_sample` uses SHA-256 of the image file for dedup. OBB pseudo-labels are full-frame images (the entire camera frame). If a manual annotation exists for the same frame (from the original ~50 annotated images), the image content hash will match, and the source-priority upsert logic (`SOURCE_PRIORITY = {"pseudo": 0, "corrected": 1, "manual": 2}`) will skip the pseudo-label import (manual priority 2 > pseudo priority 0). This is the correct behavior for that specific frame — you want the manual label, not the pseudo-label.
-
-However, for pose pseudo-labels, the situation is different. Pose labels are crop-space, and each annotation generates a unique crop. If the crop geometry (OBB corners) differs slightly between manual annotation and pseudo-label (due to different OBB computation paths), the crop images will have different hashes and both will be imported — creating a near-duplicate with conflicting labels. The same fish in the same frame would have two label files with slightly different keypoint positions.
-
-**Why it happens:**
-The store was designed for image-level dedup, which works perfectly for full-frame OBB labels. Crop-level pose labels break the assumption: same fish, same frame, slightly different crop geometry produces a different image hash. The content-hash dedup does not catch semantic duplicates (same fish, same frame, different crop).
-
-**How to avoid:**
-- For pose label import, add metadata fields `{"camera_id": ..., "frame_index": ..., "fish_id": ...}` and check for semantic duplicates before import. If a manual-source sample exists for the same (camera, frame, fish), skip the pseudo-label.
-- Alternatively, filter pseudo-labels at generation time: do not generate pseudo-labels for frames that are in the manual annotation set. The COCO JSON contains the annotated frame list; exclude those frames from pseudo-label generation.
-- The simpler approach for v3.6: since there are only ~50 manual annotation frames and ~1800 pseudo-label candidate frames, the overlap is tiny. Import manual annotations first, then import pseudo-labels with awareness of which frames are already covered.
-
-**Warning signs:**
-- Store `summary()` shows more samples than expected after importing pseudo-labels for a clip that includes manually annotated frames.
-- Pose training shows conflicting gradients (same crop, different keypoint positions) manifesting as oscillating loss.
-- `data assemble` includes both manual and pseudo crops for the same fish/frame, placing them in different splits.
-
-**Phase to address:**
-Phase 71 (Data Store Bootstrap) — import manual annotations first. Phase 73 — exclude manual annotation frames from pseudo-label generation.
-
----
-
-### Pitfall P10: Track Fragmentation Metric Confuses Occlusion Gaps With Detection Failures
-
-**What goes wrong:**
-Phase 70 adds "3D track fragmentation — post-association track count, gap count/duration stats, and continuity ratio." A gap occurs when a fish has no 3D reconstruction for one or more frames. Gaps have fundamentally different causes: (a) genuine occlusion (fish behind another fish, visible in <3 cameras), (b) detection failure (model missed the fish in enough cameras), (c) association failure (fish was detected but not associated across cameras). The gap detection code in `detect_gaps` (pseudo_labels.py) already classifies gaps as `no-detection`, `no-tracklet`, or `failed-midline`, but only for cameras where the InverseLUT says the fish should be visible. The track fragmentation metric needs to aggregate these gap classifications at the fish level, not just the camera level.
-
-If gaps are counted without classification, an "improvement" in track continuity could mean: (a) the model genuinely detects more fish (good), (b) the model hallucinates more detections including false positives (bad), or (c) the association stage is more aggressive and merges unrelated tracklets (bad). Without gap classification, track continuity is ambiguous as a quality metric.
-
-**Why it happens:**
-Track continuity is an intuitively appealing metric — higher is better. But in multi-view pose estimation, the pipeline has multiple failure modes that can masquerade as improved continuity. A model with more false positives and a looser association threshold will report higher track continuity than a more selective model, despite producing worse 3D reconstructions.
-
-**How to avoid:**
-- Report track continuity alongside singleton rate, detection count per frame, and reprojection error. If continuity improves but singleton rate or error worsens, the improvement is spurious.
-- Break down gap statistics by gap reason using the existing `detect_gaps` classifications. Report separate metrics: detection-gap-rate, tracking-gap-rate, midline-gap-rate.
-- Define a "clean reconstruction frame" as: fish has reconstruction AND reprojection error < threshold. Report clean-frame continuity, not just reconstruction-present continuity.
-
-**Warning signs:**
-- Track continuity improves across rounds while reprojection error increases — suggests more false associations, not better detection.
-- Gap count decreases but gap reason shifts from `no-detection` to `failed-midline` — means more detections but same midline failure rate.
-- Detection count per frame increases beyond 9 (there are only 9 fish) — hallucinated detections filling gaps.
-
-**Phase to address:**
-Phase 70 (Metrics & Comparison Infrastructure). Gap classification must be part of the fragmentation metric design.
-
----
-
-### Pitfall P11: COCO-to-YOLO Annotation Format Conversion Loses Visibility Information
-
-**What goes wrong:**
-Phase 71 converts manual COCO-JSON annotations to YOLO-OBB and YOLO-pose formats. The COCO keypoint format uses 3 visibility levels: `v=0` (not labeled), `v=1` (labeled but occluded), `v=2` (labeled and visible). The YOLO pose format also uses 3 levels but with different semantics: `0` (not visible), `1` (occluded), `2` (visible). The `parse_keypoints` function in `coco_convert.py` collapses visibility to boolean (`v > 0`), then `format_pose_annotation` in `geometry.py` writes `2` for visible and `0` for invisible. This correctly handles the dominant case but loses the COCO `v=1` (occluded but labeled) distinction, writing it as `v=2` (visible) in YOLO format. During training, the YOLO-pose loss treats `v=1` and `v=2` differently (COCO OKS uses visibility for sigma weighting). If occluded keypoints are marked as fully visible, the model is penalized for predicting positions of occluded keypoints with the same strictness as visible keypoints.
-
-For pseudo-labels, this is less of an issue because `generate_fish_labels` uses the refractive projection validity check (which determines geometric visibility, not occlusion). But for manual annotations with hand-labeled occluded keypoints, the distinction matters.
-
-**Why it happens:**
-The conversion was likely written for the common case (all keypoints visible in the training crops) and the occluded-keypoint edge case was not tested. The existing COCO annotations for AquaPose may have very few `v=1` keypoints if the annotator only labeled visible keypoints.
-
-**How to avoid:**
-- Check the existing COCO annotations for `v=1` occurrences. If none exist, this pitfall is academic. If they do exist, update `format_pose_annotation` to preserve the 3-level visibility.
-- For pseudo-labels, the current 2-level approach (visible=2, invisible=0) is correct — 3D-projected keypoints are either geometrically visible or not; there is no "occluded but labeled" concept in reprojection.
-
-**Warning signs:**
-- OKS evaluation treats all keypoints with equal sigma weighting when some should be down-weighted (occluded).
-- Manual annotations that include partially-occluded fish have unexpectedly low OKS scores because occluded keypoints are marked visible and penalized for imprecise position.
-
-**Phase to address:**
-Phase 71 (Data Store Bootstrap) — check COCO annotations for v=1 keypoints during conversion.
+Singleton recovery implementation phase — add a group validity assertion as a post-recovery invariant check.
 
 ---
 
@@ -299,27 +216,26 @@ Shortcuts that seem reasonable but create long-term problems.
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Skip algae FP audit before pseudo-label generation | Saves 30 min of manual inspection | Algae FPs propagate into training data, amplified across rounds, requiring full data store cleanup | Never |
-| Apply elastic augmentation to all samples uniformly | Simpler data assembly query | Noisy pseudo-label keypoints are deformed, producing misaligned training samples that degrade model accuracy on curved fish | Never — augment manual only |
-| Use random train/val split without temporal separation | Simpler implementation | Inflated val metrics from near-duplicate leakage; model appears better than it is; false confidence in iteration results | Only if pseudo-labels are excluded from val AND manual annotations are temporally separated from the iteration clip |
-| Hardcode curvature bin count | Simpler metric code | Unstable metrics on short clips; false claims of improvement in extreme curvature bins | Only as a default with N-per-bin reported alongside |
-| Skip round 0 baseline metrics | Jump straight to iteration | No basis for comparison; impossible to measure improvement; cannot detect regression | Never |
-| Trust `aquapose train compare` without visual inspection | Saves time on overlay review | Training metrics improve but pipeline metrics degrade (model learns to match training distribution, not real fish) | Never — visual inspection is the ground truth for this domain |
+| Skip extending `Tracklet2D` with keypoints; compute them freshly from detection cache in association stage | Avoids modifying the core type contract | Association stage becomes coupled to detection cache format; breaks the clean stage-output-as-input contract; fails when cache is unavailable | Never — extend `Tracklet2D` |
+| Use the same threshold for changepoint detection in group validation and singleton split detection | Single parameter to tune | Group validation operates on tracklets with strong group prior (lower FP cost); singleton detection has weak signal; same threshold leads to either over-splitting in validation or under-splitting in singleton recovery | Only as a starting point; split into two params after calibration |
+| Disable must-not-link constraints because multi-keypoint scoring makes them "unnecessary" | Simpler graph; faster Leiden | Constraints serve as a cheap safety net for near-parallel camera geometries where scoring is ambiguous; removing them risks rare but catastrophic multi-fish merges | Only after empirically confirming zero constraint violations on a full benchmark run |
+| Keep `refinement.py` as dead code with `refinement_enabled=False` | Easy rollback if removal causes issues | Dead code accrues maintenance burden; future changes to `TrackletGroup` must keep `refinement.py` consistent; creates confusion about which code path is active | Acceptable during the same milestone; must be deleted before v3.8 ships |
+| Tune changepoint threshold on the same clip used for development | Fast feedback | Overfitting to specific fish behavior on one clip; threshold that works on development clip may not generalize to held-out clips or different tank conditions | Never for final threshold; use at least two independent clips |
 
 ---
 
 ## Integration Gotchas
 
-Common mistakes when connecting existing subsystems for the retraining loop.
+Common mistakes when connecting the new components to the existing pipeline.
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| COCO-to-store import | Import images before labels, breaking the (image, label) atomicity expected by `import_sample` | Always provide matching image+label pairs to `import_sample`; validate label line count matches annotation count |
-| Pseudo-label to store | Import all frames including those in the manual annotation set | Filter out frames that overlap with manual annotations before import |
-| Dataset assembly | Assemble with `pseudo_in_val=True` for "more val data" | Always `pseudo_in_val=False` — pseudo-labels in val inflate metrics and mask model deficiencies |
-| Elastic augmentation + store | Call `add_augmented` for pseudo-label parents | Only augment `source=manual` parents; pseudo-label keypoints are too noisy for TPS warping |
-| Model registration | Register model without linking to dataset name | Always provide `dataset_name` — provenance tracking is the core benefit of the store; without it, you cannot trace which data produced which model |
-| Config auto-update after training | Trust the auto-updated config without verifying weights_path resolves | After `train compare`, verify the new model's `weights_path` exists and is loadable before running the pipeline with it |
+| `Tracklet2D` keypoint extension | Add `keypoints` field without adding `keypoint_confidences`; confidence filtering requires both position and confidence | Add both fields together; confidence is used to determine which keypoints to cast rays from |
+| `ForwardLUT.cast_ray` with keypoints | Pass `(N*K, 2)` flat tensor without tracking which entries are masked as invalid | Build an index array of valid `(frame, kpt)` pairs first; only pass valid pixels to `cast_ray`; use index array to scatter results back |
+| Group validation residual computation | Re-use scoring-phase ray data (stored somewhere) instead of re-computing fresh rays | Scoring only covers adjacent camera pairs; transitive group members may not have scored against each other; group validation requires fresh rays for all cameras in the group |
+| Must-not-link inheritance after splitting | Generate new tracklet IDs for fragments without checking constraint inheritance | When splitting, check whether either fragment's `(camera_id, frames)` conflicts with any other tracklet in any group; enforce the constraint inline during singleton recovery |
+| Refinement removal and `per_frame_confidence` | Delete `refine_clusters` call; groups have `per_frame_confidence=None`; reconstruction silently uses all frames equally | Check all reads of `per_frame_confidence` in reconstruction and evaluation; either populate it from group validation or update consumers to handle `None` correctly |
+| Singleton recovery threshold vs. group validation threshold | Use same `eviction_reproj_threshold` for both | Group validation evicts from an established group (strong prior); singleton recovery assigns to a group (no prior); recovery threshold should be stricter; use separate config parameters |
 
 ---
 
@@ -329,10 +245,10 @@ Patterns that work at small scale but fail as usage grows.
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Curvature-stratified eval on short clip | Extreme bins have <100 samples; metrics are noise | Use 3-5 bins max on short clips; reserve fine-grained binning for full run | Clips shorter than 2 minutes |
-| Per-keypoint analysis without z-correction | Tail error always looks worst due to z-uncertainty, not model error | Report per-keypoint z-variance alongside error | Always — this is a fundamental confound of the rig geometry |
-| Full pseudo-label generation for all cameras | 12 cameras * 1800 frames * 9 fish = 194k candidate labels; SQLite import takes 20+ min | Subsample temporally (every 5th frame) or spatially (best 6 cameras) for iteration runs | Datasets > 50k samples |
-| Training on full pseudo-label set without confidence filtering | Large dataset but many low-quality labels drag down model | Filter at confidence > 0.5 for OBB, > 0.6 for pose (pose is more sensitive to label noise) | When pseudo-label count exceeds 3x manual count |
+| Per-frame `cast_ray` call in group validation | Group validation becomes 4x slower than scoring (scoring already vectorizes across frames; group validation naively loops per-frame) | Vectorize across the frame dimension in group validation the same way `_batch_score_frames` does; all frames for one tracklet-group pair in one `cast_ray` call | Chunks > 100 frames with 9 groups × 5 cameras |
+| Dense `(N, K, 6, 6)` pairwise distance matrix | For K=6 keypoints, building a pairwise distance matrix across all keypoints of both tracklets is O(K²) per frame; if also across all T frames, it is O(T×K²) | Use `ray_ray_closest_point_batch` which is already vectorized across frame pairs; extend it to take `(T, K, 3)` inputs and return `(T, K)` distances; mean-reduce over K | Chunks > 200 frames; K > 6 |
+| Repeated LUT lookups for the same pixel in different pipeline steps | Scoring, group validation, and singleton recovery all call `cast_ray` for the same tracklet pixels | Cache `(origins, dirs)` per tracklet per step; within one pipeline run, re-casting the same centroid/keypoints three times wastes GPU time | Any chunk with > 50 tracklets |
+| Changepoint search O(T²) over full tracklet | Naive "find split maximizing mean difference" is O(T) per candidate split × T candidates = O(T²) | Use the O(T) CUSUM prefix-sum trick: precompute cumulative sum and count; compute all split mean-differences in O(T) | Tracklets > 100 frames |
 
 ---
 
@@ -340,14 +256,14 @@ Patterns that work at small scale but fail as usage grows.
 
 Things that appear complete but are missing critical pieces.
 
-- [ ] **Data store bootstrap:** Manual annotations imported and baseline model trained — verify the train/val split in the store matches the curvature-stratified split used in the v3.5 augmentation experiment (otherwise baseline is not comparable).
-- [ ] **Pseudo-label generation:** Labels produced and imported — verify no labels exist for frames in the manual annotation set (check for semantic duplicates, not just hash duplicates).
-- [ ] **Round 1 training:** Model trained and registered — verify `aquapose train compare` was run against baseline AND overlay video was inspected for algae FPs.
-- [ ] **Curvature-stratified metrics:** Implemented and producing output — verify N per bin is reported and extreme bins have statistically meaningful sample sizes.
-- [ ] **Per-keypoint analysis:** Reprojection error per keypoint computed — verify z-variance is reported alongside to avoid misinterpreting geometric confounds as model deficiency.
-- [ ] **Track fragmentation:** Gap count and continuity ratio reported — verify gaps are classified by reason (detection/tracking/midline) and reported separately.
-- [ ] **Final validation run:** Full 5-minute run completed — verify metrics are compared to the same metrics from short-run baseline (not expected to match exactly; document the gap).
-- [ ] **Provenance tracking:** All models and datasets registered in store — verify `store.list_models()` shows complete lineage from manual -> baseline -> round 1 -> round 2.
+- [ ] **`Tracklet2D` extension:** Keypoints field added — verify `keypoint_confidences` is also added and both are populated for coasted frames (interpolated KF state, not raw detection confidence, for coasted-frame keypoints).
+- [ ] **Multi-keypoint scoring:** Scores computed and passing tests — verify the aggregation correctly excludes low-confidence keypoints (not just the ones from coasted frames); cross-check with known-correct pair from the benchmark clip.
+- [ ] **Group validation:** Changepoint splits being produced — verify false positive rate by counting how many split fragments successfully rejoin their original group in singleton recovery; rate > 30% means threshold is too permissive.
+- [ ] **Singleton recovery:** Singletons being assigned to groups — verify no group ends up with two same-camera tracklets covering overlapping frames; add a post-recovery group validity assertion.
+- [ ] **Refinement removal:** `refine_clusters` removed — verify `TrackletGroup.per_frame_confidence` and `consensus_centroids` are either populated by the new pipeline or all consumers of these fields handle `None` correctly.
+- [ ] **Must-not-link propagation:** Constraints still applied — verify that fragments created by splitting inherit the same-camera overlap constraint and that singleton recovery enforces it inline.
+- [ ] **Benchmark regression:** Singleton rate reported — verify against v3.7 baseline (27%) with the same clip; multi-keypoint scoring should move toward the ~15% target, not above 27%.
+- [ ] **Evaluation metrics unchanged:** `aquapose eval` runs clean — verify the association evaluator and reconstruction evaluator produce valid output with the new `TrackletGroup` structure (especially if `per_frame_confidence` is now differently populated).
 
 ---
 
@@ -357,14 +273,12 @@ When pitfalls occur despite prevention, how to recover.
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Confirmation bias detected in round 2 | MEDIUM | Discard round 2 pseudo-labels; use round 1 model as final; add manual corrections for worst failure modes |
-| Train/val leakage discovered post-training | HIGH | Re-split data with temporal separation; re-train from scratch; prior metrics are invalid |
-| Augmented pseudo-labels degraded model | LOW | Remove augmented pseudo-label children from store via `exclude()`; re-assemble and re-train without augmented pseudo-labels |
-| Curvature metrics unstable | LOW | Reduce bin count to 3 (low/medium/high); report only directional trends, not absolute values |
-| Short-run metrics do not predict full-run | LOW | Expected and documented; use full-run metrics as ground truth; do not re-iterate based on short/full gap |
-| Algae FPs propagated into pseudo-labels | MEDIUM | Query store for pseudo-labels with low centroid displacement across frames; `exclude()` stationary labels; re-assemble and re-train |
-| OBB corner order mismatch | HIGH | Must re-convert and re-import all affected annotations; verify with visualization before re-training |
-| Store semantic duplicates causing conflicting labels | MEDIUM | Query store for samples sharing (camera_id, frame_index) metadata; `exclude()` lower-priority duplicates |
+| `Tracklet2D` missing keypoints field discovered mid-implementation | MEDIUM | Extend `Tracklet2D`; update `_TrackletBuilder.to_tracklet2d()`; re-run all unit tests; re-generate any golden data fixtures that include `Tracklet2D` serialization |
+| LUT coordinate space mismatch (second occurrence) | HIGH | Run the `cast_ray` round-trip unit test to confirm mismatch; identify where the coordinate space diverges (detection output vs. LUT expectation); regenerate LUT cache after verifying correct K matrix is used |
+| Changepoint detection producing mass false splits | LOW | Increase the significance threshold by 2x; re-run group validation; measure how split count changes; if still too many, add a minimum-tracklet-length filter (only attempt changepoint detection on tracklets > 30 frames) |
+| Singleton recovery corrupting groups (reprojection error increases) | LOW | Disable singleton recovery (`min_segment_length=999999`); report that singleton rate did not improve; re-enable only after re-calibrating the assignment margin gap criterion |
+| Refinement removal breaks downstream metrics | MEDIUM | Re-enable `refinement_enabled=True` temporarily; compare which downstream code paths depend on `per_frame_confidence` and `consensus_centroids`; populate those fields from group validation before re-removing |
+| Must-not-link violation in post-recovery groups | LOW | Add inline constraint check in singleton recovery assignment; evict the conflicting tracklet back to singleton; re-run eval to confirm group validity |
 
 ---
 
@@ -374,46 +288,24 @@ How roadmap phases should address these pitfalls.
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| P1: Confirmation bias | Phase 73-74 (retraining + evaluation) | Track curvature distribution of pseudo-labels per round; stop if val metrics plateau |
-| P2: Train/val temporal leakage | Phase 71 (bootstrap) | Assert no pseudo-label frames within 30 frames of any val frame |
-| P3: Augmentation of pseudo-labels | Phase 73 (dataset assembly) | Assembly query explicitly restricts augmentation to `source=manual` |
-| P4: Curvature bin instability | Phase 70 (metrics infrastructure) | Report N per bin; CI overlap check between rounds |
-| P5: Per-keypoint z-confound | Phase 70 (metrics infrastructure) | Per-keypoint z-variance column in output alongside error |
-| P6: Short vs full run divergence | Phase 72 + Phase 76 | Document expected metric gap in Phase 72; verify in Phase 76 |
-| P7: Algae domain shift | Phase 72 (baseline run) | Count algae FPs in overlay video; add negative examples if >5% of detections |
-| P8: OBB corner order | Phase 71 (conversion) | Round-trip test: manual -> YOLO -> Ultralytics train -> predict -> compare corners |
-| P9: Store semantic dedup | Phase 71 + Phase 73 | Post-import query for (camera, frame) duplicates across sources |
-| P10: Track fragmentation ambiguity | Phase 70 (metrics) | Gap-reason breakdown in fragmentation output |
-| P11: Visibility level collapse | Phase 71 (conversion) | Check COCO annotations for v=1 counts; preserve if present |
+| P1: `Tracklet2D` missing keypoints | `Tracklet2D` extension phase (prerequisite) | Unit test: construct `Tracklet2D` with keypoints, verify field is accessible and correct dtype |
+| P2: LUT coordinate space mismatch | Multi-keypoint scoring phase | Round-trip test: 3D keypoint → project → `cast_ray` → verify ray passes within 2mm of source |
+| P3: Broadcasting shape mismatch | Multi-keypoint scoring phase | Unit test with `N=5, K=6, confidence=[1,1,0,1,0,0]` on one frame; verify invalid keypoints are excluded from score |
+| P4: Wrong aggregation function | Multi-keypoint scoring design | A/B comparison: single-centroid vs. mean-per-frame multi-keypoint on benchmark clip; multi-keypoint should be >= single-centroid |
+| P5: Changepoint false positives | Group validation phase | Measure false-positive rate: count split fragments that rejoin original group in singleton recovery; target < 30% |
+| P6: Singleton to wrong group | Singleton recovery phase | Compare per-group reconstruction error before and after recovery; groups with recovered singletons should not be worse |
+| P7: Refinement removal breaks downstream | Refinement removal phase | Grep all reads of `per_frame_confidence` and `consensus_centroids`; run full `aquapose eval` before and after removal |
+| P8: Must-not-link constraint violation | Singleton recovery phase | Post-recovery group validity assertion: no group has two same-camera tracklets with overlapping frames |
 
 ---
 
 ## Sources
 
-- [Pseudo-Labeling and Confirmation Bias in Deep Semi-Supervised Learning](https://arxiv.org/pdf/1908.02983) — foundational work on confirmation bias in pseudo-labeling
-- [Confidence-Driven Pseudo-Label Optimization](https://www.emergentmind.com/topics/confidence-driven-pseudo-label-optimization) — threshold-free adaptive pseudo-label selection
-- [Semi Supervised Learning: 2025 Best Practices](https://labelyourdata.com/articles/semi-supervised-learning) — current best practices overview
-- [Data Leakage in Visual Datasets](https://arxiv.org/html/2508.17416v1) — near-duplicate and split-level leakage analysis
-- [Class Imbalance in Object Detection: An Experimental Diagnosis](https://arxiv.org/html/2403.07113v1) — class imbalance in one-stage detectors
-- [Ultralytics OBB Datasets Overview](https://docs.ultralytics.com/datasets/obb/) — OBB format specification and corner conventions
-- [Ultralytics YOLO Training Docs](https://docs.ultralytics.com/modes/train/) — training configuration and data format
-- AquaPose codebase direct inspection: `store.py` (dedup logic, assemble), `pseudo_labels.py` (confidence scoring, gap detection), `elastic_deform.py` (augmentation pipeline), `coco_convert.py` (format conversion), `evaluation/stages/reconstruction.py` (current metrics) — all integration points verified from source
-- AquaPose project memory: association tuning results, elastic augmentation experiment outcomes, known LUT coordinate space bug — project-specific context
+- AquaPose codebase direct inspection: `core/association/scoring.py` (vectorized `_batch_score_frames`, `ray_ray_closest_point_batch`), `core/association/refinement.py` (downstream `TrackletGroup` field population), `core/tracking/types.py` (current `Tracklet2D` fields — no `keypoints`), `core/tracking/keypoint_tracker.py` (`_TrackletBuilder.to_tracklet2d()` drops keypoints, `builder.keypoints` field exists), `core/tracking/stage.py` (confirms tracking stage does not add keypoints to `Tracklet2D`)
+- AquaPose project memory: ForwardLUT coordinate space mismatch post-mortem (2026-03-04) — direct precedent for P2
+- `association_multikey_rework.md` design document — primary source for intended design; P1, P3, P4, P5, P6, P7, P8 derived from analyzing gaps and edge cases in the design
+- CUSUM changepoint detection literature context: standard O(T) prefix-sum implementation; significance threshold calibration requirements for non-stationary tracking residuals
 
 ---
-
-> **Previous milestone pitfalls (v3.4) are preserved below for reference.**
-
----
-
-## v3.4 Performance Optimization Pitfalls (archived)
-
-> These pitfalls covered retrofitting batching, async I/O, and vectorization into the existing synchronous pipeline. See git history for the full v3.4 pitfalls document. Key pitfalls that remain relevant:
->
-> - **P2 (CUDA OOM from over-batching):** Still relevant for YOLO training with large datasets. Training batch size must be tunable.
-> - **P6 (TF32 precision):** Still relevant for evaluation metric consistency across GPU generations. Document TF32 state for all training and evaluation runs.
-> - **P8 (GPU tensor leak):** Still relevant when processing large numbers of pseudo-label candidate frames through the pipeline.
-
----
-*Pitfalls research for: Iterative pseudo-label retraining, curvature-stratified evaluation, and mixed-source training data management (v3.6 Model Iteration & QA)*
-*Researched: 2026-03-06*
+*Pitfalls research for: Multi-keypoint association scoring, changepoint detection, and singleton recovery (v3.8 Improved Association)*
+*Researched: 2026-03-11*

@@ -1,177 +1,188 @@
 # Technology Stack
 
-**Project:** AquaPose v3.6 Model Iteration & QA
-**Researched:** 2026-03-06
-**Scope:** Stack additions for evaluation metrics extensions, curvature-stratified analysis, per-keypoint breakdown, track fragmentation, and iteration loop orchestration
+**Project:** AquaPose v3.8 Improved Association
+**Researched:** 2026-03-11
+**Scope:** Stack additions for multi-keypoint association scoring, temporal changepoint detection, and singleton recovery
+**Confidence:** HIGH
 
-## Key Finding: No New Dependencies Required
+## Key Finding: No New Runtime Dependencies Required
 
-Every feature in the v3.6 milestone can be implemented using libraries already in the dependency set. The new metrics are pure numerical computations over data structures that already exist in the codebase.
+Every feature in the v3.8 milestone can be implemented using libraries already in the dependency set. The changepoint detection problem as specified in the design document — find the single split point that maximizes the difference in mean residuals between two halves — is a max-sweep over a precomputed residual array. This is two lines of NumPy. A library like `ruptures` would be overkill.
 
-**Rationale:** The existing stack (NumPy, SciPy, B-spline evaluation, frozen dataclasses, JSON output) provides everything needed. Adding dependencies for simple percentile/binning/counting operations would be over-engineering.
-
----
-
-## Recommended Stack (Existing -- No Changes)
-
-### Core Computation Libraries (already installed)
-
-| Technology | Version | Purpose in v3.6 | Why Sufficient |
-|------------|---------|-----------------|----------------|
-| NumPy | >=1.24 | Percentile computation, per-keypoint aggregation, curvature binning | `np.percentile`, `np.digitize`, `np.histogram` cover all binning/percentile needs |
-| SciPy | >=1.11 | B-spline evaluation for 3D curvature from `Midline3D` control points | `scipy.interpolate.BSpline` already used in reconstruction evaluator |
-| Python stdlib `dataclasses` | 3.11+ | Extended frozen metric dataclasses | Existing pattern: `ReconstructionMetrics`, `MidlineMetrics`, etc. |
-| Python stdlib `json` | 3.11+ | JSON serialization of extended metrics | Existing `_NumpySafeEncoder` handles numpy scalars |
-| Python stdlib `sqlite3` | 3.11+ | Model lineage queries for comparison | Already used by SQLite sample store |
-
-### CLI and Output (already installed)
-
-| Technology | Version | Purpose in v3.6 | Why Sufficient |
-|------------|---------|-----------------|----------------|
-| Click | >=8.1 | No new CLI subcommands needed; metrics appear in existing `aquapose eval` output | Existing `eval` and `train compare` commands |
-
-### Libraries Explicitly NOT Needed
-
-| Library | Why Considered | Why Not Adding |
-|---------|---------------|----------------|
-| pandas | Tabular metric comparison across rounds | Overkill. Dict-of-dicts + JSON output is the existing pattern. Adding pandas for a few comparison tables adds a heavy transitive dependency tree for no real benefit. |
-| matplotlib/seaborn | Plotting curvature-vs-error, regression charts | The milestone SEED doc specifies text/JSON output via `aquapose eval` and overlay video via `aquapose viz`. No new plot types are specified. If needed later, matplotlib is already transitively available via ultralytics. |
-| polars | Fast dataframe operations | Same reasoning as pandas -- the data volumes (hundreds of fish-frames per eval run) don't justify a dataframe library. |
-| rich | Pretty terminal tables | Click + plain ASCII formatting is the established pattern in `output.py`. Consistency matters more than pretty printing. |
-| pydantic | Metric schema validation | Frozen dataclasses are the project's decided pattern (KEY DECISION from PROJECT.md). |
+**Decision rationale is documented below in the changepoint section.** The rest of the stack changes are pure refactoring of existing NumPy vectorization patterns.
 
 ---
 
-## Integration Points for New Features
+## Recommended Stack (Existing — No Changes to pyproject.toml)
 
-### 1. Reprojection Error Percentiles
+### Multi-Keypoint Scoring: NumPy Broadcasting
 
-**Where:** Extend `ReconstructionMetrics` dataclass in `evaluation/stages/reconstruction.py`
+| Technology | Version | Purpose in v3.8 | Why Sufficient |
+|------------|---------|-----------------|----------------|
+| NumPy | >=1.24 | Per-keypoint ray casting aggregation, confidence masking, soft-kernel computation | `np.where`, `np.nanmean`, `np.isnan` cover all confidence-filtered aggregation needs. Already used in `_batch_score_frames`. |
+| PyTorch | >=2.0 | `ForwardLUT.cast_ray()` — takes `(N, 2)` pixel tensor, returns origins+dirs | Already used in scoring.py. Multi-keypoint extends N from 1 to K per frame. No API changes needed. |
 
-**Data source:** `Midline3D.mean_residual` per fish-frame (already collected in `evaluate_reconstruction`)
+**How multi-keypoint scoring extends the existing pattern:**
 
-**Computation:** `np.percentile(all_residuals, [50, 90, 95])` -- one line of NumPy
+Current `_batch_score_frames` stacks one centroid per frame into shape `(T, 2)` then calls `cast_ray` once per camera. Multi-keypoint extends this to shape `(T*K, 2)` — still one `cast_ray` call per camera per batch. The result is reshaped to `(T, K)` distances, then aggregated across the K dimension using `np.nanmean` (NaN for filtered low-confidence keypoints). The existing `ray_ray_closest_point_batch` function handles the `(N,)` input directly — no changes needed to the ray-ray math.
 
-**New fields on `ReconstructionMetrics`:**
+**Confidence filtering with NaN masking:**
+
 ```python
-reprojection_p50: float
-reprojection_p90: float
-reprojection_p95: float
+# conf_a, conf_b: shape (T, K), confidence per keypoint per frame
+# dists: shape (T, K), ray-ray distances
+mask = (conf_a < conf_threshold) | (conf_b < conf_threshold)
+dists_masked = np.where(mask, np.nan, dists)
+per_frame_score = np.nanmean(soft_kernel(dists_masked), axis=1)  # (T,)
 ```
 
-### 2. Per-Keypoint Reprojection Error Breakdown
+`np.nanmean` ignores NaN entries, which is exactly the behavior needed: frames where all keypoints are low-confidence produce NaN (treated as 0 contribution downstream). This is the idiomatic NumPy pattern for masked aggregation without boolean indexing overhead.
 
-**Where:** New analysis function in `evaluation/stages/reconstruction.py` or new file `evaluation/stages/keypoint_analysis.py`
+**Tracklet2D must gain a keypoints field.** The current type only stores `centroids`. Multi-keypoint scoring needs per-frame keypoint positions `(K, 2)` and confidences `(K,)`. This is a type change in `core/tracking/types.py` and the corresponding `_TrackletBuilder.to_tracklet2d()` in `keypoint_tracker.py` — the tracker already accumulates `builder.keypoints` but does not store it on `Tracklet2D`. This is the primary data contract change for the milestone.
 
-**Data source:** `Midline3D.per_camera_residuals` gives per-camera mean, but per-keypoint requires re-evaluating the spline at body point positions and computing per-point residuals. The spline (`control_points` + `knots`) and projection models are available in the cached `PipelineContext`.
+---
 
-**Key insight:** The DLT backend computes per-body-point residuals internally (`_TriangulationResult.mean_residuals`) but only stores the aggregate on `Midline3D.mean_residual`. Two approaches:
-1. **Post-hoc recomputation** (recommended): Evaluate the stored B-spline at N sample points, reproject into each camera, compute per-point errors. This matches the existing evaluator pattern of operating on cached `Midline3D` objects without needing raw triangulation intermediates.
-2. **Store per-point residuals on Midline3D**: Would require adding a field and changing the DLT backend. More invasive, but avoids recomputation.
+### Changepoint Detection: NumPy Max-Split Sweep (No Library)
 
-**Recommendation:** Post-hoc recomputation. It keeps the core types stable and follows the established evaluator pattern. The computation is cheap (15 body points x 12 cameras x N frames, all vectorizable).
+**Decision: Do not add `ruptures` or any changepoint library.**
 
-**Computation:** NumPy + SciPy B-spline eval + projection model (already available via `CalibBundle` / `DltBackend.from_models`)
+#### Why not `ruptures` 1.1.10
 
-### 3. Curvature-Stratified Reconstruction Quality
+`ruptures` is a well-maintained library (latest: 1.1.10, Sept 2025, Python 3.9–3.13) with good algorithms for offline changepoint detection: PELT (exact, penalized), Binseg (O(n log n), sequential), BottomUp (hierarchical), and others. It handles multivariate signals natively. For general-purpose changepoint work it is a solid choice.
 
-**Where:** New analysis function, likely in `evaluation/stages/reconstruction.py`
+However, the design document specifies exactly what is needed, and it does not match `ruptures`' strength:
 
-**Data source:** `Midline3D.control_points` + `Midline3D.knots` for 3D curvature; `Midline3D.mean_residual` for quality
+| Criterion | `ruptures` | Max-split sweep |
+|-----------|-----------|-----------------|
+| API surface | Model-fit + predict, penalty tuning, cost function selection | 10 lines of NumPy |
+| Penalty parameter | Required for PELT; Binseg needs explicit `n_bkps` | Not needed — threshold-based |
+| Signal structure | Assumes stationary noise within segments | Residual series has non-stationary noise; mean shift is what matters |
+| Sequence length | Optimized for long signals; short signals (50–300 points) work but incur import overhead | Trivially fast at any length |
+| Dependency cost | New runtime dependency (adds to install size, transitive numpy+scipy already present) | Zero |
+| Recursive splitting | Supported via Binseg recursion | Recursion is 3 lines of Python |
+| Significance threshold | Needs penalty calibration per signal | Simple absolute threshold on mean difference |
 
-**Existing curvature function:** `training.pseudo_labels.compute_curvature()` computes mean absolute curvature from control points via finite differences. This can be reused directly or extracted to a shared utility.
+The max-split sweep is:
 
-**Computation:**
-1. Compute curvature per fish-frame using `compute_curvature(midline3d.control_points)`
-2. Bin into quantiles: `np.percentile(curvatures, [25, 50, 75])` to define bin edges
-3. Report mean reprojection error per bin: `np.digitize` + groupby aggregation
-
-**New output structure:**
 ```python
-@dataclass(frozen=True)
-class CurvatureStratifiedMetrics:
-    bin_edges: tuple[float, ...]  # curvature quantile boundaries
-    per_bin_mean_error: dict[str, float]  # "q1", "q2", "q3", "q4" -> mean px
-    per_bin_count: dict[str, int]
-    curvature_error_correlation: float  # Pearson r
+def find_changepoint(residuals: np.ndarray, min_seg: int) -> int | None:
+    """Return split index t* maximizing |mean(residuals[:t]) - mean(residuals[t:])|.
+
+    Returns None if the best split delta is below threshold or sequence is
+    too short to meet min_seg constraint on both halves.
+    """
+    n = len(residuals)
+    if n < 2 * min_seg:
+        return None
+    # Vectorized cumulative mean difference over all valid split points
+    cumsum = np.cumsum(residuals)
+    t_range = np.arange(min_seg, n - min_seg + 1)  # valid split indices
+    mean_left = cumsum[t_range - 1] / t_range
+    mean_right = (cumsum[-1] - cumsum[t_range - 1]) / (n - t_range)
+    deltas = np.abs(mean_left - mean_right)
+    best_t = int(t_range[np.argmax(deltas)])
+    return best_t  # caller checks delta against threshold
 ```
 
-**Dependency note:** `compute_curvature` currently lives in `training.pseudo_labels`. It should be moved to a shared location (e.g., `core/types/reconstruction.py` or a new `core/geometry.py`) to avoid the evaluation module importing from training. This is a code organization move, not a dependency addition.
+This is O(n) per call, handles minimum segment length constraints, and returns exactly one split index — precisely what the design document calls for. Recursive application handles multiple swaps.
 
-### 4. Midline Confidence Percentiles
+**The design document explicitly states:** "The detection method is simple: find the split point that maximizes the difference in mean residual between the two halves, subject to a minimum segment length and a significance threshold." This description *is* the implementation.
 
-**Where:** Extend `MidlineMetrics` dataclass in `evaluation/stages/midline.py`
+#### Significance threshold without calibration
 
-**Data source:** Already collected as `all_confidences` list in `evaluate_midline()`
+`ruptures` PELT requires a penalty value that must be calibrated to the signal's noise level. The design document's approach avoids this: the threshold is an absolute delta in mean residual (metres), directly comparable to the existing `eviction_reproj_threshold`. A swap that moves a fish 3cm produces a mean-residual jump of ~0.03m. Setting `changepoint_delta_threshold=0.01` (1cm) catches real swaps and rejects noise. This is calibratable against real data without a library.
 
-**Computation:** `np.percentile(conf_array, [10, 50, 90])`
+---
 
-**New fields on `MidlineMetrics`:**
+### Group Validation and Singleton Recovery: Existing Stack
+
+| Technology | Purpose | What's Used |
+|------------|---------|-------------|
+| NumPy | Per-frame residual computation against group consensus | `np.median`, `np.mean`, `np.cumsum`, `np.argmax` |
+| PyTorch / ForwardLUT | Ray casting for group validation rays | Same `.cast_ray()` call as scoring |
+| Python dataclasses | Config fields for new thresholds | `changepoint_delta_threshold`, `min_changepoint_segment`, `singleton_recovery_enabled` on `AssociationConfig` |
+
+**No new scipy functions are needed.** The residual computations are mean/median over short arrays (50–300 values). `scipy.stats.ttest_ind` was considered for significance testing but rejected: the design document specifies a deterministic threshold on mean delta, not a statistical test. A t-test p-value would require calibrating alpha and would be sensitive to the assumed distribution of residuals — more complexity for no practical benefit at this signal scale.
+
+---
+
+### What NOT to Add
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| `ruptures` | Penalty calibration required; overkill for a single mean-split sweep | `np.cumsum` + `np.argmax` (10 lines, already shown above) |
+| `bayesian_changepoint_detection` | Bayesian inference overhead; not maintained as a first-class package | Same max-split sweep |
+| `changepy` | Last meaningful commit 2017; not maintained | Same max-split sweep |
+| `scipy.stats.ttest_ind` for swap detection | Requires distributional assumptions; calibrating alpha adds a free parameter | Absolute delta threshold on mean residuals |
+| `pandas` | Tabular aggregation of per-keypoint scores | NumPy structured arrays or plain dicts |
+| Any new dependency | The milestone is a scoring rework, not a new domain | All required operations are in the existing stack |
+
+---
+
+## Data Contract Change: Tracklet2D Extended Fields
+
+This is the one structural change the milestone requires — it is a type change, not a dependency change.
+
+**Current `Tracklet2D`** (in `core/tracking/types.py`):
 ```python
-confidence_p10: float
-confidence_p50: float
-confidence_p90: float
+frames: tuple[int, ...]
+centroids: tuple[tuple[float, float], ...]
+bboxes: tuple[tuple[float, float, float, float], ...]
+frame_status: tuple[str, ...]
 ```
 
-### 5. Camera Count Percentiles
-
-**Where:** Extend `AssociationMetrics` dataclass in `evaluation/stages/association.py`
-
-**Data source:** Already available from `camera_distribution` histogram
-
-**Computation:** Reconstruct per-observation camera counts from the histogram, then `np.percentile`
-
-**New fields on `AssociationMetrics`:**
+**Required addition for multi-keypoint scoring:**
 ```python
-camera_count_p50: float
-camera_count_p90: float
+keypoints: tuple[np.ndarray, ...]   # per-frame (K, 2) float32 arrays
+kpt_confs: tuple[np.ndarray, ...]   # per-frame (K,) float32 confidence arrays
 ```
 
-### 6. 3D Track Fragmentation Analysis
+`_TrackletBuilder` in `keypoint_tracker.py` already accumulates `builder.keypoints` (a list of `(6, 2)` arrays) and `builder.keypoint_conf` (a list of `(6,)` arrays). These are discarded in `to_tracklet2d()`. The fix is a one-line addition per field. The tracker already has the data — it just doesn't pass it through.
 
-**Where:** New section in reconstruction evaluator or new file `evaluation/stages/track_analysis.py`
+**Downstream impact:** `AssociationStage` must read the new fields. All other consumers of `Tracklet2D` (`ClusteringStage`, `ReconstructionStage`, etc.) are unaffected — they only read `centroids` and `frames`.
 
-**Data source:** `frame_results: list[tuple[int, dict[int, Midline3D]]]` -- the same input already consumed by `evaluate_reconstruction`. Track identity comes from `Midline3D.fish_id`, frame index from `Midline3D.frame_index`.
+---
 
-**Computation:**
-1. Group by `fish_id` to get per-fish frame sequences
-2. Detect gaps: consecutive frame indices with missing reconstructions
-3. Count fragments: number of contiguous runs per fish
-4. Continuity ratio: frames with reconstruction / total frames in range
+## Integration Points
 
-**All pure Python/NumPy -- no new dependencies.**
+### 1. `core/tracking/types.py` — Add keypoints/kpt_confs to Tracklet2D
 
-**New output structure:**
+One frozen dataclass field addition per new attribute. The `to_tracklet2d()` conversion in `keypoint_tracker.py` is updated to pass through the accumulated keypoint data.
+
+### 2. `core/association/scoring.py` — Extend `_batch_score_frames`
+
+Replace centroid-only cast with K-keypoint cast. The reshaped input `(T*K, 2)` → `cast_ray` → reshape output to `(T, K)` → apply confidence mask as NaN → `np.nanmean` over K → existing soft kernel over T. The `AssociationConfigLike` protocol gains `conf_threshold: float` and `min_keypoints_per_frame: int`.
+
+### 3. `core/association/refinement.py` — Replace with group_validation.py
+
+The current `refine_clusters` function uses single-centroid consensus. The v3.8 replacement computes multi-keypoint per-frame residuals, runs the changepoint sweep on each tracklet's residual series, splits swapped tracklets, and evicts outliers. The file can be renamed `group_validation.py` or `validation.py` to signal the functional change.
+
+### 4. `core/association/singleton_recovery.py` — New module
+
+Fresh computation: for each singleton, compute per-frame residuals against all existing groups, sweep split points, assign or split. No stored scoring data is reused.
+
+### 5. `engine/config.py` — New config fields on AssociationConfig
+
 ```python
-@dataclass(frozen=True)
-class TrackFragmentationMetrics:
-    total_tracks: int
-    mean_fragments_per_track: float
-    mean_gap_duration: float  # frames
-    max_gap_duration: int
-    mean_continuity_ratio: float  # 0-1
-    per_fish_continuity: dict[int, float]
+conf_threshold: float = 0.3          # min keypoint confidence to include in ray
+min_keypoints_per_frame: int = 2     # min valid keypoints for frame to contribute
+changepoint_delta_threshold: float = 0.015  # min mean residual delta (m) to split
+min_changepoint_segment: int = 10    # min frames per segment after split
+singleton_recovery_enabled: bool = True
+singleton_split_min_segment: int = 15  # min segment for singleton swap split
 ```
-
-### 7. Model Comparison / Regression Detection
-
-**Where:** Existing `aquapose train compare` CLI + extended `aquapose eval` JSON output
-
-**Approach:** Compare JSON eval outputs from different rounds. No new infrastructure needed -- the user runs `aquapose eval` on each round's diagnostic caches and compares the JSON files. The SEED doc confirms this is the intended workflow ("before/after comparison").
-
-**For automated regression detection:** Simple threshold checks on key metrics (reprojection error, singleton rate). Implementable as a comparison function that takes two `EvalRunnerResult.to_dict()` outputs and flags regressions. Pure Python dict comparison.
 
 ---
 
 ## Installation
 
-No changes to `pyproject.toml` dependencies. All features use existing packages:
+No changes to `pyproject.toml`. All features use existing packages:
 
 ```toml
-# Already in pyproject.toml -- NO CHANGES NEEDED
+# pyproject.toml — NO CHANGES NEEDED
 dependencies = [
-    "numpy>=1.24",
-    "scipy>=1.11",
+    "numpy>=1.24",   # nanmean, cumsum, argmax, where
+    "torch>=2.0",    # ForwardLUT.cast_ray
     # ... all other existing deps unchanged
 ]
 ```
@@ -180,48 +191,20 @@ dependencies = [
 
 ## Version Verification
 
-| Library | Required | Current Constraint | Verified Feature Availability |
-|---------|----------|--------------------|-------------------------------|
-| NumPy | `np.percentile`, `np.digitize` | >=1.24 | Both available since NumPy 1.0. HIGH confidence. |
-| SciPy | `BSpline` evaluation | >=1.11 | `scipy.interpolate.BSpline` available since SciPy 0.19. Already used throughout codebase. HIGH confidence. |
-| Python | `dataclasses`, `json`, `sqlite3` | >=3.11 | All stdlib. HIGH confidence. |
-
----
-
-## Code Organization Recommendations
-
-### Move `compute_curvature` to shared location
-
-**Current location:** `src/aquapose/training/pseudo_labels.py`
-**Problem:** Evaluation code cannot import from training without violating module boundaries
-**Recommended location:** `src/aquapose/core/types/reconstruction.py` (alongside `Midline3D`) or new `src/aquapose/core/geometry.py`
-**Impact:** One function move + import update in pseudo_labels.py
-
-### Keep new analysis functions alongside existing evaluators
-
-**Pattern:** Each stage evaluator is a single file in `evaluation/stages/`. New analysis functions (per-keypoint breakdown, curvature stratification, track fragmentation) should either:
-- Extend existing evaluator files (if tightly coupled to existing metrics), or
-- Live in new files in the same directory (if logically independent)
-
-**Recommendation:** Per-keypoint and curvature-stratified metrics extend the reconstruction evaluator. Track fragmentation gets its own file since it operates on a different abstraction level (temporal sequences vs. per-frame quality).
-
-### Extend `to_dict()` and output formatting
-
-Every new metric field needs:
-1. Addition to the frozen dataclass
-2. Entry in `to_dict()` for JSON serialization
-3. Row in `format_eval_report()` for ASCII output
-
-This is mechanical but must not be forgotten -- it's the pattern that makes `aquapose eval --json` work.
+| Library | Required Feature | Current Constraint | Confidence |
+|---------|-----------------|-------------------|------------|
+| NumPy | `np.nanmean`, `np.cumsum`, `np.argmax`, `np.where` with NaN | >=1.24 | HIGH — all available since NumPy 1.x |
+| PyTorch | `ForwardLUT.cast_ray(pix: Tensor[N,2])` | >=2.0 | HIGH — already used in scoring.py |
+| Python | Frozen dataclasses, structural Protocol | >=3.11 | HIGH — existing pattern |
 
 ---
 
 ## Sources
 
-- Existing codebase analysis (HIGH confidence -- direct code reading)
-- NumPy documentation for `np.percentile`, `np.digitize` (HIGH confidence -- stable API since NumPy 1.x)
-- SciPy documentation for `scipy.interpolate.BSpline` (HIGH confidence -- already used in codebase)
-- No external sources needed -- all recommendations are based on extending existing patterns with existing tools
+- Codebase direct reading: `core/association/scoring.py`, `core/tracking/types.py`, `core/tracking/keypoint_tracker.py`, `core/association/refinement.py`, `pyproject.toml` — HIGH confidence
+- `ruptures` PyPI page (https://pypi.org/project/ruptures/) — version 1.1.10, released Sept 2025 — HIGH confidence
+- `ruptures` documentation (https://centre-borelli.github.io/ruptures-docs/) — Binseg, PELT algorithm characteristics — MEDIUM confidence (fetched from official docs)
+- Design document `.planning/inbox/association_multikey_rework.md` — defines exact changepoint algorithm — HIGH confidence (primary spec)
 
 ---
 
@@ -229,8 +212,9 @@ This is mechanical but must not be forgotten -- it's the pattern that makes `aqu
 
 | Area | Confidence | Reason |
 |------|------------|--------|
-| No new dependencies | HIGH | All computations are simple NumPy/SciPy operations on existing data structures |
-| Integration points | HIGH | Direct code reading of evaluators, types, and DLT backend |
-| Per-keypoint approach | MEDIUM | Post-hoc recomputation vs. storing on Midline3D is a design choice; either works |
-| Track fragmentation | HIGH | Straightforward groupby + gap detection on frame indices |
-| Code organization | HIGH | Follows established patterns visible in codebase |
+| No new dependencies | HIGH | Direct code reading confirms all operations are in existing stack |
+| Max-split sweep correctness | HIGH | O(n) cumsum formulation is standard; directly matches design doc specification |
+| `ruptures` rejection | HIGH | Design doc specifies threshold-based splitting, not penalized optimization; library would add complexity without benefit |
+| Tracklet2D keypoints field | HIGH | `keypoint_tracker.py` already accumulates the data; it's a pass-through fix |
+| NaN masking aggregation | HIGH | `np.nanmean` is the idiomatic pattern; no edge cases for this use |
+| Config field ranges | MEDIUM | Initial values are estimates; empirical tuning pass is part of the milestone |

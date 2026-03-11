@@ -311,7 +311,7 @@ Plans:
   3. The tracker shows measurable improvement on at least one primary metric (fragmentation count or track count closer to 9) compared to OC-SORT baseline
 **Plans:** 1 plan
 Plans:
-- [ ] 82-01-PLAN.md — Add keypoint centroid config, implement extraction in tracker, document selection
+- [ ] 84-01-PLAN.md — Pipeline wiring, evaluation script, metrics comparison
 
 ### Phase 85: Code Quality Audit & CLI Smoke Test
 **Goal**: The overhaul leaves no dead code, broken cross-references, or type errors; the full pipeline runs cleanly from the CLI with the new stage ordering
@@ -322,9 +322,8 @@ Plans:
   2. `hatch run typecheck` produces no new type errors introduced by the v3.7 overhaul
   3. `aquapose run` completes end-to-end on a test clip with the new pipeline, and all config options for the new tracker are documented
   4. A documented decision exists on whether BoxMot is removed as a dependency or retained as an OC-SORT fallback
-**Plans:** 1 plan
-Plans:
-- [ ] 82-01-PLAN.md — Add keypoint centroid config, implement extraction in tracker, document selection
+**Plans:** TBD
+
 
 ### Phase 86: Cleanup (Conditional)
 **Goal**: Address issues found during the Phase 85 audit — this phase is skipped entirely if Phase 85 finds nothing actionable

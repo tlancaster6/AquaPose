@@ -46,7 +46,7 @@ Requirements for the Improved Tracking milestone. Each maps to roadmap phases.
 
 ### Association
 
-- [ ] **ASSOC-01**: Cross-view association uses mid-body keypoint centroid instead of OBB centroid for ray-based matching
+- [x] **ASSOC-01**: Cross-view association uses mid-body keypoint centroid instead of OBB centroid for ray-based matching
 
 ### Integration
 
@@ -101,7 +101,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TRACK-08 | Phase 83 | Pending |
 | TRACK-09 | Phase 83 | Pending |
 | TRACK-10 | Phase 83 | Pending |
-| ASSOC-01 | Phase 82 | Pending |
+| ASSOC-01 | Phase 82 | Complete |
 | INTEG-01 | Phase 84 | Pending |
 | INTEG-02 | Phase 84 | Pending |
 | INTEG-03 | Phase 85 | Pending |

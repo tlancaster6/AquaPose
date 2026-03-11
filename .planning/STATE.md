@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.7
 milestone_name: Improved Tracking
 status: unknown
-last_updated: "2026-03-11T02:27:08.142Z"
+last_updated: "2026-03-11T02:40:31.137Z"
 progress:
-  total_phases: 5
-  completed_phases: 4
-  total_plans: 7
-  completed_plans: 7
+  total_phases: 6
+  completed_phases: 5
+  total_plans: 8
+  completed_plans: 8
 ---
 
 # Project State
@@ -18,29 +18,30 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-10)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.7 Improved Tracking — Phase 81 (Pipeline Reorder)
+**Current focus:** v3.7 Improved Tracking — Phase 82 (Association Upgrade: Keypoint Centroid)
 
 ## Current Position
 
-Phase: 81 of v3.7 (Pipeline Reorder — Segmentation Removal)
-Plan: 02 complete
-Status: Phase 81 complete — all segmentation/orientation dead code deleted, ReconstructionStage reads keypoints from context.detections; ready for Phase 82 (keypoint-cost-association)
-Last activity: 2026-03-11 — Phase 81-02 complete, dead code deleted, _keypoints_to_midline added to ReconstructionStage, all tests passing
+Phase: 82 of v3.7 (Association Upgrade — Keypoint Centroid)
+Plan: 01 complete
+Status: Phase 82-01 complete — keypoint centroid extraction implemented in tracker, config threaded pipeline→TrackingStage→OcSortTracker→_TrackletBuilder, all tests passing
+Last activity: 2026-03-11 — Phase 82-01 complete, spine1 (index 2) keypoint centroid with OBB fallback, 36 tracking tests green
 
-Progress: [█████░░░░░] 50%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2
-- Average duration: ~10min
-- Total execution time: ~20min
+- Total plans completed: 3
+- Average duration: ~8min
+- Total execution time: ~25min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 78 | 2 | ~20min | ~10min |
+| 82 | 1 | ~5min | ~5min |
 
 ## Accumulated Context
 
@@ -76,6 +77,8 @@ Recent decisions affecting current work:
 - [Phase 81-01]: ReconstructionStage now raises ValueError if tracklet_groups is None (removed stale annotated_detections fallback)
 - [Phase 81-02]: _keypoints_to_midline t_values=[0.0, 0.1, 0.3, 0.5, 0.7, 1.0] as module-level constant — avoids cross-module coupling with PoseConfig
 - [Phase 81-02]: tuning.py/runner.py use dual-path (detections v3.7 + annotated_detections legacy fallback) for backward compat with old diagnostic runs
+- [Phase 82-01]: spine1 (index 2) selected as default centroid keypoint — mid-body, most stable under frame clipping and occlusion
+- [Phase 82-01]: centroid_confidence_floor=0.3 matches pose backend default; interior keypoints reliably exceed threshold in production
 
 ### Roadmap Evolution
 
@@ -93,5 +96,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-11
-Stopped at: Completed 81-02-PLAN.md — segmentation/orientation dead code deleted, ReconstructionStage reads keypoints from context.detections with 6→15 interpolation, all tests green
+Stopped at: Completed 82-01-PLAN.md — keypoint centroid extraction implemented, spine1 (index 2) with OBB fallback, all 1113 tests passing
 Resume file: N/A

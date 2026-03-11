@@ -52,8 +52,8 @@ Requirements for the Improved Tracking milestone. Each maps to roadmap phases.
 
 - [x] **INTEG-01**: New tracker evaluated against INV-03 baseline metrics on perfect-tracking target
 - [x] **INTEG-02**: Full pipeline runs end-to-end from CLI with new stage ordering
-- [ ] **INTEG-03**: Code quality audit: no dead code, broken cross-references, or type errors from the overhaul
-- [ ] **INTEG-04**: BoxMot dependency removal decision documented
+- [x] **INTEG-03**: Code quality audit: no dead code, broken cross-references, or type errors from the overhaul
+- [x] **INTEG-04**: BoxMot dependency removal decision documented
 
 ## Future Requirements
 
@@ -104,8 +104,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ASSOC-01 | Phase 82 | Complete |
 | INTEG-01 | Phase 84 | Complete |
 | INTEG-02 | Phase 84 | Complete |
-| INTEG-03 | Phase 85 | Pending |
-| INTEG-04 | Phase 85 | Pending |
+| INTEG-03 | Phase 85 | Complete |
+| INTEG-04 | Phase 85 | Complete |
 
 **Coverage:**
 - v3.7 requirements: 27 total

@@ -289,7 +289,10 @@ Plans:
   3. A singleton with no strong overall match but a temporal split matching two distinct groups is split and each segment assigned to its matching group (swap-aware recovery)
   4. A singleton with no match after split analysis remains a singleton; the pipeline does not force assignment
   5. End-to-end pipeline run completes; measured singleton rate is lower than the v3.7 baseline (27%)
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 91-01-PLAN.md — Create recovery.py with scoring, assignment, split-assign, and same-camera constraint logic
+- [ ] 91-02-PLAN.md — Add config fields, wire into stage.py, update __init__.py exports
 
 ### Phase 92: Parameter Tuning Pass
 **Goal**: New config parameters are empirically calibrated on real data; the final v3.8 association configuration is documented and validated against the v3.7 baseline
@@ -314,5 +317,5 @@ Note: Phases 88 and 89 depend only on Phase 87 and can be executed in either ord
 | 88. Multi-Keypoint Pairwise Scoring | 1/1 | Complete    | 2026-03-11 |
 | 89. Fragment Merging Removal | 1/1 | Complete    | 2026-03-11 |
 | 90. Group Validation with Changepoint Detection | 1/2 | In Progress|  |
-| 91. Singleton Recovery | 0/TBD | Not started | - |
+| 91. Singleton Recovery | 0/2 | Not started | - |
 | 92. Parameter Tuning Pass | 0/TBD | Not started | - |

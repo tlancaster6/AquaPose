@@ -34,11 +34,11 @@ Requirements for the Improved Tracking milestone. Each maps to roadmap phases.
 ### Tracking
 
 - [ ] **TRACK-01**: Custom keypoint tracker runs forward and backward OC-SORT passes over each chunk
-- [ ] **TRACK-02**: OKS-based association cost replaces IoU on OBBs
-- [ ] **TRACK-03**: OCM direction consistency term using spine heading vector
-- [ ] **TRACK-04**: Kalman filter tracks keypoint positions and velocities (60-dim or 24-dim state)
+- [x] **TRACK-02**: OKS-based association cost replaces IoU on OBBs
+- [x] **TRACK-03**: OCM direction consistency term using spine heading vector
+- [x] **TRACK-04**: Kalman filter tracks keypoint positions and velocities (60-dim or 24-dim state)
 - [ ] **TRACK-05**: Asymmetric track birth/death based on frame-edge proximity
-- [ ] **TRACK-06**: ORU (observation-centric re-update) and OCR (observation-centric recovery) mechanisms
+- [x] **TRACK-06**: ORU (observation-centric re-update) and OCR (observation-centric recovery) mechanisms
 - [ ] **TRACK-07**: Bidirectional merge combines forward and backward tracklets with overlap-based matching
 - [ ] **TRACK-08**: Chunk boundary handoff via serialized KF state (mean + covariance + observation history)
 - [ ] **TRACK-09**: Gap interpolation fills small tracklet gaps via spline interpolation
@@ -92,11 +92,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PIPE-02 | Phase 81 | Complete |
 | PIPE-03 | Phase 81 | Complete |
 | TRACK-01 | Phase 83 | Pending |
-| TRACK-02 | Phase 83 | Pending |
-| TRACK-03 | Phase 83 | Pending |
-| TRACK-04 | Phase 83 | Pending |
+| TRACK-02 | Phase 83 | Complete |
+| TRACK-03 | Phase 83 | Complete |
+| TRACK-04 | Phase 83 | Complete |
 | TRACK-05 | Phase 83 | Pending |
-| TRACK-06 | Phase 83 | Pending |
+| TRACK-06 | Phase 83 | Complete |
 | TRACK-07 | Phase 83 | Pending |
 | TRACK-08 | Phase 83 | Pending |
 | TRACK-09 | Phase 83 | Pending |

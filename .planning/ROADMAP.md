@@ -296,9 +296,10 @@ Plans:
   5. Chunk boundary handoff serializes and restores KF mean, covariance, and observation history so tracks survive chunk transitions
   6. Small tracklet gaps are filled via spline interpolation
   7. If INV-04 findings reveal significant low-confidence valid detections, a secondary BYTE-style pass for those detections is implemented; otherwise TRACK-10 is explicitly deferred
-**Plans:** 1 plan
+**Plans:** 2 plans
 Plans:
-- [ ] 82-01-PLAN.md — Add keypoint centroid config, implement extraction in tracker, document selection
+- [ ] 83-01-PLAN.md — KF engine, OKS/OCM cost, single-pass tracker, sigma computation
+- [ ] 83-02-PLAN.md — Bidirectional merge, gap interpolation, chunk handoff, config + stage wiring
 
 ### Phase 84: Integration & Evaluation
 **Goal**: The new tracker is wired into the reordered pipeline and evaluated against the Phase 80 baselines, with iteration on parameters if needed

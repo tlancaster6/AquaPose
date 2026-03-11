@@ -70,6 +70,10 @@ Recent decisions affecting current work:
 
 10 pending todos — see .planning/todos/pending/ (review for relevance)
 
+### Roadmap Evolution
+
+- Phase 91.1 inserted after Phase 91: association bottleneck investigation and remediation (URGENT)
+
 ### Blockers/Concerns
 
 - P2 (LUT coordinate space): Round-trip unit test required in Phase 88 before any end-to-end eval — same bug caused 86% singleton rate in v3.7

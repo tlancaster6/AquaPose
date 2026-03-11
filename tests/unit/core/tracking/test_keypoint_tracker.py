@@ -936,3 +936,74 @@ class TestCrossChunkHandoff:
 
         tracker2 = _SinglePassTracker.from_state("cam0", state)
         assert tracker2._next_track_id == next_id_before
+
+
+# ---------------------------------------------------------------------------
+# Tracklet2D keypoint round-trip tests (Phase 87)
+# ---------------------------------------------------------------------------
+
+
+class TestTracklet2DKeypointRoundtrip:
+    """Round-trip tests verifying keypoint data flows through KeypointTracker."""
+
+    def test_keypoints_shape_matches_frames(self) -> None:
+        """After feeding detections, Tracklet2D.keypoints has shape (T, 6, 2)."""
+        tracker = _make_keypoint_tracker(n_init=3, max_age=10)
+        frames = _make_linear_detections_kpt(n_fish=1, n_frames=8)
+        for i, dets in enumerate(frames):
+            tracker.update(frame_idx=i, detections=dets)
+        tracklets = tracker.get_tracklets()
+        assert len(tracklets) >= 1
+        t = tracklets[0]
+        assert t.keypoints is not None
+        assert t.keypoints.shape == (len(t.frames), 6, 2)
+        assert t.keypoints.dtype == np.float32
+
+    def test_keypoint_conf_shape_matches_frames(self) -> None:
+        """Tracklet2D.keypoint_conf has shape (T, 6)."""
+        tracker = _make_keypoint_tracker(n_init=3, max_age=10)
+        frames = _make_linear_detections_kpt(n_fish=1, n_frames=8)
+        for i, dets in enumerate(frames):
+            tracker.update(frame_idx=i, detections=dets)
+        tracklets = tracker.get_tracklets()
+        assert len(tracklets) >= 1
+        t = tracklets[0]
+        assert t.keypoint_conf is not None
+        assert t.keypoint_conf.shape == (len(t.frames), 6)
+        assert t.keypoint_conf.dtype == np.float32
+
+    def test_coasted_frames_have_zero_conf(self) -> None:
+        """Coasted/interpolated frames have keypoint_conf == 0.0 for all keypoints."""
+        tracker = _make_keypoint_tracker(n_init=3, max_age=10, max_gap_frames=5)
+        frames = _make_linear_detections_kpt(n_fish=1, n_frames=10)
+        # Drop frame 5 to create a gap that will be interpolated
+        frames[5] = []
+        for i, dets in enumerate(frames):
+            tracker.update(frame_idx=i, detections=dets)
+        tracklets = tracker.get_tracklets()
+        assert len(tracklets) >= 1
+        t = tracklets[0]
+        assert t.keypoint_conf is not None
+        for i, status in enumerate(t.frame_status):
+            if status == "coasted":
+                np.testing.assert_array_equal(
+                    t.keypoint_conf[i],
+                    np.zeros(6, dtype=np.float32),
+                    err_msg=f"Coasted frame {t.frames[i]} has non-zero keypoint_conf",
+                )
+
+    def test_detected_frames_have_nonzero_conf(self) -> None:
+        """Detected frames retain raw input confidence values (> 0)."""
+        tracker = _make_keypoint_tracker(n_init=3, max_age=10)
+        frames = _make_linear_detections_kpt(n_fish=1, n_frames=8)
+        for i, dets in enumerate(frames):
+            tracker.update(frame_idx=i, detections=dets)
+        tracklets = tracker.get_tracklets()
+        assert len(tracklets) >= 1
+        t = tracklets[0]
+        assert t.keypoint_conf is not None
+        for i, status in enumerate(t.frame_status):
+            if status == "detected":
+                assert np.any(t.keypoint_conf[i] > 0.0), (
+                    f"Detected frame {t.frames[i]} has all-zero keypoint_conf"
+                )

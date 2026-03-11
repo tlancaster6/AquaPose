@@ -14,7 +14,10 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 import numpy as np
 import torch
 
-from aquapose.core.association.scoring import ray_ray_closest_point
+from aquapose.core.association.scoring import (
+    ray_ray_closest_point,
+    ray_ray_closest_point_batch,
+)
 from aquapose.core.association.types import TrackletGroup
 
 if TYPE_CHECKING:
@@ -373,10 +376,9 @@ def _compute_frame_residual_keypoints(
         o_o = o_origins.cpu().numpy().astype(np.float64)
         o_d = o_dirs.cpu().numpy().astype(np.float64)
 
-        # Compute per-keypoint ray-ray distances
-        for k in range(len(valid_indices)):
-            dist, _ = ray_ray_closest_point(t_o[k], t_d[k], o_o[k], o_d[k])
-            all_distances.append(dist)
+        # Compute per-keypoint ray-ray distances (vectorized)
+        dists = ray_ray_closest_point_batch(t_o, t_d, o_o, o_d)
+        all_distances.extend(dists.tolist())
 
     if not all_distances:
         return None
@@ -422,8 +424,13 @@ def _compute_frame_residual_centroid(
         o_o = o_origins[0].cpu().numpy().astype(np.float64)
         o_d = o_dirs[0].cpu().numpy().astype(np.float64)
 
-        dist, _ = ray_ray_closest_point(t_o, t_d, o_o, o_d)
-        distances.append(dist)
+        dist = ray_ray_closest_point_batch(
+            t_o.reshape(1, 3),
+            t_d.reshape(1, 3),
+            o_o.reshape(1, 3),
+            o_d.reshape(1, 3),
+        )[0]
+        distances.append(float(dist))
 
     if not distances:
         return None

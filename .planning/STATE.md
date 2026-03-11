@@ -23,9 +23,9 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 ## Current Position
 
 Phase: 86 of v3.7 (Cleanup Conditional)
-Plan: 01 complete (cross-chunk handoff fix + dead code removal)
-Status: Executing Phase 86 — Plan 01 done, Plan 02 in progress
-Last activity: 2026-03-11 — Plan 86-01 complete; handoff bug fixed, dead types removed
+Plan: 02 complete (test directory reorganization + CLI wiring)
+Status: Phase 86 complete — all plans executed, verification pending
+Last activity: 2026-03-11 — Phase 86 all plans complete
 
 Progress: [█████████░] 90%
 

@@ -208,7 +208,7 @@ Full details: `.planning/milestones/v3.6-ROADMAP.md`
 - [x] **Phase 83: Custom Tracker Implementation** - Bidirectional batched keypoint tracker with OKS cost, OCM direction, KF state, gap interpolation (completed 2026-03-11)
 - [x] **Phase 84: Integration & Evaluation** - New tracker wired into pipeline, evaluated against Phase 80 baselines (completed 2026-03-11)
 - [x] **Phase 85: Code Quality Audit & CLI Smoke Test** - Dead code removed, type errors fixed, pipeline runs end-to-end from CLI (completed 2026-03-11)
-- [ ] **Phase 86: Cleanup (Conditional)** - Address issues found in Phase 85 — fix cross-chunk handoff bug, remove dead types, rename test dirs, wire augment_count
+- [x] **Phase 86: Cleanup (Conditional)** - Address issues found in Phase 85 — fix cross-chunk handoff bug, remove dead types, rename test dirs, wire augment_count (completed 2026-03-11)
 
 ## Phase Details
 
@@ -353,7 +353,7 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Each issue listed in the Phase 85 audit report has a corresponding fix or an explicit justification for deferral
   2. `hatch run check` and `hatch run test` pass cleanly after all fixes
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 86-01-PLAN.md — Fix cross-chunk handoff bug, remove dead code (FishTrack/TrackState/TrackHealth, _reproject_3d_midline)
@@ -375,4 +375,4 @@ Phases execute in numeric order: 78 -> 79 (conditional) -> 80 -> 81 -> 82 -> 83 
 | 83. Custom Tracker Implementation | 2/2 | Complete    | 2026-03-11 | - |
 | 84. Integration & Evaluation | 2/2 | Complete    | 2026-03-11 | - |
 | 85. Code Quality Audit & CLI Smoke Test | 2/2 | Complete    | 2026-03-11 | - |
-| 86. Cleanup (Conditional) | 1/2 | In Progress|  | - |
+| 86. Cleanup (Conditional) | 2/2 | Complete   | 2026-03-11 | - |

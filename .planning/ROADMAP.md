@@ -346,7 +346,7 @@ Phases execute in numeric order: 78 -> 79 (conditional) -> 80 -> 81 -> 82 -> 83 
 | 79. Occlusion Remediation (Conditional) | v3.7 | 0/0 | Skipped | 2026-03-10 |
 | 80. Baseline Metrics | 1/1 | Complete    | 2026-03-11 | - |
 | 81. Pipeline Reorder & Segmentation Removal | 2/2 | Complete    | 2026-03-11 | - |
-| 82. Association Upgrade — Keypoint Centroid | 1/1 | Complete   | 2026-03-11 | - |
+| 82. Association Upgrade — Keypoint Centroid | 1/1 | Complete    | 2026-03-11 | - |
 | 83. Custom Tracker Implementation | v3.7 | 0/TBD | Not started | - |
 | 84. Integration & Evaluation | v3.7 | 0/TBD | Not started | - |
 | 85. Code Quality Audit & CLI Smoke Test | v3.7 | 0/TBD | Not started | - |

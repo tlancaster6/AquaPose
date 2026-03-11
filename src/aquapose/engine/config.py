@@ -196,9 +196,10 @@ class TrackingConfig:
             ``"keypoint_bidi"``. Ignored when ``tracker_kind="ocsort"``.
             Default 5.
         match_cost_threshold: Maximum cost for Hungarian assignment match
-            acceptance in ``"keypoint_bidi"``. Pairs with cost above this
-            value are left unmatched. Ignored when ``tracker_kind="ocsort"``.
-            Default 1.0.
+            acceptance in ``"keypoint_bidi"``. Cells above this threshold are
+            gated to infinity before the solver runs, so impossible pairings
+            are never forced. Ignored when ``tracker_kind="ocsort"``.
+            Default 1.2.
         ocr_threshold: Minimum OKS similarity for observation-centric recovery
             (OCR) in ``"keypoint_bidi"``. Tracks that coast and then find a
             detection with OKS above this threshold are re-acquired. Ignored
@@ -219,7 +220,7 @@ class TrackingConfig:
     base_r: float = 10.0
     lambda_ocm: float = 0.2
     max_gap_frames: int = 5
-    match_cost_threshold: float = 1.0
+    match_cost_threshold: float = 1.2
     ocr_threshold: float = 0.5
 
     def __post_init__(self) -> None:

@@ -22,7 +22,7 @@ Tuning knobs (adjust if track count does not improve over 27-track baseline)::
     --n-init INT                Minimum hits before track is confirmed (default 1)
     --base-r FLOAT              KF base measurement noise variance (default 10.0)
     --lambda-ocm FLOAT          OCM weight in cost matrix (default 0.2)
-    --match-cost-threshold FLOAT  Max cost for Hungarian match acceptance (default 1.0)
+    --match-cost-threshold FLOAT  Max cost for Hungarian match acceptance (default 1.2)
     --ocr-threshold FLOAT       Min OKS for observation-centric recovery (default 0.5)
 """
 
@@ -418,7 +418,7 @@ def run_evaluation(
     n_init: int,
     base_r: float = 10.0,
     lambda_ocm: float = 0.2,
-    match_cost_threshold: float = 1.0,
+    match_cost_threshold: float = 1.2,
     ocr_threshold: float = 0.5,
 ) -> None:
     """Run dual-tracker evaluation on the specified frame range.
@@ -917,7 +917,7 @@ def main() -> None:
         "--match-cost-threshold",
         type=float,
         default=None,
-        help="Max cost for Hungarian assignment match acceptance (default: 1.0)",
+        help="Max cost for Hungarian assignment match acceptance (default: 1.2)",
     )
     parser.add_argument(
         "--ocr-threshold",
@@ -945,7 +945,7 @@ def main() -> None:
         lambda_ocm=args.lambda_ocm if args.lambda_ocm is not None else 0.2,
         match_cost_threshold=args.match_cost_threshold
         if args.match_cost_threshold is not None
-        else 1.0,
+        else 1.2,
         ocr_threshold=args.ocr_threshold if args.ocr_threshold is not None else 0.5,
     )
 

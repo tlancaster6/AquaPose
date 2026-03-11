@@ -588,7 +588,7 @@ class _SinglePassTracker:
         self._lambda_ocm: float = float(config.lambda_ocm)
         self._sigmas: np.ndarray = np.asarray(config.sigmas, dtype=np.float64)
         self._match_cost_threshold: float = float(
-            getattr(config, "match_cost_threshold", 1.0)
+            getattr(config, "match_cost_threshold", 1.2)
         )
         self._ocr_threshold: float = float(getattr(config, "ocr_threshold", 0.5))
 
@@ -707,10 +707,18 @@ class _SinglePassTracker:
 
             cost = build_cost_matrix(oks, ocm, lambda_ocm=self._lambda_ocm)  # (N, M)
 
-            row_idx, col_idx = linear_sum_assignment(cost)
+            # Gate the cost matrix BEFORE Hungarian assignment so that
+            # impossible pairings are never forced.  Cells above the
+            # threshold are set to a large sentinel that linear_sum_assignment
+            # will avoid whenever a feasible alternative exists.
+            _GATE_SENTINEL = 1e6
+            gated_cost = np.where(
+                cost < self._match_cost_threshold, cost, _GATE_SENTINEL
+            )
+            row_idx, col_idx = linear_sum_assignment(gated_cost)
 
             for r, c in zip(row_idx, col_idx, strict=False):
-                if cost[r, c] >= self._match_cost_threshold:
+                if gated_cost[r, c] >= _GATE_SENTINEL:
                     continue
                 tid = track_ids[r]
                 det, kpts_arr, kconf_arr = valid_dets[c]
@@ -863,7 +871,7 @@ class _SinglePassTracker:
             base_r=state["base_r"],
             lambda_ocm=state["lambda_ocm"],
             sigmas=np.array(state["sigmas"], dtype=np.float64),
-            match_cost_threshold=state.get("match_cost_threshold", 1.0),
+            match_cost_threshold=state.get("match_cost_threshold", 1.2),
             ocr_threshold=state.get("ocr_threshold", 0.5),
         )
         instance = cls(camera_id=camera_id, config=config)
@@ -1085,7 +1093,7 @@ class KeypointTracker:
         lambda_ocm: float = 0.2,
         sigmas: np.ndarray | None = None,
         max_gap_frames: int = 5,
-        match_cost_threshold: float = 1.0,
+        match_cost_threshold: float = 1.2,
         ocr_threshold: float = 0.5,
         centroid_keypoint_index: int = 2,  # API symmetry only
         centroid_confidence_floor: float = 0.3,  # API symmetry only
@@ -1209,7 +1217,7 @@ class KeypointTracker:
             lambda_ocm=state["lambda_ocm"],
             sigmas=sigmas,
             max_gap_frames=state["max_gap_frames"],
-            match_cost_threshold=state.get("match_cost_threshold", 1.0),
+            match_cost_threshold=state.get("match_cost_threshold", 1.2),
             ocr_threshold=state.get("ocr_threshold", 0.5),
         )
         # Restore forward tracker from saved state

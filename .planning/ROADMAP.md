@@ -313,6 +313,16 @@ Plans:
 Plans:
 - [ ] 84-01-PLAN.md — Pipeline wiring, evaluation script, metrics comparison
 
+### Phase 84.1: tracker tuning (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 84
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 84.1 to break down)
+
 ### Phase 85: Code Quality Audit & CLI Smoke Test
 **Goal**: The overhaul leaves no dead code, broken cross-references, or type errors; the full pipeline runs cleanly from the CLI with the new stage ordering
 **Depends on**: Phase 84

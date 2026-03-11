@@ -23,9 +23,9 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 ## Current Position
 
 Phase: 84 of v3.7 (Integration & Evaluation)
-Plan: 02 Tasks 1-3 complete (Task 4 checkpoint:human-verify pending)
-Status: Phase 84-02 Tasks 1-3 complete — bidi comment cleanup, eval script OOM+exclusive-assignment fix, re-evaluation (42 tracks 93.6% coverage); awaiting human review of updated 84-EVALUATION.md
-Last activity: 2026-03-11 — Phase 84-02 Tasks 1-3 complete; single-pass keypoint_bidi 42 tracks vs bidi 44 tracks; BYTE trigger no longer fires
+Plan: 02 complete (all tasks done, human-verify approved)
+Status: Phase 84-02 complete — bidi comment cleanup, eval script OOM+exclusive-assignment fix, re-evaluation approved (42 tracks 93.6% coverage)
+Last activity: 2026-03-11 — Phase 84-02 complete; single-pass keypoint_bidi 42 tracks 93.6% coverage approved; Phase 84 fully complete
 
 Progress: [█████████░] 90%
 
@@ -94,6 +94,7 @@ Recent decisions affecting current work:
 ### Roadmap Evolution
 
 - Phase 78.1 inserted after Phase 78: OBB & Pose Production Retrain (URGENT) — detection dropout on white-wall background persists after pseudo-label round; retrain with corrected pseudo-labels in train/val split and more epochs
+- Phase 84.1 inserted after Phase 84: tracker tuning (URGENT)
 
 ### Pending Todos
 
@@ -107,5 +108,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-11
-Stopped at: Phase 84-02 Tasks 1-3 complete — awaiting Task 4 checkpoint:human-verify of updated 84-EVALUATION.md and annotated video
+Stopped at: Phase 84-02 complete — all 4 tasks done, human-verify approved. Ready for Phase 85.
 Resume file: N/A

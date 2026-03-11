@@ -8,9 +8,9 @@
     "max_age": 15,
     "det_thresh": 0.1,
     "n_init": 1,
-    "base_r": 50.0,
+    "base_r": 10.0,
     "lambda_ocm": 0.2,
-    "match_cost_threshold": 1.0,
+    "match_cost_threshold": 1.2,
     "ocr_threshold": 0.5
   },
   "ocsort": {
@@ -70,13 +70,13 @@
   },
   "keypoint_bidi": {
     "tracking": {
-      "track_count": 47,
-      "length_median": 63.0,
-      "length_mean": 234.63829787234042,
-      "length_min": 7,
+      "track_count": 27,
+      "length_median": 92.0,
+      "length_mean": 400.0740740740741,
+      "length_min": 17,
       "length_max": 1200,
-      "coast_frequency": 0.06955023576351106,
-      "detection_coverage": 0.930449764236489
+      "coast_frequency": 0.05008331790409184,
+      "detection_coverage": 0.9499166820959082
     },
     "fragmentation": {
       "total_gaps": 0,
@@ -110,34 +110,14 @@
         "23": 1.0,
         "24": 1.0,
         "25": 1.0,
-        "26": 1.0,
-        "27": 1.0,
-        "28": 1.0,
-        "29": 1.0,
-        "30": 1.0,
-        "31": 1.0,
-        "32": 1.0,
-        "33": 1.0,
-        "34": 1.0,
-        "35": 1.0,
-        "36": 1.0,
-        "37": 1.0,
-        "38": 1.0,
-        "39": 1.0,
-        "40": 1.0,
-        "41": 1.0,
-        "42": 1.0,
-        "43": 1.0,
-        "44": 1.0,
-        "45": 1.0,
-        "46": 1.0
+        "26": 1.0
       },
-      "unique_fish_ids": 47,
+      "unique_fish_ids": 27,
       "expected_fish": 9,
-      "track_births": 38,
-      "track_deaths": 38,
-      "mean_track_lifespan": 234.63829787234042,
-      "median_track_lifespan": 63.0
+      "track_births": 18,
+      "track_deaths": 18,
+      "mean_track_lifespan": 400.0740740740741,
+      "median_track_lifespan": 92.0
     }
   },
   "byte_trigger": false

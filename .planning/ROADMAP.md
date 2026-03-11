@@ -324,7 +324,7 @@ Plans:
   3. ✅ Best parameter set committed: pre-gated Hungarian with `match_cost_threshold=1.2`
   4. ✅ Track count 27 — beats OC-SORT parity (30)
   5. ✅ Detection coverage 95.0% (>= 90%)
-**Plans:** 2/2 plans executed
+**Plans:** 1/2 plans complete
 
 Plans:
 - [x] 84.1-01-PLAN.md -- Config plumbing: promote constants to config, add CLI flags

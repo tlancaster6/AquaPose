@@ -9,10 +9,6 @@ from aquapose.core.association.clustering import (
     build_must_not_link,
     cluster_tracklets,
 )
-from aquapose.core.association.refinement import (
-    RefinementConfigLike,
-    refine_clusters,
-)
 from aquapose.core.association.scoring import (
     AssociationConfigLike,
     ray_ray_closest_point,
@@ -26,6 +22,10 @@ from aquapose.core.association.types import (
     HandoffState,
     TrackletGroup,
 )
+from aquapose.core.association.validation import (
+    ValidationConfigLike,
+    validate_groups,
+)
 
 __all__ = [
     "AssociationBundle",
@@ -33,13 +33,13 @@ __all__ = [
     "AssociationStage",
     "ClusteringConfigLike",
     "HandoffState",
-    "RefinementConfigLike",
     "TrackletGroup",
+    "ValidationConfigLike",
     "build_must_not_link",
     "cluster_tracklets",
     "ray_ray_closest_point",
     "ray_ray_closest_point_batch",
-    "refine_clusters",
     "score_all_pairs",
     "score_tracklet_pair",
+    "validate_groups",
 ]

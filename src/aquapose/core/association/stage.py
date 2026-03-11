@@ -97,11 +97,11 @@ class AssociationStage:
         mnl = build_must_not_link(tracks_2d)
         groups = cluster_tracklets(scores, tracks_2d, mnl, self._config.association)
 
-        # Step 4: Geometric refinement via 3D triangulation
+        # Step 4: Group validation via multi-keypoint residuals
         if forward_luts is not None:
-            from aquapose.core.association.refinement import refine_clusters
+            from aquapose.core.association.validation import validate_groups
 
-            groups = refine_clusters(groups, forward_luts, self._config.association)
+            groups = validate_groups(groups, forward_luts, self._config.association)
 
         context.tracklet_groups = groups
         return context

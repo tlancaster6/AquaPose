@@ -46,8 +46,8 @@ class TrackletGroup:
             triangulation. Stored as a tuple of ``(frame_idx, point_3d)`` pairs,
             where ``point_3d`` is a numpy array of shape (3,) in world coordinates,
             or ``None`` when fewer than 2 rays were available for that frame.
-            ``None`` when refinement was skipped (group below ``min_cameras_refine``),
-            refinement is disabled, or the group is an evicted singleton.
+            ``None`` when validation was skipped (group below ``min_cameras_validate``),
+            validation is disabled, or the group is an evicted singleton.
             Type: ``tuple[tuple[int, np.ndarray | None], ...]`` (declared as
             generic ``tuple`` to match existing field style).
     """

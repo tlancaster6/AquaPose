@@ -122,8 +122,9 @@ class PoseConfig:
 class AssociationConfig:
     """Config for the Association stage (Stage 3).
 
-    Controls pairwise cross-camera tracklet scoring and Leiden clustering
-    for fish identity assignment. All thresholds are YAML-tunable.
+    Controls pairwise cross-camera tracklet scoring, Leiden clustering,
+    and post-clustering group validation for fish identity assignment.
+    All thresholds are YAML-tunable.
 
     Attributes:
         ray_distance_threshold: Maximum ray-ray closest-point distance (metres)
@@ -140,12 +141,16 @@ class AssociationConfig:
         min_shared_voxels: Minimum shared voxels for camera pair adjacency.
             Default 100.
         leiden_resolution: Resolution parameter for Leiden clustering. Default 1.0.
-        eviction_reproj_threshold: Maximum median ray-to-consensus-point distance
-            (metres) for a tracklet to remain in its cluster. Default 0.025
-            (2.5 cm -- fish are ~10 cm long, ~2 cm wide).
-        min_cameras_refine: Minimum cameras in a cluster to attempt 3D
-            refinement. Clusters with fewer cameras skip refinement. Default 3.
-        refinement_enabled: Toggle to skip refinement entirely. Default True.
+        eviction_reproj_threshold: Maximum ray-ray distance (metres) for a frame
+            to be classified as consistent during group validation. Also used as
+            the confidence normalisation denominator. Default 0.025 (2.5 cm).
+        min_cameras_validate: Minimum unique cameras in a group for validation
+            to run. Groups below this threshold are returned unchanged. Default 2
+            (multi-keypoint residuals give meaningful signal with 2 cameras).
+        validation_enabled: Toggle to skip group validation entirely. Default True.
+        min_segment_length: Minimum frames per segment after a changepoint split.
+            Both the consistent and inconsistent segments must meet this threshold
+            for a split to be accepted. Default 10 (~0.3s at 30fps).
         centroid_keypoint_index: Index into Detection.keypoints for tracklet
             centroid. 0=nose, 1=head, 2=spine1 (default), 3=spine2, 4=spine3,
             5=tail. Falls back to OBB centroid when keypoint is absent or below
@@ -170,8 +175,9 @@ class AssociationConfig:
     min_shared_voxels: int = 100
     leiden_resolution: float = 1.0
     eviction_reproj_threshold: float = 0.025
-    min_cameras_refine: int = 3
-    refinement_enabled: bool = True
+    min_cameras_validate: int = 2
+    validation_enabled: bool = True
+    min_segment_length: int = 10
     centroid_keypoint_index: int = 2
     centroid_confidence_floor: float = 0.3
     keypoint_confidence_floor: float = 0.3

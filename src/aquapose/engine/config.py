@@ -154,6 +154,12 @@ class AssociationConfig:
         centroid_confidence_floor: Minimum keypoint confidence to use keypoint
             as centroid. Below threshold falls back to OBB centroid. Default 0.3
             (matches the pose backend confidence floor).
+        keypoint_confidence_floor: Minimum keypoint confidence for scoring
+            participation. Keypoints below this on either tracklet are excluded
+            from the frame's distance computation. Default 0.3.
+        aggregation_method: Method to aggregate per-keypoint distances within a
+            frame. Currently only ``"mean"`` is supported; plumbing for future
+            alternatives (median, trimmed_mean). Default ``"mean"``.
     """
 
     ray_distance_threshold: float = 0.03
@@ -170,6 +176,8 @@ class AssociationConfig:
     refinement_enabled: bool = True
     centroid_keypoint_index: int = 2
     centroid_confidence_floor: float = 0.3
+    keypoint_confidence_floor: float = 0.3
+    aggregation_method: str = "mean"
 
 
 @dataclass(frozen=True)
@@ -179,7 +187,7 @@ class TrackingConfig:
     Controls the tracker used for per-camera 2D fish tracking.
 
     Attributes:
-        tracker_kind: Tracker backend. Currently only ``"keypoint_bidi"``
+        tracker_kind: Tracker backend. Currently only ``"keypoint_oks"``
             (custom single-pass keypoint tracker with ORU/OCR recovery).
         max_coast_frames: Maximum frames to coast (Kalman predict with no
             observation) before dropping a track. Default 30.
@@ -205,7 +213,7 @@ class TrackingConfig:
         coupling config serialization to the sigma array format.
     """
 
-    tracker_kind: str = "keypoint_bidi"
+    tracker_kind: str = "keypoint_oks"
     max_coast_frames: int = 30
     n_init: int = 3
     det_thresh: float = 0.5
@@ -217,7 +225,7 @@ class TrackingConfig:
 
     def __post_init__(self) -> None:
         """Validate tracker_kind on construction."""
-        valid_kinds = {"keypoint_bidi"}
+        valid_kinds = {"keypoint_oks"}
         if self.tracker_kind not in valid_kinds:
             raise ValueError(
                 f"Unknown tracker_kind: {self.tracker_kind!r}. "
@@ -511,7 +519,7 @@ _RENAME_HINTS: dict[str, str] = {
     "stop_frame": "max_frames on frame source (set via CLI --set or orchestrator)",
     "model_path": "weights_path",
     "n_points": "n_sample_points (top-level)",
-    "iou_threshold": "removed (OC-SORT only; keypoint_bidi does not use IoU matching)",
+    "iou_threshold": "removed (OC-SORT only; keypoint_oks does not use IoU matching)",
 }
 
 

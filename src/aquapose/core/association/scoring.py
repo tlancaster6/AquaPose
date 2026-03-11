@@ -2,7 +2,7 @@
 
 Implements SPECSEED Steps 0-1: camera overlap graph filtering and pairwise
 scoring with ray-ray closest-point distance, early termination, and
-aggregation.
+aggregation.  Uses multi-keypoint rays (not centroids) for richer affinity.
 """
 
 from __future__ import annotations
@@ -49,6 +49,11 @@ class AssociationConfigLike(Protocol):
         t_saturate: Overlap reliability saturation frame count.
         early_k: Frames checked for early termination.
         min_shared_voxels: Camera pair adjacency voxel threshold.
+        keypoint_confidence_floor: Minimum keypoint confidence for scoring
+            participation. Keypoints below this on either tracklet are excluded
+            from the frame's distance computation.
+        aggregation_method: Method to aggregate per-keypoint distances within a
+            frame. Currently only ``"mean"`` is supported.
     """
 
     ray_distance_threshold: float
@@ -57,6 +62,8 @@ class AssociationConfigLike(Protocol):
     t_saturate: int
     early_k: int
     min_shared_voxels: int
+    keypoint_confidence_floor: float
+    aggregation_method: str
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +185,7 @@ def ray_ray_closest_point_batch(
 
 
 # ---------------------------------------------------------------------------
-# Single-pair scoring (SPECSEED Step 1)
+# Single-pair scoring (SPECSEED Step 1) — multi-keypoint
 # ---------------------------------------------------------------------------
 
 
@@ -190,22 +197,27 @@ def score_tracklet_pair(
     *,
     frame_count: int | None = None,
 ) -> float:
-    """Score a single cross-camera tracklet pair using a soft linear kernel.
+    """Score a cross-camera tracklet pair using multi-keypoint ray distances.
 
-    Implements SPECSEED Step 1: ray-ray distance aggregation with a soft
-    linear kernel ``1 - dist / threshold``, early termination, and overlap
-    reliability weighting.
+    Casts rays from all confident keypoints per detection per frame, computes
+    matched keypoint ray-ray distances (nose-to-nose, head-to-head, etc.),
+    aggregates per-frame via arithmetic mean, and applies a soft linear kernel.
 
     Args:
         tracklet_a: First tracklet (from camera A).
         tracklet_b: Second tracklet (from camera B).
         forward_luts: Per-camera ForwardLUT dict.
         config: Scoring configuration.
+        frame_count: Total frames in chunk (for overlap reliability).
 
     Returns:
-        Affinity score in [0, 1]. Zero if insufficient overlap or early
-        termination triggered.
+        Affinity score in [0, 1]. Zero if insufficient overlap, missing
+        keypoints, or early termination triggered.
     """
+    # No centroid fallback: keypoints required
+    if tracklet_a.keypoints is None or tracklet_b.keypoints is None:
+        return 0.0
+
     cam_a = tracklet_a.camera_id
     cam_b = tracklet_b.camera_id
 
@@ -225,16 +237,14 @@ def score_tracklet_pair(
     # Determine early-termination split point
     early_k = config.early_k
     if t_shared <= early_k:
-        # Single-phase: all frames fit within early window
         early_frames = shared_frames
         remaining_frames: list[int] = []
     else:
-        # Two-phase: split at early_k boundary
         early_frames = shared_frames[:early_k]
         remaining_frames = shared_frames[early_k:]
 
     # --- Phase 1: score early frames ---
-    score_sum = _batch_score_frames(
+    score_sum, n_skipped = _batch_score_frames_kpt(
         early_frames, frames_a, frames_b, tracklet_a, tracklet_b, lut_a, lut_b, config
     )
 
@@ -243,8 +253,9 @@ def score_tracklet_pair(
         return 0.0
 
     # --- Phase 2: score remaining frames (if any) ---
+    total_skipped = n_skipped
     if remaining_frames:
-        score_sum += _batch_score_frames(
+        rem_score, rem_skipped = _batch_score_frames_kpt(
             remaining_frames,
             frames_a,
             frames_b,
@@ -254,9 +265,16 @@ def score_tracklet_pair(
             lut_b,
             config,
         )
+        score_sum += rem_score
+        total_skipped += rem_skipped
+
+    # Effective t_shared excludes frames where no keypoints were valid
+    effective_t_shared = t_shared - total_skipped
+    if effective_t_shared <= 0:
+        return 0.0
 
     # Soft inlier fraction
-    f = score_sum / t_shared
+    f = score_sum / effective_t_shared
 
     # Overlap reliability — cap t_saturate at actual run length for short runs
     effective_saturate = (
@@ -269,7 +287,7 @@ def score_tracklet_pair(
     return score
 
 
-def _batch_score_frames(
+def _batch_score_frames_kpt(
     batch_frames: list[int],
     frames_a: dict[int, int],
     frames_b: dict[int, int],
@@ -278,12 +296,13 @@ def _batch_score_frames(
     lut_a: ForwardLUT,
     lut_b: ForwardLUT,
     config: AssociationConfigLike,
-) -> float:
-    """Score a batch of shared frames using vectorized ray-ray distances.
+) -> tuple[float, int]:
+    """Score a batch of shared frames using multi-keypoint ray-ray distances.
 
-    Stacks centroids for all frames into a single ``cast_ray`` call per
-    camera, then uses ``ray_ray_closest_point_batch`` for vectorized
-    distance computation and a vectorized soft kernel.
+    Extracts keypoints for both tracklets, builds a confidence intersection
+    mask, flattens valid keypoints into a single ``cast_ray`` call per camera,
+    computes matched distances, aggregates per-frame via mean, and applies the
+    soft linear kernel.
 
     Args:
         batch_frames: Frame indices to score.
@@ -296,38 +315,71 @@ def _batch_score_frames(
         config: Scoring configuration.
 
     Returns:
-        Sum of soft-kernel contributions for the batch.
+        Tuple of ``(score_sum, n_skipped)`` where ``score_sum`` is the sum of
+        soft-kernel contributions and ``n_skipped`` is the count of frames
+        excluded because no keypoints passed the confidence intersection.
     """
+    n_frames = len(batch_frames)
     idx_a = [frames_a[f] for f in batch_frames]
     idx_b = [frames_b[f] for f in batch_frames]
 
-    cents_a = np.array(
-        [tracklet_a.centroids[i] for i in idx_a], dtype=np.float64
-    )  # (N, 2)
-    cents_b = np.array(
-        [tracklet_b.centroids[i] for i in idx_b], dtype=np.float64
-    )  # (N, 2)
+    # Extract keypoints and confidences for shared frames
+    assert tracklet_a.keypoints is not None  # caller checks
+    assert tracklet_b.keypoints is not None
+    assert tracklet_a.keypoint_conf is not None
+    assert tracklet_b.keypoint_conf is not None
+
+    kpts_a = tracklet_a.keypoints[idx_a]  # (N, K, 2)
+    kpts_b = tracklet_b.keypoints[idx_b]  # (N, K, 2)
+    conf_a = tracklet_a.keypoint_conf[idx_a]  # (N, K)
+    conf_b = tracklet_b.keypoint_conf[idx_b]  # (N, K)
+
+    # Intersection mask: both tracklets must have confident keypoint
+    floor = config.keypoint_confidence_floor
+    valid = (conf_a >= floor) & (conf_b >= floor)  # (N, K) bool
+
+    # Count valid keypoints per frame
+    n_valid = valid.sum(axis=1)  # (N,)
+    active_mask = n_valid > 0  # (N,) bool
+    n_skipped = int((~active_mask).sum())
+
+    if not active_mask.any():
+        return 0.0, n_frames
+
+    # Flatten valid keypoints for batched ray casting
+    pixels_a = kpts_a[valid].astype(np.float64)  # (M, 2)
+    pixels_b = kpts_b[valid].astype(np.float64)  # (M, 2)
 
     # Single cast_ray call per camera
-    pix_a = torch.tensor(cents_a, dtype=torch.float32)
-    pix_b = torch.tensor(cents_b, dtype=torch.float32)
+    pix_a_t = torch.tensor(pixels_a, dtype=torch.float32)
+    pix_b_t = torch.tensor(pixels_b, dtype=torch.float32)
 
-    origins_a, dirs_a = lut_a.cast_ray(pix_a)
-    origins_b, dirs_b = lut_b.cast_ray(pix_b)
+    origins_a, dirs_a = lut_a.cast_ray(pix_a_t)
+    origins_b, dirs_b = lut_b.cast_ray(pix_b_t)
 
-    # Convert once to numpy float64
+    # Convert to numpy float64
     oa = origins_a.cpu().numpy().astype(np.float64)
     da = dirs_a.cpu().numpy().astype(np.float64)
     ob = origins_b.cpu().numpy().astype(np.float64)
     db = dirs_b.cpu().numpy().astype(np.float64)
 
-    # Vectorized ray-ray distances
-    dists = ray_ray_closest_point_batch(oa, da, ob, db)  # (N,)
+    # Vectorized ray-ray distances for all valid keypoint pairs
+    dists = ray_ray_closest_point_batch(oa, da, ob, db)  # (M,)
 
-    # Vectorized soft kernel
-    inlier = dists < config.ray_distance_threshold
-    contributions = np.where(inlier, 1.0 - dists / config.ray_distance_threshold, 0.0)
-    return float(contributions.sum())
+    # Scatter back to per-frame mean distances using reduceat
+    active_n_valid = n_valid[active_mask]  # (A,) where A = active frame count
+    offsets = np.concatenate([[0], np.cumsum(active_n_valid[:-1])])
+    frame_sums = np.add.reduceat(dists, offsets)  # (A,)
+    mean_dists = frame_sums / active_n_valid  # (A,)
+
+    # Soft kernel applied AFTER per-frame mean distance
+    contributions = np.where(
+        mean_dists < config.ray_distance_threshold,
+        1.0 - mean_dists / config.ray_distance_threshold,
+        0.0,
+    )
+
+    return float(contributions.sum()), n_skipped
 
 
 # ---------------------------------------------------------------------------

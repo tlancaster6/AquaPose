@@ -339,7 +339,7 @@ Plans:
   2. `hatch run typecheck` produces no new type errors introduced by the v3.7 overhaul
   3. `aquapose run` completes end-to-end on a test clip with the new pipeline, and all config options for the new tracker are documented
   4. A documented decision exists on whether BoxMot is removed as a dependency or retained as an OC-SORT fallback
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 85-01-PLAN.md — BoxMot removal, type error fixes, dead code cleanup
@@ -370,5 +370,5 @@ Phases execute in numeric order: 78 -> 79 (conditional) -> 80 -> 81 -> 82 -> 83 
 | 82. Association Upgrade — Keypoint Centroid | 1/1 | Complete    | 2026-03-11 | - |
 | 83. Custom Tracker Implementation | 2/2 | Complete    | 2026-03-11 | - |
 | 84. Integration & Evaluation | 2/2 | Complete    | 2026-03-11 | - |
-| 85. Code Quality Audit & CLI Smoke Test | v3.7 | 0/2 | Not started | - |
+| 85. Code Quality Audit & CLI Smoke Test | 1/2 | In Progress|  | - |
 | 86. Cleanup (Conditional) | v3.7 | 0/TBD | Not started | - |

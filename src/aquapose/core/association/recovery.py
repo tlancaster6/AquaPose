@@ -463,6 +463,135 @@ def _score_singleton_against_group(
     return float(np.mean(all_residuals))
 
 
+def _compute_per_frame_residuals(
+    singleton: Tracklet2D,
+    group: TrackletGroup,
+    forward_luts: dict[str, ForwardLUT],
+    config: RecoveryConfigLike,
+) -> np.ndarray | None:
+    """Compute per-frame residuals for singleton vs group.
+
+    Same computation as ``_score_singleton_against_group`` but returns
+    per-singleton-frame residuals instead of a single mean. Frames without
+    valid data get np.nan.
+
+    Args:
+        singleton: The singleton tracklet to score.
+        group: The candidate multi-tracklet group.
+        forward_luts: Per-camera ForwardLUT dict.
+        config: Recovery configuration.
+
+    Returns:
+        Array of shape (n_singleton_frames,) with per-frame mean residuals,
+        or None if no shared frames or camera missing.
+    """
+    group_frames: set[int] = set()
+    for t in group.tracklets:
+        group_frames.update(t.frames)
+
+    shared = sorted(set(singleton.frames) & group_frames)
+    if len(shared) < config.recovery_min_shared_frames:
+        return None
+
+    if singleton.camera_id not in forward_luts:
+        return None
+
+    lut_singleton = forward_luts[singleton.camera_id]
+    singleton_frame_map = {f: i for i, f in enumerate(singleton.frames)}
+    n_frames = len(singleton.frames)
+    residuals = np.full(n_frames, np.nan)
+
+    use_keypoints = (
+        singleton.keypoints is not None and singleton.keypoint_conf is not None
+    )
+
+    if use_keypoints:
+        assert singleton.keypoints is not None
+        assert singleton.keypoint_conf is not None
+        n_kpts = singleton.keypoints.shape[1]
+
+        # Batch all confident singleton keypoint pixels
+        all_pixels: list[np.ndarray] = []
+        pixel_meta: list[tuple[int, int, int]] = []  # (frame, kpt_idx, frame_idx)
+        for frame in shared:
+            idx_s = singleton_frame_map[frame]
+            conf_s = singleton.keypoint_conf[idx_s]
+            kpts_s = singleton.keypoints[idx_s]
+            for k in range(n_kpts):
+                if conf_s[k] < config.keypoint_confidence_floor:
+                    continue
+                all_pixels.append(np.array([float(kpts_s[k, 0]), float(kpts_s[k, 1])]))
+                pixel_meta.append((frame, k, idx_s))
+
+        if not all_pixels:
+            return None
+
+        pixels_batch = np.array(all_pixels, dtype=np.float64)
+        pix_t = torch.tensor(pixels_batch, dtype=torch.float32)
+        s_origins, s_dirs = lut_singleton.cast_ray(pix_t)
+        s_o = s_origins.cpu().numpy().astype(np.float64)
+        s_d = s_dirs.cpu().numpy().astype(np.float64)
+
+        frame_3d_cache: dict[int, list[np.ndarray | None] | None] = {}
+        # Collect per-frame residual lists
+        frame_dists: dict[int, list[float]] = {}
+        for i, (frame, k, idx_s) in enumerate(pixel_meta):
+            if frame not in frame_3d_cache:
+                frame_3d_cache[frame] = _triangulate_group_keypoints_for_frame(
+                    frame,
+                    group.tracklets,
+                    forward_luts,
+                    config.keypoint_confidence_floor,
+                    n_kpts,
+                )
+            group_3d = frame_3d_cache[frame]
+            if group_3d is None:
+                continue
+            pt_3d = group_3d[k]
+            if pt_3d is None:
+                continue
+            dist = _point_to_ray_distance(pt_3d, s_o[i], s_d[i])
+            frame_dists.setdefault(idx_s, []).append(dist)
+
+        for idx_s, dists in frame_dists.items():
+            residuals[idx_s] = float(np.mean(dists))
+
+    else:
+        # Centroid-only fallback
+        centroid_pixels: list[np.ndarray] = []
+        centroid_meta: list[tuple[int, int]] = []  # (frame, idx_s)
+        for frame in shared:
+            idx_s = singleton_frame_map[frame]
+            centroid_s = singleton.centroids[idx_s]
+            centroid_pixels.append(
+                np.array([float(centroid_s[0]), float(centroid_s[1])])
+            )
+            centroid_meta.append((frame, idx_s))
+
+        if not centroid_pixels:
+            return None
+
+        pixels_batch = np.array(centroid_pixels, dtype=np.float64)
+        pix_t = torch.tensor(pixels_batch, dtype=torch.float32)
+        s_origins, s_dirs = lut_singleton.cast_ray(pix_t)
+        s_o = s_origins.cpu().numpy().astype(np.float64)
+        s_d = s_dirs.cpu().numpy().astype(np.float64)
+
+        for i, (frame, idx_s) in enumerate(centroid_meta):
+            group_centroid = _triangulate_group_centroid_for_frame(
+                frame, group.tracklets, forward_luts
+            )
+            if group_centroid is None:
+                continue
+            dist = _point_to_ray_distance(group_centroid, s_o[i], s_d[i])
+            residuals[idx_s] = dist
+
+    if np.all(np.isnan(residuals)):
+        return None
+
+    return residuals
+
+
 def _triangulate_group_keypoints_for_frame(
     frame: int,
     group_tracklets: tuple,
@@ -644,52 +773,103 @@ def _attempt_split_assign(
     if n_frames < 2 * min_seg:
         return None
 
+    n_groups = len(multi_groups)
+
+    # Phase 1: Precompute per-frame residuals for all groups
+    residuals = np.full((n_groups, n_frames), np.nan)
+    for g_idx, group in enumerate(multi_groups):
+        per_frame = _compute_per_frame_residuals(singleton, group, forward_luts, config)
+        if per_frame is not None:
+            residuals[g_idx] = per_frame
+
+    # Phase 2: Precompute per-group detected frame sets for overlap checking
+    singleton_det_mask = np.array([s == "detected" for s in singleton.frame_status])
+    singleton_frame_arr = np.array(singleton.frames)
+    cam = singleton.camera_id
+
+    group_det_frames: list[set[int]] = []
+    for g_idx, group in enumerate(multi_groups):
+        det: set[int] = set()
+        all_tracklets = list(group.tracklets) + existing_assignments.get(g_idx, [])
+        for t in all_tracklets:
+            if t.camera_id != cam:
+                continue
+            det.update(
+                f
+                for f, s in zip(t.frames, t.frame_status, strict=True)
+                if s == "detected"
+            )
+        group_det_frames.append(det)
+
+    # Phase 3: Sweep split points using precomputed data
     best: tuple[float, int, int, int] | None = None  # (total_res, split_idx, bg, ag)
+    threshold = config.recovery_residual_threshold
 
     for split_idx in range(min_seg, n_frames - min_seg + 1):
-        before = _slice_tracklet(singleton, 0, split_idx, next_track_id)
-        after = _slice_tracklet(singleton, split_idx, n_frames, next_track_id + 1)
+        # Compute mean residuals for before/after segments via numpy slicing
+        with np.errstate(all="ignore"):
+            before_means = np.nanmean(residuals[:, :split_idx], axis=1)
+            after_means = np.nanmean(residuals[:, split_idx:], axis=1)
 
-        # Find best-scoring group for each segment
-        best_before: tuple[float, int] | None = None  # (residual, g_idx)
-        best_after: tuple[float, int] | None = None
+        # Compute detected frame sets for overlap checking
+        before_det = set(
+            singleton_frame_arr[:split_idx][singleton_det_mask[:split_idx]]
+        )
+        after_det = set(singleton_frame_arr[split_idx:][singleton_det_mask[split_idx:]])
 
-        for g_idx, group in enumerate(multi_groups):
-            combined = list(group.tracklets) + existing_assignments.get(g_idx, [])
+        # Invalidate groups with camera overlap
+        for g_idx in range(n_groups):
+            g_det = group_det_frames[g_idx]
+            if before_det and (before_det & g_det):
+                before_means[g_idx] = np.inf
+            if after_det and (after_det & g_det):
+                after_means[g_idx] = np.inf
 
-            # Check overlap for before segment
-            if not _has_camera_overlap_with_list(before, combined):
-                score_b = _score_singleton_against_group(
-                    before, group, forward_luts, config
-                )
-                if (
-                    score_b is not None
-                    and score_b < config.recovery_residual_threshold
-                    and (best_before is None or score_b < best_before[0])
-                ):
-                    best_before = (score_b, g_idx)
+        # Apply threshold
+        before_valid = before_means < threshold
+        after_valid = after_means < threshold
 
-            # Check overlap for after segment
-            if not _has_camera_overlap_with_list(after, combined):
-                score_a = _score_singleton_against_group(
-                    after, group, forward_luts, config
-                )
-                if (
-                    score_a is not None
-                    and score_a < config.recovery_residual_threshold
-                    and (best_after is None or score_a < best_after[0])
-                ):
-                    best_after = (score_a, g_idx)
-
-        # Both segments must match DIFFERENT groups
-        if best_before is None or best_after is None:
-            continue
-        if best_before[1] == best_after[1]:
+        if not np.any(before_valid) or not np.any(after_valid):
             continue
 
-        total_residual = best_before[0] + best_after[0]
-        if best is None or total_residual < best[0]:
-            best = (total_residual, split_idx, best_before[1], best_after[1])
+        # Find best groups (must be DIFFERENT)
+        best_before_g = int(np.argmin(np.where(before_valid, before_means, np.inf)))
+        best_after_g = int(np.argmin(np.where(after_valid, after_means, np.inf)))
+
+        if best_before_g == best_after_g:
+            # Try second-best for one of them
+            after_means_masked = after_means.copy()
+            after_means_masked[best_before_g] = np.inf
+            if np.any(after_means_masked < threshold):
+                best_after_g = int(
+                    np.argmin(
+                        np.where(
+                            after_means_masked < threshold, after_means_masked, np.inf
+                        )
+                    )
+                )
+            else:
+                before_means_masked = before_means.copy()
+                before_means_masked[best_after_g] = np.inf
+                if np.any(before_means_masked < threshold):
+                    best_before_g = int(
+                        np.argmin(
+                            np.where(
+                                before_means_masked < threshold,
+                                before_means_masked,
+                                np.inf,
+                            )
+                        )
+                    )
+                else:
+                    continue
+
+        if best_before_g == best_after_g:
+            continue
+
+        total = before_means[best_before_g] + after_means[best_after_g]
+        if best is None or total < best[0]:
+            best = (total, split_idx, best_before_g, best_after_g)
 
     if best is None:
         return None

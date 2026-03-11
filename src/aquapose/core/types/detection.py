@@ -24,6 +24,12 @@ class Detection:
         obb_points: Oriented bounding box corner points, shape ``(4, 2)``,
             clockwise from top-left of the oriented box. ``None`` for
             non-OBB detectors. Set by YOLO-OBB backend when available.
+        keypoints: Raw anatomical keypoint positions in full-frame pixel
+            coordinates, shape ``(K, 2)`` float32. Keypoint indices:
+            0=nose, 1=head, 2=spine1, 3=spine2, 4=spine3, 5=tail.
+            ``None`` until PoseStage has run.
+        keypoint_conf: Per-keypoint confidence scores in ``[0, 1]``,
+            shape ``(K,)`` float32. ``None`` until PoseStage has run.
     """
 
     bbox: tuple[int, int, int, int]
@@ -32,3 +38,5 @@ class Detection:
     confidence: float
     angle: float | None = None
     obb_points: np.ndarray | None = None
+    keypoints: np.ndarray | None = None
+    keypoint_conf: np.ndarray | None = None

@@ -1,9 +1,12 @@
 """SyntheticDataStage -- generates synthetic fish detections from known 3D geometry.
 
-Replaces Detection + Midline stages in synthetic mode. Generates 3D fish
-splines, projects them through the real refractive calibration model, and
-produces Detection + AnnotatedDetection data structures matching the format
-of the real pipeline stages.
+Replaces DetectionStage in synthetic mode. Generates 3D fish splines, projects
+them through the real refractive calibration model, and produces Detection data
+structures matching the format of the real pipeline stages.
+
+Note: AnnotatedDetection and annotated_detections have been removed in Phase 81.
+SyntheticDataStage now only populates detections. Synthetic midlines for
+reconstruction will be handled in a future phase.
 """
 
 from __future__ import annotations
@@ -16,10 +19,7 @@ import torch
 from aquapose.calibration import RefractiveProjectionModel
 from aquapose.calibration.loader import compute_undistortion_maps, load_calibration_data
 from aquapose.core.context import PipelineContext
-from aquapose.core.midline.types import AnnotatedDetection
-from aquapose.core.types.crop import CropRegion
 from aquapose.core.types.detection import Detection
-from aquapose.core.types.midline import Midline2D
 
 if TYPE_CHECKING:
     from aquapose.engine.config import SyntheticConfig
@@ -130,14 +130,13 @@ class SyntheticDataStage:
         """Generate synthetic fish data and populate context fields.
 
         Loads calibration, generates 3D fish splines, projects to 2D for each
-        camera, and populates context with Detection and AnnotatedDetection data.
+        camera, and populates context with Detection data.
 
         Args:
             context: Pipeline context to populate.
 
         Returns:
-            Context with detections, annotated_detections, frame_count, and
-            camera_ids populated.
+            Context with detections, frame_count, and camera_ids populated.
 
         """
         rng = np.random.default_rng(self._config.seed)
@@ -177,7 +176,6 @@ class SyntheticDataStage:
         )
 
         all_detections: list[dict[str, list]] = []
-        all_annotated: list[dict[str, list]] = []
 
         for frame_idx in range(self._config.frame_count):
             # Per-frame RNG for displacement (deterministic per frame)
@@ -189,9 +187,8 @@ class SyntheticDataStage:
             )
 
             frame_dets: dict[str, list] = {cam: [] for cam in camera_ids}
-            frame_annot: dict[str, list] = {cam: [] for cam in camera_ids}
 
-            for fish_id, spline_3d in enumerate(frame_splines):
+            for _fish_id, spline_3d in enumerate(frame_splines):
                 for cam_name in camera_ids:
                     model = models[cam_name]
                     img_w, img_h = image_sizes[cam_name]
@@ -241,44 +238,9 @@ class SyntheticDataStage:
                     )
                     frame_dets[cam_name].append(det)
 
-                    # Create Midline2D
-                    # Synthetic midlines use uniform 1.0 confidence (perfect
-                    # projected ground-truth, no per-point uncertainty).
-                    midline = Midline2D(
-                        points=pixels_np.astype(np.float32),
-                        half_widths=np.full(n_points, 5.0, dtype=np.float32),
-                        fish_id=fish_id,
-                        camera_id=cam_name,
-                        frame_index=frame_idx,
-                        is_head_to_tail=True,
-                        point_confidence=np.ones(n_points, dtype=np.float32),
-                    )
-
-                    # Create CropRegion
-                    crop = CropRegion(
-                        x1=bbox_x,
-                        y1=bbox_y,
-                        x2=bbox_x + bbox_w,
-                        y2=bbox_y + bbox_h,
-                        frame_h=img_h,
-                        frame_w=img_w,
-                    )
-
-                    annot = AnnotatedDetection(
-                        detection=det,
-                        mask=None,
-                        crop_region=crop,
-                        midline=midline,
-                        camera_id=cam_name,
-                        frame_index=frame_idx,
-                    )
-                    frame_annot[cam_name].append(annot)
-
             all_detections.append(frame_dets)
-            all_annotated.append(frame_annot)
 
         context.frame_count = self._config.frame_count
         context.camera_ids = camera_ids
         context.detections = all_detections
-        context.annotated_detections = all_annotated
         return context

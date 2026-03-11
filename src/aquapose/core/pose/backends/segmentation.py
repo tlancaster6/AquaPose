@@ -13,20 +13,40 @@ from __future__ import annotations
 
 import logging
 
+# AnnotatedDetection has been removed in Phase 81. This backend (segmentation)
+# is no longer registered in backends/__init__.py and should not be instantiated.
+from dataclasses import dataclass
+
 import cv2
 import numpy as np
 
-from aquapose.core.midline.crop import extract_affine_crop, invert_affine_points
-from aquapose.core.midline.midline import (
+from aquapose.core.pose.crop import extract_affine_crop, invert_affine_points
+from aquapose.core.pose.midline import (
     _adaptive_smooth,
     _longest_path_bfs,
     _resample_arc_length,
     _skeleton_and_widths,
 )
-from aquapose.core.midline.types import AnnotatedDetection
 from aquapose.core.types.crop import AffineCrop
 from aquapose.core.types.detection import Detection
 from aquapose.core.types.midline import Midline2D
+
+
+@dataclass
+class AnnotatedDetection:
+    """Deprecated stub: AnnotatedDetection was removed in Phase 81.
+
+    Detection objects now carry keypoints directly. This class is kept only
+    so that segmentation.py can remain syntactically valid.
+    """
+
+    detection: Detection
+    mask: object = None
+    crop_region: object = None
+    midline: object = None
+    camera_id: str = ""
+    frame_index: int = 0
+
 
 __all__ = ["SegmentationBackend"]
 

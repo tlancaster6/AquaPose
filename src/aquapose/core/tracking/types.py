@@ -42,14 +42,13 @@ class Tracklet2D:
             Type: ``tuple[tuple[float, float, float, float], ...]``
         frame_status: Per-frame detection status, one per entry in ``frames``.
             Each value is ``"detected"`` (directly observed) or ``"coasted"``
-            (position interpolated during a missed detection).
+            (position predicted during a missed detection).
             Type: ``tuple[str, ...]``
         keypoints: Per-frame keypoint positions, shape ``(T, K, 2)``, float32.
-            ``None`` when keypoint data is unavailable (e.g. tracklets from
-            fragment merging).
+            ``None`` when keypoint data is unavailable.
         keypoint_conf: Per-frame keypoint confidences, shape ``(T, K)``, float32.
-            Values are 0.0 for coasted/interpolated frames and retain raw
-            detector confidence for detected frames. ``None`` when unavailable.
+            Values are 0.0 for coasted frames and retain raw detector confidence
+            for detected frames. ``None`` when unavailable.
     """
 
     camera_id: str

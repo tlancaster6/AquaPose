@@ -38,11 +38,12 @@ class TrackingStage:
     Tentative tracks that never graduated past probation are excluded.
 
     Args:
-        config: Frozen TrackingConfig providing OC-SORT parameters.
+        config: Frozen TrackingConfig. ``config.tracker_kind`` selects the
+            backend: ``"keypoint_bidi"`` (default) or ``"ocsort"``.
         centroid_keypoint_index: Index into Detection.keypoints for tracklet
-            centroid. Default 2 (spine1). Passed to OcSortTracker.
+            centroid. Default 2 (spine1). Passed to the active tracker backend.
         centroid_confidence_floor: Minimum keypoint confidence to use keypoint
-            as centroid. Default 0.3. Passed to OcSortTracker.
+            as centroid. Default 0.3. Passed to the active tracker backend.
 
     Example::
 

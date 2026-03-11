@@ -856,7 +856,7 @@ class TestTrackingStageKeywordBidi:
         """New keypoint_bidi fields have backward-compatible defaults."""
         from aquapose.engine.config import TrackingConfig
 
-        cfg = TrackingConfig()  # default ocsort
+        cfg = TrackingConfig()  # default keypoint_bidi
         assert hasattr(cfg, "base_r")
         assert hasattr(cfg, "lambda_ocm")
         assert hasattr(cfg, "max_gap_frames")

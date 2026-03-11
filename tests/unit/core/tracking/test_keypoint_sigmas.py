@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+
 from aquapose.core.tracking.keypoint_sigmas import (
     DEFAULT_SIGMAS,
     compute_keypoint_sigmas,

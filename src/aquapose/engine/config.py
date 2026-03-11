@@ -176,8 +176,9 @@ class TrackingConfig:
     Controls the tracker used for per-camera 2D fish tracking.
 
     Attributes:
-        tracker_kind: Tracker backend. ``"ocsort"`` uses OC-SORT (boxmot).
-            ``"keypoint_bidi"`` uses the custom bidirectional keypoint tracker.
+        tracker_kind: Tracker backend. Default ``"keypoint_bidi"`` uses the
+            custom bidirectional keypoint tracker. ``"ocsort"`` uses OC-SORT
+            (boxmot) as an alternative fallback.
         max_coast_frames: Maximum frames to coast (Kalman predict with no
             observation) before dropping a track. Maps to boxmot ``max_age``
             for OC-SORT and ``max_age`` for ``keypoint_bidi``.
@@ -201,7 +202,7 @@ class TrackingConfig:
         coupling config serialization to the sigma array format.
     """
 
-    tracker_kind: str = "ocsort"
+    tracker_kind: str = "keypoint_bidi"
     max_coast_frames: int = 30
     n_init: int = 3
     iou_threshold: float = 0.3

@@ -35,6 +35,10 @@ class TrackingStage:
 
     Args:
         config: Frozen TrackingConfig providing OC-SORT parameters.
+        centroid_keypoint_index: Index into Detection.keypoints for tracklet
+            centroid. Default 2 (spine1). Passed to OcSortTracker.
+        centroid_confidence_floor: Minimum keypoint confidence to use keypoint
+            as centroid. Default 0.3. Passed to OcSortTracker.
 
     Example::
 
@@ -43,10 +47,17 @@ class TrackingStage:
         # context.tracks_2d: {cam_id: [Tracklet2D, ...], ...}
     """
 
-    def __init__(self, config: Any) -> None:
+    def __init__(
+        self,
+        config: Any,
+        centroid_keypoint_index: int = 2,
+        centroid_confidence_floor: float = 0.3,
+    ) -> None:
         # Accept Any to avoid circular imports from engine/ into core/.
         # The config must have: max_coast_frames, n_init, iou_threshold, det_thresh.
         self._config = config
+        self._centroid_keypoint_index = centroid_keypoint_index
+        self._centroid_confidence_floor = centroid_confidence_floor
 
     def run(
         self,
@@ -97,6 +108,8 @@ class TrackingStage:
                     min_hits=self._config.n_init,
                     iou_threshold=self._config.iou_threshold,
                     det_thresh=self._config.det_thresh,
+                    centroid_keypoint_index=self._centroid_keypoint_index,
+                    centroid_confidence_floor=self._centroid_confidence_floor,
                 )
 
         # Feed all frames to each camera's tracker

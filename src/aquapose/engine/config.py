@@ -144,6 +144,13 @@ class AssociationConfig:
         min_cameras_refine: Minimum cameras in a cluster to attempt 3D
             refinement. Clusters with fewer cameras skip refinement. Default 3.
         refinement_enabled: Toggle to skip refinement entirely. Default True.
+        centroid_keypoint_index: Index into Detection.keypoints for tracklet
+            centroid. 0=nose, 1=head, 2=spine1 (default), 3=spine2, 4=spine3,
+            5=tail. Falls back to OBB centroid when keypoint is absent or below
+            ``centroid_confidence_floor``.
+        centroid_confidence_floor: Minimum keypoint confidence to use keypoint
+            as centroid. Below threshold falls back to OBB centroid. Default 0.3
+            (matches the pose backend confidence floor).
     """
 
     ray_distance_threshold: float = 0.03
@@ -158,6 +165,8 @@ class AssociationConfig:
     eviction_reproj_threshold: float = 0.025
     min_cameras_refine: int = 3
     refinement_enabled: bool = True
+    centroid_keypoint_index: int = 2
+    centroid_confidence_floor: float = 0.3
 
 
 @dataclass(frozen=True)

@@ -328,7 +328,11 @@ def build_stages(
         "reconstruction": ReconstructionStage,
     }
 
-    tracking_stage = TrackingStage(config=config.tracking)
+    tracking_stage = TrackingStage(
+        config=config.tracking,
+        centroid_keypoint_index=config.association.centroid_keypoint_index,
+        centroid_confidence_floor=config.association.centroid_confidence_floor,
+    )
 
     reconstruction_stage = ReconstructionStage(
         calibration_path=config.calibration_path,

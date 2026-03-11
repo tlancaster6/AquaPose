@@ -45,6 +45,7 @@ class _TrackletBuilder:
         frame_status: List of "detected" or "coasted" per frame.
         detected_count: Number of frames with status "detected".
         active: Whether this track is still being updated.
+        keypoint_centroid_count: Number of frames where keypoint centroid was used.
     """
 
     camera_id: str
@@ -55,25 +56,50 @@ class _TrackletBuilder:
     frame_status: list[str] = field(default_factory=list)
     detected_count: int = 0
     active: bool = True
+    keypoint_centroid_count: int = 0
 
     def add_frame(
         self,
         frame_idx: int,
         bbox_xyxy: tuple[float, float, float, float],
         status: str,
+        detection: object | None = None,
+        centroid_keypoint_index: int = 2,
+        centroid_confidence_floor: float = 0.3,
     ) -> None:
         """Append one frame of data.
+
+        When ``status == "detected"`` and ``detection`` carries a keypoint at
+        ``centroid_keypoint_index`` with confidence >= ``centroid_confidence_floor``,
+        the keypoint position is used as the centroid instead of the OBB center.
+        All other cases (coasted, missing keypoints, low confidence) fall back
+        silently to the OBB geometric center.
 
         Args:
             frame_idx: Frame index.
             bbox_xyxy: Bounding box as (x1, y1, x2, y2).
             status: "detected" or "coasted".
+            detection: Optional source Detection object for keypoint centroid lookup.
+            centroid_keypoint_index: Index into detection.keypoints for the centroid.
+            centroid_confidence_floor: Minimum keypoint confidence to use keypoint.
         """
         x1, y1, x2, y2 = bbox_xyxy
         w = x2 - x1
         h = y2 - y1
         cx = x1 + w / 2.0
         cy = y1 + h / 2.0
+
+        # Attempt keypoint centroid override for detected frames only
+        if status == "detected" and detection is not None:
+            kpts = getattr(detection, "keypoints", None)
+            kconf = getattr(detection, "keypoint_conf", None)
+            if kpts is not None and kconf is not None:
+                idx = centroid_keypoint_index
+                if idx < len(kconf) and float(kconf[idx]) >= centroid_confidence_floor:
+                    cx = float(kpts[idx, 0])
+                    cy = float(kpts[idx, 1])
+                    self.keypoint_centroid_count += 1
+
         self.frames.append(frame_idx)
         self.centroids.append((cx, cy))
         self.bboxes.append((x1, y1, w, h))
@@ -87,6 +113,12 @@ class _TrackletBuilder:
         Returns:
             Immutable Tracklet2D with tuple sequence fields.
         """
+        logger.debug(
+            "tracklet %d: %d/%d frames used keypoint centroid",
+            self.track_id,
+            self.keypoint_centroid_count,
+            len(self.frames),
+        )
         return Tracklet2D(
             camera_id=self.camera_id,
             track_id=self.track_id,
@@ -117,6 +149,11 @@ class OcSortTracker:
             to boxmot ``min_hits``.
         iou_threshold: IoU threshold for matching detections to tracks.
         det_thresh: Minimum detection confidence to pass to tracker.
+        centroid_keypoint_index: Index into Detection.keypoints for tracklet
+            centroid. Default 2 (spine1). Falls back to OBB centroid when
+            keypoint is absent or below ``centroid_confidence_floor``.
+        centroid_confidence_floor: Minimum keypoint confidence to use keypoint
+            as centroid. Below threshold falls back to OBB centroid. Default 0.3.
     """
 
     def __init__(
@@ -126,12 +163,16 @@ class OcSortTracker:
         min_hits: int = 3,
         iou_threshold: float = 0.3,
         det_thresh: float = 0.3,
+        centroid_keypoint_index: int = 2,
+        centroid_confidence_floor: float = 0.3,
     ) -> None:
         self.camera_id = camera_id
         self._max_age = max_age
         self._min_hits = min_hits
         self._iou_threshold = iou_threshold
         self._det_thresh = det_thresh
+        self._centroid_keypoint_index = centroid_keypoint_index
+        self._centroid_confidence_floor = centroid_confidence_floor
 
         # Local ID management: boxmot assigns its own IDs; we map them to
         # clean monotonically increasing local IDs.
@@ -212,6 +253,7 @@ class OcSortTracker:
         result = self._tracker.update(dets_array, img_dummy)
         # result shape: (N, 8) — [x1, y1, x2, y2, track_id, conf, cls, idx]
         # track_id column is 1-indexed (boxmot internal)
+        # Column 7 (idx) is the index into the input detections array
 
         # Determine which boxmot track IDs are in this frame's output
         confirmed_this_frame: set[int] = set()
@@ -221,7 +263,19 @@ class OcSortTracker:
                 confirmed_this_frame.add(boxmot_id)
                 local_id = self._assign_local_id(boxmot_id)
                 bbox_xyxy = (float(row[0]), float(row[1]), float(row[2]), float(row[3]))
-                self._builders[local_id].add_frame(frame_idx, bbox_xyxy, "detected")
+                # Recover source Detection from column 7 index for keypoint centroid
+                det_idx = int(row[7])
+                source_det = (
+                    detections[det_idx] if 0 <= det_idx < len(detections) else None
+                )
+                self._builders[local_id].add_frame(
+                    frame_idx,
+                    bbox_xyxy,
+                    "detected",
+                    detection=source_det,
+                    centroid_keypoint_index=self._centroid_keypoint_index,
+                    centroid_confidence_floor=self._centroid_confidence_floor,
+                )
 
         # Capture coasting tracks: active_tracks with time_since_update > 0
         # that have graduated past min_hits (hit_streak >= min_hits at peak)
@@ -296,6 +350,8 @@ class OcSortTracker:
             "min_hits": self._min_hits,
             "iou_threshold": self._iou_threshold,
             "det_thresh": self._det_thresh,
+            "centroid_keypoint_index": self._centroid_keypoint_index,
+            "centroid_confidence_floor": self._centroid_confidence_floor,
         }
 
     @classmethod
@@ -315,6 +371,11 @@ class OcSortTracker:
         instance._min_hits = state["min_hits"]
         instance._iou_threshold = state["iou_threshold"]
         instance._det_thresh = state["det_thresh"]
+        # Restore centroid config with defaults for backward compat with old state blobs
+        instance._centroid_keypoint_index = state.get("centroid_keypoint_index", 2)
+        instance._centroid_confidence_floor = state.get(
+            "centroid_confidence_floor", 0.3
+        )
         instance._tracker = state["tracker"]
         instance._next_local_id = state["next_local_id"]
         instance._boxmot_id_to_local = dict(state["boxmot_id_to_local"])

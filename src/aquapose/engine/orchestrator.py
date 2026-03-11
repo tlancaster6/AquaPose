@@ -92,7 +92,7 @@ def _build_stages_for_chunk(config: object, chunk_source: object) -> list:
 
     Args:
         config: PipelineConfig instance.
-        chunk_source: ChunkFrameSource to inject into DetectionStage and MidlineStage.
+        chunk_source: ChunkFrameSource to inject into DetectionStage and PoseStage.
 
     Returns:
         List of stage instances in pipeline order.

@@ -1,7 +1,7 @@
 """Shared utility for discovering camera-video mappings from a directory.
 
 Provides a single canonical implementation of camera-video discovery used
-by both DetectionStage and MidlineStage to avoid duplicated glob logic.
+by both DetectionStage and PoseStage to avoid duplicated glob logic.
 """
 
 from __future__ import annotations

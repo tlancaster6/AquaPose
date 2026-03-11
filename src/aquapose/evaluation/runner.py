@@ -546,24 +546,39 @@ class EvalRunner:
         """Build per-frame MidlineSets from PipelineContext data.
 
         Assembles MidlineSets by matching TrackletGroup tracklet centroids to
-        AnnotatedDetection midlines using a centroid proximity threshold.
+        Detection keypoints (v3.7+) or AnnotatedDetection midlines (legacy).
 
         Args:
-            ctx: PipelineContext with tracklet_groups and annotated_detections.
+            ctx: PipelineContext with tracklet_groups and detections (v3.7)
+                or annotated_detections (legacy).
             sampled_indices: Frame indices to include. Empty list means all frames.
 
         Returns:
             List of MidlineSet dicts (fish_id -> camera_id -> Midline2D), one
             entry per sampled frame index. Frames with no data yield empty dicts.
         """
+        import numpy as np
+
+        from aquapose.core.reconstruction.stage import (
+            _KEYPOINT_T_VALUES,
+            _keypoints_to_midline,
+        )
+
         tracklet_groups = ctx.tracklet_groups or []
-        # annotated_detections was removed in v3.7 — keypoints now live on Detection objects
+
+        # v3.7: keypoints live on Detection objects in ctx.detections
+        # Legacy: midlines live on AnnotatedDetection objects in ctx.annotated_detections
+        detections: list = ctx.detections or []
         annotated_detections: list = getattr(ctx, "annotated_detections", None) or []
-        frame_count = ctx.frame_count or len(annotated_detections)
+        use_detections = bool(detections)
+
+        data_source = detections if use_detections else annotated_detections
+        frame_count = ctx.frame_count or len(data_source)
 
         effective_indices = (
             sampled_indices if sampled_indices else list(range(frame_count))
         )
+        effective_set = set(effective_indices)
 
         # Accumulate: frame_idx -> fish_id -> camera_id -> Midline2D
         collected: dict[int, MidlineSet] = {}
@@ -583,25 +598,60 @@ class EvalRunner:
                 ):
                     if status != "detected":
                         continue
-                    if frame_idx not in set(effective_indices):
+                    if frame_idx not in effective_set:
                         continue
-                    if frame_idx >= len(annotated_detections):
-                        continue
-
-                    frame_annot = annotated_detections[frame_idx]
-                    if not isinstance(frame_annot, dict):
-                        continue
-                    cam_list = frame_annot.get(cam_id)
-                    if not cam_list:
+                    if frame_idx >= len(data_source):
                         continue
 
                     centroid: tuple[float, float] = tracklet.centroids[tidx]  # type: ignore[union-attr]
-                    ann_det = _match_annotated_by_centroid(cam_list, centroid)
-                    if ann_det is None:
-                        continue
-                    midline = cast(Midline2D, ann_det.midline)  # type: ignore[union-attr]
-                    if midline is None:
-                        continue
+
+                    if use_detections:
+                        # v3.7 path: match Detection by centroid, build Midline2D from keypoints
+                        frame_dets = data_source[frame_idx]
+                        if not isinstance(frame_dets, dict):
+                            continue
+                        cam_list = frame_dets.get(cam_id)
+                        if not cam_list:
+                            continue
+
+                        det = _match_detection_by_centroid(cam_list, centroid)
+                        if det is None or det.keypoints is None:  # type: ignore[union-attr]
+                            continue
+
+                        kpts_conf = (
+                            det.keypoint_conf  # type: ignore[union-attr]
+                            if det.keypoint_conf is not None  # type: ignore[union-attr]
+                            else np.ones(len(det.keypoints), dtype=np.float32)  # type: ignore[union-attr]
+                        )
+                        points, point_conf = _keypoints_to_midline(
+                            det.keypoints,  # type: ignore[union-attr]
+                            _KEYPOINT_T_VALUES,
+                            kpts_conf,
+                            n_points=15,
+                        )
+                        midline = Midline2D(
+                            points=points,
+                            half_widths=np.zeros(len(points), dtype=np.float32),
+                            fish_id=fish_id,
+                            camera_id=cam_id,
+                            frame_index=frame_idx,
+                            point_confidence=point_conf,
+                        )
+                    else:
+                        # Legacy path: match AnnotatedDetection by centroid, use .midline
+                        frame_annot = data_source[frame_idx]
+                        if not isinstance(frame_annot, dict):
+                            continue
+                        cam_list = frame_annot.get(cam_id)
+                        if not cam_list:
+                            continue
+
+                        ann_det = _match_annotated_by_centroid(cam_list, centroid)
+                        if ann_det is None:
+                            continue
+                        midline = cast(Midline2D, ann_det.midline)  # type: ignore[union-attr]
+                        if midline is None:
+                            continue
 
                     collected.setdefault(frame_idx, {}).setdefault(fish_id, {})[
                         cam_id
@@ -615,11 +665,43 @@ class EvalRunner:
         return result
 
 
+def _match_detection_by_centroid(
+    frame_dets_for_cam: list,
+    centroid: tuple[float, float],
+) -> object | None:
+    """Find the Detection whose bbox centroid is nearest to centroid (v3.7).
+
+    Args:
+        frame_dets_for_cam: List of Detection objects for a single (frame, camera) pair.
+        centroid: ``(u, v)`` pixel coordinate from a Tracklet2D.
+
+    Returns:
+        The closest Detection within ``_CENTROID_MATCH_TOLERANCE_PX``
+        pixels, or None if no match is found.
+    """
+    cx, cy = centroid
+    best = None
+    best_dist = _CENTROID_MATCH_TOLERANCE_PX
+
+    for det in frame_dets_for_cam:
+        x, y, w, h = det.bbox
+        det_cx = x + w / 2.0
+        det_cy = y + h / 2.0
+        dist = math.sqrt((det_cx - cx) ** 2 + (det_cy - cy) ** 2)
+        if dist <= best_dist:
+            best_dist = dist
+            best = det
+
+    return best
+
+
 def _match_annotated_by_centroid(
     frame_annotated_for_cam: list,
     centroid: tuple[float, float],
 ) -> object | None:
     """Find the AnnotatedDetection whose Detection centroid is nearest to centroid.
+
+    Legacy function retained for backward compatibility with old diagnostic runs.
 
     Args:
         frame_annotated_for_cam: List of AnnotatedDetection objects for a

@@ -455,53 +455,45 @@ def generate_overlay(
 
         # Merge all chunks' data lists.
         all_midlines_3d: list[dict] = []
-        all_annotated_detections: list[dict | None] = []
+        all_detections: list[dict | None] = []
         for ctx in contexts:
             mid = getattr(ctx, "midlines_3d", None) or []
-            ann = getattr(ctx, "annotated_detections", None) or [None] * len(mid)
+            det = getattr(ctx, "detections", None) or [None] * len(mid)
             all_midlines_3d.extend(mid)
-            all_annotated_detections.extend(ann)
+            all_detections.extend(det)
 
         with ctx_mgr as frame_iter:
             for frame_idx, frames in frame_iter:
                 if frame_idx >= total_frames:
                     break
 
-                # Draw 2D midlines.
-                if frame_idx < len(all_annotated_detections):
-                    frame_dets = all_annotated_detections[frame_idx]
+                # Draw 2D keypoints from detections.
+                if show_bbox and frame_idx < len(all_detections):
+                    frame_dets = all_detections[frame_idx]
                     if isinstance(frame_dets, dict):
                         for cam_id, dets in frame_dets.items():
                             if cam_id not in frames:
                                 continue
                             for det in dets:
-                                midline = getattr(det, "midline", None)
-                                if midline is not None:
-                                    pts = getattr(midline, "points", None)
-                                    if pts is not None:
-                                        pts_arr = np.asarray(pts, dtype=np.float32)
-                                        _draw_midline_points(
-                                            frames[cam_id], pts_arr, (255, 0, 0)
-                                        )
-                                if show_bbox:
-                                    inner = getattr(det, "detection", det)
-                                    bbox = getattr(inner, "bbox", None)
-                                    if bbox is not None:
-                                        fish_id_label = (
-                                            getattr(det, "fish_id", None)
-                                            if show_fish_id
-                                            else None
-                                        )
-                                        obb_pts = getattr(inner, "obb_points", None)
-                                        conf = getattr(inner, "confidence", None)
-                                        _draw_detection_bbox(
-                                            frames[cam_id],
-                                            bbox,
-                                            (255, 0, 0),
-                                            obb_points=obb_pts,
-                                            fish_id=fish_id_label,
-                                            confidence=conf,
-                                        )
+                                # Draw raw keypoints if available
+                                kpts = getattr(det, "keypoints", None)
+                                if kpts is not None:
+                                    pts_arr = np.asarray(kpts, dtype=np.float32)
+                                    _draw_midline_points(
+                                        frames[cam_id], pts_arr, (255, 0, 0)
+                                    )
+                                bbox = getattr(det, "bbox", None)
+                                if bbox is not None:
+                                    obb_pts = getattr(det, "obb_points", None)
+                                    conf = getattr(det, "confidence", None)
+                                    _draw_detection_bbox(
+                                        frames[cam_id],
+                                        bbox,
+                                        (255, 0, 0),
+                                        obb_points=obb_pts,
+                                        fish_id=None,
+                                        confidence=conf,
+                                    )
 
                 # Draw reprojected 3D midlines (batched per camera).
                 if frame_idx < len(all_midlines_3d):

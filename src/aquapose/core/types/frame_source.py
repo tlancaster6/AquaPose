@@ -1,7 +1,7 @@
 """FrameSource protocol and VideoFrameSource concrete implementation.
 
 Defines the canonical interface for multi-camera frame providers used by
-DetectionStage, MidlineStage, and future chunk-windowed sources.
+DetectionStage, PoseStage, and future chunk-windowed sources.
 """
 
 from __future__ import annotations

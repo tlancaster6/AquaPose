@@ -103,7 +103,7 @@ def _apply_frame_displacement(
 class SyntheticDataStage:
     """Stage that generates synthetic detections and midlines from known 3D geometry.
 
-    Satisfies the Stage protocol. Replaces both DetectionStage and MidlineStage
+    Satisfies the Stage protocol. Replaces both DetectionStage and PoseStage
     in synthetic mode. Projects known 3D fish splines through the real refractive
     calibration model to produce realistic 2D detection data.
 

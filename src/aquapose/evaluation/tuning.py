@@ -109,10 +109,15 @@ def _build_midline_sets(
 
     Adapted from EvalRunner._build_midline_sets but accepts explicit
     tracklet_groups so the caller can pass new groups from a sweep combo
-    while reusing the midline cache's annotated_detections.
+    while reusing the context's detection data.
+
+    Reads keypoints from context.detections (v3.7+). Also supports legacy
+    contexts with annotated_detections for backward compatibility with
+    old diagnostic runs.
 
     Args:
-        ctx: PipelineContext with annotated_detections (from midline cache).
+        ctx: PipelineContext with detections (v3.7) or annotated_detections
+            (legacy) from the midline cache.
         tracklet_groups: TrackletGroup list (may be from original cache or
             from an association sweep combo).
         sampled_indices: Frame indices to include.
@@ -122,11 +127,23 @@ def _build_midline_sets(
     """
     import math
 
+    import numpy as np
+
+    from aquapose.core.reconstruction.stage import (
+        _KEYPOINT_T_VALUES,
+        _keypoints_to_midline,
+    )
     from aquapose.core.types.midline import Midline2D
 
     _CENTROID_MATCH_TOLERANCE_PX = 5.0
-    annotated_detections = ctx.annotated_detections or []
-    frame_count = ctx.frame_count or len(annotated_detections)
+
+    # v3.7: read from detections; fall back to annotated_detections for legacy runs
+    detections = ctx.detections or []
+    annotated_detections: list = getattr(ctx, "annotated_detections", None) or []
+    use_detections = bool(detections)
+
+    data_source = detections if use_detections else annotated_detections
+    frame_count = ctx.frame_count or len(data_source)
     effective_indices = sampled_indices if sampled_indices else list(range(frame_count))
     effective_set = set(effective_indices)
 
@@ -145,38 +162,79 @@ def _build_midline_sets(
                     continue
                 if frame_idx not in effective_set:
                     continue
-                if frame_idx >= len(annotated_detections):
-                    continue
-
-                frame_annot = annotated_detections[frame_idx]
-                if not isinstance(frame_annot, dict):
-                    continue
-                cam_list = frame_annot.get(cam_id)
-                if not cam_list:
+                if frame_idx >= len(data_source):
                     continue
 
                 centroid: tuple[float, float] = tracklet.centroids[tidx]
-
-                # Match by centroid proximity
                 cx, cy = centroid
-                best = None
-                best_dist = _CENTROID_MATCH_TOLERANCE_PX
-                for ann_det in cam_list:
-                    x, y, w, h = ann_det.detection.bbox
-                    det_cx = x + w / 2.0
-                    det_cy = y + h / 2.0
-                    dist = math.sqrt((det_cx - cx) ** 2 + (det_cy - cy) ** 2)
-                    if dist <= best_dist:
-                        best_dist = dist
-                        best = ann_det
 
-                if best is None:
-                    continue
-                midline = best.midline
-                if midline is None:
-                    continue
-                if not isinstance(midline, Midline2D):
-                    continue
+                if use_detections:
+                    # v3.7: read keypoints from Detection objects
+                    frame_dets = data_source[frame_idx]
+                    if not isinstance(frame_dets, dict):
+                        continue
+                    cam_list = frame_dets.get(cam_id)
+                    if not cam_list:
+                        continue
+
+                    best = None
+                    best_dist = _CENTROID_MATCH_TOLERANCE_PX
+                    for det in cam_list:
+                        x, y, w, h = det.bbox
+                        det_cx = x + w / 2.0
+                        det_cy = y + h / 2.0
+                        dist = math.sqrt((det_cx - cx) ** 2 + (det_cy - cy) ** 2)
+                        if dist <= best_dist:
+                            best_dist = dist
+                            best = det
+
+                    if best is None or best.keypoints is None:
+                        continue
+
+                    kpts_conf = (
+                        best.keypoint_conf
+                        if best.keypoint_conf is not None
+                        else np.ones(len(best.keypoints), dtype=np.float32)
+                    )
+                    points, point_conf = _keypoints_to_midline(
+                        best.keypoints,
+                        _KEYPOINT_T_VALUES,
+                        kpts_conf,
+                        n_points=15,
+                    )
+                    midline = Midline2D(
+                        points=points,
+                        half_widths=np.zeros(len(points), dtype=np.float32),
+                        fish_id=fish_id,
+                        camera_id=cam_id,
+                        frame_index=frame_idx,
+                        point_confidence=point_conf,
+                    )
+                else:
+                    # Legacy: read midline from AnnotatedDetection objects
+                    frame_annot = data_source[frame_idx]
+                    if not isinstance(frame_annot, dict):
+                        continue
+                    cam_list = frame_annot.get(cam_id)
+                    if not cam_list:
+                        continue
+
+                    best = None
+                    best_dist = _CENTROID_MATCH_TOLERANCE_PX
+                    for ann_det in cam_list:
+                        x, y, w, h = ann_det.detection.bbox
+                        det_cx = x + w / 2.0
+                        det_cy = y + h / 2.0
+                        dist = math.sqrt((det_cx - cx) ** 2 + (det_cy - cy) ** 2)
+                        if dist <= best_dist:
+                            best_dist = dist
+                            best = ann_det
+
+                    if best is None:
+                        continue
+                    midline = best.midline
+                    if midline is None or not isinstance(midline, Midline2D):
+                        continue
 
                 collected.setdefault(frame_idx, {}).setdefault(fish_id, {})[cam_id] = (
                     midline
@@ -336,7 +394,12 @@ class TuningOrchestrator:
                 self._caches["tracking"] = ctx
             if ctx.tracklet_groups is not None:
                 self._caches["association"] = ctx
-            if getattr(ctx, "annotated_detections", None) is not None:
+            # v3.7: pose data lives in detections (keypoints on Detection objects)
+            # Legacy runs may have annotated_detections; check both.
+            if (
+                ctx.detections is not None
+                or getattr(ctx, "annotated_detections", None) is not None
+            ):
                 self._caches["midline"] = ctx
             if ctx.midlines_3d is not None:
                 self._caches["reconstruction"] = ctx

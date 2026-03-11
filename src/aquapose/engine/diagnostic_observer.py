@@ -17,10 +17,10 @@ from aquapose.engine.events import Event, PipelineComplete, PipelineStart, Stage
 logger = logging.getLogger(__name__)
 
 # PipelineContext field names that hold per-frame data (list-typed, indexed by frame).
-# detections, annotated_detections, and midlines_3d are all list[...] indexed by frame.
+# detections and midlines_3d are list[...] indexed by frame.
+# annotated_detections was removed in Phase 81 (v3.7 pipeline reorder).
 _PER_FRAME_FIELDS = (
     "detections",
-    "annotated_detections",
     "midlines_3d",
 )
 
@@ -43,7 +43,6 @@ class StageSnapshot:
         frame_count: Number of frames (from PipelineContext), or None.
         camera_ids: Active camera IDs (from PipelineContext), or None.
         detections: Reference to PipelineContext.detections, or None.
-        annotated_detections: Reference to PipelineContext.annotated_detections, or None.
         tracks_2d: Reference to PipelineContext.tracks_2d (dict, not per-frame), or None.
         tracklet_groups: Reference to PipelineContext.tracklet_groups (flat list), or None.
         midlines_3d: Reference to PipelineContext.midlines_3d, or None.
@@ -55,7 +54,6 @@ class StageSnapshot:
     frame_count: int | None = None
     camera_ids: list[str] | None = None
     detections: list | None = None
-    annotated_detections: list | None = None
     tracks_2d: dict | None = None
     tracklet_groups: list | None = None
     midlines_3d: list | None = None
@@ -164,7 +162,6 @@ class DiagnosticObserver:
             frame_count=getattr(context, "frame_count", None),
             camera_ids=getattr(context, "camera_ids", None),
             detections=getattr(context, "detections", None),
-            annotated_detections=getattr(context, "annotated_detections", None),
             tracks_2d=getattr(context, "tracks_2d", None),
             tracklet_groups=getattr(context, "tracklet_groups", None),
             midlines_3d=getattr(context, "midlines_3d", None),

@@ -223,7 +223,7 @@ Full details: `.planning/milestones/v3.7-ROADMAP.md`
 - [x] **Phase 87: Tracklet2D Keypoint Propagation** - Extend Tracklet2D with per-frame keypoint and confidence arrays from tracker (completed 2026-03-11)
 - [x] **Phase 88: Multi-Keypoint Pairwise Scoring** - Replace single-centroid ray casting with K-keypoint vectorized scoring (completed 2026-03-11)
 - [x] **Phase 89: Fragment Merging Removal** - Delete merge_fragments and max_merge_gap; pipeline still runs end-to-end (completed 2026-03-11)
-- [ ] **Phase 90: Group Validation with Changepoint Detection** - Add validation.py replacing refinement.py; temporal ID swap splitting and outlier eviction
+- [x] **Phase 90: Group Validation with Changepoint Detection** - Add validation.py replacing refinement.py; temporal ID swap splitting and outlier eviction (completed 2026-03-11)
 - [ ] **Phase 91: Singleton Recovery** - Assign or split-assign singletons to existing groups; enforce same-camera overlap constraint
 - [ ] **Phase 92: Parameter Tuning Pass** - Calibrate new config parameters on real data; confirm improvement over v3.7 baseline
 
@@ -316,6 +316,6 @@ Note: Phases 88 and 89 depend only on Phase 87 and can be executed in either ord
 | 87. Tracklet2D Keypoint Propagation | 1/1 | Complete    | 2026-03-11 |
 | 88. Multi-Keypoint Pairwise Scoring | 1/1 | Complete    | 2026-03-11 |
 | 89. Fragment Merging Removal | 1/1 | Complete    | 2026-03-11 |
-| 90. Group Validation with Changepoint Detection | 1/2 | In Progress|  |
+| 90. Group Validation with Changepoint Detection | 2/2 | Complete   | 2026-03-11 |
 | 91. Singleton Recovery | 0/2 | Not started | - |
 | 92. Parameter Tuning Pass | 0/TBD | Not started | - |

@@ -730,15 +730,15 @@ class TestKeypointTracker:
 # ---------------------------------------------------------------------------
 
 
-class TestTrackingStageKeywordBidi:
-    """Integration tests for TrackingStage with tracker_kind='keypoint_bidi'."""
+class TestTrackingStageKeypointOks:
+    """Integration tests for TrackingStage with tracker_kind='keypoint_oks'."""
 
-    def test_config_accepts_keypoint_bidi(self) -> None:
-        """TrackingConfig accepts tracker_kind='keypoint_bidi' without error."""
+    def test_config_accepts_keypoint_oks(self) -> None:
+        """TrackingConfig accepts tracker_kind='keypoint_oks' without error."""
         from aquapose.engine.config import TrackingConfig
 
-        cfg = TrackingConfig(tracker_kind="keypoint_bidi")
-        assert cfg.tracker_kind == "keypoint_bidi"
+        cfg = TrackingConfig(tracker_kind="keypoint_oks")
+        assert cfg.tracker_kind == "keypoint_oks"
 
     def test_config_rejects_unknown_kind(self) -> None:
         """TrackingConfig raises ValueError for unknown tracker_kind."""
@@ -750,10 +750,10 @@ class TestTrackingStageKeywordBidi:
             TrackingConfig(tracker_kind="bad_tracker")
 
     def test_config_new_fields_have_defaults(self) -> None:
-        """New keypoint_bidi fields have backward-compatible defaults."""
+        """New keypoint_oks fields have backward-compatible defaults."""
         from aquapose.engine.config import TrackingConfig
 
-        cfg = TrackingConfig()  # default keypoint_bidi
+        cfg = TrackingConfig()  # default keypoint_oks
         assert hasattr(cfg, "base_r")
         assert hasattr(cfg, "lambda_ocm")
         assert hasattr(cfg, "max_gap_frames")
@@ -767,14 +767,14 @@ class TestTrackingStageKeywordBidi:
 
         assert "KeypointTracker" in tracking_pkg.__all__
 
-    def test_tracking_stage_keypoint_bidi_produces_tracklets(self) -> None:
-        """TrackingStage with keypoint_bidi produces valid Tracklet2D output."""
+    def test_tracking_stage_keypoint_oks_produces_tracklets(self) -> None:
+        """TrackingStage with keypoint_oks produces valid Tracklet2D output."""
         from aquapose.core.context import PipelineContext
         from aquapose.core.tracking.stage import TrackingStage
         from aquapose.core.tracking.types import Tracklet2D
         from aquapose.engine.config import TrackingConfig
 
-        cfg = TrackingConfig(tracker_kind="keypoint_bidi", n_init=2, max_coast_frames=5)
+        cfg = TrackingConfig(tracker_kind="keypoint_oks", n_init=2, max_coast_frames=5)
         stage = TrackingStage(config=cfg)
 
         # Build synthetic context with 2 cameras x 10 frames x 1 fish
@@ -822,13 +822,13 @@ class TestTrackingStageKeywordBidi:
                 assert isinstance(t, Tracklet2D)
                 assert t.camera_id == cam_id
 
-    def test_tracking_stage_chunk_handoff_keypoint_bidi(self) -> None:
+    def test_tracking_stage_chunk_handoff_keypoint_oks(self) -> None:
         """Chunk handoff serializes and restores keypoint tracker state."""
         from aquapose.core.context import PipelineContext
         from aquapose.core.tracking.stage import TrackingStage
         from aquapose.engine.config import TrackingConfig
 
-        cfg = TrackingConfig(tracker_kind="keypoint_bidi", n_init=2, max_coast_frames=5)
+        cfg = TrackingConfig(tracker_kind="keypoint_oks", n_init=2, max_coast_frames=5)
         stage = TrackingStage(config=cfg)
 
         camera_ids = ["cam0"]
@@ -866,3 +866,73 @@ class TestTrackingStageKeywordBidi:
         ctx2, carry2 = stage.run(ctx2, carry=carry1)
         assert carry2 is not None
         # Should not raise — state was restored and processing continued
+
+
+class TestCrossChunkHandoff:
+    """Regression tests for cross-chunk handoff serialization (Phase 86)."""
+
+    def test_get_state_excludes_builders(self) -> None:
+        """get_state() must NOT serialize builder history."""
+        config = _make_tracker_config(n_init=3, max_age=10)
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
+        frames = _make_linear_detections_kpt(n_fish=1, n_frames=6)
+        for i, dets in enumerate(frames):
+            tracker.update(frame_idx=i, detections=dets)
+        state = tracker.get_state()
+        assert "builders" not in state
+
+    def test_from_state_creates_empty_builders(self) -> None:
+        """from_state() must create empty builders for active tracks."""
+        config = _make_tracker_config(n_init=3, max_age=10)
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
+        frames = _make_linear_detections_kpt(n_fish=1, n_frames=6)
+        for i, dets in enumerate(frames):
+            tracker.update(frame_idx=i, detections=dets)
+        state = tracker.get_state()
+        tracker2 = _SinglePassTracker.from_state("cam0", state)
+        # Should have one builder per active track, each with empty frames
+        assert len(tracker2._builders) == len(tracker2._active_tracks)
+        for tid, b in tracker2._builders.items():
+            assert tid in tracker2._active_tracks
+            assert len(b.frames) == 0
+
+    def test_cross_chunk_handoff_no_duplicate_frames(self) -> None:
+        """A 2-chunk sequence must produce tracklets with no duplicate frame indices."""
+        tracker = _make_keypoint_tracker(n_init=3, max_age=10)
+        # Chunk 1: frames 0-7
+        frames1 = _make_linear_detections_kpt(n_fish=1, n_frames=8)
+        for i, dets in enumerate(frames1):
+            tracker.update(frame_idx=i, detections=dets)
+        tracklets1 = tracker.get_tracklets()
+        state = tracker.get_state()
+
+        # Chunk 2: frames 8-15
+        tracker2 = KeypointTracker.from_state("cam0", state)
+        frames2 = _make_linear_detections_kpt(n_fish=1, n_frames=8, start_x=140.0)
+        for i, dets in enumerate(frames2, start=8):
+            tracker2.update(frame_idx=i, detections=dets)
+        tracklets2 = tracker2.get_tracklets()
+
+        # Combine all frame indices from both chunks
+        all_frames: list[int] = []
+        for t in tracklets1:
+            all_frames.extend(t.frames)
+        for t in tracklets2:
+            all_frames.extend(t.frames)
+        # No duplicates
+        assert len(all_frames) == len(set(all_frames)), (
+            f"Duplicate frame indices found: {sorted(all_frames)}"
+        )
+
+    def test_next_track_id_preserved_across_handoff(self) -> None:
+        """next_track_id must be preserved so new tracks don't collide."""
+        config = _make_tracker_config(n_init=3, max_age=10)
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
+        frames = _make_linear_detections_kpt(n_fish=2, n_frames=8)
+        for i, dets in enumerate(frames):
+            tracker.update(frame_idx=i, detections=dets)
+        state = tracker.get_state()
+        next_id_before = state["next_track_id"]
+
+        tracker2 = _SinglePassTracker.from_state("cam0", state)
+        assert tracker2._next_track_id == next_id_before

@@ -805,8 +805,12 @@ class _SinglePassTracker:
     def get_state(self) -> dict[str, Any]:
         """Serialize tracker state for cross-chunk handoff.
 
+        Builder history is intentionally excluded — only KF states, track
+        metadata, OCR state, and config are serialized.  On restore,
+        ``from_state()`` creates fresh empty builders for active tracks.
+
         Returns:
-            State dict containing track KF states, builder data, and config.
+            State dict containing track KF states and config (no builders).
         """
         tracks_state = {}
         for tid, trk in self._active_tracks.items():
@@ -825,21 +829,8 @@ class _SinglePassTracker:
                 if trk._pre_coast_P is not None
                 else None,
             }
-        builders_state = {}
-        for tid, b in self._builders.items():
-            builders_state[tid] = {
-                "frames": list(b.frames),
-                "centroids": list(b.centroids),
-                "bboxes": list(b.bboxes),
-                "frame_status": list(b.frame_status),
-                "keypoints": [k.tolist() for k in b.keypoints],
-                "keypoint_conf": [c.tolist() for c in b.keypoint_conf],
-                "detected_count": b.detected_count,
-                "active": b.active,
-            }
         return {
             "tracks": tracks_state,
-            "builders": builders_state,
             "next_track_id": self._next_track_id,
             "max_age": self._max_age,
             "n_init": self._n_init,
@@ -897,20 +888,13 @@ class _SinglePassTracker:
                 trk._pre_coast_P = np.array(ts["pre_coast_P"], dtype=np.float64)
             instance._active_tracks[tid] = trk
 
-        for tid_str, bs in state["builders"].items():
-            tid = int(tid_str)
-            b = _KptTrackletBuilder(camera_id=camera_id, track_id=tid)
-            b.frames = list(bs["frames"])
-            b.centroids = [tuple(c) for c in bs["centroids"]]  # type: ignore[misc]
-            b.bboxes = [tuple(bx) for bx in bs["bboxes"]]  # type: ignore[misc]
-            b.frame_status = list(bs["frame_status"])
-            b.keypoints = [np.array(k, dtype=np.float32) for k in bs["keypoints"]]
-            b.keypoint_conf = [
-                np.array(c, dtype=np.float32) for c in bs["keypoint_conf"]
-            ]
-            b.detected_count = bs["detected_count"]
-            b.active = bs["active"]
-            instance._builders[tid] = b
+        # Create empty builders for active tracks so new detections in the
+        # next chunk are accumulated correctly (builder history is NOT carried
+        # across chunks to avoid duplicate frame indices).
+        for tid in instance._active_tracks:
+            instance._builders[tid] = _KptTrackletBuilder(
+                camera_id=camera_id, track_id=tid
+            )
 
         return instance
 
@@ -1179,7 +1163,7 @@ class KeypointTracker:
             JSON-safe state dict. All numpy arrays serialized as lists.
         """
         return {
-            "kind": "keypoint_bidi",
+            "kind": "keypoint_oks",
             "camera_id": self._camera_id,
             "max_age": self._max_age,
             "n_init": self._n_init,

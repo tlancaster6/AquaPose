@@ -481,7 +481,6 @@ def run_evaluation(
     # --- Pass 1: Cache all Detection objects with keypoints ---
     print("\nPass 1: OBB detection + pose estimation (caching detections)...")
     all_frame_dets: list[list[Detection]] = []
-    all_raw_frames: list[np.ndarray] = []
 
     cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     for fidx in range(start_frame, end_frame):
@@ -510,7 +509,6 @@ def run_evaluation(
             _run_pose_on_detections(pose_backend, det_objects, frame, fidx)
 
         all_frame_dets.append(det_objects)
-        all_raw_frames.append(frame.copy())
 
         if (fidx - start_frame) % 100 == 0:
             n_with_kpts = sum(1 for d in det_objects if d.keypoints is not None)
@@ -616,41 +614,61 @@ def run_evaluation(
             centroid = t.centroids[i] if i < len(t.centroids) else None
             frame_to_tracks[f].append((t.track_id, centroid))
 
-    print(f"\nRendering annotated video ({len(all_raw_frames)} frames)...")
-    for frame_offset, (frame, det_objects) in enumerate(
-        zip(all_raw_frames, all_frame_dets, strict=True)
-    ):
+    print(f"\nRendering annotated video ({len(all_frame_dets)} frames)...")
+    cap2 = cv2.VideoCapture(str(video_path))
+    cap2.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    for frame_offset, det_objects in enumerate(all_frame_dets):
+        ret, frame = cap2.read()
+        if not ret:
+            break
         fidx = start_frame + frame_offset
-        frame_copy = frame.copy()
 
         active_tracks = frame_to_tracks.get(fidx, [])
-        # Build OBB->track_id assignment via centroid proximity
-        for det in det_objects:
-            if det.obb_points is None:
-                continue
-            cx, cy = _obb_center(det.obb_points)
-            # Find best matching track for this detection
-            best_id = None
-            best_dist = 60.0  # pixel tolerance
-            for tid, centroid in active_tracks:
-                if centroid is None:
-                    continue
-                dist = float(np.hypot(cx - centroid[0], cy - centroid[1]))
-                if dist < best_dist:
-                    best_dist = dist
-                    best_id = tid
+        # Build OBB->track_id assignment via exclusive centroid matching.
+        # Use linear_sum_assignment so each detection gets at most one track ID
+        # and each track ID is used at most once per frame (no duplicate IDs).
+        valid_dets = [
+            (i, det, _obb_center(det.obb_points))
+            for i, det in enumerate(det_objects)
+            if det.obb_points is not None
+        ]
+        valid_tracks = [
+            (j, tid, centroid)
+            for j, (tid, centroid) in enumerate(active_tracks)
+            if centroid is not None
+        ]
 
+        det_to_track_id: dict[int, int] = {}
+        if valid_dets and valid_tracks:
+            from scipy.optimize import linear_sum_assignment
+
+            dist_thresh = 60.0  # pixel tolerance
+            cost_mat = np.full((len(valid_dets), len(valid_tracks)), dist_thresh + 1.0)
+            for di, (_, _, (dcx, dcy)) in enumerate(valid_dets):
+                for tj, (_, _, (tcx, tcy)) in enumerate(valid_tracks):
+                    d = float(np.hypot(dcx - tcx, dcy - tcy))
+                    if d <= dist_thresh:
+                        cost_mat[di, tj] = d
+            row_idx, col_idx = linear_sum_assignment(cost_mat)
+            for r, c in zip(row_idx, col_idx, strict=False):
+                if cost_mat[r, c] <= dist_thresh:
+                    det_i = valid_dets[r][0]
+                    tid = valid_tracks[c][1]
+                    det_to_track_id[det_i] = tid
+
+        for det_i, det, (cx, cy) in valid_dets:
+            best_id = det_to_track_id.get(det_i)
             color = (
                 _PALETTE_BGR[best_id % len(_PALETTE_BGR)]
                 if best_id is not None
                 else (128, 128, 128)
             )
-            _draw_obb(frame_copy, det.obb_points, color, thickness=2)
+            _draw_obb(frame, det.obb_points, color, thickness=2)
             if best_id is not None:
                 cv2.putText(
-                    frame_copy,
+                    frame,
                     str(best_id),
-                    (cx - 8, cy + 5),
+                    (int(cx) - 8, int(cy) + 5),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.6,
                     color,
@@ -658,7 +676,7 @@ def run_evaluation(
                 )
 
         cv2.putText(
-            frame_copy,
+            frame,
             f"F{fidx}",
             (5, 20),
             cv2.FONT_HERSHEY_SIMPLEX,
@@ -666,8 +684,9 @@ def run_evaluation(
             (255, 255, 255),
             1,
         )
-        writer.write(frame_copy)
+        writer.write(frame)
 
+    cap2.release()
     writer.release()
     print(f"Video saved: {output_video}")
 

@@ -215,11 +215,11 @@ class PipelineContext:
     Fields use generic stdlib types only to preserve the engine import
     boundary (ENG-07). Actual element types are documented below.
 
-    The 5-stage data flow is:
+    The 5-stage data flow (v3.7) is:
     1. Detection     -> ``detections``
-    2. 2D Tracking   -> ``tracks_2d``
-    3. Association   -> ``tracklet_groups``
-    4. Midline       -> ``annotated_detections``
+    2. Pose          -> (enriches detections in-place with keypoints)
+    3. 2D Tracking   -> ``tracks_2d``
+    4. Association   -> ``tracklet_groups``
     5. Reconstruction -> ``midlines_3d``
 
     Attributes:
@@ -228,19 +228,16 @@ class PipelineContext:
             Type: ``list[str]``
         detections: Stage 1 (Detection) output. Per-frame per-camera detection results.
             Indexed by frame_idx. Each entry is a dict mapping camera_id to list of
-            Detection objects.
+            Detection objects. After Stage 2 (Pose), each Detection also carries
+            ``keypoints`` and ``keypoint_conf`` fields.
             Type: ``list[dict[str, list[Detection]]]``
-        tracks_2d: Stage 2 (2D Tracking) output. Per-camera temporal tracklets.
+        tracks_2d: Stage 3 (2D Tracking) output. Per-camera temporal tracklets.
             Keys are camera IDs; values are lists of Tracklet2D objects for that camera.
             Type: ``dict[str, list[Tracklet2D]]``
-        tracklet_groups: Stage 3 (Association) output. Cross-camera identity clusters.
+        tracklet_groups: Stage 4 (Association) output. Cross-camera identity clusters.
             Each entry is a TrackletGroup representing one fish whose per-camera
             tracklets have been matched across cameras.
             Type: ``list[TrackletGroup]``
-        annotated_detections: Stage 4 (Midline) output. Detections enriched with
-            15-point 2D midlines and half-widths. Same structure as ``detections``
-            but each Detection carries midline data.
-            Type: ``list[dict[str, list[Detection]]]``
         midlines_3d: Stage 5 (Reconstruction) output. Per-frame 3D midline results.
             Each entry maps fish_id to a Spline3D (or Midline3D) object.
             Type: ``list[dict[int, Spline3D]]``
@@ -257,7 +254,6 @@ class PipelineContext:
     detections: list | None = None
     tracks_2d: dict | None = None
     tracklet_groups: list | None = None
-    annotated_detections: list | None = None
     midlines_3d: list | None = None
     stage_timing: dict = field(default_factory=dict)
     carry_forward: ChunkHandoff | None = None

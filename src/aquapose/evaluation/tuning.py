@@ -336,7 +336,7 @@ class TuningOrchestrator:
                 self._caches["tracking"] = ctx
             if ctx.tracklet_groups is not None:
                 self._caches["association"] = ctx
-            if ctx.annotated_detections is not None:
+            if getattr(ctx, "annotated_detections", None) is not None:
                 self._caches["midline"] = ctx
             if ctx.midlines_3d is not None:
                 self._caches["reconstruction"] = ctx

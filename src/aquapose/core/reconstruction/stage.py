@@ -105,8 +105,7 @@ class ReconstructionStage:
             The same *context* object with ``midlines_3d`` populated.
 
         Raises:
-            ValueError: If ``context.tracklet_groups`` is None and
-                ``context.annotated_detections`` is also None.
+            ValueError: If ``context.tracklet_groups`` is None.
 
         """
         tracklet_groups = context.tracklet_groups
@@ -126,13 +125,11 @@ class ReconstructionStage:
         if tracklet_groups is not None and len(tracklet_groups) > 0:
             return self._run_with_tracklet_groups(context, tracklet_groups)
 
-        # Fallback: no tracklet_groups, use annotated_detections directly.
-        if context.annotated_detections is None:
-            raise ValueError(
-                "ReconstructionStage requires context.annotated_detections -- "
-                "it is not populated. Ensure Stage 4 (MidlineStage) has run.",
-            )
-        return self._run_legacy(context)
+        # Fallback: no tracklet_groups — cannot reconstruct.
+        raise ValueError(
+            "ReconstructionStage requires context.tracklet_groups -- "
+            "it is not populated. Ensure Stage 4 (AssociationStage) has run.",
+        )
 
     def _run_with_tracklet_groups(
         self,

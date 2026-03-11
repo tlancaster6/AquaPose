@@ -237,9 +237,9 @@ def test_pipeline_context_passed_between_stages(tmp_path: Path) -> None:
     [
         (None, 5, "ReconstructionStage"),
         ("detection", 1, "DetectionStage"),
-        ("tracking", 2, "TrackingStage"),
-        ("association", 3, "AssociationStage"),
-        ("midline", 4, "MidlineStage"),
+        ("pose", 2, "PoseStage"),
+        ("tracking", 3, "TrackingStage"),
+        ("association", 4, "AssociationStage"),
     ],
 )
 def test_build_stages_stop_after(
@@ -251,7 +251,7 @@ def test_build_stages_stop_after(
     """build_stages truncates the stage list when stop_after is set."""
     from aquapose.core import (
         DetectionStage,
-        MidlineStage,
+        PoseStage,
         ReconstructionStage,
         SyntheticDataStage,
     )
@@ -262,7 +262,7 @@ def test_build_stages_stop_after(
     # Stub __init__ on all stage classes (and VideoFrameSource) to avoid file I/O
     for cls in (
         DetectionStage,
-        MidlineStage,
+        PoseStage,
         ReconstructionStage,
         SyntheticDataStage,
         AssociationStage,
@@ -289,7 +289,7 @@ def test_build_stages_stop_after_invalid(monkeypatch: pytest.MonkeyPatch) -> Non
     """build_stages raises ValueError for an unrecognized stop_after value."""
     from aquapose.core import (
         DetectionStage,
-        MidlineStage,
+        PoseStage,
         ReconstructionStage,
         SyntheticDataStage,
     )
@@ -299,7 +299,7 @@ def test_build_stages_stop_after_invalid(monkeypatch: pytest.MonkeyPatch) -> Non
 
     for cls in (
         DetectionStage,
-        MidlineStage,
+        PoseStage,
         ReconstructionStage,
         SyntheticDataStage,
         AssociationStage,

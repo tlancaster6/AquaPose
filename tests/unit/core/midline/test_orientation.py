@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 
-from aquapose.core.midline.orientation import resolve_orientation
+from aquapose.core.pose.orientation import resolve_orientation
 
 # ---------------------------------------------------------------------------
 # Mock config and ForwardLUT

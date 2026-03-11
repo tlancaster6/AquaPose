@@ -96,8 +96,7 @@ def _make_frozen_config(
         "calibration_path": str(run_dir / "calib.json"),
         "output_dir": str(run_dir),
         "n_animals": 3,
-        "midline": {
-            "backend": "pose_estimation",
+        "pose": {
             "weights_path": "fake.pt",
             "keypoint_t_values": keypoint_t_values,
         },

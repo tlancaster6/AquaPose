@@ -124,10 +124,12 @@ class TestSyntheticDataStageRun:
         assert context.detections is not None
         assert len(context.detections) == 5  # frame_count
 
-    def test_populates_annotated_detections(self) -> None:
+    def test_does_not_populate_annotated_detections(self) -> None:
+        """SyntheticDataStage no longer populates annotated_detections (removed in v3.7)."""
         context = self._run_stage()
-        assert context.annotated_detections is not None
-        assert len(context.annotated_detections) == 5
+        assert not hasattr(context, "annotated_detections"), (
+            "annotated_detections was removed from PipelineContext in v3.7"
+        )
 
     def test_detections_have_camera_keys(self) -> None:
         context = self._run_stage()
@@ -146,19 +148,19 @@ class TestSyntheticDataStageRun:
                     break
         assert has_any, "No cameras received any detections"
 
-    def test_annotated_detections_have_midlines(self) -> None:
-        from aquapose.core.types.midline import Midline2D
+    def test_detections_have_bbox_fields(self) -> None:
+        """SyntheticDataStage produces Detection objects with bbox fields set."""
+        from aquapose.core.types.detection import Detection
 
         context = self._run_stage()
-        found_midline = False
-        for frame_annot in context.annotated_detections:
-            for _cam_id, annots in frame_annot.items():
-                for annot in annots:
-                    if annot.midline is not None:
-                        assert isinstance(annot.midline, Midline2D)
-                        assert annot.midline.points.shape == (10, 2)
-                        found_midline = True
-        assert found_midline, "No annotated detections have midlines"
+        found_detection = False
+        for frame_dets in context.detections:
+            for _cam_id, dets in frame_dets.items():
+                for det in dets:
+                    assert isinstance(det, Detection)
+                    assert det.bbox is not None
+                    found_detection = True
+        assert found_detection, "No detections produced"
 
     def test_deterministic_with_same_seed(self) -> None:
         config = SyntheticConfig(fish_count=2, frame_count=3, seed=123)
@@ -170,7 +172,8 @@ class TestSyntheticDataStageRun:
             for cam in ctx1.camera_ids:
                 assert len(ctx1.detections[f][cam]) == len(ctx2.detections[f][cam])
 
-    def test_noise_changes_output(self) -> None:
+    def test_noise_changes_detections(self) -> None:
+        """With noise, detection bbox coordinates should differ from no-noise run."""
         config_no_noise = SyntheticConfig(
             fish_count=2, frame_count=3, noise_std=0.0, seed=42
         )
@@ -180,26 +183,19 @@ class TestSyntheticDataStageRun:
         ctx1 = self._run_stage(config_no_noise)
         ctx2 = self._run_stage(config_noise)
 
-        # With noise, midline points should differ
+        # With noise, detection bboxes should differ
         diffs_found = False
         for f in range(3):
             for cam in ctx1.camera_ids:
-                for a1, a2 in zip(
-                    ctx1.annotated_detections[f][cam],
-                    ctx2.annotated_detections[f][cam],
-                    strict=False,
-                ):
-                    if (
-                        a1.midline is not None
-                        and a2.midline is not None
-                        and not np.allclose(a1.midline.points, a2.midline.points)
-                    ):
+                dets1 = ctx1.detections[f].get(cam, [])
+                dets2 = ctx2.detections[f].get(cam, [])
+                for d1, d2 in zip(dets1, dets2, strict=False):
+                    if not np.allclose(d1.bbox, d2.bbox):
                         diffs_found = True
-        assert diffs_found, "Noise had no effect on midline points"
+        assert diffs_found, "Noise had no effect on detection bboxes"
 
     def test_frame_count_matches_config(self) -> None:
         config = SyntheticConfig(fish_count=1, frame_count=10, seed=42)
         context = self._run_stage(config)
         assert context.frame_count == 10
         assert len(context.detections) == 10
-        assert len(context.annotated_detections) == 10

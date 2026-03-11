@@ -17,8 +17,10 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from aquapose.core.midline.backends.segmentation import SegmentationBackend
-from aquapose.core.midline.types import AnnotatedDetection
+from aquapose.core.pose.backends.segmentation import (
+    AnnotatedDetection,
+    SegmentationBackend,
+)
 from aquapose.core.types.crop import AffineCrop
 from aquapose.core.types.detection import Detection
 
@@ -100,7 +102,7 @@ def test_instantiation_no_weights_path(caplog: pytest.LogCaptureFixture) -> None
     import logging
 
     with caplog.at_level(
-        logging.WARNING, logger="aquapose.core.midline.backends.segmentation"
+        logging.WARNING, logger="aquapose.core.pose.backends.segmentation"
     ):
         backend = SegmentationBackend(weights_path=None)
 
@@ -169,8 +171,8 @@ def test_process_frame_no_model_empty_camera() -> None:
 # ---------------------------------------------------------------------------
 
 
-@patch("aquapose.core.midline.backends.segmentation.invert_affine_points")
-@patch("aquapose.core.midline.backends.segmentation.extract_affine_crop")
+@patch("aquapose.core.pose.backends.segmentation.invert_affine_points")
+@patch("aquapose.core.pose.backends.segmentation.extract_affine_crop")
 def test_process_frame_with_mock_model_produces_midline(
     mock_extract: MagicMock,
     mock_invert: MagicMock,
@@ -218,8 +220,8 @@ def test_process_frame_with_mock_model_produces_midline(
 # ---------------------------------------------------------------------------
 
 
-@patch("aquapose.core.midline.backends.segmentation.invert_affine_points")
-@patch("aquapose.core.midline.backends.segmentation.extract_affine_crop")
+@patch("aquapose.core.pose.backends.segmentation.invert_affine_points")
+@patch("aquapose.core.pose.backends.segmentation.extract_affine_crop")
 def test_mask_below_min_area_returns_none(
     mock_extract: MagicMock,
     mock_invert: MagicMock,
@@ -263,8 +265,8 @@ def test_mask_below_min_area_returns_none(
 # ---------------------------------------------------------------------------
 
 
-@patch("aquapose.core.midline.backends.segmentation.invert_affine_points")
-@patch("aquapose.core.midline.backends.segmentation.extract_affine_crop")
+@patch("aquapose.core.pose.backends.segmentation.invert_affine_points")
+@patch("aquapose.core.pose.backends.segmentation.extract_affine_crop")
 def test_none_angle_falls_back_to_zero(
     mock_extract: MagicMock,
     mock_invert: MagicMock,
@@ -308,7 +310,7 @@ def test_none_angle_falls_back_to_zero(
 
 def test_no_engine_import() -> None:
     """segmentation.py does not import from aquapose.engine at runtime."""
-    import aquapose.core.midline.backends.segmentation as seg_mod
+    import aquapose.core.pose.backends.segmentation as seg_mod
 
     engine_imports = [name for name in vars(seg_mod) if "engine" in name.lower()]
     assert not engine_imports, (

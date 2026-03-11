@@ -56,9 +56,9 @@ def test_pipeline_context_accumulates_fields() -> None:
 
 
 def test_pipeline_context_defaults_none() -> None:
-    """All Optional fields default to None on a fresh PipelineContext (v2.1 stage order).
+    """All Optional fields default to None on a fresh PipelineContext (v3.7 stage order).
 
-    v2.1 pipeline: Detection -> 2D Tracking -> Association -> Midline -> Reconstruction.
+    v3.7 pipeline: Detection -> Pose -> 2D Tracking -> Association -> Reconstruction.
     """
     ctx = PipelineContext()
 
@@ -66,12 +66,11 @@ def test_pipeline_context_defaults_none() -> None:
     assert ctx.camera_ids is None
     # Stage 1 — Detection
     assert ctx.detections is None
-    # Stage 2 — 2D Tracking
+    # Stage 2 — Pose (enriches detections in-place, no dedicated field)
+    # Stage 3 — 2D Tracking
     assert ctx.tracks_2d is None
-    # Stage 3 — Association
+    # Stage 4 — Association
     assert ctx.tracklet_groups is None
-    # Stage 4 — Midline
-    assert ctx.annotated_detections is None
     # Stage 5 — Reconstruction
     assert ctx.midlines_3d is None
     # stage_timing should be an empty dict (not None)

@@ -37,7 +37,7 @@ class DetectionConfig:
             ``None`` means no path configured (caller must supply via
             ``detector_kwargs`` or construct the stage directly).
         crop_size: Output size ``[width, height]`` in pixels for affine crops
-            produced by :func:`~aquapose.core.midline.crop.extract_affine_crop`.
+            produced by :func:`~aquapose.core.pose.crop.extract_affine_crop`.
             Used by downstream stages when ``detector_kind`` is ``"yolo_obb"``.
             Defaults to ``[256, 128]`` — wide enough for a typical elongated fish
             body at standard frame resolutions. Stored as a list so that YAML
@@ -80,70 +80,39 @@ class DetectionConfig:
 
 
 @dataclass(frozen=True)
-class MidlineConfig:
-    """Config for the Midline stage (Stage 2).
+class PoseConfig:
+    """Config for the Pose stage (Stage 2).
 
-    The Midline stage supports two backends: ``"segmentation"`` (YOLO-seg
-    mask skeletonization) and ``"pose_estimation"`` (YOLO-pose keypoint
-    spline interpolation).
+    The Pose stage runs YOLO-pose inference on all detections and writes raw
+    anatomical keypoints directly onto Detection objects before tracking.
 
     Attributes:
-        confidence_threshold: Minimum confidence for mask acceptance by the
-            segmentation backend.
-        conf_threshold: Minimum detection confidence passed to the YOLO backend.
-            Detections below this score are discarded at inference time.
-        weights_path: Path to model weights for the active midline backend
-            (segmentation or pose estimation).
-        backend: Midline backend to use. ``"segmentation"`` (default) or
-            ``"pose_estimation"``.
-        min_area: Minimum mask area (pixels) required to attempt midline extraction
-            (``"segmentation"`` only). Default 100 — conservative threshold for
-            128x64 crop space where a full fish body spans ~2000-4000 px².
+        confidence_threshold: YOLO detection confidence threshold for
+            model.predict(). Detections below this score are discarded at
+            inference time. Default 0.5.
+        weights_path: Path to YOLO-pose model weights file.
         detection_tolerance: Maximum pixel distance for matching a tracklet
-            centroid to a detection. OC-SORT Kalman predictions can drift
-            10-30px from raw centroids during coast/recovery. Default 50.0.
-        speed_threshold: Minimum pixel-per-frame speed for velocity signal in
-            head-tail orientation. Below this, velocity is ignored. Default 2.0.
-        orientation_weight_geometric: Weight for cross-camera geometric vote
-            in orientation resolution. Default 1.0.
-        orientation_weight_velocity: Weight for velocity alignment signal.
-            Default 0.5.
-        orientation_weight_temporal: Weight for temporal prior signal.
-            Default 0.3.
+            centroid to a detection. Default 50.0.
         n_keypoints: Number of anatomical keypoints. Default 6.
         keypoint_t_values: Per-keypoint arc-fraction values in [0, 1] from nose
             (0.0) to tail (1.0). If ``None``, defaults to uniform spacing.
         keypoint_confidence_floor: Minimum per-keypoint confidence to treat as
-            visible in the ``"pose_estimation"`` backend. Default 0.3.
-        min_observed_keypoints: Minimum number of visible keypoints required to
-            fit the spline in the ``"pose_estimation"`` backend. Default 3.
-        midline_batch_crops: Maximum number of crops per YOLO midline batch.
+            visible. Default 0.3.
+        min_observed_keypoints: Minimum number of visible keypoints required for
+            a valid pose result. Default 3.
+        pose_batch_crops: Maximum number of crops per YOLO pose batch.
             ``0`` means no limit (batch all crops in the chunk).
     """
 
     confidence_threshold: float = 0.5
     weights_path: str | None = None
-    backend: str = "segmentation"
-    min_area: int = 100
     detection_tolerance: float = 50.0
-    speed_threshold: float = 2.0
-    orientation_weight_geometric: float = 1.0
-    orientation_weight_velocity: float = 0.5
-    orientation_weight_temporal: float = 0.3
     # pose_estimation backend fields
     n_keypoints: int = 6
     keypoint_t_values: list[float] | None = None
     keypoint_confidence_floor: float = 0.3
     min_observed_keypoints: int = 3
-    midline_batch_crops: int = 0
-
-    def __post_init__(self) -> None:
-        _valid_backends = {"segmentation", "pose_estimation"}
-        if self.backend not in _valid_backends:
-            raise ValueError(
-                f"Unknown midline backend: {self.backend!r}. "
-                f"Available: {sorted(_valid_backends)}"
-            )
+    pose_batch_crops: int = 0
 
 
 @dataclass(frozen=True)
@@ -349,7 +318,7 @@ class PipelineConfig:
             ``synthetic.fish_count`` when those fields are not explicitly overridden.
         device: Compute device for all stages (e.g. ``"cuda:0"``, ``"cpu"``).
             Auto-detected from :func:`_default_device` when absent from YAML.
-            Propagates to DetectionStage and MidlineStage via :func:`build_stages`.
+            Propagates to DetectionStage and PoseStage via :func:`build_stages`.
         n_sample_points: Number of 2D midline points produced per detection and
             used throughout the reconstruction pipeline. Default is 15. Propagates
             to ``reconstruction.n_sample_points`` when that field is not explicitly
@@ -357,15 +326,15 @@ class PipelineConfig:
         project_dir: Optional project root directory for resolving relative paths.
             Empty string means no resolution — paths are used as-is.
         detection: Detection stage config (Stage 1).
-        midline: Midline stage config (Stage 2) — configures segment-then-extract backend.
-        association: Association stage config (Stage 3).
-        tracking: Tracking stage config (Stage 4).
+        pose: Pose stage config (Stage 2) — configures YOLO-pose keypoint backend.
+        association: Association stage config (Stage 4).
+        tracking: Tracking stage config (Stage 3).
         reconstruction: Reconstruction stage config (Stage 5).
         synthetic: Synthetic data generation config (synthetic mode only).
         lut: Refractive lookup table config (tank geometry and grid resolution).
         stop_after: If set, truncate the stage list after the named stage.
-            Valid values: ``"detection"``, ``"tracking"``, ``"association"``,
-            ``"midline"``, or ``None`` (run all stages).
+            Valid values: ``"detection"``, ``"pose"``, ``"tracking"``,
+            ``"association"``, or ``None`` (run all stages).
         chunk_size: Number of frames per processing chunk. None or 0 means
             process the entire video as a single chunk. Callers should check
             ``config.chunk_size or None`` to treat 0 as None.
@@ -381,7 +350,7 @@ class PipelineConfig:
     n_sample_points: int = 15
     project_dir: str = ""
     detection: DetectionConfig = dataclasses.field(default_factory=DetectionConfig)
-    midline: MidlineConfig = dataclasses.field(default_factory=MidlineConfig)
+    pose: PoseConfig = dataclasses.field(default_factory=PoseConfig)
     association: AssociationConfig = dataclasses.field(
         default_factory=AssociationConfig
     )
@@ -569,7 +538,7 @@ def load_config(
     """
     # --- layer 1: defaults ------------------------------------------------
     det_kwargs: dict[str, Any] = {}
-    mid_kwargs: dict[str, Any] = {}
+    pose_kwargs: dict[str, Any] = {}
     assoc_kwargs: dict[str, Any] = {}
     trk_kwargs: dict[str, Any] = {}
     rec_kwargs: dict[str, Any] = {}
@@ -588,11 +557,12 @@ def load_config(
         yaml_nested = _build_stage_dict_from_dotted(flat_yaml)
 
         det_kwargs = _merge_stage_config(det_kwargs, yaml_nested.get("detection", {}))
-        # Accept old name ("segmentation") for backward compat; new name ("midline") takes precedence
-        mid_kwargs = _merge_stage_config(
-            mid_kwargs, yaml_nested.get("segmentation", {})
+        # Accept old names ("segmentation", "midline") for backward compat; new name ("pose") takes precedence
+        pose_kwargs = _merge_stage_config(
+            pose_kwargs, yaml_nested.get("segmentation", {})
         )
-        mid_kwargs = _merge_stage_config(mid_kwargs, yaml_nested.get("midline", {}))
+        pose_kwargs = _merge_stage_config(pose_kwargs, yaml_nested.get("midline", {}))
+        pose_kwargs = _merge_stage_config(pose_kwargs, yaml_nested.get("pose", {}))
         assoc_kwargs = _merge_stage_config(
             assoc_kwargs, yaml_nested.get("association", {})
         )
@@ -614,9 +584,12 @@ def load_config(
         cli_nested = _build_stage_dict_from_dotted(flat_cli)
 
         det_kwargs = _merge_stage_config(det_kwargs, cli_nested.get("detection", {}))
-        # Accept old name ("segmentation") for backward compat; new name ("midline") takes precedence
-        mid_kwargs = _merge_stage_config(mid_kwargs, cli_nested.get("segmentation", {}))
-        mid_kwargs = _merge_stage_config(mid_kwargs, cli_nested.get("midline", {}))
+        # Accept old names ("segmentation", "midline") for backward compat; new name ("pose") takes precedence
+        pose_kwargs = _merge_stage_config(
+            pose_kwargs, cli_nested.get("segmentation", {})
+        )
+        pose_kwargs = _merge_stage_config(pose_kwargs, cli_nested.get("midline", {}))
+        pose_kwargs = _merge_stage_config(pose_kwargs, cli_nested.get("pose", {}))
         assoc_kwargs = _merge_stage_config(
             assoc_kwargs, cli_nested.get("association", {})
         )
@@ -647,7 +620,7 @@ def load_config(
         # Resolve sub-config path fields
         for sub_kwargs, field_names in [
             (det_kwargs, ["weights_path"]),
-            (mid_kwargs, ["weights_path"]),
+            (pose_kwargs, ["weights_path"]),
         ]:
             for fname in field_names:
                 val = sub_kwargs.get(fname, "")
@@ -701,7 +674,7 @@ def load_config(
         run_id=resolved_run_id,
         output_dir=resolved_output_dir,
         detection=DetectionConfig(**_filter_fields(DetectionConfig, det_kwargs)),
-        midline=MidlineConfig(**_filter_fields(MidlineConfig, mid_kwargs)),
+        pose=PoseConfig(**_filter_fields(PoseConfig, pose_kwargs)),
         association=AssociationConfig(
             **_filter_fields(AssociationConfig, assoc_kwargs)
         ),

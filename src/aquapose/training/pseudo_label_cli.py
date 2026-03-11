@@ -157,7 +157,7 @@ def generate(
     pipeline_config = load_config(yaml_path=str(config_path))
 
     # 2. Fail fast if keypoint_t_values not configured
-    keypoint_t_values = pipeline_config.midline.keypoint_t_values
+    keypoint_t_values = pipeline_config.pose.keypoint_t_values
     if keypoint_t_values is None:
         raise click.ClickException(
             "keypoint_t_values is None in config. "

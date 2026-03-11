@@ -100,39 +100,31 @@ def _make_tracklet_group(fish_id: int, tracklets: tuple) -> Any:
     )
 
 
-def _make_annotated_detections(n_frames: int, cam_ids: list[str]) -> list:
-    """Build synthetic annotated_detections list for midline stage.
+def _make_detections_with_keypoints(n_frames: int, cam_ids: list[str]) -> list:
+    """Build synthetic detections list with keypoints on Detection objects (v3.7).
 
-    Returns list[dict[str, list[AnnotatedDetection]]] where each entry is
-    a per-frame dict of camera_id -> list of AnnotatedDetection.
-    Each AnnotatedDetection carries a Midline2D with fish_id=0 or 1.
+    Returns list[dict[str, list[Detection]]] where each Detection has
+    keypoints and keypoint_conf populated directly.
     """
-    from aquapose.core.midline.types import AnnotatedDetection
     from aquapose.core.types.detection import Detection
 
     frames = []
     for frame_idx in range(n_frames):
         frame_dict: dict[str, list] = {}
         for cam_id in cam_ids:
-            ann_list = []
+            det_list = []
             for fish_id in _FISH_IDS:
+                rng = np.random.default_rng(fish_id * 100 + frame_idx)
                 det = Detection(
                     bbox=(10 + fish_id * 5, 20, 50, 80),
                     mask=None,
                     area=4000,
                     confidence=0.9,
+                    keypoints=rng.random((6, 2)).astype(np.float32),
+                    keypoint_conf=np.ones(6, dtype=np.float32),
                 )
-                midline = _make_midline2d(fish_id, cam_id, frame_idx)
-                ann = AnnotatedDetection(
-                    detection=det,
-                    mask=None,
-                    crop_region=None,
-                    midline=midline,
-                    camera_id=cam_id,
-                    frame_index=frame_idx,
-                )
-                ann_list.append(ann)
-            frame_dict[cam_id] = ann_list
+                det_list.append(det)
+            frame_dict[cam_id] = det_list
         frames.append(frame_dict)
     return frames
 
@@ -173,7 +165,6 @@ def _make_full_context(
         )
         for fish_id in _FISH_IDS
     ]
-    annotated_detections = _make_annotated_detections(n_frames, _CAM_IDS)
     midlines_3d = [
         {fish_id: _make_midline3d(fish_id, fi) for fish_id in _FISH_IDS}
         for fi in range(n_frames)
@@ -184,7 +175,6 @@ def _make_full_context(
         detections=detection_frames,
         tracks_2d=tracks_2d,
         tracklet_groups=tracklet_groups,
-        annotated_detections=annotated_detections,
         midlines_3d=midlines_3d,
     )
 
@@ -297,9 +287,9 @@ def _make_chunk_run_dir(
                 "end_frame": frame_offset + n_frames_per_chunk,
                 "stages_cached": [
                     "DetectionStage",
+                    "PoseStage",
                     "TrackingStage",
                     "AssociationStage",
-                    "MidlineStage",
                     "ReconstructionStage",
                 ],
             }
@@ -354,10 +344,10 @@ def test_single_chunk_all_stages_present(tmp_path: Path) -> None:
     assert result.detection is not None
     assert result.tracking is not None
     assert result.association is not None
-    assert result.midline is not None
+    # midline evaluation removed in v3.7 (annotated_detections no longer produced)
     assert result.reconstruction is not None
     assert result.stages_present == frozenset(
-        {"detection", "tracking", "association", "midline", "reconstruction"}
+        {"detection", "tracking", "association", "reconstruction"}
     )
     assert result.frames_available == _N_FRAMES
     assert result.frames_evaluated == _N_FRAMES
@@ -460,12 +450,12 @@ def test_multi_chunk_all_stages_present(tmp_path: Path) -> None:
     assert result.detection is not None
     assert result.tracking is not None
     assert result.association is not None
-    assert result.midline is not None
+    # midline evaluation removed in v3.7 (annotated_detections no longer produced)
     assert result.reconstruction is not None
 
 
 def test_multi_chunk_stages_present_frozenset(tmp_path: Path) -> None:
-    """Multi-chunk run: stages_present contains all 5 stage keys."""
+    """Multi-chunk run: stages_present contains 4 stage keys (midline removed in v3.7)."""
     from aquapose.evaluation.runner import EvalRunner
 
     run_dir = _make_chunk_run_dir(tmp_path, n_chunks=2)
@@ -474,7 +464,7 @@ def test_multi_chunk_stages_present_frozenset(tmp_path: Path) -> None:
     result = runner.run()
 
     assert result.stages_present == frozenset(
-        {"detection", "tracking", "association", "midline", "reconstruction"}
+        {"detection", "tracking", "association", "reconstruction"}
     )
 
 

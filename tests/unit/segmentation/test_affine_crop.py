@@ -15,7 +15,7 @@ import math
 import numpy as np
 import pytest
 
-from aquapose.core.midline.crop import (
+from aquapose.core.pose.crop import (
     extract_affine_crop,
     invert_affine_point,
     invert_affine_points,

@@ -45,15 +45,10 @@ logger = logging.getLogger(__name__)
 # is provided, enabling skip of already-completed stages.
 _STAGE_OUTPUT_FIELDS: dict[str, tuple[str, ...]] = {
     "DetectionStage": ("frame_count", "camera_ids", "detections"),
-    "SyntheticDataStage": (
-        "frame_count",
-        "camera_ids",
-        "detections",
-        "annotated_detections",
-    ),
+    "SyntheticDataStage": ("frame_count", "camera_ids", "detections"),
+    "PoseStage": (),  # enriches detections in-place, no dedicated output field
     "TrackingStage": ("tracks_2d",),
     "AssociationStage": ("tracklet_groups",),
-    "MidlineStage": ("annotated_detections",),
     "ReconstructionStage": ("midlines_3d",),
 }
 
@@ -282,16 +277,16 @@ def build_stages(
     It imports all stage classes from ``aquapose.core`` (never the reverse) and
     constructs each stage from its corresponding sub-config in *config*.
 
-    v2.1 pipeline ordering: Detection → 2D Tracking → Association → Midline →
-    Reconstruction. Stage 3 (AssociationStage) performs Leiden-based cross-camera
-    tracklet clustering using ray-ray geometry and ghost-point penalties.
+    v3.7 pipeline ordering: Detection → Pose → 2D Tracking → Association →
+    Reconstruction. PoseStage (Stage 2) runs before tracking, enriching
+    Detection objects with raw anatomical keypoints in-place.
 
     When ``config.mode == "synthetic"``, returns a 4-stage list with
-    SyntheticDataStage replacing both DetectionStage and MidlineStage:
+    SyntheticDataStage replacing DetectionStage:
     SyntheticDataStage → TrackingStage → AssociationStage → ReconstructionStage.
 
     For all other modes, returns the full 5-stage list:
-    DetectionStage → TrackingStage → AssociationStage → MidlineStage → ReconstructionStage.
+    DetectionStage → PoseStage → TrackingStage → AssociationStage → ReconstructionStage.
 
     Example::
 
@@ -303,7 +298,7 @@ def build_stages(
         config: Frozen pipeline config providing calibration path, model paths,
             backend selection, and all stage-specific parameters.
         frame_source: Optional pre-created FrameSource to inject into detection
-            and midline stages. When None (default), a new VideoFrameSource is
+            and pose stages. When None (default), a new VideoFrameSource is
             created internally for non-synthetic modes.
 
     Returns:
@@ -316,7 +311,7 @@ def build_stages(
     """
     from aquapose.core import (
         DetectionStage,
-        MidlineStage,
+        PoseStage,
         ReconstructionStage,
         SyntheticDataStage,
     )
@@ -327,9 +322,9 @@ def build_stages(
     STAGE_NAMES: dict[str, type] = {
         "detection": DetectionStage,
         "synthetic": SyntheticDataStage,
+        "pose": PoseStage,
         "tracking": TrackingStage,
         "association": AssociationStage,
-        "midline": MidlineStage,
         "reconstruction": ReconstructionStage,
     }
 
@@ -357,7 +352,7 @@ def build_stages(
         for i, stage in enumerate(stages):
             if isinstance(stage, target_cls):
                 return stages[: i + 1]
-        # Target stage not in the list (e.g. "midline" in synthetic mode)
+        # Target stage not in the list
         return stages
 
     def _check_luts_if_needed(stages: list) -> None:
@@ -379,7 +374,7 @@ def build_stages(
         """Raise early if any configured model weights paths don't exist."""
         paths: list[tuple[str, str | None]] = [
             ("detection.weights_path", config.detection.weights_path),
-            ("midline.weights_path", config.midline.weights_path),
+            ("pose.weights_path", config.pose.weights_path),
         ]
         for label, path in paths:
             if path is not None and not Path(path).exists():
@@ -387,7 +382,7 @@ def build_stages(
 
     _check_model_weights()
 
-    # --- Synthetic mode: SyntheticDataStage replaces Detection + Midline
+    # --- Synthetic mode: SyntheticDataStage replaces DetectionStage
     if config.mode == "synthetic":
         synthetic_stage = SyntheticDataStage(
             calibration_path=config.calibration_path,
@@ -423,27 +418,22 @@ def build_stages(
         device=config.device,
     )
 
-    midline_stage = MidlineStage(
+    pose_stage = PoseStage(
         frame_source=frame_source,
-        calibration_path=config.calibration_path,
-        weights_path=config.midline.weights_path,
-        confidence_threshold=config.midline.confidence_threshold,
-        backend=config.midline.backend,
+        weights_path=config.pose.weights_path,
+        confidence_threshold=config.pose.confidence_threshold,
         device=config.device,
-        n_points=config.n_sample_points,
-        min_area=config.midline.min_area,
-        lut_config=config.lut,
-        midline_config=config.midline,
+        pose_config=config.pose,
         crop_size=tuple(config.detection.crop_size),
-        midline_batch_crops=config.midline.midline_batch_crops,
+        pose_batch_crops=config.pose.pose_batch_crops,
     )
 
     stages = _truncate(
         [
             detection_stage,
+            pose_stage,
             tracking_stage,
             AssociationStage(config),
-            midline_stage,
             reconstruction_stage,
         ]
     )

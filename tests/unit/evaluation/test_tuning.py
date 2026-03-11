@@ -443,7 +443,6 @@ def _make_tuning_context(n_frames: int = _N_FRAMES) -> Any:
         detections=detection_frames,
         tracks_2d=tracks_2d,
         tracklet_groups=tracklet_groups,
-        annotated_detections=None,
         midlines_3d=None,
     )
 

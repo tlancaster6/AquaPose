@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 import cv2
 import numpy as np
 
-from aquapose.core.midline.midline import (
+from aquapose.core.pose.midline import (
     MidlineExtractor,
     _adaptive_smooth,
     _check_skip_mask,

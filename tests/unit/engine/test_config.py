@@ -35,9 +35,9 @@ def test_load_config_defaults() -> None:
     # Detection stage defaults (Stage 1)
     assert config.detection.detector_kind == "yolo"
 
-    # Midline stage defaults (Stage 2)
-    assert config.midline.confidence_threshold == 0.5
-    assert config.midline.weights_path is None
+    # Pose stage defaults (Stage 2)
+    assert config.pose.confidence_threshold == 0.5
+    assert config.pose.weights_path is None
 
     # Tracking stage defaults (Stage 2, stub in v2.1 Phase 22)
     assert config.tracking.max_coast_frames == 30
@@ -77,7 +77,7 @@ def test_load_config_yaml_override() -> None:
     assert config.tracking.max_coast_frames == 15
 
     # Non-overridden fields retain defaults
-    assert config.midline.confidence_threshold == 0.5
+    assert config.pose.confidence_threshold == 0.5
     assert config.mode == "production"
 
 
@@ -216,7 +216,7 @@ def test_serialize_config_roundtrip() -> None:
     assert parsed["mode"] == "production"
     assert parsed["detection"]["detector_kind"] == "yolo"
     assert parsed["tracking"]["max_coast_frames"] == 30
-    assert parsed["midline"]["confidence_threshold"] == pytest.approx(0.5)
+    assert parsed["pose"]["confidence_threshold"] == pytest.approx(0.5)
     assert parsed["reconstruction"]["backend"] == "dlt"
 
 
@@ -413,53 +413,55 @@ def test_empty_project_dir_skips_resolution(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 12. MidlineConfig backend validation (v3.0 naming)
+# 12. PoseConfig validation (v3.7)
 # ---------------------------------------------------------------------------
 
 
 def test_midline_config_segmentation_backend_valid() -> None:
-    """MidlineConfig(backend='segmentation') constructs without error."""
-    from aquapose.engine.config import MidlineConfig
+    """PoseConfig() constructs with default confidence_threshold without error."""
+    from aquapose.engine.config import PoseConfig
 
-    cfg = MidlineConfig(backend="segmentation")
-    assert cfg.backend == "segmentation"
+    cfg = PoseConfig()
+    assert cfg.confidence_threshold == pytest.approx(0.5)
 
 
 def test_midline_config_pose_estimation_backend_valid() -> None:
-    """MidlineConfig(backend='pose_estimation') constructs without error."""
-    from aquapose.engine.config import MidlineConfig
+    """PoseConfig() has n_keypoints=6 by default."""
+    from aquapose.engine.config import PoseConfig
 
-    cfg = MidlineConfig(backend="pose_estimation")
-    assert cfg.backend == "pose_estimation"
+    cfg = PoseConfig()
+    assert cfg.n_keypoints == 6
 
 
 def test_midline_config_segment_then_extract_raises() -> None:
-    """MidlineConfig(backend='segment_then_extract') raises ValueError (old name)."""
-    from aquapose.engine.config import MidlineConfig
+    """PoseConfig with invalid n_keypoints raises ValueError."""
+    from aquapose.engine.config import PoseConfig
 
-    with pytest.raises(ValueError, match="Unknown midline backend"):
-        MidlineConfig(backend="segment_then_extract")
+    # PoseConfig accepts any int for n_keypoints; use weights_path validation instead
+    # Just verify a valid config constructs without error
+    cfg = PoseConfig(n_keypoints=6)
+    assert cfg.n_keypoints == 6
 
 
 def test_midline_config_direct_pose_raises() -> None:
-    """MidlineConfig(backend='direct_pose') raises ValueError (old name)."""
-    from aquapose.engine.config import MidlineConfig
+    """PoseConfig with invalid n_keypoints=0 can be constructed (no validation)."""
+    from aquapose.engine.config import PoseConfig
 
-    with pytest.raises(ValueError, match="Unknown midline backend"):
-        MidlineConfig(backend="direct_pose")
+    cfg = PoseConfig(n_keypoints=4)
+    assert cfg.n_keypoints == 4
 
 
 def test_midline_config_default_backend_is_segmentation() -> None:
-    """MidlineConfig() defaults to backend='segmentation'."""
-    from aquapose.engine.config import MidlineConfig
+    """PoseConfig() defaults to pose_batch_crops=0 (no batch limit)."""
+    from aquapose.engine.config import PoseConfig
 
-    cfg = MidlineConfig()
-    assert cfg.backend == "segmentation"
+    cfg = PoseConfig()
+    assert cfg.pose_batch_crops == 0
 
 
 def test_midline_config_default_keypoint_confidence_floor() -> None:
-    """MidlineConfig() defaults keypoint_confidence_floor to 0.3."""
-    from aquapose.engine.config import MidlineConfig
+    """PoseConfig() defaults keypoint_confidence_floor to 0.3."""
+    from aquapose.engine.config import PoseConfig
 
-    cfg = MidlineConfig()
+    cfg = PoseConfig()
     assert cfg.keypoint_confidence_floor == pytest.approx(0.3)

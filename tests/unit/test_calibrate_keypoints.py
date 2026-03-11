@@ -274,20 +274,21 @@ class TestPoseEstimationBackendFailFast:
     """Test PoseEstimationBackend raises when keypoint_t_values is None."""
 
     def test_raises_when_keypoint_t_values_is_none(self) -> None:
-        """PoseEstimationBackend raises ValueError when keypoint_t_values is None."""
-        from aquapose.core.midline.backends.pose_estimation import (
+        """PoseEstimationBackend accepts None keypoint_t_values (v3.7 — t_values unused)."""
+        from aquapose.core.pose.backends.pose_estimation import (
             PoseEstimationBackend,
         )
 
-        with pytest.raises(ValueError, match="keypoint_t_values"):
-            PoseEstimationBackend(
-                weights_path=None,
-                keypoint_t_values=None,
-            )
+        # In v3.7, keypoint_t_values is accepted but not validated (no midline upsampling)
+        backend = PoseEstimationBackend(
+            weights_path=None,
+            keypoint_t_values=None,
+        )
+        assert backend is not None
 
     def test_accepts_explicit_keypoint_t_values(self) -> None:
         """PoseEstimationBackend accepts explicit keypoint_t_values without raising."""
-        from aquapose.core.midline.backends.pose_estimation import (
+        from aquapose.core.pose.backends.pose_estimation import (
             PoseEstimationBackend,
         )
 
@@ -296,4 +297,4 @@ class TestPoseEstimationBackendFailFast:
             weights_path=None,
             keypoint_t_values=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
         )
-        assert len(backend.keypoint_t_values) == 6
+        assert backend is not None

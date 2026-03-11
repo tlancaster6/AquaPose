@@ -512,15 +512,15 @@ def test_import_boundary() -> None:
 
 
 def test_active_stages_importable() -> None:
-    """Active stage classes are importable from aquapose.core (v2.1 set)."""
+    """Active stage classes are importable from aquapose.core (v3.7 set)."""
     from aquapose.core import (
         DetectionStage,
-        MidlineStage,
+        PoseStage,
         ReconstructionStage,
     )
 
     assert DetectionStage is not None
-    assert MidlineStage is not None
+    assert PoseStage is not None
     assert ReconstructionStage is not None
 
     from aquapose.core.association import AssociationStage
@@ -536,10 +536,10 @@ def test_active_stages_importable() -> None:
 
 
 def test_build_stages_returns_stages(tmp_path: Path) -> None:
-    """build_stages(config) returns an ordered list of 5 Stage instances."""
+    """build_stages(config) returns an ordered list of 5 Stage instances (v3.7 order)."""
     from aquapose.core import (
         DetectionStage,
-        MidlineStage,
+        PoseStage,
         ReconstructionStage,
     )
     from aquapose.core.association import AssociationStage
@@ -562,9 +562,9 @@ def test_build_stages_returns_stages(tmp_path: Path) -> None:
         detection=__import__(
             "aquapose.engine.config", fromlist=["DetectionConfig"]
         ).DetectionConfig(weights_path=str(model_file)),
-        midline=__import__(
-            "aquapose.engine.config", fromlist=["MidlineConfig"]
-        ).MidlineConfig(weights_path=str(weights_file)),
+        pose=__import__("aquapose.engine.config", fromlist=["PoseConfig"]).PoseConfig(
+            weights_path=str(weights_file)
+        ),
     )
 
     with (
@@ -575,7 +575,7 @@ def test_build_stages_returns_stages(tmp_path: Path) -> None:
         patch(
             "aquapose.core.detection.stage.DetectionStage.__init__", return_value=None
         ),
-        patch("aquapose.core.midline.stage.MidlineStage.__init__", return_value=None),
+        patch("aquapose.core.pose.stage.PoseStage.__init__", return_value=None),
         patch(
             "aquapose.core.reconstruction.stage.ReconstructionStage.__init__",
             return_value=None,
@@ -586,9 +586,9 @@ def test_build_stages_returns_stages(tmp_path: Path) -> None:
     assert isinstance(stages, list)
     assert len(stages) == 5, f"Expected 5 stages, got {len(stages)}"
     assert isinstance(stages[0], DetectionStage)
-    assert isinstance(stages[1], TrackingStage)
-    assert isinstance(stages[2], AssociationStage)
-    assert isinstance(stages[3], MidlineStage)
+    assert isinstance(stages[1], PoseStage)
+    assert isinstance(stages[2], TrackingStage)
+    assert isinstance(stages[3], AssociationStage)
     assert isinstance(stages[4], ReconstructionStage)
 
     from aquapose.core.context import Stage
@@ -628,7 +628,7 @@ def test_pose_pipeline_instantiable_with_build_stages(tmp_path: Path) -> None:
         patch(
             "aquapose.core.detection.stage.DetectionStage.__init__", return_value=None
         ),
-        patch("aquapose.core.midline.stage.MidlineStage.__init__", return_value=None),
+        patch("aquapose.core.pose.stage.PoseStage.__init__", return_value=None),
         patch(
             "aquapose.core.reconstruction.stage.ReconstructionStage.__init__",
             return_value=None,
@@ -645,10 +645,10 @@ def test_pose_pipeline_instantiable_with_build_stages(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_run_raises_if_annotated_detections_missing(tmp_path: Path) -> None:
-    """run() raises ValueError if both tracklet_groups and annotated_detections are None."""
+def test_run_raises_if_tracklet_groups_missing(tmp_path: Path) -> None:
+    """run() raises ValueError if tracklet_groups is None."""
     stage = _build_stage(tmp_path)
     ctx = PipelineContext()
 
-    with pytest.raises(ValueError, match=r"annotated_detections"):
+    with pytest.raises(ValueError, match=r"tracklet_groups"):
         stage.run(ctx)

@@ -1,14 +1,14 @@
-"""Unit tests for build_stages mode-aware stage factory (v2.1).
+"""Unit tests for build_stages mode-aware stage factory (v3.7).
 
-v2.1: build_stages returns 5 stages in production mode and 4 in synthetic mode.
-Stage order: Detection -> TrackingStage -> AssociationStage -> Midline -> Reconstruction
+v3.7: build_stages returns 5 stages in production mode and 4 in synthetic mode.
+Stage order: Detection -> PoseStage -> TrackingStage -> AssociationStage -> Reconstruction
 Synthetic order: SyntheticDataStage -> TrackingStage -> AssociationStage -> Reconstruction
 
 TrackingStage is imported from aquapose.core.tracking.
 AssociationStage is inline in engine/pipeline.py.
 
-v3.3: build_stages creates a VideoFrameSource and injects it into DetectionStage and
-MidlineStage constructors. Tests patch VideoFrameSource to avoid real I/O.
+v3.7: PoseStage (Stage 2) runs before tracking, enriching Detection objects with
+raw anatomical keypoints in-place. Tests patch VideoFrameSource to avoid real I/O.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ class TestBuildStagesProductionMode:
         with (
             patch(_VFS_PATCH, return_value=None),
             patch("aquapose.core.DetectionStage") as mock_det,
-            patch("aquapose.core.MidlineStage") as mock_mid,
+            patch("aquapose.core.PoseStage") as mock_pose,
             patch("aquapose.core.ReconstructionStage") as mock_rec,
             patch("aquapose.core.SyntheticDataStage"),
         ):
@@ -46,11 +46,11 @@ class TestBuildStagesProductionMode:
             stages = build_stages(config)
             assert len(stages) == 5, f"Expected 5 stages, got {len(stages)}"
             mock_det.assert_called_once()
-            mock_mid.assert_called_once()
+            mock_pose.assert_called_once()
             mock_rec.assert_called_once()
 
     def test_production_mode_stage_order(self) -> None:
-        """Production mode: Detection -> TrackingStage -> AssociationStub -> Midline -> Reconstruction."""
+        """Production mode: Detection -> PoseStage -> TrackingStage -> AssociationStage -> Reconstruction."""
         from aquapose.core.tracking import TrackingStage
 
         config = PipelineConfig(
@@ -61,7 +61,7 @@ class TestBuildStagesProductionMode:
         with (
             patch(_VFS_PATCH, return_value=None),
             patch("aquapose.core.DetectionStage") as mock_det,
-            patch("aquapose.core.MidlineStage") as mock_mid,
+            patch("aquapose.core.PoseStage") as mock_pose,
             patch("aquapose.core.ReconstructionStage") as mock_rec,
             patch("aquapose.core.SyntheticDataStage"),
         ):
@@ -69,11 +69,11 @@ class TestBuildStagesProductionMode:
 
             stages = build_stages(config)
             assert stages[0] is mock_det.return_value, "Stage 0 must be DetectionStage"
-            assert isinstance(stages[1], TrackingStage), "Stage 1 must be TrackingStage"
-            assert isinstance(stages[2], AssociationStage), (
-                "Stage 2 must be AssociationStage"
+            assert stages[1] is mock_pose.return_value, "Stage 1 must be PoseStage"
+            assert isinstance(stages[2], TrackingStage), "Stage 2 must be TrackingStage"
+            assert isinstance(stages[3], AssociationStage), (
+                "Stage 3 must be AssociationStage"
             )
-            assert stages[3] is mock_mid.return_value, "Stage 3 must be MidlineStage"
             assert stages[4] is mock_rec.return_value, (
                 "Stage 4 must be ReconstructionStage"
             )
@@ -88,7 +88,7 @@ class TestBuildStagesProductionMode:
         with (
             patch(_VFS_PATCH, return_value=None),
             patch("aquapose.core.DetectionStage") as mock_det,
-            patch("aquapose.core.MidlineStage"),
+            patch("aquapose.core.PoseStage"),
             patch("aquapose.core.ReconstructionStage"),
             patch("aquapose.core.SyntheticDataStage"),
         ):
@@ -107,7 +107,7 @@ class TestBuildStagesProductionMode:
         with (
             patch(_VFS_PATCH, return_value=None),
             patch("aquapose.core.DetectionStage"),
-            patch("aquapose.core.MidlineStage"),
+            patch("aquapose.core.PoseStage"),
             patch("aquapose.core.ReconstructionStage") as mock_rec,
             patch("aquapose.core.SyntheticDataStage"),
         ):
@@ -130,7 +130,7 @@ class TestBuildStagesSyntheticMode:
         )
         with (
             patch("aquapose.core.DetectionStage"),
-            patch("aquapose.core.MidlineStage"),
+            patch("aquapose.core.PoseStage"),
             patch("aquapose.core.SyntheticDataStage") as mock_syn,
             patch("aquapose.core.ReconstructionStage") as mock_rec,
         ):
@@ -142,7 +142,7 @@ class TestBuildStagesSyntheticMode:
             mock_rec.assert_called_once()
 
     def test_synthetic_mode_stage_order(self) -> None:
-        """Synthetic mode: SyntheticData -> TrackingStage -> AssociationStub -> Reconstruction."""
+        """Synthetic mode: SyntheticData -> TrackingStage -> AssociationStage -> Reconstruction."""
         from aquapose.core.tracking import TrackingStage
 
         config = PipelineConfig(
@@ -152,7 +152,7 @@ class TestBuildStagesSyntheticMode:
         )
         with (
             patch("aquapose.core.DetectionStage"),
-            patch("aquapose.core.MidlineStage"),
+            patch("aquapose.core.PoseStage"),
             patch("aquapose.core.SyntheticDataStage") as mock_syn,
             patch("aquapose.core.ReconstructionStage") as mock_rec,
         ):
@@ -179,7 +179,7 @@ class TestBuildStagesSyntheticMode:
         )
         with (
             patch("aquapose.core.DetectionStage"),
-            patch("aquapose.core.MidlineStage"),
+            patch("aquapose.core.PoseStage"),
             patch("aquapose.core.SyntheticDataStage") as mock_syn,
             patch("aquapose.core.ReconstructionStage"),
         ):
@@ -197,7 +197,7 @@ class TestBuildStagesSyntheticMode:
         )
         with (
             patch("aquapose.core.DetectionStage"),
-            patch("aquapose.core.MidlineStage"),
+            patch("aquapose.core.PoseStage"),
             patch("aquapose.core.SyntheticDataStage"),
             patch("aquapose.core.ReconstructionStage") as mock_rec,
         ):
@@ -239,7 +239,7 @@ class TestTrackingStageDirectly:
         assert isinstance(carry.tracks_2d_state, dict)
 
     def test_tracking_stage_present_in_production_build(self) -> None:
-        """TrackingStage appears at position 1 in production build."""
+        """TrackingStage appears at position 2 in production build (after PoseStage)."""
 
         config = PipelineConfig(
             mode="production",
@@ -249,7 +249,7 @@ class TestTrackingStageDirectly:
         with (
             patch(_VFS_PATCH, return_value=None),
             patch("aquapose.core.DetectionStage"),
-            patch("aquapose.core.MidlineStage"),
+            patch("aquapose.core.PoseStage"),
             patch("aquapose.core.ReconstructionStage"),
             patch("aquapose.core.SyntheticDataStage"),
         ):
@@ -259,8 +259,8 @@ class TestTrackingStageDirectly:
             stage_names = [type(s).__name__ for s in stages]
             assert "TrackingStage" in stage_names
             assert "AssociationStage" in stage_names
-            assert stage_names.index("TrackingStage") == 1
-            assert stage_names.index("AssociationStage") == 2
+            assert stage_names.index("TrackingStage") == 2
+            assert stage_names.index("AssociationStage") == 3
 
     def test_no_tracking_stub_stage_in_build(self) -> None:
         """TrackingStubStage is gone — not present in any build output."""
@@ -272,7 +272,7 @@ class TestTrackingStageDirectly:
         with (
             patch(_VFS_PATCH, return_value=None),
             patch("aquapose.core.DetectionStage"),
-            patch("aquapose.core.MidlineStage"),
+            patch("aquapose.core.PoseStage"),
             patch("aquapose.core.ReconstructionStage"),
             patch("aquapose.core.SyntheticDataStage"),
         ):
@@ -284,7 +284,7 @@ class TestTrackingStageDirectly:
 
     @pytest.mark.parametrize("mode", ["production", "diagnostic", "benchmark"])
     def test_non_synthetic_modes_include_tracking_stage(self, mode: str) -> None:
-        """All non-synthetic modes include TrackingStage at position 1."""
+        """All non-synthetic modes include TrackingStage at position 2."""
         from aquapose.core.tracking import TrackingStage
 
         config = PipelineConfig(
@@ -295,7 +295,7 @@ class TestTrackingStageDirectly:
         with (
             patch(_VFS_PATCH, return_value=None),
             patch("aquapose.core.DetectionStage"),
-            patch("aquapose.core.MidlineStage"),
+            patch("aquapose.core.PoseStage"),
             patch("aquapose.core.ReconstructionStage"),
             patch("aquapose.core.SyntheticDataStage"),
         ):
@@ -319,7 +319,7 @@ class TestBuildStagesConfigDevice:
         )
         with (
             patch("aquapose.core.DetectionStage"),
-            patch("aquapose.core.MidlineStage"),
+            patch("aquapose.core.PoseStage"),
             patch("aquapose.core.SyntheticDataStage") as mock_syn,
             patch("aquapose.core.ReconstructionStage"),
         ):

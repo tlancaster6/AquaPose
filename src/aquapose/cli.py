@@ -67,7 +67,7 @@ def cli(ctx: click.Context, project_name: str | None) -> None:
     "--stop-after",
     "stop_after",
     type=click.Choice(
-        ["detection", "tracking", "association", "midline"], case_sensitive=False
+        ["detection", "pose", "tracking", "association"], case_sensitive=False
     ),
     default=None,
     help="Stop pipeline after the named stage (skip later stages).",
@@ -188,9 +188,8 @@ def init_cmd(name: str, synthetic: bool) -> None:
         "detector_kind": "yolo_obb",  # oriented bounding box detection
         "weights_path": "models/yolo_obb.pt",
     }
-    # --- Midline ---
-    data["midline"] = {
-        "backend": "pose_estimation",  # segmentation or pose_estimation
+    # --- Pose ---
+    data["pose"] = {
         "weights_path": "models/yolo_pose.pt",
     }
     # --- Synthetic (only with --synthetic) ---
@@ -200,10 +199,10 @@ def init_cmd(name: str, synthetic: bool) -> None:
     # Write config.yaml with brief comment header
     header = "# AquaPose pipeline config\n# See documentation for advanced options\n\n"
     yaml_content = yaml.dump(data, default_flow_style=False, sort_keys=False)
-    # Inject reminder comment before the midline section
+    # Inject reminder comment before the pose section
     yaml_content = yaml_content.replace(
-        "midline:",
-        "# Run 'aquapose prep calibrate-keypoints' to set keypoint_t_values\nmidline:",
+        "pose:",
+        "# Run 'aquapose prep calibrate-keypoints' to set keypoint_t_values\npose:",
     )
     (project_dir / "config.yaml").write_text(header + yaml_content)
 

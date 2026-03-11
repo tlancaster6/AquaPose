@@ -145,9 +145,8 @@ def _merge_chunk_contexts(
     # Determine camera_ids from the first chunk
     camera_ids = chunks[0][1].camera_ids if chunks else None
 
-    # Merge per-frame lists: detections, annotated_detections, midlines_3d
+    # Merge per-frame lists: detections, midlines_3d
     merged_detections: list | None = None
-    merged_annotated: list | None = None
     merged_midlines_3d: list | None = None
 
     for _, ctx in chunks:
@@ -155,11 +154,6 @@ def _merge_chunk_contexts(
             if merged_detections is None:
                 merged_detections = []
             merged_detections.extend(ctx.detections)
-
-        if ctx.annotated_detections is not None:
-            if merged_annotated is None:
-                merged_annotated = []
-            merged_annotated.extend(ctx.annotated_detections)
 
         if ctx.midlines_3d is not None:
             if merged_midlines_3d is None:
@@ -199,7 +193,6 @@ def _merge_chunk_contexts(
         detections=merged_detections,
         tracks_2d=merged_tracks_2d,
         tracklet_groups=merged_tracklet_groups,
-        annotated_detections=merged_annotated,
         midlines_3d=merged_midlines_3d,
     )
 
@@ -372,8 +365,6 @@ class EvalRunner:
             stages_present.add("tracking")
         if ctx.tracklet_groups is not None:
             stages_present.add("association")
-        if ctx.annotated_detections is not None:
-            stages_present.add("midline")
         if ctx.midlines_3d is not None:
             stages_present.add("reconstruction")
 
@@ -566,7 +557,8 @@ class EvalRunner:
             entry per sampled frame index. Frames with no data yield empty dicts.
         """
         tracklet_groups = ctx.tracklet_groups or []
-        annotated_detections = ctx.annotated_detections or []
+        # annotated_detections was removed in v3.7 — keypoints now live on Detection objects
+        annotated_detections: list = getattr(ctx, "annotated_detections", None) or []
         frame_count = ctx.frame_count or len(annotated_detections)
 
         effective_indices = (

@@ -21,10 +21,10 @@ Requirements for the Improved Association milestone. Each maps to roadmap phases
 
 ### Group Validation
 
-- [ ] **VALID-01**: After clustering, each tracklet's multi-keypoint residuals are computed against its group
-- [ ] **VALID-02**: Changepoint detection identifies temporal ID swap points in per-tracklet residual series
-- [ ] **VALID-03**: Swapped tracklets are split at the changepoint — consistent segment stays, inconsistent segment becomes singleton candidate
-- [ ] **VALID-04**: Tracklets with high overall residual (no changepoint) are evicted to singleton status
+- [x] **VALID-01**: After clustering, each tracklet's multi-keypoint residuals are computed against its group
+- [x] **VALID-02**: Changepoint detection identifies temporal ID swap points in per-tracklet residual series
+- [x] **VALID-03**: Swapped tracklets are split at the changepoint — consistent segment stays, inconsistent segment becomes singleton candidate
+- [x] **VALID-04**: Tracklets with high overall residual (no changepoint) are evicted to singleton status
 
 ### Singleton Recovery
 
@@ -36,7 +36,7 @@ Requirements for the Improved Association milestone. Each maps to roadmap phases
 ### Cleanup
 
 - [x] **CLEAN-01**: Fragment merging code and max_merge_gap config field removed
-- [ ] **CLEAN-02**: Refinement module replaced by group validation (refinement.py deleted after consumer audit)
+- [x] **CLEAN-02**: Refinement module replaced by group validation (refinement.py deleted after consumer audit)
 
 ### Evaluation
 
@@ -72,11 +72,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SCORE-03 | Phase 88 | Pending |
 | SCORE-04 | Phase 88 | Pending |
 | CLEAN-01 | Phase 89 | Complete |
-| VALID-01 | Phase 90 | Pending |
-| VALID-02 | Phase 90 | Pending |
-| VALID-03 | Phase 90 | Pending |
-| VALID-04 | Phase 90 | Pending |
-| CLEAN-02 | Phase 90 | Pending |
+| VALID-01 | Phase 90 | Complete |
+| VALID-02 | Phase 90 | Complete |
+| VALID-03 | Phase 90 | Complete |
+| VALID-04 | Phase 90 | Complete |
+| CLEAN-02 | Phase 90 | Complete |
 | RECOV-01 | Phase 91 | Pending |
 | RECOV-02 | Phase 91 | Pending |
 | RECOV-03 | Phase 91 | Pending |

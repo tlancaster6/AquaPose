@@ -14,6 +14,7 @@
 - ✅ **v3.5 Pseudo-Labeling** — Phases 61-69 (shipped 2026-03-06)
 - ✅ **v3.6 Model Iteration & QA** — Phases 70-77 (shipped 2026-03-10)
 - ✅ **v3.7 Improved Tracking** — Phases 78-86 (shipped 2026-03-11)
+- 🚧 **v3.8 Improved Association** — Phases 87-92 (in progress)
 
 ## Phases
 
@@ -214,3 +215,99 @@ Full details: `.planning/milestones/v3.6-ROADMAP.md`
 Full details: `.planning/milestones/v3.7-ROADMAP.md`
 
 </details>
+
+### 🚧 v3.8 Improved Association (In Progress)
+
+**Milestone Goal:** Replace single-centroid ray scoring with multi-keypoint association, add swap-aware group validation and singleton recovery, and tune on real data to reduce the ~27% singleton rate.
+
+- [ ] **Phase 87: Tracklet2D Keypoint Propagation** - Extend Tracklet2D with per-frame keypoint and confidence arrays from tracker
+- [ ] **Phase 88: Multi-Keypoint Pairwise Scoring** - Replace single-centroid ray casting with K-keypoint vectorized scoring
+- [ ] **Phase 89: Fragment Merging Removal** - Delete merge_fragments and max_merge_gap; pipeline still runs end-to-end
+- [ ] **Phase 90: Group Validation with Changepoint Detection** - Add validation.py replacing refinement.py; temporal ID swap splitting and outlier eviction
+- [ ] **Phase 91: Singleton Recovery** - Assign or split-assign singletons to existing groups; enforce same-camera overlap constraint
+- [ ] **Phase 92: Parameter Tuning Pass** - Calibrate new config parameters on real data; confirm improvement over v3.7 baseline
+
+## Phase Details
+
+### Phase 87: Tracklet2D Keypoint Propagation
+**Goal**: Tracklet2D carries full per-frame keypoint and confidence data from the tracking stage to the association stage
+**Depends on**: Nothing (first phase of milestone)
+**Requirements**: DATA-01, DATA-02
+**Success Criteria** (what must be TRUE):
+  1. `Tracklet2D` has `keypoints` field holding a (T, K, 2) array of per-frame keypoint coordinates
+  2. `Tracklet2D` has `keypoint_conf` field holding a (T, K) array of per-frame confidence values, with 0.0 on coasted frames
+  3. Both fields are None when the tracking stage does not produce keypoint data, and all existing association consumers are unaffected by the None default
+  4. Unit tests confirm the keypoint arrays round-trip correctly through the tracker's `to_tracklet2d()` method
+**Plans**: TBD
+
+### Phase 88: Multi-Keypoint Pairwise Scoring
+**Goal**: Association scoring casts rays from all confident keypoints per detection per frame instead of one centroid, producing richer pairwise affinity scores
+**Depends on**: Phase 87
+**Requirements**: SCORE-01, SCORE-02, SCORE-03, SCORE-04
+**Success Criteria** (what must be TRUE):
+  1. For a tracklet pair sharing frames, the scorer produces one aggregate score derived from multiple keypoint rays rather than a single centroid ray
+  2. Keypoints below the configurable confidence floor are excluded from scoring on a per-frame basis — low-confidence frames cast fewer rays, not zero
+  3. Per-frame keypoint distances are aggregated into a single pairwise score via the configured method (default: arithmetic mean); the aggregation method is selectable via `AssociationConfig`
+  4. Scoring produces numerically identical results to a reference loop-based implementation; a round-trip unit test confirms LUT coordinate correctness (3D point projects, ray passes within 2mm of source)
+  5. Benchmark shows no regression in scoring wall time relative to the added ray count (< 3x slowdown on the same chunk)
+**Plans**: TBD
+
+### Phase 89: Fragment Merging Removal
+**Goal**: Fragment merging code is deleted and the pipeline still runs end-to-end without it
+**Depends on**: Phase 87
+**Requirements**: CLEAN-01
+**Success Criteria** (what must be TRUE):
+  1. `merge_fragments` function and all helpers are gone from `clustering.py`
+  2. `max_merge_gap` field is absent from `AssociationConfig` and all YAML configs
+  3. End-to-end pipeline run completes without errors on the benchmark clip
+**Plans**: TBD
+
+### Phase 90: Group Validation with Changepoint Detection
+**Goal**: After clustering, each group is audited for temporal ID swaps and outliers; swapped tracklets are split or evicted; refinement.py is deleted
+**Depends on**: Phase 88, Phase 89
+**Requirements**: VALID-01, VALID-02, VALID-03, VALID-04, CLEAN-02
+**Success Criteria** (what must be TRUE):
+  1. For each tracklet in a group, per-frame multi-keypoint residuals against the group consensus are computed and accessible for inspection
+  2. A temporal changepoint in a tracklet's residual series causes the tracklet to be split at the detected swap point; the consistent segment stays in the group and the inconsistent segment becomes a singleton candidate
+  3. A tracklet with uniformly high residual (no changepoint found) is evicted from the group and becomes a singleton candidate
+  4. `refinement.py` is deleted; all downstream consumers of `per_frame_confidence` and `consensus_centroids` either use equivalent outputs from `validation.py` or handle None correctly
+  5. False positive rate on confirmed-correct tracklets from the v3.7 benchmark is below 30% (measured during plan execution)
+**Plans**: TBD
+
+### Phase 91: Singleton Recovery
+**Goal**: Singletons (including those created by Phase 90) are scored against existing groups and assigned, split-assigned, or left as true singletons
+**Depends on**: Phase 90
+**Requirements**: RECOV-01, RECOV-02, RECOV-03, RECOV-04
+**Success Criteria** (what must be TRUE):
+  1. Each singleton is scored against all existing groups using per-frame multi-keypoint residuals computed fresh against each group
+  2. A singleton with strong overall match to one group is assigned to that group; the group membership constraint (no duplicate cameras in overlapping frames) is enforced before assignment
+  3. A singleton with no strong overall match but a temporal split matching two distinct groups is split and each segment assigned to its matching group (swap-aware recovery)
+  4. A singleton with no match after split analysis remains a singleton; the pipeline does not force assignment
+  5. End-to-end pipeline run completes; measured singleton rate is lower than the v3.7 baseline (27%)
+**Plans**: TBD
+
+### Phase 92: Parameter Tuning Pass
+**Goal**: New config parameters are empirically calibrated on real data; the final v3.8 association configuration is documented and validated against the v3.7 baseline
+**Depends on**: Phase 91
+**Requirements**: EVAL-01, EVAL-02
+**Success Criteria** (what must be TRUE):
+  1. `aquapose tune --stage association` runs a parameter grid over the new config fields (confidence floor, changepoint threshold, minimum segment length, singleton assignment threshold) on cached tracking outputs
+  2. Tuned parameters are applied and an end-to-end pipeline run produces a measurable reduction in singleton rate vs. the v3.7 baseline (target: ~15%, floor: better than 27%)
+  3. Reprojection error and grouping quality metrics are not degraded relative to v3.7 baseline
+  4. Tuned config defaults are committed; a brief tuning results document records the sweep ranges, selected values, and metric comparison
+**Plans**: TBD
+
+## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 87 → 88 → 89 → 90 → 91 → 92
+Note: Phases 88 and 89 depend only on Phase 87 and can be executed in either order (they touch different files).
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 87. Tracklet2D Keypoint Propagation | 0/TBD | Not started | - |
+| 88. Multi-Keypoint Pairwise Scoring | 0/TBD | Not started | - |
+| 89. Fragment Merging Removal | 0/TBD | Not started | - |
+| 90. Group Validation with Changepoint Detection | 0/TBD | Not started | - |
+| 91. Singleton Recovery | 0/TBD | Not started | - |
+| 92. Parameter Tuning Pass | 0/TBD | Not started | - |

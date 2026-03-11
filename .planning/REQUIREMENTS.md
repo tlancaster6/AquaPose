@@ -65,30 +65,30 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DATA-01 | — | Pending |
-| DATA-02 | — | Pending |
-| SCORE-01 | — | Pending |
-| SCORE-02 | — | Pending |
-| SCORE-03 | — | Pending |
-| SCORE-04 | — | Pending |
-| VALID-01 | — | Pending |
-| VALID-02 | — | Pending |
-| VALID-03 | — | Pending |
-| VALID-04 | — | Pending |
-| RECOV-01 | — | Pending |
-| RECOV-02 | — | Pending |
-| RECOV-03 | — | Pending |
-| RECOV-04 | — | Pending |
-| CLEAN-01 | — | Pending |
-| CLEAN-02 | — | Pending |
-| EVAL-01 | — | Pending |
-| EVAL-02 | — | Pending |
+| DATA-01 | Phase 87 | Pending |
+| DATA-02 | Phase 87 | Pending |
+| SCORE-01 | Phase 88 | Pending |
+| SCORE-02 | Phase 88 | Pending |
+| SCORE-03 | Phase 88 | Pending |
+| SCORE-04 | Phase 88 | Pending |
+| CLEAN-01 | Phase 89 | Pending |
+| VALID-01 | Phase 90 | Pending |
+| VALID-02 | Phase 90 | Pending |
+| VALID-03 | Phase 90 | Pending |
+| VALID-04 | Phase 90 | Pending |
+| CLEAN-02 | Phase 90 | Pending |
+| RECOV-01 | Phase 91 | Pending |
+| RECOV-02 | Phase 91 | Pending |
+| RECOV-03 | Phase 91 | Pending |
+| RECOV-04 | Phase 91 | Pending |
+| EVAL-01 | Phase 92 | Pending |
+| EVAL-02 | Phase 92 | Pending |
 
 **Coverage:**
 - v3.8 requirements: 18 total
-- Mapped to phases: 0
-- Unmapped: 18 ⚠️
+- Mapped to phases: 18
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-11*
-*Last updated: 2026-03-11 after initial definition*
+*Last updated: 2026-03-11 after roadmap creation*

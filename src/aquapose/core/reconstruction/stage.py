@@ -432,16 +432,10 @@ def _find_matching_detection(
     best_dist = tolerance
 
     for det in detection_list:
-        if hasattr(det, "bbox"):
-            bx, by, bw, bh = det.bbox
-            cx = bx + bw / 2
-            cy = by + bh / 2
-            dist = ((cx - centroid[0]) ** 2 + (cy - centroid[1]) ** 2) ** 0.5
-        elif hasattr(det, "centroid"):
-            c = det.centroid
-            dist = ((c[0] - centroid[0]) ** 2 + (c[1] - centroid[1]) ** 2) ** 0.5
-        else:
-            continue
+        bx, by, bw, bh = det.bbox
+        cx = bx + bw / 2
+        cy = by + bh / 2
+        dist = ((cx - centroid[0]) ** 2 + (cy - centroid[1]) ** 2) ** 0.5
 
         if dist < best_dist:
             best_dist = dist

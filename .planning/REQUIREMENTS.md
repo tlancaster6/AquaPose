@@ -40,7 +40,7 @@ Requirements for the Improved Association milestone. Each maps to roadmap phases
 
 ### Evaluation
 
-- [ ] **EVAL-01**: Parameter tuning pass on real data measuring singleton rate, reprojection error, and grouping quality vs v3.7 baseline
+- [x] **EVAL-01**: Parameter tuning pass on real data measuring singleton rate, reprojection error, and grouping quality vs v3.7 baseline
 - [ ] **EVAL-02**: End-to-end pipeline run with tuned parameters confirms improvement over v3.7
 
 ## Future Requirements
@@ -81,7 +81,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RECOV-02 | Phase 91 | Complete |
 | RECOV-03 | Phase 91 | Complete |
 | RECOV-04 | Phase 91 | Complete |
-| EVAL-01 | Phase 92 | Pending |
+| EVAL-01 | Phase 92 | Complete |
 | EVAL-02 | Phase 92 | Pending |
 
 **Coverage:**

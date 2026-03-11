@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.7
 milestone_name: Improved Tracking
 status: unknown
-last_updated: "2026-03-11T03:23:53.056Z"
+last_updated: "2026-03-11T12:02:37.249Z"
 progress:
   total_phases: 7
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 11
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 
 ## Current Position
 
-Phase: 83 of v3.7 (Custom Keypoint Tracker — bidirectional merge)
-Plan: 02 complete
-Status: Phase 83-02 complete — bidirectional merge, gap interpolation, KeypointTracker public API, TrackingConfig extended, TrackingStage wired, all 1179 tests passing
-Last activity: 2026-03-11 — Phase 83-02 complete, pipeline can now run with tracker_kind: keypoint_bidi
+Phase: 84 of v3.7 (Integration & Evaluation)
+Plan: 01 complete (checkpoint:human-verify pending)
+Status: Phase 84-01 Tasks 1+2 complete — TrackingStage dual-backend dispatch, evaluation script, metrics comparison document; awaiting human review of 84-EVALUATION.md
+Last activity: 2026-03-11 — Phase 84-01 Tasks 1+2 complete; keypoint_bidi vs OC-SORT evaluated (44 vs 30 tracks; BYTE trigger fired)
 
-Progress: [████████░░] 80%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -44,6 +44,7 @@ Progress: [████████░░] 80%
 | 82 | 1 | ~5min | ~5min |
 | Phase 83-custom-tracker-implementation P01 | 9 | 1 tasks | 5 files |
 | Phase 83 P02 | 501 | 2 tasks | 5 files |
+| Phase 84-integration-evaluation P01 | 45 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -85,6 +86,8 @@ Recent decisions affecting current work:
 - [Phase 83-01]: _KptTrackletBuilder independent from ocsort_wrapper._TrackletBuilder — stores keypoints+confs for Plan 02 bidirectional merge
 - [Phase 83]: KeypointTracker.get_tracklets() uses _collect_merged_builders() returning raw builders for mutable gap interpolation before Tracklet2D conversion
 - [Phase 83]: oks_sigmas not in TrackingConfig — loaded from DEFAULT_SIGMAS at construction time to avoid config/sigma coupling
+- [Phase 84-integration-evaluation]: keypoint_bidi produces 44 tracks vs OC-SORT 30 vs target 9 — both over-fragment at occlusion; root cause is identity-breaking at occlusion events, not temporal gaps (both trackers have 0 gaps, continuity=1.000)
+- [Phase 84-integration-evaluation]: BYTE-style pass (TRACK-10) triggered by coverage=0.898 < 0.90; deferred — root cause is occlusion reacquisition, not low-confidence detection misses; a BYTE pass would not fix 44-track fragmentation
 
 ### Roadmap Evolution
 

@@ -267,3 +267,49 @@ class TestGenerateVariants:
         variants = generate_variants(img, coords, visible, 100, 60, 15.0)
         for v in variants:
             assert v["image"].shape == img.shape
+
+
+class TestGenerateVariantsNVariants:
+    """Tests for n_variants parameter in generate_variants (Phase 86)."""
+
+    @pytest.fixture
+    def variant_inputs(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        img = np.random.randint(0, 255, (60, 100, 3), dtype=np.uint8)
+        coords = np.array(
+            [[15, 30], [30, 30], [45, 30], [60, 30], [75, 30], [90, 30]],
+            dtype=np.float64,
+        )
+        visible = np.ones(6, dtype=bool)
+        return img, coords, visible
+
+    def test_default_returns_four(
+        self, variant_inputs: tuple[np.ndarray, np.ndarray, np.ndarray]
+    ) -> None:
+        """Default (no n_variants) returns 4 variants for backward compat."""
+        from aquapose.training.elastic_deform import generate_variants
+
+        img, coords, visible = variant_inputs
+        variants = generate_variants(img, coords, visible, 100, 60, 15.0)
+        assert len(variants) == 4
+
+    def test_n_variants_two(
+        self, variant_inputs: tuple[np.ndarray, np.ndarray, np.ndarray]
+    ) -> None:
+        """n_variants=2 returns exactly 2 variants."""
+        from aquapose.training.elastic_deform import generate_variants
+
+        img, coords, visible = variant_inputs
+        variants = generate_variants(img, coords, visible, 100, 60, 15.0, n_variants=2)
+        assert len(variants) == 2
+        tags = [v["variant_tag"] for v in variants]
+        assert tags == ["c_pos", "s_pos"]
+
+    def test_n_variants_six(
+        self, variant_inputs: tuple[np.ndarray, np.ndarray, np.ndarray]
+    ) -> None:
+        """n_variants=6 returns exactly 6 variants."""
+        from aquapose.training.elastic_deform import generate_variants
+
+        img, coords, visible = variant_inputs
+        variants = generate_variants(img, coords, visible, 100, 60, 15.0, n_variants=6)
+        assert len(variants) == 6

@@ -279,12 +279,13 @@ def generate_variants(
     crop_h: int,
     lateral_pad: float,
     angle_range: tuple[float, float] = (5.0, 15.0),
+    n_variants: int = 4,
 ) -> list[dict]:
-    """Generate 4 deformed variants of a fish image and keypoints.
+    """Generate deformed variants of a fish image and keypoints.
 
-    Produces 2 C-curve variants (positive and negative angle) and 2 S-curve
-    variants (positive and negative amplitude). The deformation angle is the
-    midpoint of ``angle_range``.
+    Produces variants by cycling through the base deformation pattern:
+    C-curve positive, S-curve positive, C-curve negative, S-curve negative.
+    Each variant independently samples a random angle from ``angle_range``.
 
     Args:
         image: Input BGR crop of shape ``(crop_h, crop_w, 3)``.
@@ -294,20 +295,29 @@ def generate_variants(
         crop_h: Crop height in pixels.
         lateral_pad: OBB lateral padding in pixels.
         angle_range: ``(min_angle, max_angle)`` in degrees for deformation
-            magnitude. The midpoint is used.
+            magnitude.
+        n_variants: Number of variants to generate (default 4). Cycles through
+            ``[c_pos, s_pos, c_neg, s_neg]`` pattern, appending a counter
+            suffix for tags beyond the first 4.
 
     Returns:
-        List of 4 variant dicts, each with keys: ``image``, ``coords``,
-        ``visible``, ``obb_line``, ``pose_line``, ``variant_tag``.
+        List of ``n_variants`` variant dicts, each with keys: ``image``,
+        ``coords``, ``visible``, ``obb_line``, ``pose_line``, ``variant_tag``.
     """
     rng = np.random.default_rng()
 
-    deform_specs = [
+    base_specs = [
         ("c_pos", deform_keypoints_c_curve, +1.0),
-        ("c_neg", deform_keypoints_c_curve, -1.0),
         ("s_pos", deform_keypoints_s_curve, +1.0),
+        ("c_neg", deform_keypoints_c_curve, -1.0),
         ("s_neg", deform_keypoints_s_curve, -1.0),
     ]
+    deform_specs = []
+    for i in range(n_variants):
+        base_tag, fn, sign = base_specs[i % len(base_specs)]
+        cycle = i // len(base_specs)
+        tag = base_tag if cycle == 0 else f"{base_tag}{cycle + 1}"
+        deform_specs.append((tag, fn, sign))
 
     variants: list[dict] = []
     vis_coords = coords[visible]

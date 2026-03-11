@@ -73,7 +73,7 @@ def import_cmd(
     source: str,
     input_dir: str,
     augment: bool,
-    augment_count: int,  # reserved for generate_variants n_variants
+    augment_count: int,
     augment_angle_range: float,
     batch_id: str | None,
     metadata_json: str | None,
@@ -246,6 +246,7 @@ def import_cmd(
                     crop_h=crop_h,
                     lateral_pad=lateral_pad,
                     angle_range=(5.0, augment_angle_range),
+                    n_variants=augment_count,
                 )
 
                 for variant in variants:

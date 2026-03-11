@@ -101,4 +101,5 @@ class TimingObserver:
 
         if self._output_path is not None:
             self._output_path.parent.mkdir(parents=True, exist_ok=True)
-            self._output_path.write_text(report_text, encoding="utf-8")
+            with self._output_path.open("a", encoding="utf-8") as f:
+                f.write(report_text + "\n\n")

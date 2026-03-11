@@ -94,6 +94,32 @@ def test_timing_observer_writes_file(tmp_path: object) -> None:
     assert "Stage1" in content
 
 
+def test_multi_chunk_appends_timing(tmp_path: object) -> None:
+    """Two pipeline completions append both reports to the same file."""
+    from pathlib import Path
+
+    output_file = Path(str(tmp_path)) / "timing.txt"
+    observer = TimingObserver(output_path=output_file)
+
+    # First pipeline run
+    observer.on_event(PipelineStart(run_id="chunk_001"))
+    observer.on_event(
+        StageComplete(stage_name="Stage1", stage_index=0, elapsed_seconds=1.0)
+    )
+    observer.on_event(PipelineComplete(run_id="chunk_001", elapsed_seconds=1.0))
+
+    # Second pipeline run
+    observer.on_event(PipelineStart(run_id="chunk_002"))
+    observer.on_event(
+        StageComplete(stage_name="Stage1", stage_index=0, elapsed_seconds=2.0)
+    )
+    observer.on_event(PipelineComplete(run_id="chunk_002", elapsed_seconds=2.0))
+
+    content = output_file.read_text(encoding="utf-8")
+    assert "chunk_001" in content
+    assert "chunk_002" in content
+
+
 def test_timing_observer_handles_failure() -> None:
     """PipelineFailed sets total_time and report contains failure indication."""
     observer = TimingObserver()

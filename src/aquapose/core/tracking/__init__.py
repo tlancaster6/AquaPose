@@ -3,7 +3,7 @@
 Exports Tracklet2D — the per-camera temporal tracklet produced by Stage 2 — and
 FishTrack/TrackState for downstream reconstruction compatibility.
 Also exports TrackingStage — the Stage 2 implementation supporting both
-OC-SORT (``tracker_kind="ocsort"``) and the custom bidirectional keypoint
+OC-SORT (``tracker_kind="ocsort"``) and the custom single-pass keypoint
 tracker (``tracker_kind="keypoint_bidi"``).
 """
 
@@ -20,7 +20,6 @@ from aquapose.core.tracking.keypoint_tracker import (
     compute_ocm_matrix,
     compute_oks_matrix,
     interpolate_gaps,
-    merge_forward_backward,
 )
 from aquapose.core.tracking.stage import TrackingStage
 from aquapose.core.tracking.types import FishTrack, TrackHealth, Tracklet2D, TrackState
@@ -41,5 +40,4 @@ __all__ = [
     "compute_ocm_matrix",
     "compute_oks_matrix",
     "interpolate_gaps",
-    "merge_forward_backward",
 ]

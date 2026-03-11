@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from aquapose.core.tracking.types import Tracklet2D
 from aquapose.core.types.reconstruction import Midline3D
 
 
@@ -172,4 +173,104 @@ def evaluate_fragmentation(
     )
 
 
-__all__ = ["FragmentationMetrics", "evaluate_fragmentation"]
+def evaluate_fragmentation_2d(
+    tracklets: list[Tracklet2D],
+    n_animals: int,
+) -> FragmentationMetrics:
+    """Evaluate 2D track fragmentation from a list of Tracklet2D objects.
+
+    Analogous to ``evaluate_fragmentation`` but accepts 2D tracklets rather
+    than per-frame Midline3D mappings.  Computes gap counts, continuity ratios,
+    and birth/death statistics directly from each tracklet's ``.frames`` tuple.
+
+    Args:
+        tracklets: List of Tracklet2D objects from one camera's tracker.
+        n_animals: Expected number of fish in the scene.
+
+    Returns:
+        FragmentationMetrics with gap counts, continuity ratios, and
+        birth/death statistics.
+    """
+    # Build fish_id -> set of frame indices from tracklets
+    fish_frames: dict[int, set[int]] = {}
+    for t in tracklets:
+        fish_frames[t.track_id] = set(t.frames)
+
+    if not fish_frames:
+        return FragmentationMetrics(
+            total_gaps=0,
+            mean_gap_duration=0.0,
+            max_gap_duration=0,
+            mean_continuity_ratio=0.0,
+            per_fish_continuity={},
+            unique_fish_ids=0,
+            expected_fish=n_animals,
+            track_births=0,
+            track_deaths=0,
+            mean_track_lifespan=0.0,
+            median_track_lifespan=0.0,
+        )
+
+    # Determine global frame range across all tracklets
+    all_frames: set[int] = set()
+    for frames in fish_frames.values():
+        all_frames.update(frames)
+    global_first = min(all_frames)
+    global_last = max(all_frames)
+
+    # Per-fish gap analysis (same logic as evaluate_fragmentation)
+    total_gaps = 0
+    all_gap_durations: list[int] = []
+    per_fish_continuity: dict[int, float] = {}
+    lifespans: list[int] = []
+    track_births = 0
+    track_deaths = 0
+
+    for fish_id, frames in fish_frames.items():
+        sorted_frames = sorted(frames)
+        min_frame = sorted_frames[0]
+        max_frame = sorted_frames[-1]
+        span = max_frame - min_frame + 1
+        continuity = len(frames) / span if span > 0 else 1.0
+        per_fish_continuity[fish_id] = continuity
+        lifespans.append(span)
+
+        # Count gaps: consecutive frame indices that differ by > 1
+        for i in range(len(sorted_frames) - 1):
+            gap = sorted_frames[i + 1] - sorted_frames[i] - 1
+            if gap > 0:
+                total_gaps += 1
+                all_gap_durations.append(gap)
+
+        # Track births and deaths
+        if min_frame > global_first:
+            track_births += 1
+        if max_frame < global_last:
+            track_deaths += 1
+
+    mean_gap_duration = float(np.mean(all_gap_durations)) if all_gap_durations else 0.0
+    max_gap_duration = max(all_gap_durations) if all_gap_durations else 0
+    mean_continuity = float(np.mean(list(per_fish_continuity.values())))
+    mean_lifespan = float(np.mean(lifespans)) if lifespans else 0.0
+    median_lifespan = float(np.median(lifespans)) if lifespans else 0.0
+
+    return FragmentationMetrics(
+        total_gaps=total_gaps,
+        mean_gap_duration=mean_gap_duration,
+        max_gap_duration=max_gap_duration,
+        mean_continuity_ratio=mean_continuity,
+        per_fish_continuity=per_fish_continuity,
+        unique_fish_ids=len(fish_frames),
+        expected_fish=n_animals,
+        track_births=track_births,
+        track_deaths=track_deaths,
+        mean_track_lifespan=mean_lifespan,
+        median_track_lifespan=median_lifespan,
+    )
+
+
+__all__ = [
+    "FragmentationMetrics",
+    "evaluate_fragmentation",
+    "evaluate_fragmentation_2d",
+]

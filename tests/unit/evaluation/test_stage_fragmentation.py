@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from aquapose.core.tracking.types import Tracklet2D
 from aquapose.core.types.reconstruction import Midline3D
 
 # ---------------------------------------------------------------------------
@@ -240,6 +241,102 @@ def test_fragmentation_metrics_is_frozen() -> None:
     )
     with pytest.raises(AttributeError):
         m.total_gaps = 1  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# evaluate_fragmentation_2d tests
+# ---------------------------------------------------------------------------
+
+
+def _make_tracklet2d(
+    track_id: int,
+    frames: list[int],
+    camera_id: str = "cam0",
+) -> Tracklet2D:
+    """Build a synthetic Tracklet2D for testing."""
+    n = len(frames)
+    return Tracklet2D(
+        camera_id=camera_id,
+        track_id=track_id,
+        frames=tuple(frames),
+        centroids=tuple((float(i), float(i)) for i in range(n)),
+        bboxes=tuple((0.0, 0.0, 10.0, 10.0) for _ in range(n)),
+        frame_status=tuple("detected" for _ in range(n)),
+    )
+
+
+def test_evaluate_fragmentation_2d_empty_returns_zero() -> None:
+    """evaluate_fragmentation_2d([], n_animals=9) returns zeroed FragmentationMetrics."""
+    from aquapose.evaluation.stages.fragmentation import evaluate_fragmentation_2d
+
+    result = evaluate_fragmentation_2d([], n_animals=9)
+    assert result.total_gaps == 0
+    assert result.mean_gap_duration == 0.0
+    assert result.max_gap_duration == 0
+    assert result.mean_continuity_ratio == 0.0
+    assert result.per_fish_continuity == {}
+    assert result.unique_fish_ids == 0
+    assert result.expected_fish == 9
+    assert result.track_births == 0
+    assert result.track_deaths == 0
+    assert result.mean_track_lifespan == 0.0
+    assert result.median_track_lifespan == 0.0
+
+
+def test_evaluate_fragmentation_2d_known_gaps() -> None:
+    """Two tracklets: track 0 has gap at frames 3-4, track 1 is continuous."""
+    from aquapose.evaluation.stages.fragmentation import evaluate_fragmentation_2d
+
+    t0 = _make_tracklet2d(track_id=0, frames=[0, 1, 2, 5, 6])
+    t1 = _make_tracklet2d(track_id=1, frames=[0, 1, 2, 3, 4, 5, 6])
+
+    result = evaluate_fragmentation_2d([t0, t1], n_animals=2)
+
+    # Track 0: frames {0,1,2,5,6}, span = 6-0+1 = 7, present = 5, continuity = 5/7
+    assert result.per_fish_continuity[0] == pytest.approx(5.0 / 7.0)
+    # Track 1: frames {0..6}, continuity = 1.0
+    assert result.per_fish_continuity[1] == pytest.approx(1.0)
+    # One gap of duration 2 for track 0
+    assert result.total_gaps == 1
+    assert result.mean_gap_duration == pytest.approx(2.0)
+    assert result.max_gap_duration == 2
+    assert result.unique_fish_ids == 2
+    assert result.expected_fish == 2
+    # Births: track 0 starts at 0 (global first=0), no birth; track 1 starts at 0, no birth
+    assert result.track_births == 0
+    # Deaths: track 0 ends at 6 (global last=6), no death; track 1 ends at 6, no death
+    assert result.track_deaths == 0
+
+
+def test_evaluate_fragmentation_2d_single_track_all_frames() -> None:
+    """Single tracklet spanning all frames: 0 gaps, continuity_ratio=1.0."""
+    from aquapose.evaluation.stages.fragmentation import evaluate_fragmentation_2d
+
+    t0 = _make_tracklet2d(track_id=0, frames=list(range(10)))
+    result = evaluate_fragmentation_2d([t0], n_animals=1)
+
+    assert result.total_gaps == 0
+    assert result.per_fish_continuity[0] == pytest.approx(1.0)
+    assert result.mean_continuity_ratio == pytest.approx(1.0)
+    assert result.unique_fish_ids == 1
+    assert result.track_births == 0
+    assert result.track_deaths == 0
+
+
+def test_evaluate_fragmentation_2d_returns_frozen_fragmentation_metrics() -> None:
+    """Return type is frozen FragmentationMetrics."""
+    import dataclasses
+
+    from aquapose.evaluation.stages.fragmentation import (
+        FragmentationMetrics,
+        evaluate_fragmentation_2d,
+    )
+
+    result = evaluate_fragmentation_2d([], n_animals=9)
+    assert isinstance(result, FragmentationMetrics)
+    assert dataclasses.is_dataclass(result)
+    with pytest.raises(AttributeError):
+        result.total_gaps = 99  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------

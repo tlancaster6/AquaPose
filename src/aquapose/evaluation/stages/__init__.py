@@ -11,6 +11,7 @@ from aquapose.evaluation.stages.detection import DetectionMetrics, evaluate_dete
 from aquapose.evaluation.stages.fragmentation import (
     FragmentationMetrics,
     evaluate_fragmentation,
+    evaluate_fragmentation_2d,
 )
 from aquapose.evaluation.stages.midline import MidlineMetrics, evaluate_midline
 from aquapose.evaluation.stages.reconstruction import (
@@ -42,6 +43,7 @@ __all__ = [
     "evaluate_association",
     "evaluate_detection",
     "evaluate_fragmentation",
+    "evaluate_fragmentation_2d",
     "evaluate_midline",
     "evaluate_reconstruction",
     "evaluate_tracking",

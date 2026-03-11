@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-10)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.7 Improved Tracking — Phase 80 (Baseline Metrics)
+**Current focus:** v3.7 Improved Tracking — Phase 81 (Pipeline Reorder)
 
 ## Current Position
 
-Phase: 80 of v3.7 (Baseline Metrics)
+Phase: 81 of v3.7 (Pipeline Reorder — Segmentation Removal)
 Plan: 01 complete
-Status: Plan 80-01 complete — ready to plan Phase 81 or next phase
-Last activity: 2026-03-10 — Phase 80-01 complete, OC-SORT baseline established (27 tracks vs 9-fish target)
+Status: Plan 81-01 complete — v3.7 pipeline structure in place; ready for Phase 82 (keypoint-cost-association)
+Last activity: 2026-03-11 — Phase 81-01 complete, core/midline renamed to core/pose, PoseStage rewritten for in-place Detection enrichment
 
-Progress: [███░░░░░░░] 30%
+Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
@@ -70,6 +70,10 @@ Recent decisions affecting current work:
 - [Phase 80-01]: OC-SORT baseline: 27 tracks vs 9-fish target (3x over-fragmented) — primary failure mode for Phase 84 to address
 - [Phase 80-01]: min_hits=1 used for honest baseline — no warm-up penalty that would artificially inflate track count
 - [Phase 80-01]: Single-pass architecture in measure_baseline_tracking.py — detection+tracking+video rendering in one loop, avoids memory duplication
+- [Phase 81-01]: PoseStage enriches Detection objects in-place (no AnnotatedDetection wrapper, no annotated_detections context field)
+- [Phase 81-01]: process_batch() returns (kpts_xy, kpts_conf) tuples; PoseStage handles back-projection to full-frame coordinates
+- [Phase 81-01]: Segmentation backend retained in codebase but removed from backend registry (not user-facing)
+- [Phase 81-01]: ReconstructionStage now raises ValueError if tracklet_groups is None (removed stale annotated_detections fallback)
 
 ### Roadmap Evolution
 
@@ -86,6 +90,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-10
-Stopped at: Completed 80-01-PLAN.md — OC-SORT baseline established, evaluate_fragmentation_2d added, 80-BASELINE.md created
+Last session: 2026-03-11
+Stopped at: Completed 81-01-PLAN.md — core/midline renamed to core/pose, PoseStage enriches Detection in-place, pipeline reordered to Detection->Pose->Tracking->Association->Reconstruction
 Resume file: N/A

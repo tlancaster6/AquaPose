@@ -93,4 +93,5 @@ dmypy.json
 # Project-specific
 tmp/
 *.pt
+*.mp4
 runs/

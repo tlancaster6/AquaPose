@@ -313,9 +313,14 @@ def run_baseline(
     # Initialize tracker with min_hits=1 for honest baseline (no warm-up penalty)
     tracker = OcSortTracker(camera_id=camera_id, min_hits=1, det_thresh=0.1)
 
-    # --- Pass 1: Detection + Tracking ---
-    frame_data: list[dict] = []
+    # --- Single pass: Detection + Tracking + Video rendering ---
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_video = output_dir / "baseline_tracking.mp4"
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(str(output_video), fourcc, fps, (frame_w, frame_h))
+
     cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    frames_processed = 0
 
     for fidx in range(start_frame, end_frame):
         ret, frame = cap.read()
@@ -356,20 +361,49 @@ def run_baseline(
 
         track_assignments = _get_frame_track_assignments(tracker, dets, fidx)
 
-        frame_data.append(
-            {
-                "frame_idx": fidx,
-                "detections": dets,
-                "track_assignments": track_assignments,
-                "frame_image": frame,
-            }
+        # Render annotated frame directly to video writer
+        for di, det in enumerate(dets):
+            track_id = track_assignments.get(di)
+
+            if track_id is not None:
+                color = _PALETTE_BGR[track_id % len(_PALETTE_BGR)]
+            else:
+                color = (128, 128, 128)  # gray for untracked
+
+            if det["obb_points"] is not None:
+                _draw_obb(frame, det["obb_points"], color, thickness=2)
+                cx, cy = _obb_center(det["obb_points"])
+
+                if track_id is not None:
+                    cv2.putText(
+                        frame,
+                        str(track_id),
+                        (cx - 8, cy + 5),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.6,
+                        color,
+                        2,
+                    )
+
+        cv2.putText(
+            frame,
+            f"F{fidx}",
+            (5, 20),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (255, 255, 255),
+            1,
         )
+        writer.write(frame)
+        frames_processed += 1
 
         if (fidx - start_frame) % 100 == 0:
             print(f"  Processed frame {fidx} ({len(dets)} detections)")
 
     cap.release()
-    print(f"Pass 1 complete: {len(frame_data)} frames processed")
+    writer.release()
+    print(f"Processing complete: {frames_processed} frames")
+    print(f"Video saved: {output_video}")
 
     # --- Compute metrics ---
     tracklets = tracker.get_tracklets()
@@ -384,7 +418,6 @@ def run_baseline(
     )
 
     # --- Save metrics JSON ---
-    output_dir.mkdir(parents=True, exist_ok=True)
     metrics_json = {
         "config": {
             "camera": camera_id,
@@ -404,53 +437,6 @@ def run_baseline(
     with open(metrics_path, "w") as f:
         json.dump(metrics_json, f, indent=2)
     print(f"\nMetrics saved: {metrics_path}")
-
-    # --- Pass 2: Render annotated video ---
-    output_video = output_dir / "baseline_tracking.mp4"
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(str(output_video), fourcc, fps, (frame_w, frame_h))
-
-    for fd in frame_data:
-        frame_img = fd["frame_image"].copy()
-
-        for di, det in enumerate(fd["detections"]):
-            track_id = fd["track_assignments"].get(di)
-
-            if track_id is not None:
-                color = _PALETTE_BGR[track_id % len(_PALETTE_BGR)]
-            else:
-                color = (128, 128, 128)  # gray for untracked
-
-            if det["obb_points"] is not None:
-                _draw_obb(frame_img, det["obb_points"], color, thickness=2)
-                cx, cy = _obb_center(det["obb_points"])
-
-                if track_id is not None:
-                    label = str(track_id)
-                    cv2.putText(
-                        frame_img,
-                        label,
-                        (cx - 8, cy + 5),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.6,
-                        color,
-                        2,
-                    )
-
-        # Frame number annotation (top-left, small)
-        cv2.putText(
-            frame_img,
-            f"F{fd['frame_idx']}",
-            (5, 20),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (255, 255, 255),
-            1,
-        )
-        writer.write(frame_img)
-
-    writer.release()
-    print(f"Video saved: {output_video}")
 
 
 def _print_summary(

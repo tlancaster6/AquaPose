@@ -23,9 +23,9 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 ## Current Position
 
 Phase: 85 of v3.7 (Code Quality Audit & CLI Smoke Test)
-Plan: 01 complete (BoxMot removed, 25 type errors fixed, dead code cleaned)
-Status: Plan 85-01 complete — zero type errors, zero BoxMot references, 1152 tests pass
-Last activity: 2026-03-11 — Plan 85-01 complete; proceeding to Plan 85-02 (CLI smoke test + audit report)
+Plan: 02 complete (CLI smoke test passed, audit report written)
+Status: Phase 85 complete — zero type errors, zero BoxMot references, CLI runs end-to-end, audit report written
+Last activity: 2026-03-11 — Phase 85 complete; all plans executed, verification pending
 
 Progress: [█████████░] 90%
 

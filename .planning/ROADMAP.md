@@ -207,7 +207,7 @@ Full details: `.planning/milestones/v3.6-ROADMAP.md`
 - [x] **Phase 82: Association Upgrade — Keypoint Centroid** - Cross-view association uses mid-body keypoint instead of OBB centroid (completed 2026-03-11)
 - [x] **Phase 83: Custom Tracker Implementation** - Bidirectional batched keypoint tracker with OKS cost, OCM direction, KF state, gap interpolation (completed 2026-03-11)
 - [x] **Phase 84: Integration & Evaluation** - New tracker wired into pipeline, evaluated against Phase 80 baselines (completed 2026-03-11)
-- [ ] **Phase 85: Code Quality Audit & CLI Smoke Test** - Dead code removed, type errors fixed, pipeline runs end-to-end from CLI
+- [x] **Phase 85: Code Quality Audit & CLI Smoke Test** - Dead code removed, type errors fixed, pipeline runs end-to-end from CLI (completed 2026-03-11)
 - [ ] **Phase 86: Cleanup (Conditional)** - Address issues found in Phase 85 — skip if Phase 85 is clean
 
 ## Phase Details
@@ -339,7 +339,7 @@ Plans:
   2. `hatch run typecheck` produces no new type errors introduced by the v3.7 overhaul
   3. `aquapose run` completes end-to-end on a test clip with the new pipeline, and all config options for the new tracker are documented
   4. A documented decision exists on whether BoxMot is removed as a dependency or retained as an OC-SORT fallback
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 85-01-PLAN.md — BoxMot removal, type error fixes, dead code cleanup
@@ -370,5 +370,5 @@ Phases execute in numeric order: 78 -> 79 (conditional) -> 80 -> 81 -> 82 -> 83 
 | 82. Association Upgrade — Keypoint Centroid | 1/1 | Complete    | 2026-03-11 | - |
 | 83. Custom Tracker Implementation | 2/2 | Complete    | 2026-03-11 | - |
 | 84. Integration & Evaluation | 2/2 | Complete    | 2026-03-11 | - |
-| 85. Code Quality Audit & CLI Smoke Test | 1/2 | In Progress|  | - |
+| 85. Code Quality Audit & CLI Smoke Test | 2/2 | Complete   | 2026-03-11 | - |
 | 86. Cleanup (Conditional) | v3.7 | 0/TBD | Not started | - |

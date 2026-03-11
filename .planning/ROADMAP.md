@@ -254,7 +254,9 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. A baseline metrics document exists recording track count, track duration distribution, fragmentation count, and total coverage for the current OC-SORT tracker on `e3v83eb-20260218T145915-150429.mp4` frames 3300-4500 (1:50-2:30, 40 seconds)
   2. The document states the gap to the zero-fragmentation, 9-track target explicitly as numbers (e.g., "8 tracks found, 3 ID switches, 94% coverage")
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 80-01-PLAN.md — Build baseline tracking script, add 2D fragmentation evaluator, run and record metrics
 
 ### Phase 81: Pipeline Reorder & Segmentation Removal
 **Goal**: Pose estimation runs immediately after detection (before tracking), and the segmentation midline backend is fully removed from the codebase
@@ -331,7 +333,7 @@ Phases execute in numeric order: 78 -> 79 (conditional) -> 80 -> 81 -> 82 -> 83 
 | 78. Occlusion Investigation | v3.7 | 2/2 | Complete | 2026-03-10 |
 | 78.1 OBB & Pose Production Retrain | 2/2 | Complete    | 2026-03-10 | - |
 | 79. Occlusion Remediation (Conditional) | v3.7 | 0/0 | Skipped | 2026-03-10 |
-| 80. Baseline Metrics | v3.7 | 0/TBD | Not started | - |
+| 80. Baseline Metrics | v3.7 | 0/1 | Planned | - |
 | 81. Pipeline Reorder & Segmentation Removal | v3.7 | 0/TBD | Not started | - |
 | 82. Association Upgrade — Keypoint Centroid | v3.7 | 0/TBD | Not started | - |
 | 83. Custom Tracker Implementation | v3.7 | 0/TBD | Not started | - |

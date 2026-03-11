@@ -749,13 +749,6 @@ class TestTrackingStageKeywordBidi:
         with pytest.raises(ValueError, match="Unknown tracker_kind"):
             TrackingConfig(tracker_kind="bad_tracker")
 
-    def test_config_ocsort_still_valid(self) -> None:
-        """TrackingConfig with tracker_kind='ocsort' still works (backward compat)."""
-        from aquapose.engine.config import TrackingConfig
-
-        cfg = TrackingConfig(tracker_kind="ocsort")
-        assert cfg.tracker_kind == "ocsort"
-
     def test_config_new_fields_have_defaults(self) -> None:
         """New keypoint_bidi fields have backward-compatible defaults."""
         from aquapose.engine.config import TrackingConfig
@@ -873,24 +866,3 @@ class TestTrackingStageKeywordBidi:
         ctx2, carry2 = stage.run(ctx2, carry=carry1)
         assert carry2 is not None
         # Should not raise — state was restored and processing continued
-
-    def test_tracking_stage_ocsort_unchanged(self) -> None:
-        """Existing ocsort path still works without regression."""
-        from aquapose.core.context import PipelineContext
-        from aquapose.core.tracking.stage import TrackingStage
-        from aquapose.engine.config import TrackingConfig
-
-        cfg = TrackingConfig(tracker_kind="ocsort", n_init=1, max_coast_frames=5)
-        stage = TrackingStage(config=cfg)
-
-        camera_ids = ["cam0"]
-        detections_list = [{"cam0": []}] * 5  # empty frames
-
-        ctx = PipelineContext(
-            camera_ids=camera_ids,
-            detections=detections_list,
-            frame_count=5,
-        )
-        ctx, _carry = stage.run(ctx, carry=None)
-        assert ctx.tracks_2d is not None
-        assert "cam0" in ctx.tracks_2d

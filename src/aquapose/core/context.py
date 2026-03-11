@@ -185,8 +185,8 @@ class ChunkHandoff:
     Frozen so it is replaced wholesale each chunk, never mutated.
 
     Attributes:
-        tracks_2d_state: Per-camera opaque OC-SORT tracker state blobs.
-            Keys are camera IDs; values are dicts from OcSortTracker.get_state().
+        tracks_2d_state: Per-camera opaque tracker state blobs.
+            Keys are camera IDs; values are dicts from KeypointTracker.get_state().
             Used to restore tracker continuity at the start of the next chunk.
         identity_map: Maps chunk-local fish IDs to globally consistent fish IDs.
             Keys are chunk-local fish IDs (from TrackletGroup.fish_id in the
@@ -198,7 +198,7 @@ class ChunkHandoff:
             fish. Monotonically increasing across chunks to prevent ID reuse.
     """
 
-    tracks_2d_state: dict  # camera_id -> OcSortTracker.get_state() blob
+    tracks_2d_state: dict  # camera_id -> KeypointTracker.get_state() blob
     identity_map: dict  # local_fish_id -> global_fish_id
     track_id_to_global: dict  # (camera_id, track_id) -> global_fish_id
     next_global_id: int

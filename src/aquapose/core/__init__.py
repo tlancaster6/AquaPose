@@ -7,7 +7,7 @@ satisfies the Stage Protocol via structural typing (no inheritance required).
 Stage ordering (v3.7):
 1. DetectionStage      — raw fish detection per-camera
 2. PoseStage           — raw keypoint extraction per detection (before tracking)
-3. TrackingStage       — per-camera 2D tracklet generation via OC-SORT
+3. TrackingStage       — per-camera 2D tracklet generation via KeypointTracker
 4. AssociationStage    — cross-camera identity clustering via Leiden algorithm
 5. ReconstructionStage — 3D B-spline midline triangulation
 """

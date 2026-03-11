@@ -10,7 +10,9 @@ Tests verify:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+import numpy as np
 
 # ---------------------------------------------------------------------------
 # Minimal Detection and TrackingConfig stubs
@@ -19,10 +21,12 @@ from dataclasses import dataclass
 
 @dataclass
 class _FakeDet:
-    """Minimal Detection stub (xywh bbox, confidence)."""
+    """Minimal Detection stub with keypoints for KeypointTracker."""
 
     bbox: tuple[int, int, int, int]
     confidence: float
+    keypoints: np.ndarray = field(default_factory=lambda: np.zeros((6, 2)))
+    keypoint_conf: np.ndarray = field(default_factory=lambda: np.ones(6))
     mask: None = None
     area: int = 0
 
@@ -31,11 +35,15 @@ class _FakeDet:
 class _FakeTrackingConfig:
     """Minimal TrackingConfig stub for testing."""
 
-    tracker_kind: str = "ocsort"
+    tracker_kind: str = "keypoint_bidi"
     max_coast_frames: int = 15
     n_init: int = 3
-    iou_threshold: float = 0.3
     det_thresh: float = 0.3
+    base_r: float = 10.0
+    lambda_ocm: float = 0.2
+    max_gap_frames: int = 5
+    match_cost_threshold: float = 1.2
+    ocr_threshold: float = 0.5
 
 
 def _make_det(
@@ -45,7 +53,27 @@ def _make_det(
     h: int = 40,
     conf: float = 0.9,
 ) -> _FakeDet:
-    return _FakeDet(bbox=(x, y, w, h), confidence=conf, area=w * h)
+    cx, cy = x + w / 2, y + h / 2
+    # 6 keypoints spread along the fish body axis
+    kpts = np.array(
+        [
+            [cx - 15, cy],
+            [cx - 9, cy],
+            [cx - 3, cy],
+            [cx + 3, cy],
+            [cx + 9, cy],
+            [cx + 15, cy],
+        ],
+        dtype=np.float64,
+    )
+    kconf = np.ones(6, dtype=np.float64)
+    return _FakeDet(
+        bbox=(x, y, w, h),
+        confidence=conf,
+        keypoints=kpts,
+        keypoint_conf=kconf,
+        area=w * h,
+    )
 
 
 def _make_stage() -> TrackingStage:  # noqa: F821
@@ -231,10 +259,10 @@ class TestMultipleCameras:
 
 
 class TestCentroidConfigThreading:
-    """TrackingStage passes centroid config fields to OcSortTracker."""
+    """TrackingStage passes centroid config fields to the tracker backend."""
 
     def test_tracking_stage_passes_centroid_config_to_tracker(self) -> None:
-        """TrackingStage with centroid params threads them into OcSortTracker."""
+        """TrackingStage with centroid params threads them into the tracker."""
         from aquapose.core.tracking.stage import TrackingStage
 
         stage = TrackingStage(

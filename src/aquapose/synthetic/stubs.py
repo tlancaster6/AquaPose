@@ -3,9 +3,9 @@
 ``generate_synthetic_detections`` now delegates to
 ``generate_detection_dataset`` in ``detection.py``.
 
-``generate_synthetic_tracks`` remains a stub — track generation is a
-TrackingStage / OcSortTracker output, not an input, so it is not part of the
-synthetic data generation pipeline.
+``generate_synthetic_tracks`` remains a stub -- track generation is a
+TrackingStage output, not an input, so it is not part of the synthetic data
+generation pipeline.
 """
 
 from __future__ import annotations
@@ -57,10 +57,10 @@ def generate_synthetic_tracks(*args: object, **kwargs: object) -> object:
         Not implemented.
 
     Raises:
-        NotImplementedError: Always raised. Use TrackingStage or
-            OcSortTracker with a SyntheticDataset to generate tracks.
+        NotImplementedError: Always raised. Use TrackingStage with a
+            SyntheticDataset to generate tracks.
     """
     raise NotImplementedError(
         "generate_synthetic_tracks is not implemented. "
-        "Use TrackingStage or OcSortTracker with a SyntheticDataset to generate tracks."
+        "Use TrackingStage with a SyntheticDataset to generate tracks."
     )

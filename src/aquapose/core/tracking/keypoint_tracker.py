@@ -357,7 +357,7 @@ def build_cost_matrix(
 class _KptTrackletBuilder:
     """Mutable per-track accumulator that stores keypoints alongside standard fields.
 
-    Analogous to _TrackletBuilder in ocsort_wrapper.py but independent (no coupling).
+    Builds a Tracklet2D incrementally from per-frame observations.
     Keypoints and confs are stored for gap interpolation and downstream pose use.
 
     Attributes:
@@ -1056,7 +1056,7 @@ def interpolate_gaps(
 
 
 class KeypointTracker:
-    """Single-pass keypoint tracker (drop-in replacement for OcSortTracker).
+    """Single-pass keypoint tracker with ORU/OCR occlusion recovery.
 
     Runs a single forward pass using _SinglePassTracker with ORU/OCR mechanisms
     for occlusion recovery. Small temporal gaps are filled via cubic-spline
@@ -1069,8 +1069,8 @@ class KeypointTracker:
 
     Args:
         camera_id: Camera identifier.
-        max_age: Frames to coast before culling a track. Maps to OcSortTracker
-            max_age / TrackingConfig.max_coast_frames.
+        max_age: Frames to coast before culling a track. Maps to
+            TrackingConfig.max_coast_frames.
         n_init: Hit-streak threshold for track confirmation.
         det_thresh: Minimum detection confidence to admit to the tracker.
         base_r: KF base measurement noise variance.
@@ -1078,7 +1078,7 @@ class KeypointTracker:
         sigmas: Per-keypoint OKS sigmas. Defaults to DEFAULT_SIGMAS.
         max_gap_frames: Maximum gap size to fill via spline interpolation.
         centroid_keypoint_index: Keypoint index used as centroid (unused in
-            _SinglePassTracker but retained for API symmetry with OcSortTracker).
+            _SinglePassTracker but retained for API compatibility).
         centroid_confidence_floor: Confidence floor for centroid selection
             (retained for API symmetry).
     """
@@ -1134,7 +1134,7 @@ class KeypointTracker:
 
         Args:
             frame_idx: Current frame index.
-            detections: Detection-like objects (same as OcSortTracker.update).
+            detections: Detection-like objects with bbox, confidence, keypoints.
         """
         self._fwd_tracker.update(frame_idx=frame_idx, detections=detections)
         # Invalidate cached result

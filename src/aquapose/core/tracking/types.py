@@ -26,7 +26,7 @@ class Tracklet2D:
     """Per-camera temporal tracklet from Stage 2 (2D Tracking).
 
     Represents a single fish's track within one camera over a batch of frames.
-    Tracklets are the outputs of the per-camera 2D tracker (e.g., OC-SORT) and
+    Tracklets are the outputs of the per-camera 2D tracker and
     the inputs to Stage 3 (Association), which groups them across cameras into
     TrackletGroup objects.
 

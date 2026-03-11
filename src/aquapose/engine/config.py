@@ -176,34 +176,25 @@ class TrackingConfig:
     Controls the tracker used for per-camera 2D fish tracking.
 
     Attributes:
-        tracker_kind: Tracker backend. Default ``"keypoint_bidi"`` uses the
-            custom bidirectional keypoint tracker. ``"ocsort"`` uses OC-SORT
-            (boxmot) as an alternative fallback.
+        tracker_kind: Tracker backend. Currently only ``"keypoint_bidi"``
+            (custom single-pass keypoint tracker with ORU/OCR recovery).
         max_coast_frames: Maximum frames to coast (Kalman predict with no
-            observation) before dropping a track. Maps to boxmot ``max_age``
-            for OC-SORT and ``max_age`` for ``keypoint_bidi``.
+            observation) before dropping a track. Default 30.
         n_init: Minimum number of matched detection frames before a track is
-            confirmed and included in stage output. Maps to boxmot
-            ``min_hits`` for OC-SORT.
-        iou_threshold: IoU threshold for matching detections to existing tracks.
-            Used by ``"ocsort"`` only; ignored by ``"keypoint_bidi"``.
+            confirmed and included in stage output. Default 3.
         det_thresh: Minimum detection confidence forwarded to the tracker.
-        base_r: KF base measurement noise variance for ``"keypoint_bidi"``.
-            Ignored when ``tracker_kind="ocsort"``. Default 10.0.
-        lambda_ocm: OCM weight in the cost matrix for ``"keypoint_bidi"``.
-            Ignored when ``tracker_kind="ocsort"``. Default 0.2.
-        max_gap_frames: Maximum gap size (frames) for spline interpolation in
-            ``"keypoint_bidi"``. Ignored when ``tracker_kind="ocsort"``.
+            Default 0.5.
+        base_r: KF base measurement noise variance. Default 10.0.
+        lambda_ocm: OCM weight in the cost matrix. Default 0.2.
+        max_gap_frames: Maximum gap size (frames) for spline interpolation.
             Default 5.
         match_cost_threshold: Maximum cost for Hungarian assignment match
-            acceptance in ``"keypoint_bidi"``. Cells above this threshold are
-            gated to infinity before the solver runs, so impossible pairings
-            are never forced. Ignored when ``tracker_kind="ocsort"``.
+            acceptance. Cells above this threshold are gated to infinity
+            before the solver runs, so impossible pairings are never forced.
             Default 1.2.
         ocr_threshold: Minimum OKS similarity for observation-centric recovery
-            (OCR) in ``"keypoint_bidi"``. Tracks that coast and then find a
-            detection with OKS above this threshold are re-acquired. Ignored
-            when ``tracker_kind="ocsort"``. Default 0.5.
+            (OCR). Tracks that coast and then find a detection with OKS above
+            this threshold are re-acquired. Default 0.5.
 
     Note:
         ``oks_sigmas`` for the keypoint tracker are loaded from
@@ -214,9 +205,7 @@ class TrackingConfig:
     tracker_kind: str = "keypoint_bidi"
     max_coast_frames: int = 30
     n_init: int = 3
-    iou_threshold: float = 0.3
     det_thresh: float = 0.5
-    # --- keypoint_bidi fields (ignored when tracker_kind="ocsort") ---
     base_r: float = 10.0
     lambda_ocm: float = 0.2
     max_gap_frames: int = 5
@@ -225,7 +214,7 @@ class TrackingConfig:
 
     def __post_init__(self) -> None:
         """Validate tracker_kind on construction."""
-        valid_kinds = {"ocsort", "keypoint_bidi"}
+        valid_kinds = {"keypoint_bidi"}
         if self.tracker_kind not in valid_kinds:
             raise ValueError(
                 f"Unknown tracker_kind: {self.tracker_kind!r}. "

@@ -1,12 +1,9 @@
-"""2D Tracking stage (Stage 2) domain types for the AquaPose v2.1 pipeline.
+"""2D Tracking stage (Stage 2) domain types for the AquaPose pipeline.
 
-Exports Tracklet2D — the per-camera temporal tracklet produced by Stage 2 — and
-FishTrack/TrackState for downstream reconstruction compatibility.
-Also exports TrackingStage — the Stage 2 implementation supporting both
-OC-SORT (``tracker_kind="ocsort"``) and the custom single-pass keypoint
-tracker (``tracker_kind="keypoint_bidi"``). The keypoint_bidi tracker runs a
-single forward pass with ORU/OCR occlusion recovery; bidirectional merge was
-removed after Phase 84-01 investigation showed it inflated track count.
+Exports Tracklet2D -- the per-camera temporal tracklet produced by Stage 2 --
+and FishTrack/TrackState for downstream reconstruction compatibility.
+Also exports TrackingStage and KeypointTracker (single-pass keypoint tracker
+with ORU/OCR occlusion recovery).
 """
 
 from aquapose.core.tracking.keypoint_sigmas import (

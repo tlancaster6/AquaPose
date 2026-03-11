@@ -11,7 +11,7 @@ from a :class:`~aquapose.engine.config.PipelineConfig` and wire them into
 
 Stage 2 (TrackingStage) uses a different ``run()`` signature —
 ``(context, carry) -> (context, carry)`` — because it maintains per-camera
-OC-SORT state across batches. The pipeline runner detects this stage via
+tracker state across batches. The pipeline runner detects this stage via
 ``isinstance(stage, TrackingStage)`` and dispatches accordingly.
 """
 

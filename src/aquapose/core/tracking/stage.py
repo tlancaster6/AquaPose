@@ -1,15 +1,10 @@
-"""TrackingStage — Stage 2 of the AquaPose v2.1 pipeline.
+"""TrackingStage -- Stage 2 of the AquaPose pipeline.
 
 Per-camera 2D tracking producing Tracklet2D objects that carry temporal
 identity for the Association stage (Stage 3).
 
-Supports two tracker backends dispatched by ``config.tracker_kind``:
-
-- ``"ocsort"``: OC-SORT via the boxmot package (default). All boxmot
-  internals are fully isolated in aquapose.tracking.ocsort_wrapper.
-- ``"keypoint_bidi"``: Custom bidirectional keypoint tracker from
-  aquapose.core.tracking.keypoint_tracker. Runs forward+backward passes
-  and merges via Hungarian OKS assignment.
+Uses the custom single-pass keypoint tracker from
+``aquapose.core.tracking.keypoint_tracker`` with ORU/OCR occlusion recovery.
 """
 
 from __future__ import annotations
@@ -26,10 +21,10 @@ class TrackingStage:
     """Stage 2: Per-camera 2D tracking.
 
     Consumes ``context.detections`` (Stage 1 output) and produces
-    ``context.tracks_2d`` — a ``dict[str, list[Tracklet2D]]`` keyed by
+    ``context.tracks_2d`` -- a ``dict[str, list[Tracklet2D]]`` keyed by
     camera ID.
 
-    Each camera's detections are independently tracked by an OcSortTracker.
+    Each camera's detections are independently tracked by a KeypointTracker.
     Tracker state is preserved between pipeline chunks via ``ChunkHandoff``,
     enabling continuous track identity across chunk boundaries.
 
@@ -38,12 +33,11 @@ class TrackingStage:
     Tentative tracks that never graduated past probation are excluded.
 
     Args:
-        config: Frozen TrackingConfig. ``config.tracker_kind`` selects the
-            backend: ``"keypoint_bidi"`` (default) or ``"ocsort"``.
+        config: Frozen TrackingConfig.
         centroid_keypoint_index: Index into Detection.keypoints for tracklet
-            centroid. Default 2 (spine1). Passed to the active tracker backend.
+            centroid. Default 2 (spine1). Passed to the tracker backend.
         centroid_confidence_floor: Minimum keypoint confidence to use keypoint
-            as centroid. Default 0.3. Passed to the active tracker backend.
+            as centroid. Default 0.3. Passed to the tracker backend.
 
     Example::
 
@@ -77,10 +71,7 @@ class TrackingStage:
         objects. A new ``ChunkHandoff`` is built from the per-camera tracker
         states for the next chunk.
 
-        The tracker backend is selected by ``config.tracker_kind``:
-
-        - ``"ocsort"``: OcSortTracker (default, boxmot-backed).
-        - ``"keypoint_bidi"``: KeypointTracker (custom bidirectional KF).
+        The tracker backend is ``"keypoint_bidi"`` (KeypointTracker).
 
         Args:
             context: Accumulated pipeline state from the Detection stage.
@@ -95,8 +86,6 @@ class TrackingStage:
             ``new_carry.tracks_2d_state`` holds per-camera tracker states.
 
         """
-        tracker_kind = getattr(self._config, "tracker_kind", "ocsort")
-
         prev_tracks_2d_state: dict = {}
         if carry is not None and hasattr(carry, "tracks_2d_state"):
             prev_tracks_2d_state = carry.tracks_2d_state  # type: ignore[union-attr]
@@ -104,48 +93,28 @@ class TrackingStage:
         detections: list = context.detections or []
         camera_ids: list[str] = context.camera_ids or []
 
-        if tracker_kind == "keypoint_bidi":
-            from aquapose.core.tracking.keypoint_tracker import KeypointTracker
+        from aquapose.core.tracking.keypoint_tracker import KeypointTracker
 
-            trackers: dict[str, Any] = {}
-            for cam_id in camera_ids:
-                if cam_id in prev_tracks_2d_state:
-                    trackers[cam_id] = KeypointTracker.from_state(
-                        cam_id, prev_tracks_2d_state[cam_id]
-                    )
-                else:
-                    trackers[cam_id] = KeypointTracker(
-                        camera_id=cam_id,
-                        max_age=self._config.max_coast_frames,
-                        n_init=self._config.n_init,
-                        det_thresh=self._config.det_thresh,
-                        base_r=self._config.base_r,
-                        lambda_ocm=self._config.lambda_ocm,
-                        max_gap_frames=self._config.max_gap_frames,
-                        match_cost_threshold=self._config.match_cost_threshold,
-                        ocr_threshold=self._config.ocr_threshold,
-                        centroid_keypoint_index=self._centroid_keypoint_index,
-                        centroid_confidence_floor=self._centroid_confidence_floor,
-                    )
-        else:
-            from aquapose.core.tracking.ocsort_wrapper import OcSortTracker
-
-            trackers = {}
-            for cam_id in camera_ids:
-                if cam_id in prev_tracks_2d_state:
-                    trackers[cam_id] = OcSortTracker.from_state(
-                        cam_id, prev_tracks_2d_state[cam_id]
-                    )
-                else:
-                    trackers[cam_id] = OcSortTracker(
-                        camera_id=cam_id,
-                        max_age=self._config.max_coast_frames,
-                        min_hits=self._config.n_init,
-                        iou_threshold=self._config.iou_threshold,
-                        det_thresh=self._config.det_thresh,
-                        centroid_keypoint_index=self._centroid_keypoint_index,
-                        centroid_confidence_floor=self._centroid_confidence_floor,
-                    )
+        trackers: dict[str, Any] = {}
+        for cam_id in camera_ids:
+            if cam_id in prev_tracks_2d_state:
+                trackers[cam_id] = KeypointTracker.from_state(
+                    cam_id, prev_tracks_2d_state[cam_id]
+                )
+            else:
+                trackers[cam_id] = KeypointTracker(
+                    camera_id=cam_id,
+                    max_age=self._config.max_coast_frames,
+                    n_init=self._config.n_init,
+                    det_thresh=self._config.det_thresh,
+                    base_r=self._config.base_r,
+                    lambda_ocm=self._config.lambda_ocm,
+                    max_gap_frames=self._config.max_gap_frames,
+                    match_cost_threshold=self._config.match_cost_threshold,
+                    ocr_threshold=self._config.ocr_threshold,
+                    centroid_keypoint_index=self._centroid_keypoint_index,
+                    centroid_confidence_floor=self._centroid_confidence_floor,
+                )
 
         # Feed all frames to each camera's tracker
         for frame_idx, frame_dets in enumerate(detections):

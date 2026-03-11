@@ -364,7 +364,7 @@ class _KptTrackletBuilder:
     """Mutable per-track accumulator that stores keypoints alongside standard fields.
 
     Analogous to _TrackletBuilder in ocsort_wrapper.py but independent (no coupling).
-    Keypoints and confs are stored for Plan 02's bidirectional merge step.
+    Keypoints and confs are stored for gap interpolation and downstream pose use.
 
     Attributes:
         camera_id: Camera this tracklet belongs to.
@@ -1040,7 +1040,7 @@ def interpolate_gaps(
 
 
 # ---------------------------------------------------------------------------
-# KeypointTracker — public bidirectional wrapper
+# KeypointTracker — public single-pass wrapper
 # ---------------------------------------------------------------------------
 
 

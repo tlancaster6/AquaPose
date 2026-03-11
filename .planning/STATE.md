@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.8
 milestone_name: Improved Association
 status: unknown
-last_updated: "2026-03-11T20:30:18.225Z"
+last_updated: "2026-03-11T20:34:26.979Z"
 progress:
   total_phases: 15
-  completed_phases: 13
+  completed_phases: 14
   total_plans: 25
-  completed_plans: 23
+  completed_plans: 24
 ---
 
 # Project State
@@ -23,9 +23,9 @@ See: .planning/PROJECT.md (updated 2026-03-11)
 ## Current Position
 
 Phase: 91 of 92 (Singleton Recovery)
-Plan: 01 complete (1/1 plans done)
-Status: Phase execution complete, ready for next phase
-Last activity: 2026-03-11 — Phase 91 plan 01 executed
+Plan: 02 complete (2/2 plans done)
+Status: Phase 91 complete, ready for phase 92
+Last activity: 2026-03-11 — Phase 91 plan 02 executed
 
 Progress: [██░░░░░░░░] 17%
 
@@ -45,6 +45,7 @@ Progress: [██░░░░░░░░] 17%
 *Updated after each plan completion*
 | Phase 89 P01 | 4min | 2 tasks | 6 files |
 | Phase 91 P01 | 13min | 2 tasks | 5 files |
+| Phase 91-singleton-recovery P02 | 5min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -59,6 +60,7 @@ Recent decisions affecting current work:
 - [Phase 91]: Module independence: recovery.py copies _point_to_ray_distance() standalone — no cross-module imports from validation.py or refinement.py
 - [Phase 91]: Staleness invalidation: per_frame_confidence and consensus_centroids set to None on groups that gain new tracklets after recovery
 - [Phase 91]: Split-assign requires both segments to match DIFFERENT groups — single-segment match leaves singleton unchanged
+- [Phase 91-singleton-recovery]: recovery_enabled guard added at stage.py call site (not just inside recover_singletons) to avoid lazy import overhead when disabled
 
 ### Pending Todos
 
@@ -73,5 +75,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-11
-Stopped at: Completed 91-01-PLAN.md
+Stopped at: Completed 91-02-PLAN.md
 Resume file: None

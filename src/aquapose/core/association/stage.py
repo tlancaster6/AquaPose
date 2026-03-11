@@ -8,6 +8,7 @@ AssociationStubStage from Phase 22.
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import Any, cast
 
@@ -85,6 +86,7 @@ class AssociationStage:
 
         # Step 1: Score all pairs
         frame_count = len(detections) if detections else None
+        t0 = time.perf_counter()
         scores = score_all_pairs(
             tracks_2d,
             forward_luts,
@@ -92,22 +94,29 @@ class AssociationStage:
             self._config.association,
             frame_count=frame_count,
         )
+        logger.info("Association scoring: %.1fs", time.perf_counter() - t0)
 
         # Step 2-3: Build constraints and cluster
+        t0 = time.perf_counter()
         mnl = build_must_not_link(tracks_2d)
         groups = cluster_tracklets(scores, tracks_2d, mnl, self._config.association)
+        logger.info("Association clustering: %.1fs", time.perf_counter() - t0)
 
         # Step 4: Group validation via multi-keypoint residuals
         if forward_luts is not None:
             from aquapose.core.association.validation import validate_groups
 
+            t0 = time.perf_counter()
             groups = validate_groups(groups, forward_luts, self._config.association)
+            logger.info("Association validation: %.1fs", time.perf_counter() - t0)
 
         # Step 5: Singleton recovery (Phase 91)
         if forward_luts is not None and self._config.association.recovery_enabled:
             from aquapose.core.association.recovery import recover_singletons
 
+            t0 = time.perf_counter()
             groups = recover_singletons(groups, forward_luts, self._config.association)
+            logger.info("Association recovery: %.1fs", time.perf_counter() - t0)
 
         context.tracklet_groups = groups
         return context

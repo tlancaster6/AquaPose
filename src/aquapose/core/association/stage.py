@@ -104,7 +104,7 @@ class AssociationStage:
             groups = validate_groups(groups, forward_luts, self._config.association)
 
         # Step 5: Singleton recovery (Phase 91)
-        if forward_luts is not None:
+        if forward_luts is not None and self._config.association.recovery_enabled:
             from aquapose.core.association.recovery import recover_singletons
 
             groups = recover_singletons(groups, forward_luts, self._config.association)

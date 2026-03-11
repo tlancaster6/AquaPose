@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.7
 milestone_name: Improved Tracking
 status: unknown
-last_updated: "2026-03-11T03:08:34.105Z"
+last_updated: "2026-03-11T03:19:39.535Z"
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 11
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # Project State
@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-10)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.7 Improved Tracking — Phase 82 (Association Upgrade: Keypoint Centroid)
+**Current focus:** v3.7 Improved Tracking — Phase 83 (Custom Keypoint Tracker)
 
 ## Current Position
 
-Phase: 82 of v3.7 (Association Upgrade — Keypoint Centroid)
-Plan: 01 complete
-Status: Phase 82-01 complete — keypoint centroid extraction implemented in tracker, config threaded pipeline→TrackingStage→OcSortTracker→_TrackletBuilder, all tests passing
-Last activity: 2026-03-11 — Phase 82-01 complete, spine1 (index 2) keypoint centroid with OBB fallback, 36 tracking tests green
+Phase: 83 of v3.7 (Custom Keypoint Tracker — bidirectional merge)
+Plan: 02 complete
+Status: Phase 83-02 complete — bidirectional merge, gap interpolation, KeypointTracker public API, TrackingConfig extended, TrackingStage wired, all 1179 tests passing
+Last activity: 2026-03-11 — Phase 83-02 complete, pipeline can now run with tracker_kind: keypoint_bidi
 
 Progress: [████████░░] 80%
 
@@ -43,6 +43,7 @@ Progress: [████████░░] 80%
 | 78 | 2 | ~20min | ~10min |
 | 82 | 1 | ~5min | ~5min |
 | Phase 83-custom-tracker-implementation P01 | 9 | 1 tasks | 5 files |
+| Phase 83 P02 | 501 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,8 @@ Recent decisions affecting current work:
 - [Phase 82-01]: centroid_confidence_floor=0.3 matches pose backend default; interior keypoints reliably exceed threshold in production
 - [Phase 83-01]: KF state dimension is 24 (6 kpts x 2D x 2), not 60 — CONTEXT.md 60-dim was conceptual shorthand
 - [Phase 83-01]: _KptTrackletBuilder independent from ocsort_wrapper._TrackletBuilder — stores keypoints+confs for Plan 02 bidirectional merge
+- [Phase 83]: KeypointTracker.get_tracklets() uses _collect_merged_builders() returning raw builders for mutable gap interpolation before Tracklet2D conversion
+- [Phase 83]: oks_sigmas not in TrackingConfig — loaded from DEFAULT_SIGMAS at construction time to avoid config/sigma coupling
 
 ### Roadmap Evolution
 
@@ -99,5 +102,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-11
-Stopped at: Completed 83-01-PLAN.md — core tracker engine: 24-dim KF, OKS/OCM cost, _SinglePassTracker, all 1151 tests passing
+Stopped at: Completed 83-02-PLAN.md — bidirectional merge, gap interpolation, KeypointTracker, TrackingConfig extension, all 1179 tests passing
 Resume file: N/A

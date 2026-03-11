@@ -33,16 +33,16 @@ Requirements for the Improved Tracking milestone. Each maps to roadmap phases.
 
 ### Tracking
 
-- [ ] **TRACK-01**: Custom keypoint tracker runs forward and backward OC-SORT passes over each chunk
+- [x] **TRACK-01**: Custom keypoint tracker runs forward and backward OC-SORT passes over each chunk
 - [x] **TRACK-02**: OKS-based association cost replaces IoU on OBBs
 - [x] **TRACK-03**: OCM direction consistency term using spine heading vector
 - [x] **TRACK-04**: Kalman filter tracks keypoint positions and velocities (60-dim or 24-dim state)
-- [ ] **TRACK-05**: Asymmetric track birth/death based on frame-edge proximity
+- [x] **TRACK-05**: Asymmetric track birth/death based on frame-edge proximity
 - [x] **TRACK-06**: ORU (observation-centric re-update) and OCR (observation-centric recovery) mechanisms
-- [ ] **TRACK-07**: Bidirectional merge combines forward and backward tracklets with overlap-based matching
-- [ ] **TRACK-08**: Chunk boundary handoff via serialized KF state (mean + covariance + observation history)
-- [ ] **TRACK-09**: Gap interpolation fills small tracklet gaps via spline interpolation
-- [ ] **TRACK-10**: Secondary BYTE-style association pass for low-confidence detections (conditional — implement if INV-04 reveals significant low-confidence valid detections)
+- [x] **TRACK-07**: Bidirectional merge combines forward and backward tracklets with overlap-based matching
+- [x] **TRACK-08**: Chunk boundary handoff via serialized KF state (mean + covariance + observation history)
+- [x] **TRACK-09**: Gap interpolation fills small tracklet gaps via spline interpolation
+- [x] **TRACK-10**: Secondary BYTE-style association pass for low-confidence detections (conditional — implement if INV-04 reveals significant low-confidence valid detections)
 
 ### Association
 
@@ -91,16 +91,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PIPE-01 | Phase 81 | Complete |
 | PIPE-02 | Phase 81 | Complete |
 | PIPE-03 | Phase 81 | Complete |
-| TRACK-01 | Phase 83 | Pending |
+| TRACK-01 | Phase 83 | Complete |
 | TRACK-02 | Phase 83 | Complete |
 | TRACK-03 | Phase 83 | Complete |
 | TRACK-04 | Phase 83 | Complete |
-| TRACK-05 | Phase 83 | Pending |
+| TRACK-05 | Phase 83 | Complete |
 | TRACK-06 | Phase 83 | Complete |
-| TRACK-07 | Phase 83 | Pending |
-| TRACK-08 | Phase 83 | Pending |
-| TRACK-09 | Phase 83 | Pending |
-| TRACK-10 | Phase 83 | Pending |
+| TRACK-07 | Phase 83 | Complete |
+| TRACK-08 | Phase 83 | Complete |
+| TRACK-09 | Phase 83 | Complete |
+| TRACK-10 | Phase 83 | Complete |
 | ASSOC-01 | Phase 82 | Complete |
 | INTEG-01 | Phase 84 | Pending |
 | INTEG-02 | Phase 84 | Pending |

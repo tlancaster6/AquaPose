@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.7
 milestone_name: Improved Tracking
 status: unknown
-last_updated: "2026-03-11T01:13:48.348Z"
+last_updated: "2026-03-11T02:30:00.000Z"
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 7
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 ## Current Position
 
 Phase: 81 of v3.7 (Pipeline Reorder — Segmentation Removal)
-Plan: 01 complete
-Status: Plan 81-01 complete — v3.7 pipeline structure in place; ready for Phase 82 (keypoint-cost-association)
-Last activity: 2026-03-11 — Phase 81-01 complete, core/midline renamed to core/pose, PoseStage rewritten for in-place Detection enrichment
+Plan: 02 complete
+Status: Phase 81 complete — all segmentation/orientation dead code deleted, ReconstructionStage reads keypoints from context.detections; ready for Phase 82 (keypoint-cost-association)
+Last activity: 2026-03-11 — Phase 81-02 complete, dead code deleted, _keypoints_to_midline added to ReconstructionStage, all tests passing
 
-Progress: [████░░░░░░] 40%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -74,6 +74,8 @@ Recent decisions affecting current work:
 - [Phase 81-01]: process_batch() returns (kpts_xy, kpts_conf) tuples; PoseStage handles back-projection to full-frame coordinates
 - [Phase 81-01]: Segmentation backend retained in codebase but removed from backend registry (not user-facing)
 - [Phase 81-01]: ReconstructionStage now raises ValueError if tracklet_groups is None (removed stale annotated_detections fallback)
+- [Phase 81-02]: _keypoints_to_midline t_values=[0.0, 0.1, 0.3, 0.5, 0.7, 1.0] as module-level constant — avoids cross-module coupling with PoseConfig
+- [Phase 81-02]: tuning.py/runner.py use dual-path (detections v3.7 + annotated_detections legacy fallback) for backward compat with old diagnostic runs
 
 ### Roadmap Evolution
 
@@ -91,5 +93,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-11
-Stopped at: Completed 81-01-PLAN.md — core/midline renamed to core/pose, PoseStage enriches Detection in-place, pipeline reordered to Detection->Pose->Tracking->Association->Reconstruction
+Stopped at: Completed 81-02-PLAN.md — segmentation/orientation dead code deleted, ReconstructionStage reads keypoints from context.detections with 6→15 interpolation, all tests green
 Resume file: N/A

@@ -203,7 +203,7 @@ Full details: `.planning/milestones/v3.6-ROADMAP.md`
 - [x] **Phase 78.1: OBB & Pose Production Retrain** - Retrain detector/pose with corrected pseudo-labels in train/val split, more epochs for white-wall recall (INSERTED) — 2/2 plans complete
 - [x] **Phase 79: Occlusion Remediation (Conditional)** - skipped per Phase 78 GO decision
 - [x] **Phase 80: Baseline Metrics** - Quantitative OC-SORT tracking metrics on the perfect-tracking clip, establishing numbers to beat (completed 2026-03-11)
-- [ ] **Phase 81: Pipeline Reorder & Segmentation Removal** - Pose runs before tracking; segmentation backend removed; stage interfaces updated
+- [x] **Phase 81: Pipeline Reorder & Segmentation Removal** - Pose runs before tracking; segmentation backend removed; stage interfaces updated (completed 2026-03-11)
 - [ ] **Phase 82: Association Upgrade — Keypoint Centroid** - Cross-view association uses mid-body keypoint instead of OBB centroid
 - [ ] **Phase 83: Custom Tracker Implementation** - Bidirectional batched keypoint tracker with OKS cost, OCM direction, KF state, gap interpolation
 - [x] **Phase 84: Integration & Evaluation** - New tracker wired into pipeline, evaluated against Phase 80 baselines (completed 2026-03-11)
@@ -267,7 +267,7 @@ Plans:
   2. `backends/segmentation.py`, skeletonization code, and orientation resolution logic that only applied to segmentation are gone from the codebase — no dead imports or stale references
   3. `PipelineContext` and all stage interfaces reflect the new stage ordering and accept pose outputs from Stage 2
   4. All existing unit tests pass; any tests that depended on the old stage order or segmentation backend are updated or removed
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 81-01-PLAN.md — Rename core/midline to core/pose, reorder pipeline, update PipelineContext and Detection type
 - [ ] 81-02-PLAN.md — Delete segmentation/orientation code, update consumers, fix all tests
@@ -337,7 +337,7 @@ Phases execute in numeric order: 78 -> 79 (conditional) -> 80 -> 81 -> 82 -> 83 
 | 78.1 OBB & Pose Production Retrain | 2/2 | Complete    | 2026-03-10 | - |
 | 79. Occlusion Remediation (Conditional) | v3.7 | 0/0 | Skipped | 2026-03-10 |
 | 80. Baseline Metrics | 1/1 | Complete    | 2026-03-11 | - |
-| 81. Pipeline Reorder & Segmentation Removal | 1/2 | In Progress|  | - |
+| 81. Pipeline Reorder & Segmentation Removal | 2/2 | Complete   | 2026-03-11 | - |
 | 82. Association Upgrade — Keypoint Centroid | v3.7 | 0/TBD | Not started | - |
 | 83. Custom Tracker Implementation | v3.7 | 0/TBD | Not started | - |
 | 84. Integration & Evaluation | v3.7 | 0/TBD | Not started | - |

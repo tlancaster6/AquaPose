@@ -28,7 +28,7 @@ Requirements for the Improved Tracking milestone. Each maps to roadmap phases.
 ### Pipeline Architecture
 
 - [x] **PIPE-01**: Pose estimation runs immediately after detection (Stage 2), before tracking
-- [ ] **PIPE-02**: Segmentation midline backend removed (backends/segmentation.py, skeletonization code, orientation resolution)
+- [x] **PIPE-02**: Segmentation midline backend removed (backends/segmentation.py, skeletonization code, orientation resolution)
 - [x] **PIPE-03**: PipelineContext and stage interfaces updated for new stage ordering
 
 ### Tracking
@@ -89,7 +89,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RETRAIN-03 | Phase 78.1 | Complete |
 | RETRAIN-04 | Phase 78.1 | Complete |
 | PIPE-01 | Phase 81 | Complete |
-| PIPE-02 | Phase 81 | Pending |
+| PIPE-02 | Phase 81 | Complete |
 | PIPE-03 | Phase 81 | Complete |
 | TRACK-01 | Phase 83 | Pending |
 | TRACK-02 | Phase 83 | Pending |

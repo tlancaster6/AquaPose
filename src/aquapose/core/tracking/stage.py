@@ -1,11 +1,15 @@
 """TrackingStage — Stage 2 of the AquaPose v2.1 pipeline.
 
-Per-camera 2D tracking using OC-SORT via the boxmot package. Each camera's
-detections are tracked independently, producing Tracklet2D objects that carry
-temporal identity for the Association stage (Stage 3).
+Per-camera 2D tracking producing Tracklet2D objects that carry temporal
+identity for the Association stage (Stage 3).
 
-All boxmot internals are fully isolated in aquapose.tracking.ocsort_wrapper.
-This stage only imports from that wrapper and from the project's own contracts.
+Supports two tracker backends dispatched by ``config.tracker_kind``:
+
+- ``"ocsort"``: OC-SORT via the boxmot package (default). All boxmot
+  internals are fully isolated in aquapose.tracking.ocsort_wrapper.
+- ``"keypoint_bidi"``: Custom bidirectional keypoint tracker from
+  aquapose.core.tracking.keypoint_tracker. Runs forward+backward passes
+  and merges via Hungarian OKS assignment.
 """
 
 from __future__ import annotations
@@ -64,13 +68,18 @@ class TrackingStage:
         context: PipelineContext,
         carry: object | None = None,
     ) -> tuple[PipelineContext, ChunkHandoff]:
-        """Run per-camera OC-SORT tracking on this batch of frames.
+        """Run per-camera tracking on this batch of frames.
 
         Reads ``context.detections`` (``list[dict[str, list[Detection]]]``) and
         ``context.camera_ids`` (``list[str]``). For each camera, restores or
-        creates an OcSortTracker, feeds all frames to the tracker, then collects
-        confirmed Tracklet2D objects. A new ``ChunkHandoff`` is built from the
-        per-camera tracker states for the next chunk.
+        creates a tracker, feeds all frames, then collects confirmed Tracklet2D
+        objects. A new ``ChunkHandoff`` is built from the per-camera tracker
+        states for the next chunk.
+
+        The tracker backend is selected by ``config.tracker_kind``:
+
+        - ``"ocsort"``: OcSortTracker (default, boxmot-backed).
+        - ``"keypoint_bidi"``: KeypointTracker (custom bidirectional KF).
 
         Args:
             context: Accumulated pipeline state from the Detection stage.
@@ -85,7 +94,7 @@ class TrackingStage:
             ``new_carry.tracks_2d_state`` holds per-camera tracker states.
 
         """
-        from aquapose.core.tracking.ocsort_wrapper import OcSortTracker
+        tracker_kind = getattr(self._config, "tracker_kind", "ocsort")
 
         prev_tracks_2d_state: dict = {}
         if carry is not None and hasattr(carry, "tracks_2d_state"):
@@ -94,23 +103,46 @@ class TrackingStage:
         detections: list = context.detections or []
         camera_ids: list[str] = context.camera_ids or []
 
-        # Build or restore one OcSortTracker per camera
-        trackers: dict[str, OcSortTracker] = {}
-        for cam_id in camera_ids:
-            if cam_id in prev_tracks_2d_state:
-                trackers[cam_id] = OcSortTracker.from_state(
-                    cam_id, prev_tracks_2d_state[cam_id]
-                )
-            else:
-                trackers[cam_id] = OcSortTracker(
-                    camera_id=cam_id,
-                    max_age=self._config.max_coast_frames,
-                    min_hits=self._config.n_init,
-                    iou_threshold=self._config.iou_threshold,
-                    det_thresh=self._config.det_thresh,
-                    centroid_keypoint_index=self._centroid_keypoint_index,
-                    centroid_confidence_floor=self._centroid_confidence_floor,
-                )
+        if tracker_kind == "keypoint_bidi":
+            from aquapose.core.tracking.keypoint_tracker import KeypointTracker
+
+            trackers: dict[str, Any] = {}
+            for cam_id in camera_ids:
+                if cam_id in prev_tracks_2d_state:
+                    trackers[cam_id] = KeypointTracker.from_state(
+                        cam_id, prev_tracks_2d_state[cam_id]
+                    )
+                else:
+                    trackers[cam_id] = KeypointTracker(
+                        camera_id=cam_id,
+                        max_age=self._config.max_coast_frames,
+                        n_init=self._config.n_init,
+                        det_thresh=self._config.det_thresh,
+                        base_r=self._config.base_r,
+                        lambda_ocm=self._config.lambda_ocm,
+                        max_gap_frames=self._config.max_gap_frames,
+                        centroid_keypoint_index=self._centroid_keypoint_index,
+                        centroid_confidence_floor=self._centroid_confidence_floor,
+                    )
+        else:
+            from aquapose.core.tracking.ocsort_wrapper import OcSortTracker
+
+            trackers = {}
+            for cam_id in camera_ids:
+                if cam_id in prev_tracks_2d_state:
+                    trackers[cam_id] = OcSortTracker.from_state(
+                        cam_id, prev_tracks_2d_state[cam_id]
+                    )
+                else:
+                    trackers[cam_id] = OcSortTracker(
+                        camera_id=cam_id,
+                        max_age=self._config.max_coast_frames,
+                        min_hits=self._config.n_init,
+                        iou_threshold=self._config.iou_threshold,
+                        det_thresh=self._config.det_thresh,
+                        centroid_keypoint_index=self._centroid_keypoint_index,
+                        centroid_confidence_floor=self._centroid_confidence_floor,
+                    )
 
         # Feed all frames to each camera's tracker
         for frame_idx, frame_dets in enumerate(detections):

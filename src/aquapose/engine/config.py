@@ -173,19 +173,32 @@ class AssociationConfig:
 class TrackingConfig:
     """Config for the 2D Tracking stage (Stage 2).
 
-    Controls the OC-SORT tracker used for per-camera 2D fish tracking.
+    Controls the tracker used for per-camera 2D fish tracking.
 
     Attributes:
-        tracker_kind: Tracker backend to use. Currently only ``"ocsort"`` is
-            implemented; ``"bytetrack"`` and ``"sort"`` are reserved for
-            future use.
+        tracker_kind: Tracker backend. ``"ocsort"`` uses OC-SORT (boxmot).
+            ``"keypoint_bidi"`` uses the custom bidirectional keypoint tracker.
         max_coast_frames: Maximum frames to coast (Kalman predict with no
-            observation) before dropping a track. Maps to boxmot ``max_age``.
+            observation) before dropping a track. Maps to boxmot ``max_age``
+            for OC-SORT and ``max_age`` for ``keypoint_bidi``.
         n_init: Minimum number of matched detection frames before a track is
             confirmed and included in stage output. Maps to boxmot
-            ``min_hits``.
+            ``min_hits`` for OC-SORT.
         iou_threshold: IoU threshold for matching detections to existing tracks.
+            Used by ``"ocsort"`` only; ignored by ``"keypoint_bidi"``.
         det_thresh: Minimum detection confidence forwarded to the tracker.
+        base_r: KF base measurement noise variance for ``"keypoint_bidi"``.
+            Ignored when ``tracker_kind="ocsort"``. Default 10.0.
+        lambda_ocm: OCM weight in the cost matrix for ``"keypoint_bidi"``.
+            Ignored when ``tracker_kind="ocsort"``. Default 0.2.
+        max_gap_frames: Maximum gap size (frames) for spline interpolation in
+            ``"keypoint_bidi"``. Ignored when ``tracker_kind="ocsort"``.
+            Default 5.
+
+    Note:
+        ``oks_sigmas`` for the keypoint tracker are loaded from
+        ``keypoint_sigmas.DEFAULT_SIGMAS`` and not stored in config, to avoid
+        coupling config serialization to the sigma array format.
     """
 
     tracker_kind: str = "ocsort"
@@ -193,6 +206,19 @@ class TrackingConfig:
     n_init: int = 3
     iou_threshold: float = 0.3
     det_thresh: float = 0.5
+    # --- keypoint_bidi fields (ignored when tracker_kind="ocsort") ---
+    base_r: float = 10.0
+    lambda_ocm: float = 0.2
+    max_gap_frames: int = 5
+
+    def __post_init__(self) -> None:
+        """Validate tracker_kind on construction."""
+        valid_kinds = {"ocsort", "keypoint_bidi"}
+        if self.tracker_kind not in valid_kinds:
+            raise ValueError(
+                f"Unknown tracker_kind: {self.tracker_kind!r}. "
+                f"Available: {sorted(valid_kinds)}"
+            )
 
 
 @dataclass(frozen=True)

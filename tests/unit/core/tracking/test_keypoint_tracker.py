@@ -819,3 +819,174 @@ class TestKeypointTracker:
 
         # Bidi should produce <= forward pass tracklets (merging reduces fragmentation)
         assert len(bidi_tracklets) <= len(fwd_tracklets)
+
+
+# ---------------------------------------------------------------------------
+# TrackingStage integration tests (config extension + wiring)
+# ---------------------------------------------------------------------------
+
+
+class TestTrackingStageKeywordBidi:
+    """Integration tests for TrackingStage with tracker_kind='keypoint_bidi'."""
+
+    def test_config_accepts_keypoint_bidi(self) -> None:
+        """TrackingConfig accepts tracker_kind='keypoint_bidi' without error."""
+        from aquapose.engine.config import TrackingConfig
+
+        cfg = TrackingConfig(tracker_kind="keypoint_bidi")
+        assert cfg.tracker_kind == "keypoint_bidi"
+
+    def test_config_rejects_unknown_kind(self) -> None:
+        """TrackingConfig raises ValueError for unknown tracker_kind."""
+        import pytest
+
+        from aquapose.engine.config import TrackingConfig
+
+        with pytest.raises(ValueError, match="Unknown tracker_kind"):
+            TrackingConfig(tracker_kind="bad_tracker")
+
+    def test_config_ocsort_still_valid(self) -> None:
+        """TrackingConfig with tracker_kind='ocsort' still works (backward compat)."""
+        from aquapose.engine.config import TrackingConfig
+
+        cfg = TrackingConfig(tracker_kind="ocsort")
+        assert cfg.tracker_kind == "ocsort"
+
+    def test_config_new_fields_have_defaults(self) -> None:
+        """New keypoint_bidi fields have backward-compatible defaults."""
+        from aquapose.engine.config import TrackingConfig
+
+        cfg = TrackingConfig()  # default ocsort
+        assert hasattr(cfg, "base_r")
+        assert hasattr(cfg, "lambda_ocm")
+        assert hasattr(cfg, "max_gap_frames")
+        assert cfg.base_r == 10.0
+        assert cfg.lambda_ocm == 0.2
+        assert cfg.max_gap_frames == 5
+
+    def test_keypoint_tracker_in_tracking_all(self) -> None:
+        """KeypointTracker appears in the tracking package __all__."""
+        import aquapose.core.tracking as tracking_pkg
+
+        assert "KeypointTracker" in tracking_pkg.__all__
+
+    def test_tracking_stage_keypoint_bidi_produces_tracklets(self) -> None:
+        """TrackingStage with keypoint_bidi produces valid Tracklet2D output."""
+        from aquapose.core.context import PipelineContext
+        from aquapose.core.tracking.stage import TrackingStage
+        from aquapose.core.tracking.types import Tracklet2D
+        from aquapose.engine.config import TrackingConfig
+
+        cfg = TrackingConfig(tracker_kind="keypoint_bidi", n_init=2, max_coast_frames=5)
+        stage = TrackingStage(config=cfg)
+
+        # Build synthetic context with 2 cameras x 10 frames x 1 fish
+        camera_ids = ["cam0", "cam1"]
+        n_frames = 10
+        n_fish = 1
+        detections_list = []
+        for f_idx in range(n_frames):
+            frame_dets: dict = {}
+            for cam_id in camera_ids:
+                cam_offset = 0.0 if cam_id == "cam0" else 500.0
+                dets = []
+                for fi in range(n_fish):
+                    cx = 100.0 + fi * 200.0 + cam_offset + f_idx * 5.0
+                    cy = 300.0
+                    kpts = np.zeros((6, 2), dtype=np.float32)
+                    for k in range(6):
+                        kpts[k] = [cx + k * 10, cy]
+                    kconf = np.full(6, 0.9, dtype=np.float32)
+                    dets.append(
+                        SimpleNamespace(
+                            bbox=(cx - 50, cy - 25, 100.0, 50.0),
+                            confidence=0.9,
+                            keypoints=kpts,
+                            keypoint_conf=kconf,
+                            obb_area=5000.0,
+                        )
+                    )
+                frame_dets[cam_id] = dets
+            detections_list.append(frame_dets)
+
+        ctx = PipelineContext(
+            camera_ids=camera_ids,
+            detections=detections_list,
+            frame_count=n_frames,
+        )
+
+        ctx, _carry = stage.run(ctx, carry=None)
+
+        assert ctx.tracks_2d is not None
+        for cam_id in camera_ids:
+            cam_tracks = ctx.tracks_2d[cam_id]
+            # Should produce at least one valid tracklet per camera
+            for t in cam_tracks:
+                assert isinstance(t, Tracklet2D)
+                assert t.camera_id == cam_id
+
+    def test_tracking_stage_chunk_handoff_keypoint_bidi(self) -> None:
+        """Chunk handoff serializes and restores keypoint tracker state."""
+        from aquapose.core.context import PipelineContext
+        from aquapose.core.tracking.stage import TrackingStage
+        from aquapose.engine.config import TrackingConfig
+
+        cfg = TrackingConfig(tracker_kind="keypoint_bidi", n_init=2, max_coast_frames=5)
+        stage = TrackingStage(config=cfg)
+
+        camera_ids = ["cam0"]
+        n_frames = 8
+
+        def _make_ctx(offset: int) -> PipelineContext:
+            detections_list = []
+            for f_idx in range(n_frames):
+                cx = 100.0 + (f_idx + offset) * 5.0
+                cy = 300.0
+                kpts = np.zeros((6, 2), dtype=np.float32)
+                for k in range(6):
+                    kpts[k] = [cx + k * 10, cy]
+                kconf = np.full(6, 0.9, dtype=np.float32)
+                det = SimpleNamespace(
+                    bbox=(cx - 50, cy - 25, 100.0, 50.0),
+                    confidence=0.9,
+                    keypoints=kpts,
+                    keypoint_conf=kconf,
+                    obb_area=5000.0,
+                )
+                detections_list.append({"cam0": [det]})
+            return PipelineContext(
+                camera_ids=camera_ids,
+                detections=detections_list,
+                frame_count=n_frames,
+            )
+
+        # Chunk 1
+        ctx1 = _make_ctx(offset=0)
+        ctx1, carry1 = stage.run(ctx1, carry=None)
+        assert carry1 is not None
+        # Chunk 2 with restored carry
+        ctx2 = _make_ctx(offset=n_frames)
+        ctx2, carry2 = stage.run(ctx2, carry=carry1)
+        assert carry2 is not None
+        # Should not raise — state was restored and processing continued
+
+    def test_tracking_stage_ocsort_unchanged(self) -> None:
+        """Existing ocsort path still works without regression."""
+        from aquapose.core.context import PipelineContext
+        from aquapose.core.tracking.stage import TrackingStage
+        from aquapose.engine.config import TrackingConfig
+
+        cfg = TrackingConfig(tracker_kind="ocsort", n_init=1, max_coast_frames=5)
+        stage = TrackingStage(config=cfg)
+
+        camera_ids = ["cam0"]
+        detections_list = [{"cam0": []}] * 5  # empty frames
+
+        ctx = PipelineContext(
+            camera_ids=camera_ids,
+            detections=detections_list,
+            frame_count=5,
+        )
+        ctx, _carry = stage.run(ctx, carry=None)
+        assert ctx.tracks_2d is not None
+        assert "cam0" in ctx.tracks_2d

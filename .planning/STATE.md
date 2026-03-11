@@ -1,9 +1,9 @@
 ---
 gsd_state_version: 1.0
-milestone: none
-milestone_name: none
-status: between_milestones
-last_updated: "2026-03-11T17:15:35.023Z"
+milestone: v3.8
+milestone_name: Improved Association
+status: defining_requirements
+last_updated: "2026-03-11T18:00:00.000Z"
 progress:
   total_phases: 0
   completed_phases: 0
@@ -18,13 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Between milestones — v3.7 shipped, next milestone TBD
+**Current focus:** v3.8 Improved Association — multi-keypoint scoring, swap detection, singleton recovery
 
 ## Current Position
 
-Phase: N/A — between milestones
-Status: v3.7 Improved Tracking shipped 2026-03-11
-Last activity: 2026-03-11 — milestone completion
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-11 — Milestone v3.8 started
 
 ## Accumulated Context
 
@@ -38,11 +39,11 @@ All v3.7 decisions archived to `.planning/milestones/v3.7-ROADMAP.md` and record
 
 ### Blockers/Concerns
 
-- ASSOC-01 keypoint centroid deferred — functional in Phase 82, lost in Phase 85 BoxMot removal, deferred to TRACK-V2-04
+- ASSOC-01 keypoint centroid deferred — functional in Phase 82, lost in Phase 85 BoxMot removal. This milestone directly addresses it via multi-keypoint scoring.
 - Algae domain shift between manual annotations (clean tank) and current conditions
 
 ## Session Continuity
 
 Last session: 2026-03-11
-Stopped at: v3.7 milestone completed and archived
+Stopped at: v3.8 milestone initialization
 Resume file: N/A

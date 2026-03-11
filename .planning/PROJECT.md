@@ -124,7 +124,16 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ### Active
 
-(No active milestone — use `/gsd:new-milestone` to start next)
+## Current Milestone: v3.8 Improved Association
+
+**Goal:** Replace single-centroid ray scoring with multi-keypoint association, add swap-aware group validation and singleton recovery, and tune on real data to reduce the ~27% singleton rate.
+
+**Target features:**
+- Multi-keypoint pairwise scoring (6 keypoints per detection, confidence-filtered)
+- Group validation with temporal changepoint detection for upstream ID swap splitting
+- Singleton recovery with swap-aware split-and-assign
+- Fragment merging and full refinement removed (simplification)
+- Parameter tuning pass with real-data evaluation against v3.7 baseline
 
 ### Out of Scope
 
@@ -272,4 +281,4 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Bidirectional merge removed | Forward+backward merge added complexity without reducing fragmentation (44 vs 42 tracks) | ✓ Good — simpler single-pass architecture |
 
 ---
-*Last updated: 2026-03-11 after v3.7 Improved Tracking milestone completed*
+*Last updated: 2026-03-11 after v3.8 Improved Association milestone started*

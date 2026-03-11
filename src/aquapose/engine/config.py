@@ -511,6 +511,7 @@ _RENAME_HINTS: dict[str, str] = {
     "stop_frame": "max_frames on frame source (set via CLI --set or orchestrator)",
     "model_path": "weights_path",
     "n_points": "n_sample_points (top-level)",
+    "iou_threshold": "removed (OC-SORT only; keypoint_bidi does not use IoU matching)",
 }
 
 

@@ -164,6 +164,16 @@ class AssociationConfig:
         aggregation_method: Method to aggregate per-keypoint distances within a
             frame. Currently only ``"mean"`` is supported; plumbing for future
             alternatives (median, trimmed_mean). Default ``"mean"``.
+        recovery_enabled: Toggle to skip singleton recovery entirely. Default True.
+        recovery_residual_threshold: Maximum mean ray-to-3D residual (metres) for a
+            singleton to be assigned to a group. Default 0.025 (same as
+            eviction_reproj_threshold — allows independent tuning in Phase 92).
+        recovery_min_shared_frames: Minimum shared frames between singleton and group
+            for scoring to be attempted. Default 3 (same as t_min).
+        recovery_min_segment_length: Minimum frames per segment for the binary
+            split-assign sweep. Singletons shorter than
+            2 * recovery_min_segment_length skip the sweep. Default 10
+            (same as min_segment_length).
     """
 
     ray_distance_threshold: float = 0.03
@@ -182,6 +192,10 @@ class AssociationConfig:
     centroid_confidence_floor: float = 0.3
     keypoint_confidence_floor: float = 0.3
     aggregation_method: str = "mean"
+    recovery_enabled: bool = True
+    recovery_residual_threshold: float = 0.025
+    recovery_min_shared_frames: int = 3
+    recovery_min_segment_length: int = 10
 
 
 @dataclass(frozen=True)

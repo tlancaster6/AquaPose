@@ -9,6 +9,10 @@ from aquapose.core.association.clustering import (
     build_must_not_link,
     cluster_tracklets,
 )
+from aquapose.core.association.recovery import (
+    RecoveryConfigLike,
+    recover_singletons,
+)
 from aquapose.core.association.scoring import (
     AssociationConfigLike,
     ray_ray_closest_point,
@@ -33,12 +37,14 @@ __all__ = [
     "AssociationStage",
     "ClusteringConfigLike",
     "HandoffState",
+    "RecoveryConfigLike",
     "TrackletGroup",
     "ValidationConfigLike",
     "build_must_not_link",
     "cluster_tracklets",
     "ray_ray_closest_point",
     "ray_ray_closest_point_batch",
+    "recover_singletons",
     "score_all_pairs",
     "score_tracklet_pair",
     "validate_groups",

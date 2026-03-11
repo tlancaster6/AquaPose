@@ -6,8 +6,8 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
-from aquapose.core.association.recovery import recover_singletons
 
+from aquapose.core.association.recovery import recover_singletons
 from aquapose.core.association.types import TrackletGroup
 from aquapose.core.tracking.types import Tracklet2D
 
@@ -581,122 +581,159 @@ class TestSplitAssign:
     """Test that split-assign recovers temporally-split singletons."""
 
     def test_split_assign_finds_correct_split_point(self) -> None:
-        """Singleton with first half matching group A, second half matching group B is split."""
-        frames_a = tuple(range(0, 20))
-        frames_b = tuple(range(10, 30))  # group B covers frames 10-29
-        n_a = len(frames_a)
-        n_b = len(frames_b)
+        """Singleton with bad whole score but good per-segment scores is split.
 
-        luts = _converging_luts()
-        luts["cam_d"] = MockForwardLUT(
-            "cam_d",
-            np.array([0.0, -1.0, 0.0]),
-            np.array([0.0, 1.0, 0.5]),
+        Geometry:
+        - Group A: cam_a, cam_b — frames 0-29 — converge near point_a = (0, 0, ~0.5)
+        - Group B: cam_e, cam_f — frames 0-29 — converge near point_b = (0, 0, ~1.5)
+          (different 3D location)
+        - Singleton cam_d: frames 0-29.
+          * First half (frames 0-14): rays pass near point_a (low residual vs group_a,
+            high residual vs group_b)
+          * Second half (frames 15-29): rays pass near point_b (low residual vs group_b,
+            high residual vs group_a)
+        - Mean over all 30 frames: both groups > threshold
+        - "Before" segment (0-14): group_a passes
+        - "After" segment (15-29): group_b passes
+        """
+        n_frames = 30
+        all_frames = tuple(range(n_frames))
+        half = n_frames // 2  # 15
+        n_g = n_frames
+
+        # Group A converges near (0, 0, ~0.5) — same as the default converging luts
+        # Group B converges near (0, 0, ~1.5) — shifted by using different origins
+
+        # Group A cameras (cam_a, cam_b): converge near z=0.5
+        luts: dict[str, MockForwardLUT] = {
+            "cam_a": MockForwardLUT(
+                "cam_a",
+                np.array([1.0, 0.0, 0.0]),
+                np.array([-1.0, 0.0, 0.5]),
+            ),
+            "cam_b": MockForwardLUT(
+                "cam_b",
+                np.array([-1.0, 0.0, 0.0]),
+                np.array([1.0, 0.0, 0.5]),
+            ),
+        }
+
+        # Group B cameras (cam_e, cam_f): start at z=3 and converge near z=1.5
+        # origin at z=3, dir pointing to (0,0,1.5), i.e. dir=(-1,0,-1.5)/norm from (1,0,3)
+        luts["cam_e"] = MockForwardLUT(
+            "cam_e",
+            np.array([1.0, 0.0, 3.0]),
+            np.array([-1.0, 0.0, -1.5]),
+        )
+        luts["cam_f"] = MockForwardLUT(
+            "cam_f",
+            np.array([-1.0, 0.0, 3.0]),
+            np.array([1.0, 0.0, -1.5]),
         )
 
-        # Group A: fish 0, frames 0-19 (cam_a, cam_b, cam_c converge)
         group_a = TrackletGroup(
             fish_id=0,
             tracklets=(
                 _make_tracklet(
                     "cam_a",
                     100,
-                    frames_a,
-                    keypoints=_make_keypoints(n_a),
-                    keypoint_conf=_make_keypoint_conf(n_a),
+                    all_frames,
+                    keypoints=_make_keypoints(n_g),
+                    keypoint_conf=_make_keypoint_conf(n_g),
                 ),
                 _make_tracklet(
                     "cam_b",
                     200,
-                    frames_a,
-                    keypoints=_make_keypoints(n_a),
-                    keypoint_conf=_make_keypoint_conf(n_a),
-                ),
-                _make_tracklet(
-                    "cam_c",
-                    300,
-                    frames_a,
-                    keypoints=_make_keypoints(n_a),
-                    keypoint_conf=_make_keypoint_conf(n_a),
+                    all_frames,
+                    keypoints=_make_keypoints(n_g),
+                    keypoint_conf=_make_keypoint_conf(n_g),
                 ),
             ),
             confidence=0.9,
         )
 
-        # Group B: fish 1, frames 10-29. cam_a2/b2/c2 are different IDs but cam_b and cam_c
-        # Use cam_a2 = separate LUT that also converges
-        luts["cam_a2"] = MockForwardLUT(
-            "cam_a2",
-            np.array([1.0, 0.0, 0.0]),
-            np.array([-1.0, 0.0, 0.5]),
-        )
-        luts["cam_b2"] = MockForwardLUT(
-            "cam_b2",
-            np.array([-1.0, 0.0, 0.0]),
-            np.array([1.0, 0.0, 0.5]),
-        )
-        luts["cam_c2"] = MockForwardLUT(
-            "cam_c2",
-            np.array([0.0, 1.0, 0.0]),
-            np.array([0.0, -1.0, 0.5]),
-        )
         group_b = TrackletGroup(
             fish_id=1,
             tracklets=(
                 _make_tracklet(
-                    "cam_a2",
+                    "cam_e",
                     101,
-                    frames_b,
-                    keypoints=_make_keypoints(n_b),
-                    keypoint_conf=_make_keypoint_conf(n_b),
+                    all_frames,
+                    keypoints=_make_keypoints(n_g),
+                    keypoint_conf=_make_keypoint_conf(n_g),
                 ),
                 _make_tracklet(
-                    "cam_b2",
+                    "cam_f",
                     201,
-                    frames_b,
-                    keypoints=_make_keypoints(n_b),
-                    keypoint_conf=_make_keypoint_conf(n_b),
-                ),
-                _make_tracklet(
-                    "cam_c2",
-                    301,
-                    frames_b,
-                    keypoints=_make_keypoints(n_b),
-                    keypoint_conf=_make_keypoint_conf(n_b),
+                    all_frames,
+                    keypoints=_make_keypoints(n_g),
+                    keypoint_conf=_make_keypoint_conf(n_g),
                 ),
             ),
             confidence=0.9,
         )
 
-        # Singleton from cam_d spanning frames 0-29: should be split into
-        # [0-14] -> group_a and [15-29] -> group_b (or similar split)
-        all_frames = tuple(range(0, 30))
-        n_all = len(all_frames)
+        # Singleton cam_d:
+        # - frames 0-14: pixel (0,0) -> ray passing near point_a (matches group_a)
+        # - frames 15-29: pixel (500,500) -> ray passing near point_b (matches group_b)
+        #
+        # cam_a intersects cam_b near (0, 0, 0.5)
+        # cam_e intersects cam_f near (0, 0, 1.5)
+        #
+        # cam_d pixel_fn:
+        #   px<100: origin=(0, -1, 0), dir=(0, 1, 0.5) -> passes near (0,0,0.5) = point_a
+        #   px>=100: origin=(0, -1, 3.0), dir=(0, 1, -1.5) -> passes near (0,0,1.5) = point_b
+
+        def cam_d_pixel_fn(px: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+            """Return ray through point_a for px<100, through point_b for px>=100."""
+            if float(px[0]) < 100:
+                # Ray passing near (0, 0, 0.5)
+                return np.array([0.0, -1.0, 0.0]), np.array([0.0, 1.0, 0.5])
+            else:
+                # Ray passing near (0, 0, 1.5)
+                return np.array([0.0, -1.0, 3.0]), np.array([0.0, 1.0, -1.5])
+
+        luts["cam_d"] = MockForwardLUT(
+            "cam_d",
+            np.array([0.0, -1.0, 0.0]),
+            np.array([0.0, 1.0, 0.5]),
+            pixel_fn=cam_d_pixel_fn,
+        )
+
+        # Keypoints: first half at (0,0) -> ray near point_a; second half at (500,500) -> ray near point_b
+        kpts_singleton = np.zeros((n_frames, 6, 2), dtype=np.float32)
+        kpts_singleton[half:, :, :] = 500.0
+
         singleton_tracklet = _make_tracklet(
             "cam_d",
             999,
             all_frames,
-            keypoints=_make_keypoints(n_all),
-            keypoint_conf=_make_keypoint_conf(n_all),
+            keypoints=kpts_singleton,
+            keypoint_conf=_make_keypoint_conf(n_frames),
         )
         singleton = TrackletGroup(
             fish_id=2, tracklets=(singleton_tracklet,), confidence=0.1
         )
 
+        # Threshold = 0.5m:
+        # - "before" segment vs group_a: rays near point_a, residual ~0 -> passes
+        # - "after" segment vs group_b: rays near point_b, residual ~0 -> passes
+        # - whole singleton vs group_a: mean of (near 0) + (far from point_a) > 0.5 -> fails
+        # - whole singleton vs group_b: mean of (far from point_b) + (near 0) > 0.5 -> fails
+        # => whole-assign fails, split-assign succeeds
         config = MockRecoveryConfig(
-            recovery_residual_threshold=5.0,
+            recovery_residual_threshold=0.5,
             recovery_min_shared_frames=1,
             recovery_min_segment_length=3,
         )
         result = recover_singletons([group_a, group_b, singleton], luts, config)
 
-        # Both multi-groups should have grown by some tracklets from the split
-        multi_groups = [g for g in result if len(g.tracklets) > 1]
-        assert len(multi_groups) == 2
-        # Total tracklet count should have increased (split singleton absorbed)
-        total_tracklets = sum(len(g.tracklets) for g in result)
-        # Original was 3+3+1=7, after split-assign: 3+1 + 3+1 = 8 or more
-        assert total_tracklets > 7
+        # At least one group should have gained a segment (4 tracklets)
+        grew = any(len(g.tracklets) > 2 for g in result)
+        assert grew, "Expected at least one group to gain a segment from split-assign"
+        # No singletons remaining if both segments matched
+        singletons_out = [g for g in result if len(g.tracklets) == 1]
+        assert len(singletons_out) == 0, "Expected both segments to be absorbed"
 
     def test_split_assign_requires_both_segments_to_match_different_groups(
         self,
@@ -731,15 +768,18 @@ class TestSplitAssign:
         assert len(singletons_out) == 1
 
     def test_split_assign_skips_short_singletons(self) -> None:
-        """Short singletons below 2*min_segment_length skip split sweep."""
+        """Short singletons below 2*min_segment_length skip split sweep.
+
+        Uses a divergent singleton so that whole-assign also fails
+        (residual > threshold). The singleton has only 5 frames but
+        min_segment_length=3 requires 6+ for split sweep. It should
+        remain as a singleton — neither whole-assigned nor split.
+        """
         frames = tuple(range(0, 5))  # 5 frames, min_segment_length=3 -> skip (5 < 6)
         n = len(frames)
         luts = _converging_luts()
-        luts["cam_d"] = MockForwardLUT(
-            "cam_d",
-            np.array([0.0, -1.0, 0.0]),
-            np.array([0.0, 1.0, 0.5]),
-        )
+        # Divergent lut: singleton rays miss the group's convergence point
+        luts["cam_d"] = _divergent_lut("cam_d")
 
         group = _make_multi_group(tuple(range(0, 5)), luts, fish_id=0)
         singleton_tracklet = _make_tracklet(
@@ -752,14 +792,16 @@ class TestSplitAssign:
         singleton = TrackletGroup(
             fish_id=1, tracklets=(singleton_tracklet,), confidence=0.1
         )
+        # Tight threshold so whole-assign fails (divergent rays give large residual)
+        # and split-assign is skipped because len(frames)=5 < 2*min_segment_length=6
         config = MockRecoveryConfig(
-            recovery_residual_threshold=0.001,  # too tight for whole assign
+            recovery_residual_threshold=1.0,
             recovery_min_shared_frames=1,
             recovery_min_segment_length=3,  # 5 < 2*3=6, so skip split
         )
         result = recover_singletons([group, singleton], luts, config)
 
-        # Singleton can't be split (too short), should remain
+        # Singleton can't be split (too short) and diverges too much for whole-assign
         singletons_out = [g for g in result if len(g.tracklets) == 1]
         assert len(singletons_out) == 1
 

@@ -1,8 +1,8 @@
 """Unit tests for keypoint_tracker module.
 
 Tests cover: _KalmanFilter, compute_oks_matrix, compute_ocm_matrix,
-build_cost_matrix, _KFTrack, _SinglePassTracker, merge_forward_backward,
-interpolate_gaps, KeypointTracker.
+build_cost_matrix, _KFTrack, _SinglePassTracker, interpolate_gaps,
+KeypointTracker.
 """
 
 from __future__ import annotations
@@ -22,7 +22,6 @@ from aquapose.core.tracking.keypoint_tracker import (
     compute_ocm_matrix,
     compute_oks_matrix,
     interpolate_gaps,
-    merge_forward_backward,
 )
 
 # ---------------------------------------------------------------------------
@@ -338,16 +337,12 @@ class TestSinglePassTracker:
 
     def test_tracker_initializes(self) -> None:
         config = _make_tracker_config()
-        tracker = _SinglePassTracker(
-            camera_id="cam0", direction="forward", config=config
-        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
         assert tracker is not None
 
     def test_confirmed_tracks_appear_in_get_tracklets(self) -> None:
         config = _make_tracker_config(n_init=3, max_age=10)
-        tracker = _SinglePassTracker(
-            camera_id="cam0", direction="forward", config=config
-        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
         frames = self._make_linear_detections(n_fish=1, n_frames=8)
         for i, dets in enumerate(frames):
             tracker.update(frame_idx=i, detections=dets)
@@ -356,9 +351,7 @@ class TestSinglePassTracker:
 
     def test_tentative_tracks_excluded_from_get_tracklets(self) -> None:
         config = _make_tracker_config(n_init=5, max_age=10)
-        tracker = _SinglePassTracker(
-            camera_id="cam0", direction="forward", config=config
-        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
         # Only provide 2 frames (below n_init=5)
         frames = self._make_linear_detections(n_fish=1, n_frames=2)
         for i, dets in enumerate(frames):
@@ -369,9 +362,7 @@ class TestSinglePassTracker:
 
     def test_tracklet_has_correct_fields(self) -> None:
         config = _make_tracker_config(n_init=3, max_age=10)
-        tracker = _SinglePassTracker(
-            camera_id="testcam", direction="forward", config=config
-        )
+        tracker = _SinglePassTracker(camera_id="testcam", config=config)
         frames = self._make_linear_detections(n_fish=1, n_frames=6)
         for i, dets in enumerate(frames):
             tracker.update(frame_idx=i, detections=dets)
@@ -387,9 +378,7 @@ class TestSinglePassTracker:
 
     def test_two_fish_produce_two_tracklets(self) -> None:
         config = _make_tracker_config(n_init=3, max_age=10)
-        tracker = _SinglePassTracker(
-            camera_id="cam0", direction="forward", config=config
-        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
         frames = self._make_linear_detections(n_fish=2, n_frames=8)
         for i, dets in enumerate(frames):
             tracker.update(frame_idx=i, detections=dets)
@@ -399,9 +388,7 @@ class TestSinglePassTracker:
     def test_coasting_frame_added_when_detection_missing(self) -> None:
         """Tracks still appear with 'coasted' status when detection is dropped."""
         config = _make_tracker_config(n_init=3, max_age=10)
-        tracker = _SinglePassTracker(
-            camera_id="cam0", direction="forward", config=config
-        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
         frames = self._make_linear_detections(n_fish=1, n_frames=8)
         # Remove detections from frame 5
         frames[5] = []
@@ -416,9 +403,7 @@ class TestSinglePassTracker:
     def test_dead_tracks_culled_after_max_age(self) -> None:
         """Track that misses too many frames gets culled."""
         config = _make_tracker_config(n_init=2, max_age=2)
-        tracker = _SinglePassTracker(
-            camera_id="cam0", direction="forward", config=config
-        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
         # 5 frames with fish, then 10 frames empty
         frames = self._make_linear_detections(n_fish=1, n_frames=5)
         for i, dets in enumerate(frames):
@@ -431,9 +416,7 @@ class TestSinglePassTracker:
     def test_below_det_thresh_filtered(self) -> None:
         """Detections below det_thresh are ignored."""
         config = _make_tracker_config(det_thresh=0.8)
-        tracker = _SinglePassTracker(
-            camera_id="cam0", direction="forward", config=config
-        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
         low_conf_det = _make_detection(confidence=0.5)
         tracker.update(frame_idx=0, detections=[low_conf_det])
         # No tracks created
@@ -441,9 +424,7 @@ class TestSinglePassTracker:
 
     def test_state_serialization_roundtrip(self) -> None:
         config = _make_tracker_config(n_init=3, max_age=10)
-        tracker = _SinglePassTracker(
-            camera_id="cam0", direction="forward", config=config
-        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
         frames = self._make_linear_detections(n_fish=1, n_frames=6)
         for i, dets in enumerate(frames):
             tracker.update(frame_idx=i, detections=dets)
@@ -457,9 +438,7 @@ class TestSinglePassTracker:
     def test_oru_recovery_on_coast(self) -> None:
         """Track should recover after coasting (ORU mechanism exercised)."""
         config = _make_tracker_config(n_init=3, max_age=10)
-        tracker = _SinglePassTracker(
-            camera_id="cam0", direction="forward", config=config
-        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
         frames = self._make_linear_detections(n_fish=1, n_frames=10)
         # Drop frames 4-6 (coast), then resume
         frames[4] = []
@@ -477,9 +456,7 @@ class TestSinglePassTracker:
     def test_ocr_history_populated(self) -> None:
         """Observation history buffer fills up over detected frames."""
         config = _make_tracker_config(n_init=3, max_age=10)
-        tracker = _SinglePassTracker(
-            camera_id="cam0", direction="forward", config=config
-        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
         frames = self._make_linear_detections(n_fish=1, n_frames=8)
         for i, dets in enumerate(frames):
             tracker.update(frame_idx=i, detections=dets)
@@ -489,9 +466,7 @@ class TestSinglePassTracker:
     def test_detect_missing_keypoints_skipped(self) -> None:
         """Detection missing keypoints attribute is skipped gracefully."""
         config = _make_tracker_config(det_thresh=0.3)
-        tracker = _SinglePassTracker(
-            camera_id="cam0", direction="forward", config=config
-        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
         no_kpts = SimpleNamespace(
             bbox=(100.0, 100.0, 50.0, 80.0),
             confidence=0.9,
@@ -587,68 +562,6 @@ def _make_linear_detections_kpt(
 
 
 # ---------------------------------------------------------------------------
-# merge_forward_backward tests
-# ---------------------------------------------------------------------------
-
-
-class TestMergeForwardBackward:
-    def test_forward_only_kept_if_long_enough(self) -> None:
-        """A forward tracklet with no backward match is kept if length >= min_length."""
-        fwd = [_make_builder(frames=[0, 1, 2, 3, 4])]
-        bwd: list[_KptTrackletBuilder] = []
-        result = merge_forward_backward(fwd, bwd, min_length=3)
-        assert len(result) == 1
-
-    def test_forward_only_discarded_if_too_short(self) -> None:
-        """A short forward-only tracklet below min_length is discarded."""
-        fwd = [_make_builder(frames=[0, 1])]
-        bwd: list[_KptTrackletBuilder] = []
-        result = merge_forward_backward(fwd, bwd, min_length=3)
-        assert len(result) == 0
-
-    def test_merged_tracklet_has_ascending_frames(self) -> None:
-        """Merged tracklet frames are monotonically increasing."""
-        fwd = [_make_builder(track_id=0, frames=[0, 1, 2, 3])]
-        bwd = [_make_builder(track_id=1, frames=[2, 3, 4, 5])]
-        result = merge_forward_backward(fwd, bwd, min_length=1)
-        assert len(result) >= 1
-        for tracklet in result:
-            frames = list(tracklet.frames)
-            assert frames == sorted(frames), f"Frames not ascending: {frames}"
-
-    def test_merged_track_ids_are_unique_monotonic(self) -> None:
-        """Output track IDs are fresh monotonic sequence starting from 0."""
-        fwd = [
-            _make_builder(track_id=0, frames=[0, 1, 2]),
-            _make_builder(track_id=1, frames=[5, 6, 7]),
-        ]
-        bwd = [_make_builder(track_id=2, frames=[1, 2, 3])]
-        result = merge_forward_backward(fwd, bwd, min_length=1)
-        ids = [t.track_id for t in result]
-        assert ids == list(range(len(ids))), f"Track IDs not monotonic: {ids}"
-
-    def test_overlapping_pair_merged_no_duplicates(self) -> None:
-        """Two overlapping tracklets merge into one with no duplicate frame indices."""
-        fwd = [_make_builder(track_id=0, frames=[0, 1, 2, 3, 4])]
-        bwd = [_make_builder(track_id=1, frames=[2, 3, 4, 5, 6])]
-        result = merge_forward_backward(fwd, bwd, min_length=1)
-        # Should find a merge (high OKS on overlapping frames)
-        all_frames = []
-        for t in result:
-            all_frames.extend(t.frames)
-        # No duplicate frame indices within a single tracklet
-        for t in result:
-            assert len(t.frames) == len(set(t.frames))
-
-    def test_unmatched_backward_kept_if_long_enough(self) -> None:
-        """Unmatched backward tracklet is kept if its length >= min_length."""
-        fwd: list[_KptTrackletBuilder] = []
-        bwd = [_make_builder(frames=[0, 1, 2, 3])]
-        result = merge_forward_backward(fwd, bwd, min_length=3)
-        assert len(result) == 1
-
-
-# ---------------------------------------------------------------------------
 # interpolate_gaps tests
 # ---------------------------------------------------------------------------
 
@@ -715,14 +628,6 @@ class TestKeypointTracker:
         tracker = _make_keypoint_tracker()
         assert tracker is not None
 
-    def test_update_stores_frames(self) -> None:
-        """update() stores frame detections for backward pass replay."""
-        tracker = _make_keypoint_tracker(n_init=2)
-        frames = _make_linear_detections_kpt(n_fish=1, n_frames=5)
-        for i, dets in enumerate(frames):
-            tracker.update(frame_idx=i, detections=dets)
-        assert len(tracker._stored_frames) == 5
-
     def test_get_tracklets_returns_tracklet2d(self) -> None:
         """get_tracklets() returns Tracklet2D objects after enough frames."""
         from aquapose.core.tracking.types import Tracklet2D
@@ -765,7 +670,7 @@ class TestKeypointTracker:
         frames = _make_linear_detections_kpt(n_fish=1, n_frames=6)
         for i, dets in enumerate(frames):
             tracker.update(frame_idx=i, detections=dets)
-        tracker.get_tracklets()  # trigger merge
+        tracker.get_tracklets()  # populate cache
         state = tracker.get_state()
         # Should serialize without error
         json_str = json.dumps(state)
@@ -777,7 +682,7 @@ class TestKeypointTracker:
         frames = _make_linear_detections_kpt(n_fish=1, n_frames=8)
         for i, dets in enumerate(frames):
             tracker.update(frame_idx=i, detections=dets)
-        tracker.get_tracklets()  # finalize
+        tracker.get_tracklets()  # populate cache
         state = tracker.get_state()
 
         # Restore and continue
@@ -792,18 +697,16 @@ class TestKeypointTracker:
             len(tracklets2) >= 0
         )  # not a crash test; state restoration must not raise
 
-    def test_forward_backward_fewer_tracklets_than_single_pass(self) -> None:
-        """Bidirectional merge produces <= tracklets vs single forward pass for overlapping data."""
+    def test_single_pass_tracklets_match_fwd_tracker(self) -> None:
+        """KeypointTracker returns same tracklets as direct _SinglePassTracker for simple data."""
         tracker = _make_keypoint_tracker(n_init=2, max_age=15)
-        # Use n_fish=1 so we expect merged output to match forward
         frames = _make_linear_detections_kpt(n_fish=1, n_frames=12)
         for i, dets in enumerate(frames):
             tracker.update(frame_idx=i, detections=dets)
-        bidi_tracklets = tracker.get_tracklets()
+        kpt_tracklets = tracker.get_tracklets()
 
         fwd_tracker = _SinglePassTracker(
             camera_id="cam0",
-            direction="forward",
             config=SimpleNamespace(
                 max_age=15,
                 n_init=2,
@@ -817,8 +720,9 @@ class TestKeypointTracker:
             fwd_tracker.update(frame_idx=i, detections=dets)
         fwd_tracklets = fwd_tracker.get_tracklets()
 
-        # Bidi should produce <= forward pass tracklets (merging reduces fragmentation)
-        assert len(bidi_tracklets) <= len(fwd_tracklets)
+        # Single-pass KeypointTracker should produce same number of tracklets
+        # as direct _SinglePassTracker (both run single forward pass now)
+        assert len(kpt_tracklets) == len(fwd_tracklets)
 
 
 # ---------------------------------------------------------------------------

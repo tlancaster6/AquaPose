@@ -122,6 +122,8 @@ class TrackingStage:
                         base_r=self._config.base_r,
                         lambda_ocm=self._config.lambda_ocm,
                         max_gap_frames=self._config.max_gap_frames,
+                        match_cost_threshold=self._config.match_cost_threshold,
+                        ocr_threshold=self._config.ocr_threshold,
                         centroid_keypoint_index=self._centroid_keypoint_index,
                         centroid_confidence_floor=self._centroid_confidence_floor,
                     )

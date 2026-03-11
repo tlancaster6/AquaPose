@@ -56,12 +56,6 @@ __all__ = [
 _SPINE1_IDX: int = 2
 _SPINE3_IDX: int = 4
 
-# Assignment cost threshold: pairs above this are unmatched
-_MATCH_COST_THRESHOLD: float = 1.0
-
-# OCR recovery OKS threshold
-_OCR_RECOVERY_THRESHOLD: float = 0.5
-
 
 # ---------------------------------------------------------------------------
 # Kalman filter
@@ -525,14 +519,15 @@ class _KFTrack:
         if self.state == "tentative" and self.hit_streak >= self.n_init:
             self.state = "confirmed"
 
-    def attempt_ocr(self, sigmas: np.ndarray) -> bool:
+    def attempt_ocr(self, sigmas: np.ndarray, ocr_threshold: float = 0.5) -> bool:
         """OCR: scan obs_history for a stable observation to recover with.
 
         Computes OKS between the KF predicted positions and each stored
-        observation. If OKS > _OCR_RECOVERY_THRESHOLD, apply that update.
+        observation. If OKS > *ocr_threshold*, apply that update.
 
         Args:
             sigmas: Per-keypoint OKS sigmas, shape (6,).
+            ocr_threshold: Minimum OKS for recovery acceptance.
 
         Returns:
             True if recovery was applied, False otherwise.
@@ -552,7 +547,7 @@ class _KFTrack:
             oks_val = compute_oks_matrix(
                 pred_kpts, det_kpts, det_confs_2d, det_scales, sigmas
             )[0, 0]
-            if oks_val > _OCR_RECOVERY_THRESHOLD:
+            if oks_val > ocr_threshold:
                 self.kf.update(obs=obs, confs=confs)
                 return True
         return False
@@ -592,6 +587,10 @@ class _SinglePassTracker:
         self._base_r: float = float(config.base_r)
         self._lambda_ocm: float = float(config.lambda_ocm)
         self._sigmas: np.ndarray = np.asarray(config.sigmas, dtype=np.float64)
+        self._match_cost_threshold: float = float(
+            getattr(config, "match_cost_threshold", 1.0)
+        )
+        self._ocr_threshold: float = float(getattr(config, "ocr_threshold", 0.5))
 
         self._next_track_id: int = 0
         self._active_tracks: dict[int, _KFTrack] = {}
@@ -711,7 +710,7 @@ class _SinglePassTracker:
             row_idx, col_idx = linear_sum_assignment(cost)
 
             for r, c in zip(row_idx, col_idx, strict=False):
-                if cost[r, c] >= _MATCH_COST_THRESHOLD:
+                if cost[r, c] >= self._match_cost_threshold:
                     continue
                 tid = track_ids[r]
                 det, kpts_arr, kconf_arr = valid_dets[c]
@@ -737,7 +736,7 @@ class _SinglePassTracker:
 
             # OCR attempt for confirmed coasting tracks
             if trk.state == "confirmed":
-                trk.attempt_ocr(self._sigmas)
+                trk.attempt_ocr(self._sigmas, self._ocr_threshold)
 
             # Add coasted frame for confirmed tracks
             if trk.state == "confirmed":
@@ -840,6 +839,8 @@ class _SinglePassTracker:
             "base_r": self._base_r,
             "lambda_ocm": self._lambda_ocm,
             "sigmas": self._sigmas.tolist(),
+            "match_cost_threshold": self._match_cost_threshold,
+            "ocr_threshold": self._ocr_threshold,
         }
 
     @classmethod
@@ -862,6 +863,8 @@ class _SinglePassTracker:
             base_r=state["base_r"],
             lambda_ocm=state["lambda_ocm"],
             sigmas=np.array(state["sigmas"], dtype=np.float64),
+            match_cost_threshold=state.get("match_cost_threshold", 1.0),
+            ocr_threshold=state.get("ocr_threshold", 0.5),
         )
         instance = cls(camera_id=camera_id, config=config)
         instance._next_track_id = state["next_track_id"]
@@ -1082,6 +1085,8 @@ class KeypointTracker:
         lambda_ocm: float = 0.2,
         sigmas: np.ndarray | None = None,
         max_gap_frames: int = 5,
+        match_cost_threshold: float = 1.0,
+        ocr_threshold: float = 0.5,
         centroid_keypoint_index: int = 2,  # API symmetry only
         centroid_confidence_floor: float = 0.3,  # API symmetry only
     ) -> None:
@@ -1097,6 +1102,8 @@ class KeypointTracker:
         self._lambda_ocm = lambda_ocm
         self._sigmas = sigmas if sigmas is not None else DEFAULT_SIGMAS.copy()
         self._max_gap_frames = max_gap_frames
+        self._match_cost_threshold = match_cost_threshold
+        self._ocr_threshold = ocr_threshold
 
         config = SimpleNamespace(
             max_age=max_age,
@@ -1105,6 +1112,8 @@ class KeypointTracker:
             base_r=base_r,
             lambda_ocm=lambda_ocm,
             sigmas=self._sigmas,
+            match_cost_threshold=match_cost_threshold,
+            ocr_threshold=ocr_threshold,
         )
 
         self._fwd_tracker = _SinglePassTracker(camera_id=camera_id, config=config)
@@ -1171,6 +1180,8 @@ class KeypointTracker:
             "lambda_ocm": self._lambda_ocm,
             "sigmas": self._sigmas.tolist(),
             "max_gap_frames": self._max_gap_frames,
+            "match_cost_threshold": self._match_cost_threshold,
+            "ocr_threshold": self._ocr_threshold,
             "fwd_state": self._fwd_tracker.get_state(),
         }
 
@@ -1198,6 +1209,8 @@ class KeypointTracker:
             lambda_ocm=state["lambda_ocm"],
             sigmas=sigmas,
             max_gap_frames=state["max_gap_frames"],
+            match_cost_threshold=state.get("match_cost_threshold", 1.0),
+            ocr_threshold=state.get("ocr_threshold", 0.5),
         )
         # Restore forward tracker from saved state
         instance._fwd_tracker = _SinglePassTracker.from_state(

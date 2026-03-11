@@ -195,6 +195,14 @@ class TrackingConfig:
         max_gap_frames: Maximum gap size (frames) for spline interpolation in
             ``"keypoint_bidi"``. Ignored when ``tracker_kind="ocsort"``.
             Default 5.
+        match_cost_threshold: Maximum cost for Hungarian assignment match
+            acceptance in ``"keypoint_bidi"``. Pairs with cost above this
+            value are left unmatched. Ignored when ``tracker_kind="ocsort"``.
+            Default 1.0.
+        ocr_threshold: Minimum OKS similarity for observation-centric recovery
+            (OCR) in ``"keypoint_bidi"``. Tracks that coast and then find a
+            detection with OKS above this threshold are re-acquired. Ignored
+            when ``tracker_kind="ocsort"``. Default 0.5.
 
     Note:
         ``oks_sigmas`` for the keypoint tracker are loaded from
@@ -211,6 +219,8 @@ class TrackingConfig:
     base_r: float = 10.0
     lambda_ocm: float = 0.2
     max_gap_frames: int = 5
+    match_cost_threshold: float = 1.0
+    ocr_threshold: float = 0.5
 
     def __post_init__(self) -> None:
         """Validate tracker_kind on construction."""

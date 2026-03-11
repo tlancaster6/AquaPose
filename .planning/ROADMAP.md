@@ -216,7 +216,7 @@ Full details: `.planning/milestones/v3.7-ROADMAP.md`
 
 </details>
 
-### 🚧 v3.8 Improved Association (In Progress)
+### v3.8 Improved Association (In Progress)
 
 **Milestone Goal:** Replace single-centroid ray scoring with multi-keypoint association, add swap-aware group validation and singleton recovery, and tune on real data to reduce the ~27% singleton rate.
 
@@ -274,7 +274,10 @@ Plans:
   3. A tracklet with uniformly high residual (no changepoint found) is evicted from the group and becomes a singleton candidate
   4. `refinement.py` is deleted; all downstream consumers of `per_frame_confidence` and `consensus_centroids` either use equivalent outputs from `validation.py` or handle None correctly
   5. False positive rate on confirmed-correct tracklets from the v3.7 benchmark is below 30% (measured during plan execution)
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 90-01-PLAN.md — Create validation.py with multi-keypoint residuals, changepoint detection, and split/evict logic
+- [ ] 90-02-PLAN.md — Wire validation into pipeline, migrate config, delete refinement.py
 
 ### Phase 91: Singleton Recovery
 **Goal**: Singletons (including those created by Phase 90) are scored against existing groups and assigned, split-assigned, or left as true singletons
@@ -310,6 +313,6 @@ Note: Phases 88 and 89 depend only on Phase 87 and can be executed in either ord
 | 87. Tracklet2D Keypoint Propagation | 1/1 | Complete    | 2026-03-11 |
 | 88. Multi-Keypoint Pairwise Scoring | 1/1 | Complete    | 2026-03-11 |
 | 89. Fragment Merging Removal | 1/1 | Complete    | 2026-03-11 |
-| 90. Group Validation with Changepoint Detection | 0/TBD | Not started | - |
+| 90. Group Validation with Changepoint Detection | 0/2 | Not started | - |
 | 91. Singleton Recovery | 0/TBD | Not started | - |
 | 92. Parameter Tuning Pass | 0/TBD | Not started | - |

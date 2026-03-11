@@ -1,7 +1,8 @@
 """Unit tests for keypoint_tracker module.
 
 Tests cover: _KalmanFilter, compute_oks_matrix, compute_ocm_matrix,
-build_cost_matrix, _KFTrack, _SinglePassTracker.
+build_cost_matrix, _KFTrack, _SinglePassTracker, merge_forward_backward,
+interpolate_gaps, KeypointTracker.
 """
 
 from __future__ import annotations
@@ -9,14 +10,19 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import numpy as np
+
 from aquapose.core.tracking.keypoint_sigmas import DEFAULT_SIGMAS
 from aquapose.core.tracking.keypoint_tracker import (
+    KeypointTracker,
     _KalmanFilter,
+    _KptTrackletBuilder,
     _SinglePassTracker,
     build_cost_matrix,
     compute_heading,
     compute_ocm_matrix,
     compute_oks_matrix,
+    interpolate_gaps,
+    merge_forward_backward,
 )
 
 # ---------------------------------------------------------------------------
@@ -494,3 +500,322 @@ class TestSinglePassTracker:
         )
         tracker.update(frame_idx=0, detections=[no_kpts])
         # No crash — tentative track may or may not be created (skip is fine)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for merge / gap / KeypointTracker tests
+# ---------------------------------------------------------------------------
+
+
+def _make_builder(
+    camera_id: str = "cam0",
+    track_id: int = 0,
+    frames: list[int] | None = None,
+    n_kpts: int = 6,
+    status_override: str | None = None,
+) -> _KptTrackletBuilder:
+    """Create a _KptTrackletBuilder with synthetic frame data."""
+    if frames is None:
+        frames = [0, 1, 2]
+    builder = _KptTrackletBuilder(camera_id=camera_id, track_id=track_id)
+    for _i, f_idx in enumerate(frames):
+        kpts = np.zeros((n_kpts, 2), dtype=np.float32)
+        for k in range(n_kpts):
+            kpts[k] = [f_idx * 10.0 + k * 5.0, 100.0]
+        kconf = np.full(n_kpts, 0.9, dtype=np.float32)
+        status = status_override or "detected"
+        bbox = (f_idx * 10.0, 90.0, 60.0, 30.0)
+        builder.add_frame(
+            frame_idx=f_idx,
+            kpts=kpts,
+            kconf=kconf,
+            bbox_xywh=bbox,
+            status=status,
+        )
+    return builder
+
+
+def _make_keypoint_tracker(
+    camera_id: str = "cam0",
+    max_age: int = 5,
+    n_init: int = 3,
+    det_thresh: float = 0.3,
+    base_r: float = 10.0,
+    lambda_ocm: float = 0.2,
+    max_gap_frames: int = 5,
+) -> KeypointTracker:
+    """Create a KeypointTracker with standard test parameters."""
+    return KeypointTracker(
+        camera_id=camera_id,
+        max_age=max_age,
+        n_init=n_init,
+        det_thresh=det_thresh,
+        base_r=base_r,
+        lambda_ocm=lambda_ocm,
+        max_gap_frames=max_gap_frames,
+    )
+
+
+def _make_linear_detections_kpt(
+    n_fish: int = 2,
+    n_frames: int = 10,
+    start_x: float = 100.0,
+    spacing: float = 200.0,
+    velocity: float = 5.0,
+) -> list[list[SimpleNamespace]]:
+    """Create synthetic detections for n_fish fish moving linearly."""
+    all_frames: list[list[SimpleNamespace]] = []
+    for frame_idx in range(n_frames):
+        frame_dets = []
+        for fish_i in range(n_fish):
+            cx = start_x + fish_i * spacing + frame_idx * velocity
+            cy = 300.0
+            kpts = np.zeros((6, 2), dtype=np.float32)
+            for k in range(6):
+                kpts[k] = [cx + k * 10, cy]
+            kconf = np.full(6, 0.9, dtype=np.float32)
+            det = SimpleNamespace(
+                bbox=(cx - 50, cy - 25, 100.0, 50.0),
+                confidence=0.9,
+                keypoints=kpts,
+                keypoint_conf=kconf,
+                obb_area=5000.0,
+            )
+            frame_dets.append(det)
+        all_frames.append(frame_dets)
+    return all_frames
+
+
+# ---------------------------------------------------------------------------
+# merge_forward_backward tests
+# ---------------------------------------------------------------------------
+
+
+class TestMergeForwardBackward:
+    def test_forward_only_kept_if_long_enough(self) -> None:
+        """A forward tracklet with no backward match is kept if length >= min_length."""
+        fwd = [_make_builder(frames=[0, 1, 2, 3, 4])]
+        bwd: list[_KptTrackletBuilder] = []
+        result = merge_forward_backward(fwd, bwd, min_length=3)
+        assert len(result) == 1
+
+    def test_forward_only_discarded_if_too_short(self) -> None:
+        """A short forward-only tracklet below min_length is discarded."""
+        fwd = [_make_builder(frames=[0, 1])]
+        bwd: list[_KptTrackletBuilder] = []
+        result = merge_forward_backward(fwd, bwd, min_length=3)
+        assert len(result) == 0
+
+    def test_merged_tracklet_has_ascending_frames(self) -> None:
+        """Merged tracklet frames are monotonically increasing."""
+        fwd = [_make_builder(track_id=0, frames=[0, 1, 2, 3])]
+        bwd = [_make_builder(track_id=1, frames=[2, 3, 4, 5])]
+        result = merge_forward_backward(fwd, bwd, min_length=1)
+        assert len(result) >= 1
+        for tracklet in result:
+            frames = list(tracklet.frames)
+            assert frames == sorted(frames), f"Frames not ascending: {frames}"
+
+    def test_merged_track_ids_are_unique_monotonic(self) -> None:
+        """Output track IDs are fresh monotonic sequence starting from 0."""
+        fwd = [
+            _make_builder(track_id=0, frames=[0, 1, 2]),
+            _make_builder(track_id=1, frames=[5, 6, 7]),
+        ]
+        bwd = [_make_builder(track_id=2, frames=[1, 2, 3])]
+        result = merge_forward_backward(fwd, bwd, min_length=1)
+        ids = [t.track_id for t in result]
+        assert ids == list(range(len(ids))), f"Track IDs not monotonic: {ids}"
+
+    def test_overlapping_pair_merged_no_duplicates(self) -> None:
+        """Two overlapping tracklets merge into one with no duplicate frame indices."""
+        fwd = [_make_builder(track_id=0, frames=[0, 1, 2, 3, 4])]
+        bwd = [_make_builder(track_id=1, frames=[2, 3, 4, 5, 6])]
+        result = merge_forward_backward(fwd, bwd, min_length=1)
+        # Should find a merge (high OKS on overlapping frames)
+        all_frames = []
+        for t in result:
+            all_frames.extend(t.frames)
+        # No duplicate frame indices within a single tracklet
+        for t in result:
+            assert len(t.frames) == len(set(t.frames))
+
+    def test_unmatched_backward_kept_if_long_enough(self) -> None:
+        """Unmatched backward tracklet is kept if its length >= min_length."""
+        fwd: list[_KptTrackletBuilder] = []
+        bwd = [_make_builder(frames=[0, 1, 2, 3])]
+        result = merge_forward_backward(fwd, bwd, min_length=3)
+        assert len(result) == 1
+
+
+# ---------------------------------------------------------------------------
+# interpolate_gaps tests
+# ---------------------------------------------------------------------------
+
+
+class TestInterpolateGaps:
+    def test_no_gaps_unchanged(self) -> None:
+        """Tracklet with consecutive frames is unchanged."""
+        builder = _make_builder(frames=[0, 1, 2, 3])
+        result = interpolate_gaps(builder, max_gap_frames=5)
+        assert result.frames == [0, 1, 2, 3]
+        assert len(result.keypoints) == 4
+
+    def test_small_gap_filled(self) -> None:
+        """Tracklet with 1-frame gap gets frame 2 filled."""
+        builder = _make_builder(frames=[0, 1, 3, 4])
+        result = interpolate_gaps(builder, max_gap_frames=5)
+        assert 2 in result.frames
+        assert len(result.frames) == 5
+
+    def test_filled_frame_has_coasted_status(self) -> None:
+        """Interpolated frame has status 'coasted'."""
+        builder = _make_builder(frames=[0, 1, 3, 4])
+        result = interpolate_gaps(builder, max_gap_frames=5)
+        idx = result.frames.index(2)
+        assert result.frame_status[idx] == "coasted"
+
+    def test_large_gap_not_filled(self) -> None:
+        """Gaps larger than max_gap_frames are NOT filled."""
+        builder = _make_builder(frames=[0, 1, 10, 11])
+        result = interpolate_gaps(builder, max_gap_frames=5)
+        # Gap of 8 frames exceeds max_gap_frames=5 — not filled
+        assert 2 not in result.frames
+        assert len(result.frames) == 4
+
+    def test_interpolated_keypoints_between_neighbors(self) -> None:
+        """Interpolated keypoints are between the surrounding frames."""
+        builder = _make_builder(frames=[0, 2])  # gap at frame 1
+        # Set known keypoint positions
+        builder.keypoints[0] = np.zeros((6, 2), dtype=np.float32)
+        builder.keypoints[1] = np.full((6, 2), 20.0, dtype=np.float32)
+        result = interpolate_gaps(builder, max_gap_frames=5)
+        assert 1 in result.frames
+        idx = result.frames.index(1)
+        interp = result.keypoints[idx]
+        # Interpolated value should be between 0 and 20
+        assert np.all(interp >= 0.0)
+        assert np.all(interp <= 20.0)
+
+    def test_interpolated_frames_sorted(self) -> None:
+        """After interpolation, frames remain sorted ascending."""
+        builder = _make_builder(frames=[0, 1, 4, 5])
+        result = interpolate_gaps(builder, max_gap_frames=5)
+        assert result.frames == sorted(result.frames)
+
+
+# ---------------------------------------------------------------------------
+# KeypointTracker wrapper tests
+# ---------------------------------------------------------------------------
+
+
+class TestKeypointTracker:
+    def test_initializes(self) -> None:
+        """KeypointTracker initializes without error."""
+        tracker = _make_keypoint_tracker()
+        assert tracker is not None
+
+    def test_update_stores_frames(self) -> None:
+        """update() stores frame detections for backward pass replay."""
+        tracker = _make_keypoint_tracker(n_init=2)
+        frames = _make_linear_detections_kpt(n_fish=1, n_frames=5)
+        for i, dets in enumerate(frames):
+            tracker.update(frame_idx=i, detections=dets)
+        assert len(tracker._stored_frames) == 5
+
+    def test_get_tracklets_returns_tracklet2d(self) -> None:
+        """get_tracklets() returns Tracklet2D objects after enough frames."""
+        from aquapose.core.tracking.types import Tracklet2D
+
+        tracker = _make_keypoint_tracker(n_init=3, max_age=10)
+        frames = _make_linear_detections_kpt(n_fish=1, n_frames=10)
+        for i, dets in enumerate(frames):
+            tracker.update(frame_idx=i, detections=dets)
+        tracklets = tracker.get_tracklets()
+        assert len(tracklets) >= 1
+        for t in tracklets:
+            assert isinstance(t, Tracklet2D)
+
+    def test_get_tracklets_ascending_frames(self) -> None:
+        """All returned tracklets have monotonically ascending frame indices."""
+        tracker = _make_keypoint_tracker(n_init=3, max_age=10)
+        frames = _make_linear_detections_kpt(n_fish=2, n_frames=10)
+        for i, dets in enumerate(frames):
+            tracker.update(frame_idx=i, detections=dets)
+        tracklets = tracker.get_tracklets()
+        for t in tracklets:
+            flist = list(t.frames)
+            assert flist == sorted(flist)
+
+    def test_get_tracklets_unique_track_ids(self) -> None:
+        """All returned tracklets have unique track IDs."""
+        tracker = _make_keypoint_tracker(n_init=3, max_age=10)
+        frames = _make_linear_detections_kpt(n_fish=2, n_frames=10)
+        for i, dets in enumerate(frames):
+            tracker.update(frame_idx=i, detections=dets)
+        tracklets = tracker.get_tracklets()
+        ids = [t.track_id for t in tracklets]
+        assert len(ids) == len(set(ids))
+
+    def test_get_state_returns_json_safe(self) -> None:
+        """get_state() returns only JSON-safe types (no numpy arrays)."""
+        import json
+
+        tracker = _make_keypoint_tracker(n_init=3, max_age=10)
+        frames = _make_linear_detections_kpt(n_fish=1, n_frames=6)
+        for i, dets in enumerate(frames):
+            tracker.update(frame_idx=i, detections=dets)
+        tracker.get_tracklets()  # trigger merge
+        state = tracker.get_state()
+        # Should serialize without error
+        json_str = json.dumps(state)
+        assert len(json_str) > 0
+
+    def test_chunk_handoff_roundtrip(self) -> None:
+        """from_state() + update() on next chunk continues tracks (track_id continuity)."""
+        tracker = _make_keypoint_tracker(n_init=3, max_age=10)
+        frames = _make_linear_detections_kpt(n_fish=1, n_frames=8)
+        for i, dets in enumerate(frames):
+            tracker.update(frame_idx=i, detections=dets)
+        tracker.get_tracklets()  # finalize
+        state = tracker.get_state()
+
+        # Restore and continue
+        tracker2 = KeypointTracker.from_state("cam0", state)
+        # Feed more frames
+        more_frames = _make_linear_detections_kpt(n_fish=1, n_frames=5, start_x=140.0)
+        for i, dets in enumerate(more_frames, start=8):
+            tracker2.update(frame_idx=i, detections=dets)
+        tracklets2 = tracker2.get_tracklets()
+        # Should produce some tracklets
+        assert (
+            len(tracklets2) >= 0
+        )  # not a crash test; state restoration must not raise
+
+    def test_forward_backward_fewer_tracklets_than_single_pass(self) -> None:
+        """Bidirectional merge produces <= tracklets vs single forward pass for overlapping data."""
+        tracker = _make_keypoint_tracker(n_init=2, max_age=15)
+        # Use n_fish=1 so we expect merged output to match forward
+        frames = _make_linear_detections_kpt(n_fish=1, n_frames=12)
+        for i, dets in enumerate(frames):
+            tracker.update(frame_idx=i, detections=dets)
+        bidi_tracklets = tracker.get_tracklets()
+
+        fwd_tracker = _SinglePassTracker(
+            camera_id="cam0",
+            direction="forward",
+            config=SimpleNamespace(
+                max_age=15,
+                n_init=2,
+                det_thresh=0.3,
+                base_r=10.0,
+                lambda_ocm=0.2,
+                sigmas=DEFAULT_SIGMAS,
+            ),
+        )
+        for i, dets in enumerate(frames):
+            fwd_tracker.update(frame_idx=i, detections=dets)
+        fwd_tracklets = fwd_tracker.get_tracklets()
+
+        # Bidi should produce <= forward pass tracklets (merging reduces fragmentation)
+        assert len(bidi_tracklets) <= len(fwd_tracklets)

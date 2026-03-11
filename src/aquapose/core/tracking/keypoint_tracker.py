@@ -1,6 +1,6 @@
-"""Custom keypoint-based single-pass Kalman filter tracker.
+"""Custom keypoint-based bidirectional Kalman filter tracker.
 
-Implements the computational core of the bidirectional keypoint tracker:
+Implements the complete bidirectional keypoint tracker:
 
 - _KalmanFilter: 24-dim constant-velocity KF tracking 6 keypoints x 2D.
   State dimension note: CONTEXT.md references "60-dim" conceptually (tracking
@@ -13,8 +13,13 @@ Implements the computational core of the bidirectional keypoint tracker:
 - _KFTrack: per-track state with ORU/OCR mechanisms.
 - _KptTrackletBuilder: mutable per-track accumulator with keypoint storage.
 - _SinglePassTracker: predict/match/update/birth/death per-frame loop.
+- merge_forward_backward: Hungarian-assignment merge of forward+backward tracklets.
+- interpolate_gaps: Cubic-spline gap filling for small temporal gaps.
+- KeypointTracker: Public wrapper running bidirectional passes and merging.
 
-Plan 02 wraps _SinglePassTracker in the bidirectional architecture.
+TRACK-05 (asymmetric birth/death) is satisfied by the bidirectional merge design
+per CONTEXT.md locked decision. Forward pass naturally catches track entries,
+backward pass catches exits. No spatial-edge heuristic is needed.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
+from scipy.interpolate import CubicSpline
 from scipy.optimize import linear_sum_assignment
 
 from aquapose.core.tracking.types import Tracklet2D
@@ -32,13 +38,17 @@ from aquapose.core.tracking.types import Tracklet2D
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "KeypointTracker",
     "_KFTrack",
     "_KalmanFilter",
+    "_KptTrackletBuilder",
     "_SinglePassTracker",
     "build_cost_matrix",
     "compute_heading",
     "compute_ocm_matrix",
     "compute_oks_matrix",
+    "interpolate_gaps",
+    "merge_forward_backward",
 ]
 
 # ---------------------------------------------------------------------------
@@ -902,3 +912,669 @@ class _SinglePassTracker:
             instance._builders[tid] = b
 
         return instance
+
+
+# ---------------------------------------------------------------------------
+# Bidirectional merge helpers
+# ---------------------------------------------------------------------------
+
+
+def _compute_overlap_oks(
+    fwd: _KptTrackletBuilder,
+    bwd: _KptTrackletBuilder,
+    sigmas: np.ndarray,
+    min_overlap: int = 1,
+) -> float:
+    """Compute mean OKS in the temporal overlap region of two builders.
+
+    Args:
+        fwd: Forward-pass builder.
+        bwd: Backward-pass builder.
+        sigmas: Per-keypoint OKS sigmas, shape (6,).
+        min_overlap: Minimum overlapping frames required; returns -1.0 if fewer.
+
+    Returns:
+        Mean OKS in overlap, or -1.0 if insufficient overlap.
+    """
+    fwd_set = {f: i for i, f in enumerate(fwd.frames)}
+    bwd_set = {f: i for i, f in enumerate(bwd.frames)}
+    common = sorted(set(fwd_set.keys()) & set(bwd_set.keys()))
+    if len(common) < min_overlap:
+        return -1.0
+
+    oks_vals: list[float] = []
+    for f_idx in common:
+        fi = fwd_set[f_idx]
+        bi = bwd_set[f_idx]
+        fwd_kpt = fwd.keypoints[fi].astype(np.float64)  # (6, 2)
+        bwd_kpt = bwd.keypoints[bi].astype(np.float64)  # (6, 2)
+        bwd_conf = bwd.keypoint_conf[bi].astype(np.float64)  # (6,)
+
+        # Scale from bwd bbox
+        _bx, _by, bw, bh = bwd.bboxes[bi]
+        scale = max(float(np.sqrt(max(bw * bh, 1.0))), 1.0)
+
+        oks_val = compute_oks_matrix(
+            fwd_kpt[np.newaxis, :, :],
+            bwd_kpt[np.newaxis, :, :],
+            bwd_conf[np.newaxis, :],
+            np.array([scale]),
+            sigmas,
+        )[0, 0]
+        oks_vals.append(float(oks_val))
+
+    return float(np.mean(oks_vals)) if oks_vals else -1.0
+
+
+def _merge_two_builders(
+    fwd: _KptTrackletBuilder,
+    bwd: _KptTrackletBuilder,
+) -> _KptTrackletBuilder:
+    """Merge a matched (forward, backward) builder pair into a single builder.
+
+    For overlapping frames, applies resolution policy:
+      - detected > coasted
+      - if both detected, keep higher mean keypoint confidence
+      - if both coasted, keep forward
+
+    Non-overlapping frames from both builders are concatenated.
+    Output frames are sorted ascending.
+
+    Args:
+        fwd: Forward-pass builder.
+        bwd: Backward-pass builder.
+
+    Returns:
+        New merged _KptTrackletBuilder (track_id is not set here; caller assigns).
+    """
+    fwd_map = {f: i for i, f in enumerate(fwd.frames)}
+    bwd_map = {f: i for i, f in enumerate(bwd.frames)}
+    all_frames = sorted(set(fwd.frames) | set(bwd.frames))
+
+    merged = _KptTrackletBuilder(camera_id=fwd.camera_id, track_id=-1)
+
+    for f_idx in all_frames:
+        in_fwd = f_idx in fwd_map
+        in_bwd = f_idx in bwd_map
+
+        if in_fwd and not in_bwd:
+            fi = fwd_map[f_idx]
+            merged.frames.append(f_idx)
+            merged.centroids.append(fwd.centroids[fi])
+            merged.bboxes.append(fwd.bboxes[fi])
+            merged.frame_status.append(fwd.frame_status[fi])
+            merged.keypoints.append(fwd.keypoints[fi].copy())
+            merged.keypoint_conf.append(fwd.keypoint_conf[fi].copy())
+            if fwd.frame_status[fi] == "detected":
+                merged.detected_count += 1
+
+        elif in_bwd and not in_fwd:
+            bi = bwd_map[f_idx]
+            merged.frames.append(f_idx)
+            merged.centroids.append(bwd.centroids[bi])
+            merged.bboxes.append(bwd.bboxes[bi])
+            merged.frame_status.append(bwd.frame_status[bi])
+            merged.keypoints.append(bwd.keypoints[bi].copy())
+            merged.keypoint_conf.append(bwd.keypoint_conf[bi].copy())
+            if bwd.frame_status[bi] == "detected":
+                merged.detected_count += 1
+
+        else:
+            # Overlap: resolve conflict
+            fi = fwd_map[f_idx]
+            bi = bwd_map[f_idx]
+            fwd_status = fwd.frame_status[fi]
+            bwd_status = bwd.frame_status[bi]
+
+            if fwd_status == "detected" and bwd_status != "detected":
+                chosen_src, chosen_idx = fwd, fi
+                chosen_status = "detected"
+            elif bwd_status == "detected" and fwd_status != "detected":
+                chosen_src, chosen_idx = bwd, bi
+                chosen_status = "detected"
+            elif fwd_status == "detected" and bwd_status == "detected":
+                # Both detected: higher mean keypoint confidence wins
+                fwd_mean_conf = float(np.mean(fwd.keypoint_conf[fi]))
+                bwd_mean_conf = float(np.mean(bwd.keypoint_conf[bi]))
+                if bwd_mean_conf > fwd_mean_conf:
+                    chosen_src, chosen_idx = bwd, bi
+                else:
+                    chosen_src, chosen_idx = fwd, fi
+                chosen_status = "detected"
+            else:
+                # Both coasted: keep forward
+                chosen_src, chosen_idx = fwd, fi
+                chosen_status = "coasted"
+
+            merged.frames.append(f_idx)
+            merged.centroids.append(chosen_src.centroids[chosen_idx])
+            merged.bboxes.append(chosen_src.bboxes[chosen_idx])
+            merged.frame_status.append(chosen_status)
+            merged.keypoints.append(chosen_src.keypoints[chosen_idx].copy())
+            merged.keypoint_conf.append(chosen_src.keypoint_conf[chosen_idx].copy())
+            if chosen_status == "detected":
+                merged.detected_count += 1
+
+    return merged
+
+
+def merge_forward_backward(
+    forward_builders: list[_KptTrackletBuilder],
+    backward_builders: list[_KptTrackletBuilder],
+    *,
+    min_length: int = 3,
+    min_overlap: int = 1,
+    sigmas: np.ndarray | None = None,
+) -> list[Tracklet2D]:
+    """Merge forward and backward single-pass tracklet builders into final Tracklet2D list.
+
+    Runs Hungarian assignment on an OKS cost matrix between forward and backward
+    builders. Matched pairs are merged; unmatched builders are kept if they meet
+    the minimum length threshold.
+
+    TRACK-05 (asymmetric birth/death) is satisfied by this bidirectional design:
+    the forward pass captures track entries; the backward pass captures exits.
+    No spatial-edge heuristic is required.
+
+    Args:
+        forward_builders: Builders from the forward pass.
+        backward_builders: Builders from the backward pass.
+        min_length: Minimum number of frames for an unmatched builder to be kept.
+        min_overlap: Minimum overlapping frames between an (fwd, bwd) pair to
+            consider them matchable.
+        sigmas: Per-keypoint OKS sigmas. Defaults to DEFAULT_SIGMAS if None.
+
+    Returns:
+        List of Tracklet2D objects with fresh monotonically increasing track IDs.
+    """
+    from aquapose.core.tracking.keypoint_sigmas import DEFAULT_SIGMAS
+
+    if sigmas is None:
+        sigmas = DEFAULT_SIGMAS
+
+    n_fwd = len(forward_builders)
+    n_bwd = len(backward_builders)
+
+    merged_builders: list[_KptTrackletBuilder] = []
+    matched_fwd: set[int] = set()
+    matched_bwd: set[int] = set()
+
+    if n_fwd > 0 and n_bwd > 0:
+        # Build OKS cost matrix (N_fwd x N_bwd)
+        cost_matrix = np.ones((n_fwd, n_bwd), dtype=np.float64)
+        for i, fb in enumerate(forward_builders):
+            for j, bb in enumerate(backward_builders):
+                oks_val = _compute_overlap_oks(fb, bb, sigmas, min_overlap=min_overlap)
+                if oks_val >= 0.0:
+                    cost_matrix[i, j] = 1.0 - oks_val  # cost = 1 - OKS
+
+        row_idx, col_idx = linear_sum_assignment(cost_matrix)
+
+        for r, c in zip(row_idx, col_idx, strict=False):
+            if cost_matrix[r, c] >= 1.0:
+                # No real overlap — treat as unmatched
+                continue
+            merged = _merge_two_builders(forward_builders[r], backward_builders[c])
+            merged_builders.append(merged)
+            matched_fwd.add(r)
+            matched_bwd.add(c)
+
+    # Keep unmatched forward builders that meet min_length
+    for i, fb in enumerate(forward_builders):
+        if i in matched_fwd:
+            continue
+        if len(fb.frames) >= min_length:
+            kept = _KptTrackletBuilder(camera_id=fb.camera_id, track_id=-1)
+            kept.frames = list(fb.frames)
+            kept.centroids = list(fb.centroids)
+            kept.bboxes = list(fb.bboxes)
+            kept.frame_status = list(fb.frame_status)
+            kept.keypoints = [k.copy() for k in fb.keypoints]
+            kept.keypoint_conf = [c.copy() for c in fb.keypoint_conf]
+            kept.detected_count = fb.detected_count
+            merged_builders.append(kept)
+
+    # Keep unmatched backward builders that meet min_length
+    for j, bb in enumerate(backward_builders):
+        if j in matched_bwd:
+            continue
+        if len(bb.frames) >= min_length:
+            kept = _KptTrackletBuilder(camera_id=bb.camera_id, track_id=-1)
+            kept.frames = list(bb.frames)
+            kept.centroids = list(bb.centroids)
+            kept.bboxes = list(bb.bboxes)
+            kept.frame_status = list(bb.frame_status)
+            kept.keypoints = [k.copy() for k in bb.keypoints]
+            kept.keypoint_conf = [c.copy() for c in bb.keypoint_conf]
+            kept.detected_count = bb.detected_count
+            merged_builders.append(kept)
+
+    # Assign fresh monotonic track IDs and convert to Tracklet2D
+    result: list[Tracklet2D] = []
+    for new_id, builder in enumerate(merged_builders):
+        builder.track_id = new_id
+        result.append(builder.to_tracklet2d())
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Gap interpolation
+# ---------------------------------------------------------------------------
+
+
+def interpolate_gaps(
+    builder: _KptTrackletBuilder,
+    max_gap_frames: int = 5,
+) -> _KptTrackletBuilder:
+    """Fill small temporal gaps in a tracklet using cubic-spline interpolation.
+
+    For each gap <= max_gap_frames between consecutive frames, interpolates
+    keypoint positions using CubicSpline. Interpolated frames get status
+    "coasted". Gaps larger than max_gap_frames are left unfilled.
+
+    Centroids for interpolated frames are derived from spine1 (index 2)
+    keypoint when available. Bboxes use linear interpolation.
+
+    Args:
+        builder: Mutable tracklet builder to fill gaps in.
+        max_gap_frames: Maximum gap size (exclusive) to fill. Gaps of this
+            size or larger are left as-is.
+
+    Returns:
+        Updated builder with gap frames inserted (sorted by frame index).
+    """
+    if len(builder.frames) < 2:
+        return builder
+
+    # Collect all frame data into a sortable list
+    frame_data = list(
+        zip(
+            builder.frames,
+            builder.centroids,
+            builder.bboxes,
+            builder.frame_status,
+            builder.keypoints,
+            builder.keypoint_conf,
+            strict=False,
+        )
+    )
+    frame_data.sort(key=lambda x: x[0])
+
+    new_frames: list[int] = []
+    new_centroids: list[tuple[float, float]] = []
+    new_bboxes: list[tuple[float, float, float, float]] = []
+    new_statuses: list[str] = []
+    new_keypoints: list[np.ndarray] = []
+    new_kconfs: list[np.ndarray] = []
+
+    for row in frame_data:
+        new_frames.append(row[0])
+        new_centroids.append(row[1])
+        new_bboxes.append(row[2])
+        new_statuses.append(row[3])
+        new_keypoints.append(row[4])
+        new_kconfs.append(row[5])
+
+    # Scan for gaps and interpolate
+    i = 0
+    while i < len(new_frames) - 1:
+        gap = new_frames[i + 1] - new_frames[i] - 1
+        if 0 < gap <= max_gap_frames:
+            # Build spline on the known frames around the gap
+            # For CubicSpline we need at least 2 knot points; use all known frames
+            known_f = np.array(new_frames, dtype=np.float64)
+            known_kpts = np.stack(new_keypoints, axis=0).astype(np.float64)  # (N, 6, 2)
+            known_bboxes_arr = np.array(new_bboxes, dtype=np.float64)  # (N, 4)
+
+            # Use monotone=True via 'not-a-knot' when possible
+            cs_kpts: list[list[CubicSpline]] = []
+            n_kp = known_kpts.shape[1]
+            for k in range(n_kp):
+                cs_kpts.append(
+                    [
+                        CubicSpline(known_f, known_kpts[:, k, 0]),
+                        CubicSpline(known_f, known_kpts[:, k, 1]),
+                    ]
+                )
+            cs_bbox = [CubicSpline(known_f, known_bboxes_arr[:, d]) for d in range(4)]
+
+            # Insert interpolated frames
+            insert_idx = i + 1
+            for missing_f in range(new_frames[i] + 1, new_frames[i + 1]):
+                f_float = float(missing_f)
+
+                # Interpolate keypoints
+                interp_kpts = np.zeros((n_kp, 2), dtype=np.float32)
+                for k in range(n_kp):
+                    interp_kpts[k, 0] = float(cs_kpts[k][0](f_float))
+                    interp_kpts[k, 1] = float(cs_kpts[k][1](f_float))
+
+                # Interpolate bbox
+                interp_bbox = tuple(float(cs_bbox[d](f_float)) for d in range(4))
+
+                # Centroid from spine1 keypoint (index 2) if available
+                if n_kp > 2:
+                    cx = float(interp_kpts[2, 0])
+                    cy = float(interp_kpts[2, 1])
+                else:
+                    bx, by, bw, bh = interp_bbox
+                    cx = bx + bw / 2.0
+                    cy = by + bh / 2.0
+
+                # Insert at correct sorted position
+                new_frames.insert(insert_idx, missing_f)
+                new_centroids.insert(insert_idx, (cx, cy))
+                new_bboxes.insert(insert_idx, interp_bbox)  # type: ignore[arg-type]
+                new_statuses.insert(insert_idx, "coasted")
+                new_keypoints.insert(insert_idx, interp_kpts)
+                new_kconfs.insert(insert_idx, np.zeros(n_kp, dtype=np.float32))
+                insert_idx += 1
+
+            # Skip past the inserted frames to find the next real gap
+            i = insert_idx
+        else:
+            i += 1
+
+    # Recount detected frames
+    detected_count = sum(1 for s in new_statuses if s == "detected")
+
+    # Build updated builder
+    out = _KptTrackletBuilder(camera_id=builder.camera_id, track_id=builder.track_id)
+    out.frames = new_frames
+    out.centroids = new_centroids  # type: ignore[assignment]
+    out.bboxes = new_bboxes  # type: ignore[assignment]
+    out.frame_status = new_statuses
+    out.keypoints = new_keypoints
+    out.keypoint_conf = new_kconfs
+    out.detected_count = detected_count
+    out.active = builder.active
+
+    return out
+
+
+# ---------------------------------------------------------------------------
+# KeypointTracker — public bidirectional wrapper
+# ---------------------------------------------------------------------------
+
+
+class KeypointTracker:
+    """Bidirectional keypoint tracker (drop-in replacement for OcSortTracker).
+
+    Runs independent forward and backward passes over a chunk using
+    _SinglePassTracker, then merges the resulting builders via Hungarian
+    assignment on overlap-OKS. Small temporal gaps are filled via cubic-spline
+    interpolation.
+
+    TRACK-05 (asymmetric birth/death) is satisfied by the bidirectional design:
+    forward pass catches track entries, backward pass catches exits.
+    No spatial-edge heuristic is needed.
+
+    TRACK-10 (BYTE-style secondary pass for low-confidence detections) is
+    deferred to Phase 84 evaluation per user decision. Single confidence
+    threshold only.
+
+    Args:
+        camera_id: Camera identifier.
+        max_age: Frames to coast before culling a track. Maps to OcSortTracker
+            max_age / TrackingConfig.max_coast_frames.
+        n_init: Hit-streak threshold for track confirmation.
+        det_thresh: Minimum detection confidence to admit to the tracker.
+        base_r: KF base measurement noise variance.
+        lambda_ocm: OCM weight in the cost matrix.
+        sigmas: Per-keypoint OKS sigmas. Defaults to DEFAULT_SIGMAS.
+        max_gap_frames: Maximum gap size to fill via spline interpolation.
+        centroid_keypoint_index: Keypoint index used as centroid (unused in
+            _SinglePassTracker but retained for API symmetry with OcSortTracker).
+        centroid_confidence_floor: Confidence floor for centroid selection
+            (retained for API symmetry).
+    """
+
+    def __init__(
+        self,
+        camera_id: str,
+        max_age: int = 15,
+        n_init: int = 3,
+        det_thresh: float = 0.5,
+        base_r: float = 10.0,
+        lambda_ocm: float = 0.2,
+        sigmas: np.ndarray | None = None,
+        max_gap_frames: int = 5,
+        centroid_keypoint_index: int = 2,  # API symmetry only
+        centroid_confidence_floor: float = 0.3,  # API symmetry only
+    ) -> None:
+        from types import SimpleNamespace
+
+        from aquapose.core.tracking.keypoint_sigmas import DEFAULT_SIGMAS
+
+        self._camera_id = camera_id
+        self._max_age = max_age
+        self._n_init = n_init
+        self._det_thresh = det_thresh
+        self._base_r = base_r
+        self._lambda_ocm = lambda_ocm
+        self._sigmas = sigmas if sigmas is not None else DEFAULT_SIGMAS.copy()
+        self._max_gap_frames = max_gap_frames
+
+        config = SimpleNamespace(
+            max_age=max_age,
+            n_init=n_init,
+            det_thresh=det_thresh,
+            base_r=base_r,
+            lambda_ocm=lambda_ocm,
+            sigmas=self._sigmas,
+        )
+
+        self._fwd_tracker = _SinglePassTracker(
+            camera_id=camera_id, direction="forward", config=config
+        )
+        self._bwd_tracker = _SinglePassTracker(
+            camera_id=camera_id, direction="backward", config=config
+        )
+
+        # Stored frames for backward pass replay
+        self._stored_frames: list[tuple[int, list[Any]]] = []
+
+        # Cached merge result (set after get_tracklets() is called)
+        self._merged_tracklets: list[Tracklet2D] | None = None
+
+        # Active track state for chunk handoff (after merge, forward pass state)
+        self._last_state: dict[str, Any] | None = None
+
+    def update(self, frame_idx: int, detections: list[Any]) -> None:
+        """Feed one frame of detections to the forward pass and store for backward.
+
+        Args:
+            frame_idx: Current frame index.
+            detections: Detection-like objects (same as OcSortTracker.update).
+        """
+        self._fwd_tracker.update(frame_idx=frame_idx, detections=detections)
+        self._stored_frames.append((frame_idx, list(detections)))
+        # Invalidate cached result
+        self._merged_tracklets = None
+
+    def get_tracklets(self) -> list[Tracklet2D]:
+        """Run backward pass, merge forward+backward, apply gap interpolation.
+
+        Returns:
+            Final list of Tracklet2D objects with unique monotonic track IDs.
+        """
+        if self._merged_tracklets is not None:
+            return self._merged_tracklets
+
+        # Run backward pass (replay stored frames in reverse order)
+        for frame_idx, detections in reversed(self._stored_frames):
+            self._bwd_tracker.update(frame_idx=frame_idx, detections=detections)
+
+        # Collect confirmed builders from both passes
+        fwd_builders = [
+            b
+            for b in self._fwd_tracker._builders.values()
+            if b.detected_count >= self._n_init and b.frames
+        ]
+        bwd_builders = [
+            b
+            for b in self._bwd_tracker._builders.values()
+            if b.detected_count >= self._n_init and b.frames
+        ]
+
+        # Apply gap interpolation to each merged tracklet.
+        # Use _collect_merged_builders (returns raw builders) so gap interpolation
+        # can operate on mutable _KptTrackletBuilder objects before conversion.
+        gap_filled: list[Tracklet2D] = []
+        raw_merged_builders = _collect_merged_builders(
+            fwd_builders, bwd_builders, self._n_init, self._sigmas
+        )
+        for builder in raw_merged_builders:
+            filled = interpolate_gaps(builder, max_gap_frames=self._max_gap_frames)
+            gap_filled.append(filled.to_tracklet2d())
+
+        # Re-assign fresh track IDs
+        final: list[Tracklet2D] = []
+        for new_id, t in enumerate(gap_filled):
+            final.append(
+                Tracklet2D(
+                    camera_id=t.camera_id,
+                    track_id=new_id,
+                    frames=t.frames,
+                    centroids=t.centroids,
+                    bboxes=t.bboxes,
+                    frame_status=t.frame_status,
+                )
+            )
+
+        self._merged_tracklets = final
+
+        # Save forward pass state for chunk handoff
+        self._last_state = self._fwd_tracker.get_state()
+
+        return self._merged_tracklets
+
+    def get_state(self) -> dict[str, Any]:
+        """Serialize tracker state for cross-chunk handoff.
+
+        Must be called after get_tracklets() to capture active track state.
+        Returns JSON-safe dict with forward-pass KF states for active tracks.
+
+        Returns:
+            JSON-safe state dict. All numpy arrays serialized as lists.
+        """
+        if self._last_state is not None:
+            base = self._last_state
+        else:
+            base = self._fwd_tracker.get_state()
+
+        return {
+            "kind": "keypoint_bidi",
+            "camera_id": self._camera_id,
+            "max_age": self._max_age,
+            "n_init": self._n_init,
+            "det_thresh": self._det_thresh,
+            "base_r": self._base_r,
+            "lambda_ocm": self._lambda_ocm,
+            "sigmas": self._sigmas.tolist(),
+            "max_gap_frames": self._max_gap_frames,
+            "fwd_state": base,
+        }
+
+    @classmethod
+    def from_state(cls, camera_id: str, state: dict[str, Any]) -> KeypointTracker:
+        """Reconstruct a KeypointTracker from a saved state blob.
+
+        Restores the forward-pass tracker's KF states so that tracks from
+        the previous chunk continue seamlessly into the next chunk.
+
+        Args:
+            camera_id: Camera identifier.
+            state: State dict previously returned by ``get_state()``.
+
+        Returns:
+            Restored KeypointTracker ready to receive new frames.
+        """
+        sigmas = np.array(state["sigmas"], dtype=np.float64)
+        instance = cls(
+            camera_id=camera_id,
+            max_age=state["max_age"],
+            n_init=state["n_init"],
+            det_thresh=state["det_thresh"],
+            base_r=state["base_r"],
+            lambda_ocm=state["lambda_ocm"],
+            sigmas=sigmas,
+            max_gap_frames=state["max_gap_frames"],
+        )
+        # Restore forward tracker from saved state
+        instance._fwd_tracker = _SinglePassTracker.from_state(
+            camera_id, state["fwd_state"]
+        )
+        return instance
+
+
+def _collect_merged_builders(
+    fwd_builders: list[_KptTrackletBuilder],
+    bwd_builders: list[_KptTrackletBuilder],
+    min_length: int,
+    sigmas: np.ndarray,
+) -> list[_KptTrackletBuilder]:
+    """Run Hungarian merge on forward/backward builders, returning raw builders.
+
+    Internal helper for KeypointTracker.get_tracklets(). Identical logic to
+    merge_forward_backward but returns _KptTrackletBuilder instead of Tracklet2D
+    so that gap interpolation can operate on the mutable builders.
+
+    Args:
+        fwd_builders: Forward-pass confirmed builders.
+        bwd_builders: Backward-pass confirmed builders.
+        min_length: Minimum frame count for unmatched builders to be kept.
+        sigmas: Per-keypoint OKS sigmas.
+
+    Returns:
+        List of merged _KptTrackletBuilder objects (track_id=-1; caller assigns).
+    """
+    n_fwd = len(fwd_builders)
+    n_bwd = len(bwd_builders)
+    matched_fwd: set[int] = set()
+    matched_bwd: set[int] = set()
+    merged: list[_KptTrackletBuilder] = []
+
+    if n_fwd > 0 and n_bwd > 0:
+        cost_matrix = np.ones((n_fwd, n_bwd), dtype=np.float64)
+        for i, fb in enumerate(fwd_builders):
+            for j, bb in enumerate(bwd_builders):
+                oks_val = _compute_overlap_oks(fb, bb, sigmas, min_overlap=1)
+                if oks_val >= 0.0:
+                    cost_matrix[i, j] = 1.0 - oks_val
+
+        row_idx, col_idx = linear_sum_assignment(cost_matrix)
+        for r, c in zip(row_idx, col_idx, strict=False):
+            if cost_matrix[r, c] >= 1.0:
+                continue
+            m = _merge_two_builders(fwd_builders[r], bwd_builders[c])
+            merged.append(m)
+            matched_fwd.add(r)
+            matched_bwd.add(c)
+
+    for i, fb in enumerate(fwd_builders):
+        if i not in matched_fwd and len(fb.frames) >= min_length:
+            b = _KptTrackletBuilder(camera_id=fb.camera_id, track_id=-1)
+            b.frames = list(fb.frames)
+            b.centroids = list(fb.centroids)
+            b.bboxes = list(fb.bboxes)
+            b.frame_status = list(fb.frame_status)
+            b.keypoints = [k.copy() for k in fb.keypoints]
+            b.keypoint_conf = [c.copy() for c in fb.keypoint_conf]
+            b.detected_count = fb.detected_count
+            merged.append(b)
+
+    for j, bb in enumerate(bwd_builders):
+        if j not in matched_bwd and len(bb.frames) >= min_length:
+            b = _KptTrackletBuilder(camera_id=bb.camera_id, track_id=-1)
+            b.frames = list(bb.frames)
+            b.centroids = list(bb.centroids)
+            b.bboxes = list(bb.bboxes)
+            b.frame_status = list(bb.frame_status)
+            b.keypoints = [k.copy() for k in bb.keypoints]
+            b.keypoint_conf = [c.copy() for c in bb.keypoint_conf]
+            b.detected_count = bb.detected_count
+            merged.append(b)
+
+    return merged

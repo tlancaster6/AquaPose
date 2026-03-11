@@ -236,7 +236,7 @@ Plans:
 
 Plans:
 - [x] 78.1-01-PLAN.md -- Assemble datasets and hand off training commands to user (complete 2026-03-10)
-- [ ] 78.1-02-PLAN.md -- Evaluate new models, update config, visual white-wall check
+- [x] 78.1-02-PLAN.md -- Evaluate new models, update config, visual white-wall check
 
 ### Phase 79: Occlusion Remediation (Conditional)
 **Goal**: Address occlusion-related failure modes identified in Phase 78 before building the tracker — this phase is skipped entirely if Phase 78 yields a go recommendation
@@ -252,7 +252,7 @@ Plans:
 **Depends on**: Phase 78.1
 **Requirements**: INV-03
 **Success Criteria** (what must be TRUE):
-  1. A baseline metrics document exists recording track count, track duration distribution, fragmentation count, and total coverage for the current OC-SORT tracker on `e3v831e-20260218T145915-150429.mp4` first 20 seconds
+  1. A baseline metrics document exists recording track count, track duration distribution, fragmentation count, and total coverage for the current OC-SORT tracker on `e3v83eb-20260218T145915-150429.mp4` frames 3300-4500 (1:50-2:30, 40 seconds)
   2. The document states the gap to the zero-fragmentation, 9-track target explicitly as numbers (e.g., "8 tracks found, 3 ID switches, 94% coverage")
 **Plans**: TBD
 

@@ -95,7 +95,7 @@ def _find_video(video_dir: Path, camera_id: str) -> Path:
 
     Args:
         video_dir: Directory containing video files.
-        camera_id: Camera identifier (e.g., 'e3v831e').
+        camera_id: Camera identifier (e.g., 'e3v83eb').
 
     Returns:
         Path to the matching video file.
@@ -769,7 +769,7 @@ def main() -> None:
     parser.add_argument(
         "--camera",
         required=True,
-        help="Camera ID to analyze (e.g., e3v831e)",
+        help="Camera ID to analyze (e.g., e3v83eb)",
     )
     parser.add_argument(
         "--start-frame",

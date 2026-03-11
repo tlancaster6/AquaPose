@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.8
 milestone_name: Improved Association
 status: unknown
-last_updated: "2026-03-11T19:14:11.837Z"
+last_updated: "2026-03-11T19:23:05.031Z"
 progress:
   total_phases: 13
-  completed_phases: 11
+  completed_phases: 12
   total_plans: 21
-  completed_plans: 19
+  completed_plans: 20
 ---
 
 # Project State
@@ -43,6 +43,7 @@ Progress: [██░░░░░░░░] 17%
 | - | - | - | - |
 
 *Updated after each plan completion*
+| Phase 89 P01 | 4min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -53,6 +54,7 @@ Recent decisions affecting current work:
 - v3.7: ASSOC-01 keypoint centroid lost in Phase 85 BoxMot removal — superseded by full multi-keypoint scoring in Phase 88
 - Research: Fragment merging removed (works against upstream fragmentation intent); refinement.py replaced by validation.py (richer signal, combines eviction + changepoint in one pass)
 - Research: No new dependencies — ruptures rejected; custom O(n) prefix-sum changepoint sufficient
+- [Phase 89]: Fragment merging removed permanently from association pipeline — works against upstream fragmentation intent; max_merge_gap removed from AssociationConfig and ClusteringConfigLike
 
 ### Pending Todos
 

@@ -35,7 +35,7 @@ Requirements for the Improved Association milestone. Each maps to roadmap phases
 
 ### Cleanup
 
-- [ ] **CLEAN-01**: Fragment merging code and max_merge_gap config field removed
+- [x] **CLEAN-01**: Fragment merging code and max_merge_gap config field removed
 - [ ] **CLEAN-02**: Refinement module replaced by group validation (refinement.py deleted after consumer audit)
 
 ### Evaluation
@@ -71,7 +71,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SCORE-02 | Phase 88 | Pending |
 | SCORE-03 | Phase 88 | Pending |
 | SCORE-04 | Phase 88 | Pending |
-| CLEAN-01 | Phase 89 | Pending |
+| CLEAN-01 | Phase 89 | Complete |
 | VALID-01 | Phase 90 | Pending |
 | VALID-02 | Phase 90 | Pending |
 | VALID-03 | Phase 90 | Pending |

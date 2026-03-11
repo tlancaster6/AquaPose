@@ -11,7 +11,7 @@ Requirements for the Improved Tracking milestone. Each maps to roadmap phases.
 
 - [x] **INV-01**: Occlusion investigation script generates per-detection pose overlay video with confidence visualization for a configurable camera/frame range
 - [x] **INV-02**: Written summary characterizing OBB detector and pose model behavior under fish occlusion with go/no-go recommendation
-- [ ] **INV-03**: Baseline tracking metrics (track count, duration distribution, fragmentation, coverage) measured on perfect-tracking target clip with current OC-SORT
+- [x] **INV-03**: Baseline tracking metrics (track count, duration distribution, fragmentation, coverage) measured on perfect-tracking target clip with current OC-SORT
 - [x] **INV-04**: Detection confidence threshold determined empirically — characterize the quality vs false-positive tradeoff across confidence levels
 
 ### Remediation
@@ -81,7 +81,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | INV-01 | Phase 78 | Complete |
 | INV-02 | Phase 78 | Complete |
-| INV-03 | Phase 80 | Pending |
+| INV-03 | Phase 80 | Complete |
 | INV-04 | Phase 78 | Complete |
 | REM-01 | Phase 79 | Skipped (GO) |
 | RETRAIN-01 | Phase 78.1 | Complete |

@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 ## Current Position
 
 Phase: 80 of v3.7 (Baseline Metrics)
-Plan: — (not yet planned)
-Status: Ready to plan
-Last activity: 2026-03-10 — Phase 78.1 complete, production models deployed, evaluation video switched to e3v83eb 1:50-2:30
+Plan: 01 complete
+Status: Plan 80-01 complete — ready to plan Phase 81 or next phase
+Last activity: 2026-03-10 — Phase 80-01 complete, OC-SORT baseline established (27 tracks vs 9-fish target)
 
-Progress: [██░░░░░░░░] 20%
+Progress: [███░░░░░░░] 30%
 
 ## Performance Metrics
 
@@ -67,6 +67,9 @@ Recent decisions affecting current work:
 - [Phase 78.1-02]: White-wall recall deferred — no systematic dropout, marginal cases remain, not blocking Phase 80+
 - [Phase 78.1-02]: False positive above tank (conf=0.618) accepted — filtered by triangulation geometry; tank ROI mask deferred
 - [Phase 78.1-02]: Both models deployed to config.yaml as production defaults (run_20260310_115419 OBB, run_20260310_171543 Pose)
+- [Phase 80-01]: OC-SORT baseline: 27 tracks vs 9-fish target (3x over-fragmented) — primary failure mode for Phase 84 to address
+- [Phase 80-01]: min_hits=1 used for honest baseline — no warm-up penalty that would artificially inflate track count
+- [Phase 80-01]: Single-pass architecture in measure_baseline_tracking.py — detection+tracking+video rendering in one loop, avoids memory duplication
 
 ### Roadmap Evolution
 
@@ -84,5 +87,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-10
-Stopped at: Phase 78.1 complete — ready to plan Phase 80 (Baseline Metrics)
+Stopped at: Completed 80-01-PLAN.md — OC-SORT baseline established, evaluate_fragmentation_2d added, 80-BASELINE.md created
 Resume file: N/A

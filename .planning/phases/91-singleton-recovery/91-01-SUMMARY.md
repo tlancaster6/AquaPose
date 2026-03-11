@@ -120,6 +120,15 @@ During the TDD RED-to-GREEN cycle, the split-assign test required careful geomet
 - Phase 92 evaluation can measure reduction in singleton rate with this recovery active
 - Singleton rate expected to decrease from ~27% baseline; Phase 92 to measure actual improvement
 
+## Self-Check: PASSED
+
+- recovery.py: FOUND
+- test_recovery.py: FOUND
+- SUMMARY.md: FOUND
+- Commit 89caba7 (RED phase): FOUND
+- Commit f30ccf3 (GREEN phase): FOUND
+- `grep -c "from aquapose.core.association.validation\|from aquapose.core.association.refinement" recovery.py` = 0 (module independence verified)
+
 ---
 *Phase: 91-singleton-recovery*
 *Completed: 2026-03-11*

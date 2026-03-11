@@ -305,7 +305,7 @@ Note: Phases 88 and 89 depend only on Phase 87 and can be executed in either ord
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 87. Tracklet2D Keypoint Propagation | 1/1 | Complete   | 2026-03-11 |
+| 87. Tracklet2D Keypoint Propagation | 1/1 | Complete    | 2026-03-11 |
 | 88. Multi-Keypoint Pairwise Scoring | 0/TBD | Not started | - |
 | 89. Fragment Merging Removal | 0/TBD | Not started | - |
 | 90. Group Validation with Changepoint Detection | 0/TBD | Not started | - |

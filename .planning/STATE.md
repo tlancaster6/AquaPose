@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.8
 milestone_name: Improved Association
-status: roadmap_ready
-last_updated: "2026-03-11T18:30:00.000Z"
+status: unknown
+last_updated: "2026-03-11T18:27:45.472Z"
 progress:
-  total_phases: 6
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_phases: 11
+  completed_phases: 10
+  total_plans: 19
+  completed_plans: 18
 ---
 
 # Project State

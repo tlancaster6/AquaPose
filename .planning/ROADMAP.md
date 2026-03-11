@@ -208,7 +208,7 @@ Full details: `.planning/milestones/v3.6-ROADMAP.md`
 - [x] **Phase 83: Custom Tracker Implementation** - Bidirectional batched keypoint tracker with OKS cost, OCM direction, KF state, gap interpolation (completed 2026-03-11)
 - [x] **Phase 84: Integration & Evaluation** - New tracker wired into pipeline, evaluated against Phase 80 baselines (completed 2026-03-11)
 - [x] **Phase 85: Code Quality Audit & CLI Smoke Test** - Dead code removed, type errors fixed, pipeline runs end-to-end from CLI (completed 2026-03-11)
-- [x] **Phase 86: Cleanup (Conditional)** - Address issues found in Phase 85 — skip if Phase 85 is clean (completed 2026-03-11)
+- [ ] **Phase 86: Cleanup (Conditional)** - Address issues found in Phase 85 — fix cross-chunk handoff bug, remove dead types, rename test dirs, wire augment_count
 
 ## Phase Details
 
@@ -347,13 +347,17 @@ Plans:
 
 
 ### Phase 86: Cleanup (Conditional)
-**Goal**: Address issues found during the Phase 85 audit — this phase is skipped entirely if Phase 85 finds nothing actionable
+**Goal**: Address the 4 issues found during the Phase 85 audit: cross-chunk handoff bug, dead OC-SORT types, misnamed test directory, and unwired augment_count CLI param
 **Depends on**: Phase 85
 **Requirements**: (none — scope set by Phase 85 findings)
 **Success Criteria** (what must be TRUE):
   1. Each issue listed in the Phase 85 audit report has a corresponding fix or an explicit justification for deferral
   2. `hatch run check` and `hatch run test` pass cleanly after all fixes
-**Plans**: TBD (scope set by Phase 85 findings)
+**Plans:** 2 plans
+
+Plans:
+- [ ] 86-01-PLAN.md — Fix cross-chunk handoff bug, remove dead code (FishTrack/TrackState/TrackHealth, _reproject_3d_midline)
+- [ ] 86-02-PLAN.md — Rename test directory, wire augment_count CLI option
 
 ## Progress
 
@@ -371,4 +375,4 @@ Phases execute in numeric order: 78 -> 79 (conditional) -> 80 -> 81 -> 82 -> 83 
 | 83. Custom Tracker Implementation | 2/2 | Complete    | 2026-03-11 | - |
 | 84. Integration & Evaluation | 2/2 | Complete    | 2026-03-11 | - |
 | 85. Code Quality Audit & CLI Smoke Test | 2/2 | Complete    | 2026-03-11 | - |
-| 86. Cleanup (Conditional) | v3.7 | 0/TBD | Not started | - |
+| 86. Cleanup (Conditional) | v3.7 | 0/2 | Not started | - |

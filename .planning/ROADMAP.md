@@ -260,7 +260,9 @@ Full details: `.planning/milestones/v3.7-ROADMAP.md`
   1. `merge_fragments` function and all helpers are gone from `clustering.py`
   2. `max_merge_gap` field is absent from `AssociationConfig` and all YAML configs
   3. End-to-end pipeline run completes without errors on the benchmark clip
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 89-01-PLAN.md — Delete merge_fragments code, config, tests, and interpolated references
 
 ### Phase 90: Group Validation with Changepoint Detection
 **Goal**: After clustering, each group is audited for temporal ID swaps and outliers; swapped tracklets are split or evicted; refinement.py is deleted
@@ -307,7 +309,7 @@ Note: Phases 88 and 89 depend only on Phase 87 and can be executed in either ord
 |-------|----------------|--------|-----------|
 | 87. Tracklet2D Keypoint Propagation | 1/1 | Complete    | 2026-03-11 |
 | 88. Multi-Keypoint Pairwise Scoring | 0/TBD | Not started | - |
-| 89. Fragment Merging Removal | 0/TBD | Not started | - |
+| 89. Fragment Merging Removal | 0/1 | Planned | - |
 | 90. Group Validation with Changepoint Detection | 0/TBD | Not started | - |
 | 91. Singleton Recovery | 0/TBD | Not started | - |
 | 92. Parameter Tuning Pass | 0/TBD | Not started | - |

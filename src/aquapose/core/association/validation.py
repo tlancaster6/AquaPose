@@ -202,15 +202,18 @@ def validate_groups(
             all_frames.update(t.frames)
         frame_list = sorted(all_frames)
 
+        kept_tuple = tuple(kept_tracklets)
+        precomputed = _precompute_centroid_rays(frame_list, kept_tuple, forward_luts)
         frame_consensus = _compute_frame_consensus(
-            frame_list, tuple(kept_tracklets), forward_luts
+            frame_list, kept_tuple, forward_luts, precomputed_rays=precomputed
         )
         per_frame_conf = _compute_per_frame_confidence(
             frame_list,
-            tuple(kept_tracklets),
+            kept_tuple,
             frame_consensus,
             forward_luts,
             config.eviction_reproj_threshold,
+            precomputed_rays=precomputed,
         )
 
         mean_conf = float(np.mean(per_frame_conf)) if per_frame_conf else None
@@ -646,11 +649,61 @@ def _compute_next_track_id(groups: list[TrackletGroup]) -> int:
 # Consensus and confidence (copied from refinement.py)
 # ---------------------------------------------------------------------------
 
+# Type alias for precomputed rays: tracklet_index -> {frame -> (origin, dir)}
+_PrecomputedRays = dict[int, dict[int, tuple[np.ndarray, np.ndarray]]]
+
+
+def _precompute_centroid_rays(
+    frame_list: list[int],
+    tracklets: tuple[Tracklet2D, ...] | tuple,
+    forward_luts: dict[str, ForwardLUT],
+) -> _PrecomputedRays:
+    """Batch cast_ray calls per camera across all frames.
+
+    Groups centroid pixels by camera and makes one cast_ray call per camera
+    instead of one per (frame, tracklet). Returns a nested dict indexed by
+    tracklet index and frame number.
+
+    Args:
+        frame_list: Sorted list of frame indices to process.
+        tracklets: Tracklets in the cluster.
+        forward_luts: Per-camera ForwardLUTs.
+
+    Returns:
+        Dict mapping tracklet index -> {frame -> (origin_3d, dir_3d)}.
+    """
+    frame_set = set(frame_list)
+    # Collect per-camera: list of (tracklet_idx, frame, pixel)
+    cam_entries: dict[str, list[tuple[int, int, np.ndarray]]] = {}
+    for t_idx, t in enumerate(tracklets):
+        cam = t.camera_id
+        for i, f in enumerate(t.frames):
+            if f not in frame_set:
+                continue
+            centroid = t.centroids[i]
+            cam_entries.setdefault(cam, []).append(
+                (t_idx, f, np.array([float(centroid[0]), float(centroid[1])]))
+            )
+
+    result: _PrecomputedRays = {}
+
+    for cam_id, entries in cam_entries.items():
+        pixels = np.array([e[2] for e in entries], dtype=np.float64)
+        pix_t = torch.tensor(pixels, dtype=torch.float32)
+        origins, dirs = forward_luts[cam_id].cast_ray(pix_t)
+        origins_np = origins.cpu().numpy().astype(np.float64)
+        dirs_np = dirs.cpu().numpy().astype(np.float64)
+        for idx, (t_idx, frame, _) in enumerate(entries):
+            result.setdefault(t_idx, {})[frame] = (origins_np[idx], dirs_np[idx])
+
+    return result
+
 
 def _compute_frame_consensus(
     frame_list: list[int],
     tracklets: tuple[Tracklet2D, ...] | tuple,
     forward_luts: dict[str, ForwardLUT],
+    precomputed_rays: _PrecomputedRays | None = None,
 ) -> dict[int, np.ndarray | None]:
     """Compute per-frame consensus 3D point from tracklet ray intersections.
 
@@ -661,38 +714,34 @@ def _compute_frame_consensus(
         frame_list: Sorted list of frame indices to process.
         tracklets: Tracklets in the cluster.
         forward_luts: Per-camera ForwardLUTs.
+        precomputed_rays: Optional precomputed rays from
+            ``_precompute_centroid_rays``. If None, rays are computed inline.
 
     Returns:
         Dict mapping frame index to consensus 3D point (shape (3,)),
         or None if fewer than 2 rays available for that frame.
     """
-    tracklet_frame_maps: list[dict[int, int]] = []
-    for t in tracklets:
-        tracklet_frame_maps.append({f: i for i, f in enumerate(t.frames)})
+    if precomputed_rays is None:
+        precomputed_rays = _precompute_centroid_rays(
+            frame_list, tracklets, forward_luts
+        )
 
     consensus: dict[int, np.ndarray | None] = {}
 
     for frame in frame_list:
         rays: list[tuple[np.ndarray, np.ndarray]] = []
 
-        for t, frame_map in zip(tracklets, tracklet_frame_maps, strict=True):
-            if frame not in frame_map:
-                continue
-            idx = frame_map[frame]
-            centroid = t.centroids[idx]
-            lut = forward_luts[t.camera_id]
-            pix = torch.tensor(
-                [[float(centroid[0]), float(centroid[1])]], dtype=torch.float32
-            )
-            origins, dirs = lut.cast_ray(pix)
-            o = origins[0].cpu().numpy().astype(np.float64)
-            d = dirs[0].cpu().numpy().astype(np.float64)
-            rays.append((o, d))
+        for t_idx in range(len(tracklets)):
+            t_rays = precomputed_rays.get(t_idx)
+            if t_rays is not None and frame in t_rays:
+                rays.append(t_rays[frame])
 
         if len(rays) < 2:
             consensus[frame] = None
             continue
 
+        # Pairwise midpoints — small count (C(cameras,2) ~ 3-15), needs midpoints
+        # so scalar ray_ray_closest_point is appropriate here
         midpoints: list[np.ndarray] = []
         distances: list[float] = []
         for i in range(len(rays)):
@@ -720,6 +769,7 @@ def _compute_per_frame_confidence(
     frame_consensus: dict[int, np.ndarray | None],
     forward_luts: dict[str, ForwardLUT],
     threshold: float,
+    precomputed_rays: _PrecomputedRays | None = None,
 ) -> list[float]:
     """Compute per-frame confidence from ray convergence quality.
 
@@ -732,11 +782,17 @@ def _compute_per_frame_confidence(
         frame_consensus: Per-frame consensus 3D points.
         forward_luts: Per-camera ForwardLUTs.
         threshold: Eviction threshold in metres.
+        precomputed_rays: Optional precomputed rays from
+            ``_precompute_centroid_rays``. If None, rays are computed inline.
 
     Returns:
         List of confidence values, one per frame in frame_list.
     """
-    tracklet_frame_maps = [{f: i for i, f in enumerate(t.frames)} for t in tracklets]
+    if precomputed_rays is None:
+        precomputed_rays = _precompute_centroid_rays(
+            frame_list, tracklets, forward_luts
+        )
+
     confidences: list[float] = []
 
     for frame in frame_list:
@@ -746,33 +802,21 @@ def _compute_per_frame_confidence(
             continue
 
         rays: list[tuple[np.ndarray, np.ndarray]] = []
-        for t, frame_map in zip(tracklets, tracklet_frame_maps, strict=True):
-            if frame not in frame_map:
-                continue
-            idx = frame_map[frame]
-            centroid = t.centroids[idx]
-            lut = forward_luts[t.camera_id]
-            pix = torch.tensor(
-                [[float(centroid[0]), float(centroid[1])]], dtype=torch.float32
-            )
-            origins, dirs = lut.cast_ray(pix)
-            o = origins[0].cpu().numpy().astype(np.float64)
-            d = dirs[0].cpu().numpy().astype(np.float64)
-            rays.append((o, d))
+        for t_idx in range(len(tracklets)):
+            t_rays = precomputed_rays.get(t_idx)
+            if t_rays is not None and frame in t_rays:
+                rays.append(t_rays[frame])
 
         if len(rays) < 2:
             confidences.append(0.0)
             continue
 
-        pair_dists: list[float] = []
-        for i in range(len(rays)):
-            for j in range(i + 1, len(rays)):
-                dist, _ = ray_ray_closest_point(
-                    rays[i][0], rays[i][1], rays[j][0], rays[j][1]
-                )
-                pair_dists.append(dist)
-
-        mean_dist = float(np.mean(pair_dists))
+        # Use batch for pairwise distances (no midpoints needed)
+        oa = np.array([r[0] for r in rays])  # (R, 3)
+        da = np.array([r[1] for r in rays])  # (R, 3)
+        ii, jj = np.triu_indices(len(rays), k=1)
+        pair_dists = ray_ray_closest_point_batch(oa[ii], da[ii], oa[jj], da[jj])
+        mean_dist = float(pair_dists.mean())
         conf = max(0.0, min(1.0, 1.0 - mean_dist / threshold))
         confidences.append(conf)
 

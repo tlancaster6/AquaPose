@@ -64,12 +64,12 @@ def test_captures_multiple_stages() -> None:
 
     ctx2 = PipelineContext()
     ctx2.detections = [[{"cam1": [1]}]]
-    ctx2.annotated_detections = [[{"cam1": [{"midline": [1, 2]}]}]]
+    ctx2.midlines_3d = [[{}]]
     ctx2.frame_count = 1
 
     observer.on_event(
         StageComplete(
-            stage_name="MidlineStage",
+            stage_name="PoseStage",
             stage_index=1,
             elapsed_seconds=0.7,
             context=ctx2,
@@ -78,8 +78,8 @@ def test_captures_multiple_stages() -> None:
 
     assert len(observer.stages) == 2
     assert "DetectionStage" in observer.stages
-    assert "MidlineStage" in observer.stages
-    assert observer.stages["MidlineStage"].annotated_detections is not None
+    assert "PoseStage" in observer.stages
+    assert observer.stages["PoseStage"].detections is not None
 
 
 def test_snapshot_getitem() -> None:
@@ -157,13 +157,13 @@ def test_stage_timing_captured() -> None:
 
 
 def test_all_stages_captured_in_full_sequence() -> None:
-    """Five StageComplete events produce five snapshot entries (v2.1 stage names)."""
+    """Five StageComplete events produce five snapshot entries (v3.7 stage names)."""
     observer = DiagnosticObserver()
     stage_names = [
         "DetectionStage",
+        "PoseStage",
         "TrackingStage",
         "AssociationStage",
-        "MidlineStage",
         "ReconstructionStage",
     ]
 

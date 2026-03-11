@@ -540,8 +540,9 @@ class TestTuningOrchestratorChunkLoading:
         run_dir = _make_tuning_run_dir(tmp_path, n_chunks=1)
         orchestrator = TuningOrchestrator(run_dir / "config.yaml")
 
+        # "reconstruction" cache is not populated because the context has no midlines_3d
         with pytest.raises(FileNotFoundError):
-            orchestrator._require_cache("midline")
+            orchestrator._require_cache("reconstruction")
 
     def test_no_chunk_caches_means_empty_caches(self, tmp_path: Path) -> None:
         """TuningOrchestrator with empty diagnostics has empty _caches dict."""

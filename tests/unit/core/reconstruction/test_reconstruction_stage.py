@@ -22,7 +22,6 @@ from __future__ import annotations
 import importlib
 import inspect
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -33,6 +32,7 @@ from aquapose.core.context import PipelineContext, Stage
 from aquapose.core.reconstruction import ReconstructionStage
 from aquapose.core.reconstruction.backends import get_backend
 from aquapose.core.tracking.types import Tracklet2D
+from aquapose.core.types.detection import Detection
 from aquapose.core.types.midline import Midline2D
 from aquapose.core.types.reconstruction import Midline3D
 
@@ -81,13 +81,30 @@ def _make_midline3d(
     )
 
 
-def _make_annotated_detection(
-    midline: Midline2D | None,
+def _make_detection_with_keypoints(
     centroid: tuple[float, float] = (50.0, 50.0),
-) -> SimpleNamespace:
-    """Create a mock AnnotatedDetection with a midline and detection centroid."""
-    det = SimpleNamespace(centroid=centroid)
-    return SimpleNamespace(midline=midline, detection=det)
+    has_keypoints: bool = True,
+) -> Detection:
+    """Create a Detection with 6 anatomical keypoints at the given centroid.
+
+    The bbox is centered on *centroid* with a 20x20 pixel box.
+    Keypoints are evenly spaced along a horizontal line through the centroid.
+    """
+    cx, cy = centroid
+    x, y, w, h = cx - 10, cy - 10, 20, 20
+    det = Detection(
+        bbox=(x, y, w, h),
+        mask=None,
+        area=w * h,
+        confidence=0.9,
+    )
+    if has_keypoints:
+        # 6 keypoints evenly spaced along centroid row
+        det.keypoints = np.array(
+            [[cx + (i - 2.5) * 4, cy] for i in range(6)], dtype=np.float32
+        )
+        det.keypoint_conf = np.ones(6, dtype=np.float32)
+    return det
 
 
 def _make_tracklet(
@@ -159,10 +176,6 @@ def test_reconstruction_stage_satisfies_protocol(tmp_path: Path) -> None:
 
 def test_reconstruction_with_tracklet_groups(tmp_path: Path) -> None:
     """run() uses tracklet_groups camera membership to build MidlineSets."""
-    ml1 = _make_midline2d(fish_id=0, camera_id="cam1")
-    ml2 = _make_midline2d(fish_id=0, camera_id="cam2")
-    ml3 = _make_midline2d(fish_id=0, camera_id="cam3")
-
     expected_m3d = _make_midline3d(fish_id=0, frame_index=0)
 
     mock_backend = MagicMock()
@@ -170,14 +183,14 @@ def test_reconstruction_with_tracklet_groups(tmp_path: Path) -> None:
 
     stage = _build_stage(tmp_path, mock_backend=mock_backend, min_cameras=3)
 
-    # Build annotated detections: 3 cameras, 2 frames
-    ann1 = _make_annotated_detection(ml1, centroid=(50.0, 50.0))
-    ann2 = _make_annotated_detection(ml2, centroid=(50.0, 50.0))
-    ann3 = _make_annotated_detection(ml3, centroid=(50.0, 50.0))
+    # Build detections: 3 cameras, 2 frames, each with keypoints
+    det1 = _make_detection_with_keypoints(centroid=(50.0, 50.0))
+    det2 = _make_detection_with_keypoints(centroid=(50.0, 50.0))
+    det3 = _make_detection_with_keypoints(centroid=(50.0, 50.0))
 
-    annotated = [
-        {"cam1": [ann1], "cam2": [ann2], "cam3": [ann3]},
-        {"cam1": [ann1], "cam2": [ann2], "cam3": [ann3]},
+    detections = [
+        {"cam1": [det1], "cam2": [det2], "cam3": [det3]},
+        {"cam1": [det1], "cam2": [det2], "cam3": [det3]},
     ]
 
     # Build tracklet group with 3 cameras, frames 0-1
@@ -189,7 +202,7 @@ def test_reconstruction_with_tracklet_groups(tmp_path: Path) -> None:
     ctx = PipelineContext()
     ctx.frame_count = 2
     ctx.tracklet_groups = [group]
-    ctx.annotated_detections = annotated
+    ctx.detections = detections
 
     result = stage.run(ctx)
 
@@ -214,24 +227,32 @@ def test_reconstruction_two_fish(tmp_path: Path) -> None:
 
     stage = _build_stage(tmp_path, mock_backend=mock_backend, min_cameras=3)
 
-    ml = _make_midline2d()
-    ann = _make_annotated_detection(ml, centroid=(50.0, 50.0))
-    annotated = [{"cam1": [ann, ann], "cam2": [ann], "cam3": [ann]}]
+    # Two fish centroids at different positions so they match different tracklets
+    det_a = _make_detection_with_keypoints(centroid=(50.0, 50.0))
+    det_b = _make_detection_with_keypoints(centroid=(200.0, 200.0))
 
     t_a1 = _make_tracklet("cam1", 1, (0,))
     t_a2 = _make_tracklet("cam2", 2, (0,))
     t_a3 = _make_tracklet("cam3", 3, (0,))
     group_a = TrackletGroup(fish_id=0, tracklets=(t_a1, t_a2, t_a3))
 
-    t_b1 = _make_tracklet("cam1", 4, (0,))
-    t_b2 = _make_tracklet("cam2", 5, (0,))
-    t_b3 = _make_tracklet("cam3", 6, (0,))
+    t_b1 = _make_tracklet("cam1", 4, (0,), centroids=((200.0, 200.0),))
+    t_b2 = _make_tracklet("cam2", 5, (0,), centroids=((200.0, 200.0),))
+    t_b3 = _make_tracklet("cam3", 6, (0,), centroids=((200.0, 200.0),))
     group_b = TrackletGroup(fish_id=1, tracklets=(t_b1, t_b2, t_b3))
+    # Add det_b for each camera so fish_b can be matched
+    detections_2 = [
+        {
+            "cam1": [det_a, det_b],
+            "cam2": [det_a, det_b],
+            "cam3": [det_a, det_b],
+        }
+    ]
 
     ctx = PipelineContext()
     ctx.frame_count = 1
     ctx.tracklet_groups = [group_a, group_b]
-    ctx.annotated_detections = annotated
+    ctx.detections = detections_2
 
     stage.run(ctx)
 
@@ -252,9 +273,8 @@ def test_min_cameras_drops_insufficient_views(tmp_path: Path) -> None:
     mock_backend.reconstruct_frame.return_value = {}
     stage = _build_stage(tmp_path, mock_backend=mock_backend, min_cameras=3)
 
-    ml = _make_midline2d()
-    ann = _make_annotated_detection(ml, centroid=(50.0, 50.0))
-    annotated = [{"cam1": [ann], "cam2": [ann]}]
+    det = _make_detection_with_keypoints(centroid=(50.0, 50.0))
+    detections = [{"cam1": [det], "cam2": [det]}]
 
     # Only 2 cameras -> below min_cameras=3
     t1 = _make_tracklet("cam1", 1, (0,))
@@ -264,7 +284,7 @@ def test_min_cameras_drops_insufficient_views(tmp_path: Path) -> None:
     ctx = PipelineContext()
     ctx.frame_count = 1
     ctx.tracklet_groups = [group]
-    ctx.annotated_detections = annotated
+    ctx.detections = detections
 
     stage.run(ctx)
 
@@ -300,15 +320,14 @@ def test_gap_interpolation_short_gap(tmp_path: Path) -> None:
         tmp_path, mock_backend=mock_backend, min_cameras=3, max_interp_gap=5
     )
 
-    ml = _make_midline2d()
-    ann = _make_annotated_detection(ml, centroid=(50.0, 50.0))
+    det = _make_detection_with_keypoints(centroid=(50.0, 50.0))
     # Only frames 0 and 5 have 3 cameras; frames 1-4 have 0 cameras
-    annotated = []
+    detections = []
     for i in range(6):
         if i in (0, 5):
-            annotated.append({"cam1": [ann], "cam2": [ann], "cam3": [ann]})
+            detections.append({"cam1": [det], "cam2": [det], "cam3": [det]})
         else:
-            annotated.append({})
+            detections.append({})
 
     t1 = _make_tracklet("cam1", 1, (0, 5))
     t2 = _make_tracklet("cam2", 2, (0, 5))
@@ -318,7 +337,7 @@ def test_gap_interpolation_short_gap(tmp_path: Path) -> None:
     ctx = PipelineContext()
     ctx.frame_count = 6
     ctx.tracklet_groups = [group]
-    ctx.annotated_detections = annotated
+    ctx.detections = detections
 
     stage.run(ctx)
 
@@ -357,14 +376,13 @@ def test_gap_too_long_not_interpolated(tmp_path: Path) -> None:
         tmp_path, mock_backend=mock_backend, min_cameras=3, max_interp_gap=3
     )
 
-    ml = _make_midline2d()
-    ann = _make_annotated_detection(ml, centroid=(50.0, 50.0))
-    annotated = []
+    det = _make_detection_with_keypoints(centroid=(50.0, 50.0))
+    detections = []
     for i in range(9):
         if i in (0, 8):
-            annotated.append({"cam1": [ann], "cam2": [ann], "cam3": [ann]})
+            detections.append({"cam1": [det], "cam2": [det], "cam3": [det]})
         else:
-            annotated.append({})
+            detections.append({})
 
     t1 = _make_tracklet("cam1", 1, (0, 8))
     t2 = _make_tracklet("cam2", 2, (0, 8))
@@ -374,7 +392,7 @@ def test_gap_too_long_not_interpolated(tmp_path: Path) -> None:
     ctx = PipelineContext()
     ctx.frame_count = 9
     ctx.tracklet_groups = [group]
-    ctx.annotated_detections = annotated
+    ctx.detections = detections
 
     stage.run(ctx)
 
@@ -434,9 +452,8 @@ def test_coasted_frames_excluded_from_camera_count(tmp_path: Path) -> None:
     mock_backend.reconstruct_frame.return_value = {}
     stage = _build_stage(tmp_path, mock_backend=mock_backend, min_cameras=3)
 
-    ml = _make_midline2d()
-    ann = _make_annotated_detection(ml, centroid=(50.0, 50.0))
-    annotated = [{"cam1": [ann], "cam2": [ann], "cam3": [ann]}]
+    det = _make_detection_with_keypoints(centroid=(50.0, 50.0))
+    detections = [{"cam1": [det], "cam2": [det], "cam3": [det]}]
 
     # cam3 is coasted in frame 0 -> only 2 detected cameras -> dropped
     t1 = _make_tracklet("cam1", 1, (0,), frame_status=("detected",))
@@ -447,7 +464,7 @@ def test_coasted_frames_excluded_from_camera_count(tmp_path: Path) -> None:
     ctx = PipelineContext()
     ctx.frame_count = 1
     ctx.tracklet_groups = [group]
-    ctx.annotated_detections = annotated
+    ctx.detections = detections
 
     stage.run(ctx)
 

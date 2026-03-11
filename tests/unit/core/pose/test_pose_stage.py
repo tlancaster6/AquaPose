@@ -227,7 +227,6 @@ _CORE_POSE_MODULES = [
     "aquapose.core.pose.stage",
     "aquapose.core.pose.types",
     "aquapose.core.pose.backends",
-    "aquapose.core.pose.backends.segmentation",
     "aquapose.core.pose.backends.pose_estimation",
 ]
 

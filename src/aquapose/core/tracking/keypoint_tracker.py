@@ -434,6 +434,8 @@ class _KptTrackletBuilder:
             centroids=tuple(self.centroids),
             bboxes=tuple(self.bboxes),
             frame_status=tuple(self.frame_status),
+            keypoints=np.stack(self.keypoints) if self.keypoints else None,
+            keypoint_conf=np.stack(self.keypoint_conf) if self.keypoint_conf else None,
         )
 
 

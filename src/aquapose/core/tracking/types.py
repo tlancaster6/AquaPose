@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+
 __all__ = ["Tracklet2D"]
 
 # ---------------------------------------------------------------------------
@@ -33,6 +35,8 @@ class Tracklet2D:
         frames: Ordered frame indices where the tracklet is active.
             Type: ``tuple[int, ...]``
         centroids: Per-frame (u, v) pixel centroids, one per entry in ``frames``.
+            Deprecated: prefer ``keypoints[:, centroid_idx, :]`` when
+            ``keypoints`` is not None.
             Type: ``tuple[tuple[float, float], ...]``
         bboxes: Per-frame bounding boxes as (x, y, w, h), one per entry in ``frames``.
             Type: ``tuple[tuple[float, float, float, float], ...]``
@@ -40,6 +44,12 @@ class Tracklet2D:
             Each value is ``"detected"`` (directly observed) or ``"coasted"``
             (position interpolated during a missed detection).
             Type: ``tuple[str, ...]``
+        keypoints: Per-frame keypoint positions, shape ``(T, K, 2)``, float32.
+            ``None`` when keypoint data is unavailable (e.g. tracklets from
+            fragment merging).
+        keypoint_conf: Per-frame keypoint confidences, shape ``(T, K)``, float32.
+            Values are 0.0 for coasted/interpolated frames and retain raw
+            detector confidence for detected frames. ``None`` when unavailable.
     """
 
     camera_id: str
@@ -48,3 +58,5 @@ class Tracklet2D:
     centroids: tuple
     bboxes: tuple
     frame_status: tuple
+    keypoints: np.ndarray | None = None
+    keypoint_conf: np.ndarray | None = None

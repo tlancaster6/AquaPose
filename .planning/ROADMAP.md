@@ -300,7 +300,7 @@ Plans:
 **Goal:** Fix association stage wall-time performance (452s to <30s per chunk). Add per-step timing instrumentation, vectorize all scalar ray-casting loops in validation.py and recovery.py, restructure split-assign to precompute residuals. Fix timing observer append behavior.
 **Requirements**: PERF-INSTRUMENT, PERF-TIMING-FIX, PERF-VALIDATION, PERF-RECOVERY
 **Depends on:** Phase 91
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 - [ ] 91.1-01-PLAN.md — Per-step timing instrumentation in stage.py and timing observer append fix
@@ -331,5 +331,5 @@ Note: Phases 88 and 89 depend only on Phase 87 and can be executed in either ord
 | 89. Fragment Merging Removal | 1/1 | Complete    | 2026-03-11 |
 | 90. Group Validation with Changepoint Detection | 2/2 | Complete    | 2026-03-11 |
 | 91. Singleton Recovery | 2/2 | Complete    | 2026-03-11 |
-| 91.1. Association Bottleneck Remediation | 0/3 | Planned    |  |
+| 91.1. Association Bottleneck Remediation | 1/3 | In Progress|  |
 | 92. Parameter Tuning Pass | 1/2 | In Progress|  |

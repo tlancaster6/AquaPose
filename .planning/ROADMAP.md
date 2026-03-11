@@ -220,7 +220,7 @@ Full details: `.planning/milestones/v3.7-ROADMAP.md`
 
 **Milestone Goal:** Replace single-centroid ray scoring with multi-keypoint association, add swap-aware group validation and singleton recovery, and tune on real data to reduce the ~27% singleton rate.
 
-- [ ] **Phase 87: Tracklet2D Keypoint Propagation** - Extend Tracklet2D with per-frame keypoint and confidence arrays from tracker
+- [x] **Phase 87: Tracklet2D Keypoint Propagation** - Extend Tracklet2D with per-frame keypoint and confidence arrays from tracker (completed 2026-03-11)
 - [ ] **Phase 88: Multi-Keypoint Pairwise Scoring** - Replace single-centroid ray casting with K-keypoint vectorized scoring
 - [ ] **Phase 89: Fragment Merging Removal** - Delete merge_fragments and max_merge_gap; pipeline still runs end-to-end
 - [ ] **Phase 90: Group Validation with Changepoint Detection** - Add validation.py replacing refinement.py; temporal ID swap splitting and outlier eviction
@@ -305,7 +305,7 @@ Note: Phases 88 and 89 depend only on Phase 87 and can be executed in either ord
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 87. Tracklet2D Keypoint Propagation | 0/TBD | Not started | - |
+| 87. Tracklet2D Keypoint Propagation | 1/1 | Complete   | 2026-03-11 |
 | 88. Multi-Keypoint Pairwise Scoring | 0/TBD | Not started | - |
 | 89. Fragment Merging Removal | 0/TBD | Not started | - |
 | 90. Group Validation with Changepoint Detection | 0/TBD | Not started | - |

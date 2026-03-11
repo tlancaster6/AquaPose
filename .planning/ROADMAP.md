@@ -358,6 +358,6 @@ Phases execute in numeric order: 78 -> 79 (conditional) -> 80 -> 81 -> 82 -> 83 
 | 81. Pipeline Reorder & Segmentation Removal | 2/2 | Complete    | 2026-03-11 | - |
 | 82. Association Upgrade — Keypoint Centroid | 1/1 | Complete    | 2026-03-11 | - |
 | 83. Custom Tracker Implementation | 2/2 | Complete    | 2026-03-11 | - |
-| 84. Integration & Evaluation | 2/2 | Complete   | 2026-03-11 | - |
+| 84. Integration & Evaluation | 2/2 | Complete    | 2026-03-11 | - |
 | 85. Code Quality Audit & CLI Smoke Test | v3.7 | 0/TBD | Not started | - |
 | 86. Cleanup (Conditional) | v3.7 | 0/TBD | Not started | - |

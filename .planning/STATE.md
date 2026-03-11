@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-10)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.7 Improved Tracking — Phase 78.1 (OBB & Pose Production Retrain)
+**Current focus:** v3.7 Improved Tracking — Phase 80 (Baseline Metrics)
 
 ## Current Position
 
-Phase: 78.1 of v3.7 (OBB & Pose Production Retrain)
-Plan: 02 complete — Phase 78.1 COMPLETE
-Status: Phase 78.1 complete — proceed to Phase 80 (tracker)
-Last activity: 2026-03-10 — Plan 78.1-02 complete (production models approved and deployed to config)
+Phase: 80 of v3.7 (Baseline Metrics)
+Plan: — (not yet planned)
+Status: Ready to plan
+Last activity: 2026-03-10 — Phase 78.1 complete, production models deployed, evaluation video switched to e3v83eb 1:50-2:30
 
 Progress: [██░░░░░░░░] 20%
 
@@ -84,5 +84,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-10
-Stopped at: Phase 78.1 Plan 02 complete — production models approved and deployed; Phase 78.1 COMPLETE; proceed to Phase 80 (tracker)
+Stopped at: Phase 78.1 complete — ready to plan Phase 80 (Baseline Metrics)
 Resume file: N/A

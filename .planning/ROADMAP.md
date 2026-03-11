@@ -324,7 +324,7 @@ Plans:
   3. ✅ Best parameter set committed: pre-gated Hungarian with `match_cost_threshold=1.2`
   4. ✅ Track count 27 — beats OC-SORT parity (30)
   5. ✅ Detection coverage 95.0% (>= 90%)
-**Plans:** 1/2 plans complete
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 84.1-01-PLAN.md -- Config plumbing: promote constants to config, add CLI flags
@@ -339,7 +339,11 @@ Plans:
   2. `hatch run typecheck` produces no new type errors introduced by the v3.7 overhaul
   3. `aquapose run` completes end-to-end on a test clip with the new pipeline, and all config options for the new tracker are documented
   4. A documented decision exists on whether BoxMot is removed as a dependency or retained as an OC-SORT fallback
-**Plans:** TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 85-01-PLAN.md — BoxMot removal, type error fixes, dead code cleanup
+- [ ] 85-02-PLAN.md — CLI smoke test, audit report, user review
 
 
 ### Phase 86: Cleanup (Conditional)
@@ -366,5 +370,5 @@ Phases execute in numeric order: 78 -> 79 (conditional) -> 80 -> 81 -> 82 -> 83 
 | 82. Association Upgrade — Keypoint Centroid | 1/1 | Complete    | 2026-03-11 | - |
 | 83. Custom Tracker Implementation | 2/2 | Complete    | 2026-03-11 | - |
 | 84. Integration & Evaluation | 2/2 | Complete    | 2026-03-11 | - |
-| 85. Code Quality Audit & CLI Smoke Test | v3.7 | 0/TBD | Not started | - |
+| 85. Code Quality Audit & CLI Smoke Test | v3.7 | 0/2 | Not started | - |
 | 86. Cleanup (Conditional) | v3.7 | 0/TBD | Not started | - |

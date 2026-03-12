@@ -337,14 +337,19 @@ class DltBackend:
 
         control_points, arc_length = spline_result
 
-        # Convert half-widths to world metres via pinhole approximation
-        hw_metres_all = self._convert_half_widths(
-            per_point_hw_px=per_point_hw_px,
-            per_point_depths=per_point_depths,
-            per_point_inlier_ids=per_point_inlier_ids,
-            u_param=u_param,
-            n_body_points=n_body_points,
-        )
+        # Convert half-widths to world metres via pinhole approximation.
+        # Skip when all pixel half-widths are zero (keypoint-only pipeline
+        # does not produce width estimates).
+        if any(hw > 0.0 for hw in per_point_hw_px):
+            hw_metres_all = self._convert_half_widths(
+                per_point_hw_px=per_point_hw_px,
+                per_point_depths=per_point_depths,
+                per_point_inlier_ids=per_point_inlier_ids,
+                u_param=u_param,
+                n_body_points=n_body_points,
+            )
+        else:
+            hw_metres_all = np.zeros(n_body_points, dtype=np.float32)
 
         # Compute spline-based per-camera residuals
         spline_obj = scipy.interpolate.BSpline(

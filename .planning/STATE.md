@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.8
 milestone_name: Improved Association
-status: unknown
-last_updated: "2026-03-11T23:45:30.301Z"
+status: complete
+last_updated: "2026-03-12T23:33:00Z"
 progress:
   total_phases: 17
-  completed_phases: 15
+  completed_phases: 17
   total_plans: 30
-  completed_plans: 28
+  completed_plans: 30
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-03-11)
 ## Current Position
 
 Phase: 92 of 92 (Parameter Tuning Pass)
-Plan: 01 complete (1/2 plans done)
-Status: Phase 92 plan 01 complete, ready for plan 02
-Last activity: 2026-03-12 - Completed quick task 26: Global ID remap for diagnostic cache
+Plan: 02 complete (2/2 plans done)
+Status: v3.8 Improved Association milestone COMPLETE
+Last activity: 2026-03-12 - Completed 92-02: parameter sweep confirms defaults optimal
 
-Progress: [████░░░░░░] 40%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -47,6 +47,7 @@ Progress: [████░░░░░░] 40%
 | Phase 91 P01 | 13min | 2 tasks | 5 files |
 | Phase 91-singleton-recovery P02 | 5min | 1 tasks | 1 files |
 | Phase 92 P01 | 9min | 2 tasks | 9 files |
+| Phase 92 P02 | 5min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -65,6 +66,7 @@ Recent decisions affecting current work:
 - [Phase 92-01]: Centroid-only toggle placed BEFORE keypoints=None check in score_tracklet_pair so toggle is respected even when keypoints are populated
 - [Phase 92-01]: keypoint_confidence_floor added to joint (Phase 1) grid not carry-forward — it interacts tightly with ray_dist and score_min
 - [Phase 92-01]: 3D joint grid gives 27 combos acceptable for sweep time
+- [Phase 92-02]: Sweep confirmed current defaults are optimal — no config changes needed; v3.8 gains are architectural not parameter-driven
 
 ### Pending Todos
 
@@ -88,6 +90,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-11
-Stopped at: Completed 92-01-PLAN.md
+Last session: 2026-03-12
+Stopped at: Completed 92-02-PLAN.md — v3.8 milestone complete
 Resume file: None

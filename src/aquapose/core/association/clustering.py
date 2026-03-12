@@ -55,11 +55,12 @@ class ClusteringConfigLike(Protocol):
 def build_must_not_link(
     tracks_2d: dict[str, list[Tracklet2D]],
 ) -> set[frozenset[TrackletKey]]:
-    """Build must-not-link constraint set from same-camera detection overlaps.
+    """Build must-not-link constraint set from same-camera frame overlaps.
 
     Two tracklets from the same camera are must-not-link if they share any
-    frames where both have ``frame_status == "detected"``. Coasted-only
-    overlap does not create a must-not-link constraint.
+    frames, regardless of status. When the tracker has two tracks alive
+    simultaneously (even if one is coasting), it has already determined
+    they are different fish — the association stage must respect that.
 
     Args:
         tracks_2d: Per-camera tracklet lists.
@@ -76,19 +77,7 @@ def build_must_not_link(
                 ta = tracklets[i]
                 tb = tracklets[j]
 
-                # Build detected frame sets
-                det_a = {
-                    f
-                    for f, s in zip(ta.frames, ta.frame_status, strict=False)
-                    if s == "detected"
-                }
-                det_b = {
-                    f
-                    for f, s in zip(tb.frames, tb.frame_status, strict=False)
-                    if s == "detected"
-                }
-
-                if det_a & det_b:
+                if set(ta.frames) & set(tb.frames):
                     key_a: TrackletKey = (cam_id, ta.track_id)
                     key_b: TrackletKey = (cam_id, tb.track_id)
                     constraints.add(frozenset({key_a, key_b}))

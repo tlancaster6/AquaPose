@@ -575,6 +575,7 @@ class _SinglePassTracker:
             - base_r (float): KF base measurement noise.
             - lambda_ocm (float): OCM weight in cost matrix.
             - sigmas (np.ndarray): Per-keypoint OKS sigmas, shape (6,).
+            - max_match_distance (float): Max spine1 distance for match gating.
     """
 
     def __init__(
@@ -593,10 +594,16 @@ class _SinglePassTracker:
             getattr(config, "match_cost_threshold", 1.2)
         )
         self._ocr_threshold: float = float(getattr(config, "ocr_threshold", 0.5))
+        self._max_match_distance: float = float(
+            getattr(config, "max_match_distance", 75.0)
+        )
 
         self._next_track_id: int = 0
         self._active_tracks: dict[int, _KFTrack] = {}
         self._builders: dict[int, _KptTrackletBuilder] = {}
+
+        # Inferred image bounds from detection bboxes (for out-of-frame culling).
+        self._image_bounds: tuple[float, float] | None = None  # (max_x, max_y)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -672,6 +679,19 @@ class _SinglePassTracker:
                 continue
             valid_dets.append((det, kpts_arr, kconf_arr))
 
+        # Update inferred image bounds from detection bboxes.
+        for det, _kpts_arr, _kconf_arr in valid_dets:
+            bx, by, bw, bh = det.bbox
+            right = float(bx) + float(bw)
+            bottom = float(by) + float(bh)
+            if self._image_bounds is None:
+                self._image_bounds = (right, bottom)
+            else:
+                self._image_bounds = (
+                    max(self._image_bounds[0], right),
+                    max(self._image_bounds[1], bottom),
+                )
+
         track_ids = list(self._active_tracks.keys())
 
         # 2. Predict all active tracks
@@ -714,8 +734,22 @@ class _SinglePassTracker:
             # threshold are set to a large sentinel that linear_sum_assignment
             # will avoid whenever a feasible alternative exists.
             _GATE_SENTINEL = 1e6
+
+            # Spatial distance gate: prevent matches where predicted and
+            # detected spine1 keypoints are too far apart.  This stops
+            # coasting tracks from stealing detections across the tank.
+            pred_spine1 = pred_kpts[:, _SPINE1_IDX, :]  # (N, 2)
+            det_spine1 = det_kpts_arr[:, _SPINE1_IDX, :]  # (M, 2)
+            spine1_dist = np.linalg.norm(
+                pred_spine1[:, np.newaxis, :] - det_spine1[np.newaxis, :, :],
+                axis=-1,
+            )  # (N, M)
+            distance_mask = spine1_dist > self._max_match_distance  # (N, M)
+
             gated_cost = np.where(
-                cost < self._match_cost_threshold, cost, _GATE_SENTINEL
+                (cost < self._match_cost_threshold) & ~distance_mask,
+                cost,
+                _GATE_SENTINEL,
             )
             row_idx, col_idx = linear_sum_assignment(gated_cost)
 
@@ -782,12 +816,26 @@ class _SinglePassTracker:
                 status="detected",
             )
 
-        # 6. Death: cull tracks exceeding max_age
-        dead_ids = [
-            tid
-            for tid, trk in self._active_tracks.items()
-            if trk.time_since_update > self._max_age
-        ]
+        # 6. Death: cull tracks exceeding max_age or out of frame
+        _OOF_MARGIN = 50.0  # pixels beyond image edge before culling
+        dead_ids = []
+        for tid, trk in self._active_tracks.items():
+            if trk.time_since_update > self._max_age:
+                dead_ids.append(tid)
+                continue
+            # Out-of-frame culling: if predicted spine1 has left the image,
+            # the fish is gone — cull immediately to prevent detection theft.
+            if self._image_bounds is not None and trk.time_since_update > 0:
+                pred_pos = trk.kf.get_positions()  # (6, 2)
+                spine1 = pred_pos[_SPINE1_IDX]
+                max_x, max_y = self._image_bounds
+                if (
+                    spine1[0] < -_OOF_MARGIN
+                    or spine1[1] < -_OOF_MARGIN
+                    or spine1[0] > max_x + _OOF_MARGIN
+                    or spine1[1] > max_y + _OOF_MARGIN
+                ):
+                    dead_ids.append(tid)
         for tid in dead_ids:
             del self._active_tracks[tid]
             # Keep builder for get_tracklets()
@@ -842,6 +890,10 @@ class _SinglePassTracker:
             "sigmas": self._sigmas.tolist(),
             "match_cost_threshold": self._match_cost_threshold,
             "ocr_threshold": self._ocr_threshold,
+            "max_match_distance": self._max_match_distance,
+            "image_bounds": list(self._image_bounds)
+            if self._image_bounds is not None
+            else None,
         }
 
     @classmethod
@@ -866,9 +918,15 @@ class _SinglePassTracker:
             sigmas=np.array(state["sigmas"], dtype=np.float64),
             match_cost_threshold=state.get("match_cost_threshold", 1.2),
             ocr_threshold=state.get("ocr_threshold", 0.5),
+            max_match_distance=state.get("max_match_distance", 75.0),
         )
         instance = cls(camera_id=camera_id, config=config)
         instance._next_track_id = state["next_track_id"]
+
+        # Restore inferred image bounds from previous chunk.
+        saved_bounds = state.get("image_bounds")
+        if saved_bounds is not None:
+            instance._image_bounds = (float(saved_bounds[0]), float(saved_bounds[1]))
 
         for tid_str, ts in state["tracks"].items():
             tid = int(tid_str)
@@ -1081,6 +1139,7 @@ class KeypointTracker:
         max_gap_frames: int = 5,
         match_cost_threshold: float = 1.2,
         ocr_threshold: float = 0.5,
+        max_match_distance: float = 75.0,
         centroid_keypoint_index: int = 2,  # API symmetry only
         centroid_confidence_floor: float = 0.3,  # API symmetry only
     ) -> None:
@@ -1098,6 +1157,7 @@ class KeypointTracker:
         self._max_gap_frames = max_gap_frames
         self._match_cost_threshold = match_cost_threshold
         self._ocr_threshold = ocr_threshold
+        self._max_match_distance = max_match_distance
 
         config = SimpleNamespace(
             max_age=max_age,
@@ -1108,6 +1168,7 @@ class KeypointTracker:
             sigmas=self._sigmas,
             match_cost_threshold=match_cost_threshold,
             ocr_threshold=ocr_threshold,
+            max_match_distance=max_match_distance,
         )
 
         self._fwd_tracker = _SinglePassTracker(camera_id=camera_id, config=config)
@@ -1130,7 +1191,7 @@ class KeypointTracker:
         """Collect confirmed forward-pass tracklets with gap interpolation.
 
         Returns:
-            List of Tracklet2D objects with fresh monotonic track IDs.
+            List of Tracklet2D objects with original internal tracker IDs.
         """
         if self._cached_tracklets is not None:
             return self._cached_tracklets
@@ -1149,10 +1210,11 @@ class KeypointTracker:
                 interpolate_gaps(builder, max_gap_frames=self._max_gap_frames)
             )
 
-        # Assign fresh monotonic track IDs
+        # Preserve internal tracker IDs (globally unique via _next_track_id
+        # carry-forward) so that (camera_id, track_id) tuples in
+        # fish_tracklet_sets remain unique across chunks.
         final: list[Tracklet2D] = []
-        for new_id, builder in enumerate(gap_filled):
-            builder.track_id = new_id
+        for builder in gap_filled:
             final.append(builder.to_tracklet2d())
 
         self._cached_tracklets = final
@@ -1176,6 +1238,7 @@ class KeypointTracker:
             "max_gap_frames": self._max_gap_frames,
             "match_cost_threshold": self._match_cost_threshold,
             "ocr_threshold": self._ocr_threshold,
+            "max_match_distance": self._max_match_distance,
             "fwd_state": self._fwd_tracker.get_state(),
         }
 
@@ -1205,6 +1268,7 @@ class KeypointTracker:
             max_gap_frames=state["max_gap_frames"],
             match_cost_threshold=state.get("match_cost_threshold", 1.2),
             ocr_threshold=state.get("ocr_threshold", 0.5),
+            max_match_distance=state.get("max_match_distance", 75.0),
         )
         # Restore forward tracker from saved state
         instance._fwd_tracker = _SinglePassTracker.from_state(

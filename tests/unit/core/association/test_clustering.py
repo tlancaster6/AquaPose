@@ -74,8 +74,12 @@ class TestBuildMustNotLink:
         expected_pair = frozenset({("cam_a", 1), ("cam_a", 2)})
         assert expected_pair in constraints
 
-    def test_coasted_overlap_not_constraint(self) -> None:
-        """Same-camera overlap only in coasted frames -> no constraint."""
+    def test_coasted_overlap_creates_constraint(self) -> None:
+        """Same-camera overlap in coasted frames -> constraint.
+
+        The tracker had both tracks alive simultaneously, so they are
+        definitively different fish regardless of frame_status.
+        """
         ta = _make_tracklet(
             "cam_a",
             1,
@@ -92,8 +96,7 @@ class TestBuildMustNotLink:
 
         constraints = build_must_not_link(tracks_2d)
 
-        # Overlap at frames 3,4: ta is coasted, tb is coasted -> no detected overlap
-        assert len(constraints) == 0
+        assert len(constraints) == 1
 
     def test_different_cameras_no_constraint(self) -> None:
         """Tracklets from different cameras -> never a constraint."""

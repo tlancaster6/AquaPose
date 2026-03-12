@@ -137,7 +137,7 @@ def validate_groups(
                 kept_tracklets.append(target)
                 continue
 
-            action, split_idx = _classify_tracklet(
+            action, split_idx, consistent_is_before = _classify_tracklet(
                 residuals,
                 valid_frames,
                 config.eviction_reproj_threshold,
@@ -151,12 +151,16 @@ def validate_groups(
                 # Map split_idx (index into valid_frames) back to tracklet index
                 split_frame = valid_frames[split_idx]
                 tracklet_split_idx = _find_tracklet_frame_index(target, split_frame)
-                consistent, inconsistent = _split_tracklet_at(
+                before, after = _split_tracklet_at(
                     target, tracklet_split_idx, next_track_id, next_track_id + 1
                 )
                 next_track_id += 2
-                kept_tracklets.append(consistent)
-                split_singletons.append(inconsistent)
+                if consistent_is_before:
+                    kept_tracklets.append(before)
+                    split_singletons.append(after)
+                else:
+                    kept_tracklets.append(after)
+                    split_singletons.append(before)
                 total_splits += 1
             else:  # evict
                 evicted_tracklets.append(target)
@@ -451,7 +455,7 @@ def _find_changepoint_by_run(
     frames: list[int],
     threshold: float,
     min_segment_length: int,
-) -> int | None:
+) -> tuple[int, bool] | None:
     """Find split index using longest-consistent-run heuristic.
 
     Classifies each frame as consistent (residual < threshold) or
@@ -465,9 +469,10 @@ def _find_changepoint_by_run(
         min_segment_length: Minimum frames per segment after split.
 
     Returns:
-        Index into ``residuals``/``frames`` at which to split (the first
-        index of the segment outside the longest consistent run), or
-        None if no valid split exists.
+        Tuple of ``(split_idx, consistent_is_before)`` where *split_idx*
+        is an index into ``residuals``/``frames`` and *consistent_is_before*
+        indicates whether the consistent segment is ``[:split_idx]`` (True)
+        or ``[split_idx:]`` (False).  Returns None if no valid split exists.
     """
     n = len(residuals)
     if n < 2 * min_segment_length:
@@ -496,9 +501,13 @@ def _find_changepoint_by_run(
     if remaining_length < min_segment_length:
         return None
 
-    # Return the end of the longest consistent run as the split point.
-    # Consistent segment = frames[:best_end], inconsistent = frames[best_end:]
-    return best_end
+    # Return (split_index, consistent_is_before).
+    # If the consistent run starts at 0, consistent = [:best_end].
+    # Otherwise, consistent = [best_start:].
+    best_start = int(starts[best_run_idx])
+    if best_start == 0:
+        return best_end, True
+    return best_start, False
 
 
 def _classify_tracklet(
@@ -506,7 +515,7 @@ def _classify_tracklet(
     frames: list[int],
     threshold: float,
     min_segment_length: int,
-) -> tuple[str, int | None]:
+) -> tuple[str, int | None, bool]:
     """Classify a tracklet as keep, split, or evict.
 
     Decision tree:
@@ -521,28 +530,29 @@ def _classify_tracklet(
         min_segment_length: Minimum frames per segment after split.
 
     Returns:
-        Tuple of (action, split_idx) where action is ``"keep"``,
-        ``"split"``, or ``"evict"``, and split_idx is the index into
-        frames/residuals at which to split (only for ``"split"``).
+        Tuple of ``(action, split_idx, consistent_is_before)`` where
+        *action* is ``"keep"``, ``"split"``, or ``"evict"``;
+        *split_idx* is the index into frames/residuals at which to split
+        (only for ``"split"``); and *consistent_is_before* indicates
+        whether ``[:split_idx]`` is the consistent segment.
     """
     if not residuals:
-        return "keep", None
+        return "keep", None, True
 
     n_consistent = sum(1 for r in residuals if r < threshold)
     fraction_consistent = n_consistent / len(residuals)
 
     if fraction_consistent > 0.5:
-        return "keep", None
+        return "keep", None, True
 
     # Check for a changepoint
-    split_idx = _find_changepoint_by_run(
-        residuals, frames, threshold, min_segment_length
-    )
-    if split_idx is not None:
-        return "split", split_idx
+    result = _find_changepoint_by_run(residuals, frames, threshold, min_segment_length)
+    if result is not None:
+        split_idx, consistent_is_before = result
+        return "split", split_idx, consistent_is_before
 
     # Uniformly inconsistent — evict
-    return "evict", None
+    return "evict", None, True
 
 
 # ---------------------------------------------------------------------------

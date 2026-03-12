@@ -28,7 +28,7 @@ def test_stitch_identities_track_continues() -> None:
     prev_handoff = ChunkHandoff(
         tracks_2d_state={},
         identity_map={0: 5},
-        track_id_to_global={("cam1", 0): 5},
+        fish_tracklet_sets={5: frozenset({("cam1", 0)})},
         next_global_id=6,
     )
     tracklet = types.SimpleNamespace(camera_id="cam1", track_id=0)
@@ -47,7 +47,7 @@ def test_stitch_identities_new_fish() -> None:
     prev_handoff = ChunkHandoff(
         tracks_2d_state={},
         identity_map={},
-        track_id_to_global={},
+        fish_tracklet_sets={},
         next_global_id=7,
     )
     tracklet = types.SimpleNamespace(camera_id="cam2", track_id=99)
@@ -59,16 +59,17 @@ def test_stitch_identities_new_fish() -> None:
     assert next_id == 8
 
 
-def test_stitch_identities_conflict_majority_vote(caplog) -> None:  # type: ignore[no-untyped-def]
-    """Conflicting global ID matches resolved by majority vote with warning logged."""
-    import logging
-
+def test_stitch_identities_set_overlap_picks_higher() -> None:
+    """Group overlapping two previous fish picks the one with higher overlap."""
     from aquapose.engine.orchestrator import ChunkHandoff, _stitch_identities
 
     prev_handoff = ChunkHandoff(
         tracks_2d_state={},
         identity_map={},
-        track_id_to_global={("cam1", 0): 2, ("cam2", 0): 2, ("cam3", 0): 99},
+        fish_tracklet_sets={
+            2: frozenset({("cam1", 0), ("cam2", 0)}),
+            99: frozenset({("cam3", 0)}),
+        },
         next_global_id=100,
     )
     tracklets = [
@@ -77,12 +78,143 @@ def test_stitch_identities_conflict_majority_vote(caplog) -> None:  # type: igno
         types.SimpleNamespace(camera_id="cam3", track_id=0),
     ]
     group = types.SimpleNamespace(fish_id=0, tracklets=tracklets)
-    with caplog.at_level(logging.WARNING, logger="aquapose.engine.orchestrator"):
-        identity_map, _next_id = _stitch_identities(
-            [group], prev_handoff=prev_handoff, next_global_id=100
-        )
+    identity_map, _next_id = _stitch_identities(
+        [group], prev_handoff=prev_handoff, next_global_id=100
+    )
+    # Overlap with fish 2 is 2 (cam1, cam2), overlap with fish 99 is 1 (cam3)
     assert identity_map == {0: 2}
-    assert "conflict" in caplog.text.lower() or "Identity conflict" in caplog.text
+
+
+def test_stitch_identities_collision_resolved() -> None:
+    """Two groups overlapping the same previous fish — higher overlap wins, other gets fresh."""
+    from aquapose.engine.orchestrator import ChunkHandoff, _stitch_identities
+
+    prev_handoff = ChunkHandoff(
+        tracks_2d_state={},
+        identity_map={},
+        fish_tracklet_sets={
+            5: frozenset({("cam1", 0), ("cam2", 0), ("cam3", 0)}),
+        },
+        next_global_id=6,
+    )
+    # Group A: overlaps fish 5 by 2 tracklets
+    group_a = types.SimpleNamespace(
+        fish_id=0,
+        tracklets=[
+            types.SimpleNamespace(camera_id="cam1", track_id=0),
+            types.SimpleNamespace(camera_id="cam2", track_id=0),
+        ],
+    )
+    # Group B: overlaps fish 5 by 1 tracklet
+    group_b = types.SimpleNamespace(
+        fish_id=1,
+        tracklets=[
+            types.SimpleNamespace(camera_id="cam3", track_id=0),
+        ],
+    )
+    identity_map, _next_id = _stitch_identities(
+        [group_a, group_b], prev_handoff=prev_handoff, next_global_id=6
+    )
+    assert identity_map[0] == 5  # group A wins fish 5
+    assert identity_map[1] == 6  # group B gets fresh ID
+    assert len(set(identity_map.values())) == len(identity_map)  # all unique
+
+
+def test_stitch_identities_bijection_invariant() -> None:
+    """Multiple groups contending for same global_id — all output IDs are unique."""
+    from aquapose.engine.orchestrator import ChunkHandoff, _stitch_identities
+
+    prev_handoff = ChunkHandoff(
+        tracks_2d_state={},
+        identity_map={},
+        fish_tracklet_sets={
+            10: frozenset({("cam1", 0), ("cam2", 0)}),
+        },
+        next_global_id=11,
+    )
+    groups = [
+        types.SimpleNamespace(
+            fish_id=i,
+            tracklets=[types.SimpleNamespace(camera_id=f"cam{i + 1}", track_id=0)],
+        )
+        for i in range(3)  # groups 0, 1, 2 — only 0 and 1 overlap fish 10
+    ]
+    identity_map, _next_id = _stitch_identities(
+        groups, prev_handoff=prev_handoff, next_global_id=11
+    )
+    assert len(set(identity_map.values())) == len(identity_map)
+
+
+def test_stitch_identities_no_overlap_gets_fresh() -> None:
+    """Group with no tracklet overlap with any previous fish gets a fresh ID."""
+    from aquapose.engine.orchestrator import ChunkHandoff, _stitch_identities
+
+    prev_handoff = ChunkHandoff(
+        tracks_2d_state={},
+        identity_map={},
+        fish_tracklet_sets={
+            5: frozenset({("cam1", 0)}),
+        },
+        next_global_id=6,
+    )
+    group = types.SimpleNamespace(
+        fish_id=0,
+        tracklets=[types.SimpleNamespace(camera_id="cam9", track_id=99)],
+    )
+    identity_map, next_id = _stitch_identities(
+        [group], prev_handoff=prev_handoff, next_global_id=6
+    )
+    assert identity_map == {0: 6}
+    assert next_id == 7
+
+
+def test_stitch_identities_loser_gets_fresh_not_second_choice() -> None:
+    """Group overlapping two prev fish, both claimed by stronger contenders, gets fresh ID."""
+    from aquapose.engine.orchestrator import ChunkHandoff, _stitch_identities
+
+    prev_handoff = ChunkHandoff(
+        tracks_2d_state={},
+        identity_map={},
+        fish_tracklet_sets={
+            10: frozenset({("cam1", 0), ("cam2", 0), ("cam3", 0)}),
+            20: frozenset({("cam4", 0), ("cam5", 0), ("cam6", 0)}),
+        },
+        next_global_id=21,
+    )
+    # Group A: strong overlap with fish 10 (3 tracklets)
+    group_a = types.SimpleNamespace(
+        fish_id=0,
+        tracklets=[
+            types.SimpleNamespace(camera_id="cam1", track_id=0),
+            types.SimpleNamespace(camera_id="cam2", track_id=0),
+            types.SimpleNamespace(camera_id="cam3", track_id=0),
+        ],
+    )
+    # Group B: strong overlap with fish 20 (3 tracklets)
+    group_b = types.SimpleNamespace(
+        fish_id=1,
+        tracklets=[
+            types.SimpleNamespace(camera_id="cam4", track_id=0),
+            types.SimpleNamespace(camera_id="cam5", track_id=0),
+            types.SimpleNamespace(camera_id="cam6", track_id=0),
+        ],
+    )
+    # Group C: weak overlap with both fish 10 and 20 (1 tracklet each)
+    # but both are already claimed by stronger groups
+    group_c = types.SimpleNamespace(
+        fish_id=2,
+        tracklets=[
+            types.SimpleNamespace(camera_id="cam1", track_id=0),
+            types.SimpleNamespace(camera_id="cam4", track_id=0),
+        ],
+    )
+    identity_map, next_id = _stitch_identities(
+        [group_a, group_b, group_c], prev_handoff=prev_handoff, next_global_id=21
+    )
+    assert identity_map[0] == 10  # group A → fish 10
+    assert identity_map[1] == 20  # group B → fish 20
+    assert identity_map[2] == 21  # group C → fresh (both prev fish claimed)
+    assert next_id == 22
 
 
 def test_single_chunk_degenerate() -> None:

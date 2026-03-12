@@ -71,7 +71,7 @@ class TrackingStage:
         objects. A new ``ChunkHandoff`` is built from the per-camera tracker
         states for the next chunk.
 
-        The tracker backend is ``"keypoint_bidi"`` (KeypointTracker).
+        The tracker backend is ``"keypoint_oks"`` (KeypointTracker).
 
         Args:
             context: Accumulated pipeline state from the Detection stage.
@@ -112,6 +112,7 @@ class TrackingStage:
                     max_gap_frames=self._config.max_gap_frames,
                     match_cost_threshold=self._config.match_cost_threshold,
                     ocr_threshold=self._config.ocr_threshold,
+                    max_match_distance=self._config.max_match_distance,
                     centroid_keypoint_index=self._centroid_keypoint_index,
                     centroid_confidence_floor=self._centroid_confidence_floor,
                 )
@@ -137,14 +138,14 @@ class TrackingStage:
             new_carry = ChunkHandoff(
                 tracks_2d_state=new_tracks_2d_state,
                 identity_map=carry.identity_map,
-                track_id_to_global=carry.track_id_to_global,
+                fish_tracklet_sets=carry.fish_tracklet_sets,
                 next_global_id=carry.next_global_id,
             )
         else:
             new_carry = ChunkHandoff(
                 tracks_2d_state=new_tracks_2d_state,
                 identity_map={},
-                track_id_to_global={},
+                fish_tracklet_sets={},
                 next_global_id=0,
             )
 

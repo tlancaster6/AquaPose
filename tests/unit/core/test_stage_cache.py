@@ -97,7 +97,7 @@ def test_carry_forward_field_exists() -> None:
     handoff = ChunkHandoff(
         tracks_2d_state={},
         identity_map={},
-        track_id_to_global={},
+        fish_tracklet_sets={},
         next_global_id=0,
     )
     ctx_with_carry = PipelineContext(carry_forward=handoff)

@@ -151,7 +151,7 @@ def test_pipeline_extracts_carry_from_initial_context(tmp_path: Path) -> None:
     initial_ctx.carry_forward = ChunkHandoff(
         tracks_2d_state=carry_state,
         identity_map={},
-        track_id_to_global={},
+        fish_tracklet_sets={},
         next_global_id=0,
     )
 
@@ -191,7 +191,7 @@ def test_carry_forward_injected_after_tracking_stage(tmp_path: Path) -> None:
             ctx.carry_forward = ChunkHandoff(
                 tracks_2d_state={"cam1": {}},
                 identity_map={},
-                track_id_to_global={},
+                fish_tracklet_sets={},
                 next_global_id=0,
             )
             return ctx

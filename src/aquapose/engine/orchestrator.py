@@ -29,8 +29,10 @@ def _stitch_identities(
 ) -> tuple[dict[int, int], int]:
     """Map chunk-local fish IDs to globally consistent IDs.
 
-    Uses track ID continuity: checks each tracklet's (camera_id, track_id)
-    against prev_handoff.track_id_to_global. Majority vote resolves conflicts.
+    Uses set-overlap matching with 1:1 bipartite assignment to prevent
+    identity collapse. Each previous fish is represented as a frozenset of
+    (camera_id, track_id) tuples; new groups are matched by overlap count
+    with greedy highest-overlap-first assignment.
 
     Args:
         tracklet_groups: List of TrackletGroup from the completed chunk.
@@ -41,39 +43,51 @@ def _stitch_identities(
         (identity_map, updated_next_global_id) where identity_map maps
         local fish_id -> global fish_id for every group in tracklet_groups.
     """
-    from collections import Counter
-
-    track_to_global: dict[tuple[str, int], int] = {}
+    prev_sets: dict[int, frozenset[tuple[str, int]]] = {}
     if prev_handoff is not None:
-        track_to_global = dict(prev_handoff.track_id_to_global)
+        prev_sets = prev_handoff.fish_tracklet_sets
 
-    identity_map: dict[int, int] = {}
+    # Phase 1: compute overlap scores — (local_id, global_id, overlap_count)
+    scores: list[tuple[int, int, int]] = []
+    needs_fresh: list[int] = []
+
     for group in tracklet_groups:
         local_id = group.fish_id
-        candidate_global_ids: list[int] = []
-        for tracklet in group.tracklets:
-            key = (tracklet.camera_id, tracklet.track_id)
-            if key in track_to_global:
-                candidate_global_ids.append(track_to_global[key])
+        group_keys = frozenset((t.camera_id, t.track_id) for t in group.tracklets)
+        has_match = False
+        for gid, prev_keys in prev_sets.items():
+            overlap = len(group_keys & prev_keys)
+            if overlap > 0:
+                scores.append((local_id, gid, overlap))
+                has_match = True
+        if not has_match:
+            needs_fresh.append(local_id)
 
-        if not candidate_global_ids:
-            identity_map[local_id] = next_global_id
+    # Phase 2: greedy 1:1 assignment (highest overlap first)
+    scores.sort(key=lambda x: -x[2])
+
+    identity_map: dict[int, int] = {}
+    claimed_globals: set[int] = set()
+    assigned_locals: set[int] = set()
+
+    for local_id, gid, _overlap in scores:
+        if local_id in assigned_locals or gid in claimed_globals:
+            continue
+        identity_map[local_id] = gid
+        claimed_globals.add(gid)
+        assigned_locals.add(local_id)
+
+    # Phase 3: fresh IDs for unmatched + contention losers
+    for local_id in needs_fresh:
+        identity_map[local_id] = next_global_id
+        next_global_id += 1
+
+    for group in tracklet_groups:
+        if group.fish_id not in identity_map:
+            identity_map[group.fish_id] = next_global_id
             next_global_id += 1
-        else:
-            counts = Counter(candidate_global_ids)
-            winner_global_id, winner_count = counts.most_common(1)[0]
-            if len(counts) > 1:
-                logger.warning(
-                    "Identity conflict for local fish %d: matched global IDs %s — "
-                    "using majority winner %d (%d/%d tracklets)",
-                    local_id,
-                    dict(counts),
-                    winner_global_id,
-                    winner_count,
-                    len(candidate_global_ids),
-                )
-            identity_map[local_id] = winner_global_id
 
+    # Logging
     prev_next = prev_handoff.next_global_id if prev_handoff is not None else 0
     n_new = next_global_id - prev_next
     n_continued = len(identity_map) - n_new
@@ -257,7 +271,7 @@ class ChunkOrchestrator:
 
                 # PipelineContext is a mutable dataclass — direct field assignment is safe
                 # Pass the full ChunkHandoff directly so TrackingStage can preserve
-                # identity fields (identity_map, track_id_to_global, next_global_id).
+                # identity fields (identity_map, fish_tracklet_sets, next_global_id).
                 initial_context = PipelineContext()
                 if prev_handoff is not None:
                     initial_context.carry_forward = prev_handoff
@@ -335,6 +349,14 @@ class ChunkOrchestrator:
                         global_id = identity_map.get(int(lid), int(lid))
                         ml.fish_id = global_id  # type: ignore[union-attr]  # Midline3D is not frozen
                         remapped_frame[global_id] = ml
+                    if len(remapped_frame) < len(frame_midlines):
+                        logger.error(
+                            "Identity remap lost %d midlines in frame "
+                            "(had %d, remapped to %d)",
+                            len(frame_midlines) - len(remapped_frame),
+                            len(frame_midlines),
+                            len(remapped_frame),
+                        )
                     frame_midlines.clear()
                     frame_midlines.update(remapped_frame)
 
@@ -361,18 +383,18 @@ class ChunkOrchestrator:
                 carry_out = getattr(context, "carry_forward", None)
                 tracks_2d_state = carry_out.tracks_2d_state if carry_out else {}
 
-                new_track_id_to_global: dict[tuple[str, int], int] = {}
+                new_fish_tracklet_sets: dict[int, frozenset[tuple[str, int]]] = {}
                 for group in context.tracklet_groups:
                     gid = group.fish_id  # already remapped to global ID
-                    for tracklet in group.tracklets:
-                        new_track_id_to_global[
-                            (tracklet.camera_id, tracklet.track_id)
-                        ] = gid
+                    keys = frozenset((t.camera_id, t.track_id) for t in group.tracklets)
+                    if gid in new_fish_tracklet_sets:
+                        keys = new_fish_tracklet_sets[gid] | keys
+                    new_fish_tracklet_sets[gid] = keys
 
                 prev_handoff = ChunkHandoff(
                     tracks_2d_state=tracks_2d_state,
                     identity_map=identity_map,
-                    track_id_to_global=new_track_id_to_global,
+                    fish_tracklet_sets=new_fish_tracklet_sets,
                     next_global_id=next_global_id,
                 )
                 write_handoff(output_dir / "handoff.pkl", prev_handoff)

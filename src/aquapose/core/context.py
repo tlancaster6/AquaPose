@@ -192,15 +192,16 @@ class ChunkHandoff:
             Keys are chunk-local fish IDs (from TrackletGroup.fish_id in the
             just-completed chunk); values are global fish IDs.
             Built by the identity stitcher after each chunk.
-        track_id_to_global: Maps (camera_id, track_id) tuples to global fish IDs.
-            Used for track-continuity-based identity stitching across chunk boundaries.
+        fish_tracklet_sets: Maps global fish IDs to the set of (camera_id, track_id)
+            tuples that belong to that fish. Used for set-overlap-based identity
+            stitching across chunk boundaries.
         next_global_id: Next globally unique fish ID to assign to an unmatched
             fish. Monotonically increasing across chunks to prevent ID reuse.
     """
 
     tracks_2d_state: dict  # camera_id -> KeypointTracker.get_state() blob
     identity_map: dict  # local_fish_id -> global_fish_id
-    track_id_to_global: dict  # (camera_id, track_id) -> global_fish_id
+    fish_tracklet_sets: dict  # global_fish_id -> frozenset[(camera_id, track_id)]
     next_global_id: int
 
 

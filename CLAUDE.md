@@ -24,6 +24,23 @@ hatch run docs:build        # sphinx docs
 hatch run pre-commit run --all-files  # all pre-commit hooks
 ```
 
+### Pipeline CLI
+
+The project ID (`-p`) is a top-level argument before the subcommand:
+
+```bash
+hatch run aquapose -p YH <command> [options]
+```
+
+Subcommands: `run`, `viz`, `data`, `eval`, `init`, `prep`, etc.
+
+Examples:
+
+```bash
+hatch run aquapose -p YH run --max-chunks 6    # run pipeline (6 chunks)
+hatch run aquapose -p YH run -v                # verbose run
+```
+
 ## Workflow Preferences
 
 - **Long-running commands**: Use `TaskCreate` (subagent tasks) instead of backgrounding processes in `Bash` and polling in a sleep/check loop. `TaskCreate` provides async completion notification, avoiding wasted turns on manual polling.

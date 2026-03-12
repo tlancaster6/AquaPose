@@ -447,6 +447,13 @@ def tune_cmd(
     is_flag=True,
     help="Generate detection overlay mosaic PNG (OBB boxes colored by confidence).",
 )
+@click.option(
+    "--stride",
+    type=int,
+    default=1,
+    show_default=True,
+    help="Animation frame stride: keep every Nth frame (reduces HTML size for long videos).",
+)
 @click.pass_context
 def viz(
     ctx: click.Context,
@@ -457,6 +464,7 @@ def viz(
     trails: bool,
     fade_trails: bool,
     detections: bool,
+    stride: int,
 ) -> None:
     """Generate visualizations from diagnostic run caches.
 
@@ -485,7 +493,7 @@ def viz(
 
     generators: dict[str, Any] = {
         "overlay": lambda: generate_overlay(run_path, out_dir),
-        "animation": lambda: generate_animation(run_path, out_dir),
+        "animation": lambda: generate_animation(run_path, out_dir, stride=stride),
         "detections": lambda: generate_detection_overlay(run_path, out_dir),
         "trails": lambda: generate_trails(run_path, out_dir, fade_trails=fade_trails),
     }

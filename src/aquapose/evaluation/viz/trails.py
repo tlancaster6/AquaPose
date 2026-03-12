@@ -46,6 +46,21 @@ FISH_COLORS_BGR: list[tuple[int, int, int]] = [
 _GRAY_BGR: tuple[int, int, int] = (119, 119, 119)
 _TRAIL_LENGTH: int = 30
 _TILE_SCALE: float = 0.35
+_ANCHOR_KPT_IDX: int = 2  # spine1 — matches engine config default
+
+
+def _trail_positions(tracklet: object) -> tuple[tuple[float, float], ...]:
+    """Return per-frame (u, v) positions for trail drawing.
+
+    Uses keypoints[:, anchor, :] when available, falls back to centroids.
+    """
+    kpts = getattr(tracklet, "keypoints", None)
+    if kpts is not None:
+        return tuple(
+            (float(kpts[i, _ANCHOR_KPT_IDX, 0]), float(kpts[i, _ANCHOR_KPT_IDX, 1]))
+            for i in range(kpts.shape[0])
+        )
+    return tracklet.centroids  # type: ignore[return-value]
 
 
 def _fish_color(fish_id: int) -> tuple[int, int, int]:
@@ -153,7 +168,8 @@ def _draw_trail(
     """
     base_color = fish_color_map.get(fish_id, _GRAY_BGR)
     start_idx = max(0, current_idx - trail_length)
-    trail_pts = list(tracklet.centroids[start_idx : current_idx + 1])  # type: ignore[index]
+    positions = _trail_positions(tracklet)
+    trail_pts = list(positions[start_idx : current_idx + 1])
     trail_statuses = list(tracklet.frame_status[start_idx : current_idx + 1])  # type: ignore[index]
     n_pts = len(trail_pts)
 
@@ -227,7 +243,8 @@ def _draw_trail_scaled(
     """
     base_color = fish_color_map.get(fish_id, _GRAY_BGR)
     start_idx = max(0, current_idx - trail_length)
-    trail_pts = list(tracklet.centroids[start_idx : current_idx + 1])  # type: ignore[index]
+    positions = _trail_positions(tracklet)
+    trail_pts = list(positions[start_idx : current_idx + 1])
     trail_statuses = list(tracklet.frame_status[start_idx : current_idx + 1])  # type: ignore[index]
     n_pts = len(trail_pts)
 
@@ -546,6 +563,7 @@ def _rebase_tracklet(tracklet: object, frame_offset: int) -> object:
             self._t = t
             self.frames = [f + offset for f in t.frames]  # type: ignore[union-attr]
             self.centroids = t.centroids  # type: ignore[union-attr]
+            self.keypoints = getattr(t, "keypoints", None)
             self.frame_status = t.frame_status  # type: ignore[union-attr]
             self.camera_id = t.camera_id  # type: ignore[union-attr]
             self.track_id = t.track_id  # type: ignore[union-attr]

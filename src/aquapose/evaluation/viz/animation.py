@@ -258,6 +258,7 @@ def _load_midlines_from_h5(h5_path: Path) -> list[dict[int, _H5Spline]]:
 def generate_animation(
     run_dir: Path,
     output_dir: Path | None = None,
+    stride: int = 1,
 ) -> Path:
     """Generate an interactive 3D midline animation HTML across all chunks.
 
@@ -269,6 +270,8 @@ def generate_animation(
     Args:
         run_dir: Path to the pipeline run directory.
         output_dir: Directory for output. Defaults to ``{run_dir}/viz/``.
+        stride: Keep every Nth frame. Default 1 (all frames). Use higher
+            values (e.g. 3 or 5) to reduce HTML size for long videos.
 
     Returns:
         Path to the written ``animation_3d.html`` file.
@@ -299,6 +302,13 @@ def generate_animation(
 
     if not all_midlines_3d:
         raise RuntimeError("No midlines_3d data found")
+
+    if stride > 1:
+        all_midlines_3d = all_midlines_3d[::stride]
+        sys.stderr.write(
+            f"Subsampled to {len(all_midlines_3d)} frames (stride={stride})\n"
+        )
+        sys.stderr.flush()
 
     # Collect all unique fish IDs.
     all_fish_ids: set[int] = set()

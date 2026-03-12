@@ -35,7 +35,7 @@ class _FakeDet:
 class _FakeTrackingConfig:
     """Minimal TrackingConfig stub for testing."""
 
-    tracker_kind: str = "keypoint_bidi"
+    tracker_kind: str = "keypoint_oks"
     max_coast_frames: int = 15
     n_init: int = 3
     det_thresh: float = 0.3
@@ -44,6 +44,7 @@ class _FakeTrackingConfig:
     max_gap_frames: int = 5
     match_cost_threshold: float = 1.2
     ocr_threshold: float = 0.5
+    max_match_distance: float = 75.0
 
 
 def _make_det(

@@ -128,8 +128,8 @@ class AssociationConfig:
 
     Attributes:
         ray_distance_threshold: Maximum ray-ray closest-point distance (metres)
-            to classify a frame as an inlier. Default 0.03 (3 cm -- fish are
-            ~10 cm long, ~2 cm wide; 3 cm accommodates centroid jitter).
+            to classify a frame as an inlier. Default 0.01 (1 cm -- tuned via
+            grid sweep on real data; tighter threshold improves yield).
         score_min: Minimum affinity score to create a graph edge. Default 0.3.
         t_min: Minimum shared frames for a tracklet pair to be scored. Default 3
             (matches ``n_init`` so tracklets confirmed by tracking can always be
@@ -179,11 +179,11 @@ class AssociationConfig:
             (v3.7 behavior) for baseline comparison.
     """
 
-    ray_distance_threshold: float = 0.03
+    ray_distance_threshold: float = 0.01
     score_min: float = 0.3
     t_min: int = 3
     t_saturate: int = 100
-    early_k: int = 10
+    early_k: int = 5
     expected_fish_count: int = 9
     min_shared_voxels: int = 100
     leiden_resolution: float = 1.0
@@ -193,7 +193,7 @@ class AssociationConfig:
     min_segment_length: int = 10
     centroid_keypoint_index: int = 2
     centroid_confidence_floor: float = 0.3
-    keypoint_confidence_floor: float = 0.3
+    keypoint_confidence_floor: float = 0.2
     aggregation_method: str = "mean"
     recovery_enabled: bool = True
     recovery_residual_threshold: float = 0.025
@@ -228,6 +228,10 @@ class TrackingConfig:
         ocr_threshold: Minimum OKS similarity for observation-centric recovery
             (OCR). Tracks that coast and then find a detection with OKS above
             this threshold are re-acquired. Default 0.5.
+        max_match_distance: Maximum pixel distance between predicted and detected
+            spine1 keypoints for a match to be considered. Pairs exceeding this
+            distance are gated to infinity before Hungarian assignment, preventing
+            cross-tank ID swaps. Default 200.0.
 
     Note:
         ``oks_sigmas`` for the keypoint tracker are loaded from
@@ -244,6 +248,7 @@ class TrackingConfig:
     max_gap_frames: int = 5
     match_cost_threshold: float = 1.2
     ocr_threshold: float = 0.5
+    max_match_distance: float = 75.0
 
     def __post_init__(self) -> None:
         """Validate tracker_kind on construction."""

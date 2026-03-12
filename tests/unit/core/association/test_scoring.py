@@ -28,13 +28,13 @@ N_KEYPOINTS = 6
 class MockAssociationConfig:
     """Mock config satisfying AssociationConfigLike for tests."""
 
-    ray_distance_threshold: float = 0.03
+    ray_distance_threshold: float = 0.01
     score_min: float = 0.3
     t_min: int = 3
     t_saturate: int = 100
-    early_k: int = 3
+    early_k: int = 5
     min_shared_voxels: int = 1
-    keypoint_confidence_floor: float = 0.3
+    keypoint_confidence_floor: float = 0.2
     aggregation_method: str = "mean"
     use_multi_keypoint_scoring: bool = True
 
@@ -839,14 +839,14 @@ class TestKeypointScoring:
         assert real_cfg.aggregation_method == "mean"
 
     def test_keypoint_confidence_floor_field_exists(self) -> None:
-        """Config objects have keypoint_confidence_floor field defaulting to 0.3."""
+        """Config objects have keypoint_confidence_floor field defaulting to 0.2."""
         from aquapose.engine.config import AssociationConfig
 
         mock_cfg = MockAssociationConfig()
         real_cfg = AssociationConfig()
 
-        assert mock_cfg.keypoint_confidence_floor == 0.3
-        assert real_cfg.keypoint_confidence_floor == 0.3
+        assert mock_cfg.keypoint_confidence_floor == 0.2
+        assert real_cfg.keypoint_confidence_floor == 0.2
 
     def test_single_confident_keypoint_contributes(self) -> None:
         """A frame with only 1 confident keypoint still contributes (minimum is 1)."""

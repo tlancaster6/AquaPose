@@ -10,6 +10,7 @@ import logging
 import os
 import pickle
 import tempfile
+from dataclasses import replace as dc_replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -326,21 +327,43 @@ class ChunkOrchestrator:
                 )
                 n_new = len(identity_map) - n_continued
 
+                # Remap midlines_3d fish IDs in-place: local -> global
                 midlines_3d = getattr(context, "midlines_3d", None) or []
-                for local_idx, frame_midlines in enumerate(midlines_3d):
-                    global_frame_idx = chunk_start + local_idx
-                    remapped: dict[int, object] = {}
+                for frame_midlines in midlines_3d:
+                    remapped_frame: dict[int, object] = {}
                     for lid, ml in frame_midlines.items():  # type: ignore[union-attr]
                         global_id = identity_map.get(int(lid), int(lid))
-                        remapped[global_id] = ml
-                    writer.write_frame(global_frame_idx, remapped)  # type: ignore[arg-type]
+                        ml.fish_id = global_id  # type: ignore[union-attr]  # Midline3D is not frozen
+                        remapped_frame[global_id] = ml
+                    frame_midlines.clear()
+                    frame_midlines.update(remapped_frame)
+
+                # Remap tracklet_groups fish IDs in-place via dataclasses.replace (frozen)
+                context.tracklet_groups = [
+                    dc_replace(
+                        group, fish_id=identity_map.get(group.fish_id, group.fish_id)
+                    )
+                    for group in tracklet_groups
+                ]
+
+                # Write HDF5 using already-remapped midlines (no double remap)
+                for local_idx, frame_midlines in enumerate(midlines_3d):
+                    global_frame_idx = chunk_start + local_idx
+                    writer.write_frame(global_frame_idx, frame_midlines)  # type: ignore[arg-type]
+
+                # Flush diagnostic cache with globally-remapped IDs
+                from aquapose.engine.diagnostic_observer import DiagnosticObserver
+
+                for obs in observers:
+                    if isinstance(obs, DiagnosticObserver):
+                        obs.flush_cache()
 
                 carry_out = getattr(context, "carry_forward", None)
                 tracks_2d_state = carry_out.tracks_2d_state if carry_out else {}
 
                 new_track_id_to_global: dict[tuple[str, int], int] = {}
-                for group in tracklet_groups:
-                    gid: int = identity_map.get(group.fish_id, group.fish_id)  # type: ignore[assignment]
+                for group in context.tracklet_groups:
+                    gid = group.fish_id  # already remapped to global ID
                     for tracklet in group.tracklets:
                         new_track_id_to_global[
                             (tracklet.camera_id, tracklet.track_id)

@@ -173,7 +173,9 @@ def test_degenerate_single_chunk_output(tmp_path: pathlib.Path) -> None:
 
     # Minimal canned context: 1 frame, 1 fish with global_id 0
     fish_id = 0
-    fake_midline = object()
+    fake_midline = types.SimpleNamespace(
+        fish_id=fish_id
+    )  # must have fish_id (mutated by orchestrator)
     context = PipelineContext()
     context.frame_count = 1
     context.camera_ids = ["cam1"]
@@ -253,25 +255,26 @@ def test_multi_chunk_mechanical_correctness(tmp_path: pathlib.Path) -> None:
     - Handoff from chunk 1 carries identity state into chunk 2 stitching
     """
 
+    from aquapose.core.association.types import TrackletGroup
     from aquapose.core.context import PipelineContext
     from aquapose.engine.orchestrator import ChunkOrchestrator
 
     # Chunk 1: one fish at local_id=0, one tracklet (cam1, track_id=0)
     tracklet_ch1 = types.SimpleNamespace(camera_id="cam1", track_id=0)
-    group_ch1 = types.SimpleNamespace(fish_id=0, tracklets=[tracklet_ch1])
+    group_ch1 = TrackletGroup(fish_id=0, tracklets=(tracklet_ch1,))
     ctx_ch1 = PipelineContext()
     ctx_ch1.frame_count = 1
     ctx_ch1.camera_ids = ["cam1"]
-    ctx_ch1.midlines_3d = [{0: object()}]
+    ctx_ch1.midlines_3d = [{0: types.SimpleNamespace(fish_id=0)}]  # must have fish_id
     ctx_ch1.tracklet_groups = [group_ch1]
 
     # Chunk 2: same fish continues, local_id=0 should stitch to global_id=0
     tracklet_ch2 = types.SimpleNamespace(camera_id="cam1", track_id=0)
-    group_ch2 = types.SimpleNamespace(fish_id=0, tracklets=[tracklet_ch2])
+    group_ch2 = TrackletGroup(fish_id=0, tracklets=(tracklet_ch2,))
     ctx_ch2 = PipelineContext()
     ctx_ch2.frame_count = 1
     ctx_ch2.camera_ids = ["cam1"]
-    ctx_ch2.midlines_3d = [{0: object()}]
+    ctx_ch2.midlines_3d = [{0: types.SimpleNamespace(fish_id=0)}]  # must have fish_id
     ctx_ch2.tracklet_groups = [group_ch2]
 
     # Side-effect: first call returns ch1, second returns ch2
@@ -348,6 +351,131 @@ def test_multi_chunk_mechanical_correctness(tmp_path: pathlib.Path) -> None:
     # continue as global_id=0 (same track as chunk 1)
     ch2_remapped = calls[1][0][1]  # remapped dict passed to write_frame
     assert 0 in ch2_remapped, "Global fish_id=0 should be in chunk 2 remapped dict"
+
+
+def test_diagnostic_observer_flushed_after_remap(tmp_path: pathlib.Path) -> None:
+    """Integration: orchestrator remaps context IDs to global, then flushes diagnostic cache.
+
+    Verifies that cache.pkl written by DiagnosticObserver contains globally-consistent
+    fish IDs (not chunk-local IDs) in both midlines_3d and tracklet_groups.
+    """
+    import pickle
+
+    from aquapose.core.association.types import TrackletGroup
+    from aquapose.core.context import PipelineContext
+    from aquapose.engine.diagnostic_observer import DiagnosticObserver
+    from aquapose.engine.orchestrator import ChunkOrchestrator
+
+    # Local fish_id=5 will be stitched to global_id=0 (first chunk, fresh ID)
+    # Use SimpleNamespace (picklable, mutable) to simulate Midline3D
+    local_fish_id = 5
+    fake_midline = types.SimpleNamespace(fish_id=local_fish_id)
+
+    tracklet = types.SimpleNamespace(camera_id="cam1", track_id=0)
+    group = TrackletGroup(
+        fish_id=local_fish_id,
+        tracklets=(tracklet,),
+        confidence=None,
+        per_frame_confidence=None,
+        consensus_centroids=None,
+    )
+
+    context = PipelineContext()
+    context.frame_count = 1
+    context.camera_ids = ["cam1"]
+    context.midlines_3d = [{local_fish_id: fake_midline}]
+    context.tracklet_groups = [group]
+
+    diag_observer = DiagnosticObserver(output_dir=tmp_path, chunk_idx=0, chunk_start=0)
+
+    def _mock_pipeline_run(initial_context: object = None) -> PipelineContext:
+        """Simulate pipeline: fire events then return context."""
+        from aquapose.engine.events import PipelineComplete, PipelineStart
+
+        diag_observer.on_event(PipelineStart(run_id="test-remap-run"))
+        diag_observer.on_event(PipelineComplete(context=context))
+        return context
+
+    mock_pipeline = unittest.mock.MagicMock()
+    mock_pipeline.run.side_effect = _mock_pipeline_run
+
+    mock_writer = unittest.mock.MagicMock()
+    mock_writer.__enter__ = unittest.mock.MagicMock(return_value=mock_writer)
+    mock_writer.__exit__ = unittest.mock.MagicMock(return_value=False)
+
+    mock_video_source = unittest.mock.MagicMock()
+    mock_video_source.__len__ = unittest.mock.MagicMock(return_value=1)
+    mock_video_source.__enter__ = unittest.mock.MagicMock(
+        return_value=mock_video_source
+    )
+    mock_video_source.__exit__ = unittest.mock.MagicMock(return_value=False)
+
+    config = unittest.mock.MagicMock()
+    config.chunk_size = None
+    config.mode = "diagnostic"
+    config.n_animals = 2
+    config.n_sample_points = 15
+    config.output_dir = str(tmp_path)
+    config.video_dir = str(tmp_path)
+    config.calibration_path = str(tmp_path / "calib.json")
+
+    with (
+        unittest.mock.patch(
+            "aquapose.engine.orchestrator._build_stages_for_chunk",
+            return_value=[],
+        ),
+        unittest.mock.patch(
+            "aquapose.engine.pipeline.PosePipeline",
+            return_value=mock_pipeline,
+        ),
+        unittest.mock.patch(
+            "aquapose.core.types.frame_source.VideoFrameSource",
+            return_value=mock_video_source,
+        ),
+        unittest.mock.patch(
+            "aquapose.io.midline_writer.Midline3DWriter",
+            return_value=mock_writer,
+        ),
+        unittest.mock.patch(
+            "aquapose.logging.setup_file_logging",
+        ),
+        unittest.mock.patch(
+            "aquapose.engine.orchestrator.write_handoff",
+        ),
+        unittest.mock.patch(
+            "aquapose.engine.observer_factory.build_observers",
+            return_value=[diag_observer],
+        ),
+    ):
+        orchestrator = ChunkOrchestrator(config=config)
+        orchestrator.run()
+
+    # Verify cache was written
+    cache_path = tmp_path / "diagnostics" / "chunk_000" / "cache.pkl"
+    assert cache_path.exists(), "cache.pkl should have been written by orchestrator"
+
+    envelope = pickle.loads(cache_path.read_bytes())
+    cached_ctx = envelope["context"]
+
+    # midlines_3d should have global fish_id (0) as key, not local (5)
+    assert len(cached_ctx.midlines_3d) == 1
+    frame_midlines = cached_ctx.midlines_3d[0]
+    assert 0 in frame_midlines, (
+        f"Global fish_id=0 should be key in midlines_3d, got keys: {list(frame_midlines.keys())}"
+    )
+    assert local_fish_id not in frame_midlines, (
+        f"Local fish_id={local_fish_id} should NOT be key in midlines_3d"
+    )
+    # Midline3D.fish_id should also be updated
+    assert frame_midlines[0].fish_id == 0, (
+        f"Midline3D.fish_id should be global 0, got {frame_midlines[0].fish_id}"
+    )
+
+    # tracklet_groups should have global fish_id (0)
+    assert len(cached_ctx.tracklet_groups) == 1
+    assert cached_ctx.tracklet_groups[0].fish_id == 0, (
+        f"TrackletGroup.fish_id should be global 0, got {cached_ctx.tracklet_groups[0].fish_id}"
+    )
 
 
 def test_manifest_start_frame(tmp_path: pathlib.Path) -> None:

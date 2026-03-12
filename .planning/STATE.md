@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-03-11)
 Phase: 92 of 92 (Parameter Tuning Pass)
 Plan: 01 complete (1/2 plans done)
 Status: Phase 92 plan 01 complete, ready for plan 02
-Last activity: 2026-03-11 — Phase 92 plan 01 executed
+Last activity: 2026-03-12 - Completed quick task 26: Global ID remap for diagnostic cache
 
 Progress: [████░░░░░░] 40%
 
@@ -79,6 +79,12 @@ Recent decisions affecting current work:
 - P2 (LUT coordinate space): Round-trip unit test required in Phase 88 before any end-to-end eval — same bug caused 86% singleton rate in v3.7
 - P7 (refinement removal): Grep audit of `per_frame_confidence` and `consensus_centroids` consumers must happen before `refinement.py` is deleted in Phase 90
 - Phase 90 changepoint threshold needs calibration against confirmed-correct v3.7 benchmark tracklets; false positive target < 30%
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 26 | Global ID remap for diagnostic cache | 2026-03-12 | 9ee79e4 | [26-global-id-remap-for-diagnostic-cache](./quick/26-global-id-remap-for-diagnostic-cache/) |
 
 ## Session Continuity
 

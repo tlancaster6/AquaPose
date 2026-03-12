@@ -105,19 +105,13 @@ def _build_midline_sets(
     tracklet_groups: list[Any],
     sampled_indices: list[int],
 ) -> list[dict[int, dict[str, Any]]]:
-    """Build per-frame MidlineSets from context data and tracklet groups.
+    """Build per-frame MidlineSets from tracklet keypoints.
 
-    Adapted from EvalRunner._build_midline_sets but accepts explicit
-    tracklet_groups so the caller can pass new groups from a sweep combo
-    while reusing the context's detection data.
-
-    Reads keypoints from context.detections (v3.7+). Also supports legacy
-    contexts with annotated_detections for backward compatibility with
-    old diagnostic runs.
+    Reads keypoints directly from Tracklet2D objects (v3.8+). Falls back to
+    legacy AnnotatedDetection matching only when tracklet keypoints are absent.
 
     Args:
-        ctx: PipelineContext with detections (v3.7) or annotated_detections
-            (legacy) from the midline cache.
+        ctx: PipelineContext (used for frame_count and legacy fallback).
         tracklet_groups: TrackletGroup list (may be from original cache or
             from an association sweep combo).
         sampled_indices: Frame indices to include.
@@ -125,25 +119,15 @@ def _build_midline_sets(
     Returns:
         List of MidlineSet dicts, one per sampled frame.
     """
-    import math
-
     import numpy as np
 
     from aquapose.core.reconstruction.stage import (
-        _KEYPOINT_T_VALUES,
+        _DEFAULT_KEYPOINT_T_VALUES,
         _keypoints_to_midline,
     )
     from aquapose.core.types.midline import Midline2D
 
-    _CENTROID_MATCH_TOLERANCE_PX = 5.0
-
-    # v3.7: read from detections; fall back to annotated_detections for legacy runs
-    detections = ctx.detections or []
-    annotated_detections: list = getattr(ctx, "annotated_detections", None) or []
-    use_detections = bool(detections)
-
-    data_source = detections if use_detections else annotated_detections
-    frame_count = ctx.frame_count or len(data_source)
+    frame_count = ctx.frame_count or 0
     effective_indices = sampled_indices if sampled_indices else list(range(frame_count))
     effective_set = set(effective_indices)
 
@@ -162,79 +146,29 @@ def _build_midline_sets(
                     continue
                 if frame_idx not in effective_set:
                     continue
-                if frame_idx >= len(data_source):
+
+                if tracklet.keypoints is None:
                     continue
-
-                centroid: tuple[float, float] = tracklet.centroids[tidx]
-                cx, cy = centroid
-
-                if use_detections:
-                    # v3.7: read keypoints from Detection objects
-                    frame_dets = data_source[frame_idx]
-                    if not isinstance(frame_dets, dict):
-                        continue
-                    cam_list = frame_dets.get(cam_id)
-                    if not cam_list:
-                        continue
-
-                    best = None
-                    best_dist = _CENTROID_MATCH_TOLERANCE_PX
-                    for det in cam_list:
-                        x, y, w, h = det.bbox
-                        det_cx = x + w / 2.0
-                        det_cy = y + h / 2.0
-                        dist = math.sqrt((det_cx - cx) ** 2 + (det_cy - cy) ** 2)
-                        if dist <= best_dist:
-                            best_dist = dist
-                            best = det
-
-                    if best is None or best.keypoints is None:
-                        continue
-
-                    kpts_conf = (
-                        best.keypoint_conf
-                        if best.keypoint_conf is not None
-                        else np.ones(len(best.keypoints), dtype=np.float32)
-                    )
-                    points, point_conf = _keypoints_to_midline(
-                        best.keypoints,
-                        _KEYPOINT_T_VALUES,
-                        kpts_conf,
-                        n_points=15,
-                    )
-                    midline = Midline2D(
-                        points=points,
-                        half_widths=np.zeros(len(points), dtype=np.float32),
-                        fish_id=fish_id,
-                        camera_id=cam_id,
-                        frame_index=frame_idx,
-                        point_confidence=point_conf,
-                    )
-                else:
-                    # Legacy: read midline from AnnotatedDetection objects
-                    frame_annot = data_source[frame_idx]
-                    if not isinstance(frame_annot, dict):
-                        continue
-                    cam_list = frame_annot.get(cam_id)
-                    if not cam_list:
-                        continue
-
-                    best = None
-                    best_dist = _CENTROID_MATCH_TOLERANCE_PX
-                    for ann_det in cam_list:
-                        x, y, w, h = ann_det.detection.bbox
-                        det_cx = x + w / 2.0
-                        det_cy = y + h / 2.0
-                        dist = math.sqrt((det_cx - cx) ** 2 + (det_cy - cy) ** 2)
-                        if dist <= best_dist:
-                            best_dist = dist
-                            best = ann_det
-
-                    if best is None:
-                        continue
-                    midline = best.midline
-                    if midline is None or not isinstance(midline, Midline2D):
-                        continue
+                kpts_xy = tracklet.keypoints[tidx]  # (K, 2)
+                kpts_conf = (
+                    tracklet.keypoint_conf[tidx]
+                    if tracklet.keypoint_conf is not None
+                    else np.ones(kpts_xy.shape[0], dtype=np.float32)
+                )
+                points, point_conf = _keypoints_to_midline(
+                    kpts_xy,
+                    _DEFAULT_KEYPOINT_T_VALUES,
+                    kpts_conf,
+                    n_points=15,
+                )
+                midline = Midline2D(
+                    points=points,
+                    half_widths=np.zeros(len(points), dtype=np.float32),
+                    fish_id=fish_id,
+                    camera_id=cam_id,
+                    frame_index=frame_idx,
+                    point_confidence=point_conf,
+                )
 
                 collected.setdefault(frame_idx, {}).setdefault(fish_id, {})[cam_id] = (
                     midline
@@ -381,49 +315,54 @@ class TuningOrchestrator:
         # Lazy-loaded projection models for centroid reprojection
         self._projection_models: dict[str, Any] | None = None
 
-        # Try chunk-based loading first (Phase 54+), fall back to legacy
-        # per-stage cache files for older diagnostic runs.
-        ctx, _manifest = load_run_context(self._run_dir)
+        # Load per-chunk caches for chunk-aware association sweeps
+        self._chunk_caches: list[PipelineContext] = []
+        self._load_caches()
 
+        # Merged context for stages that don't need per-chunk isolation
+        # (reconstruction sweeps, metric queries)
         self._caches: dict[str, PipelineContext] = {}
-        if ctx is not None:
-            # Build stage-keyed cache dict from merged context fields
-            if ctx.detections is not None:
-                self._caches["detection"] = ctx
-            if ctx.tracks_2d is not None:
-                self._caches["tracking"] = ctx
-            if ctx.tracklet_groups is not None:
-                self._caches["association"] = ctx
-            # v3.7: pose data lives in detections (keypoints on Detection objects)
-            # Legacy runs may have annotated_detections; check both.
+        merged, _ = load_run_context(self._run_dir)
+        if merged is not None:
+            if merged.detections is not None:
+                self._caches["detection"] = merged
+            if merged.tracks_2d is not None:
+                self._caches["tracking"] = merged
+            if merged.tracklet_groups is not None:
+                self._caches["association"] = merged
             if (
-                ctx.detections is not None
-                or getattr(ctx, "annotated_detections", None) is not None
+                merged.detections is not None
+                or getattr(merged, "annotated_detections", None) is not None
             ):
-                self._caches["midline"] = ctx
-            if ctx.midlines_3d is not None:
-                self._caches["reconstruction"] = ctx
-        else:
-            # Legacy: load individual stage caches
-            from aquapose.core.context import load_stage_cache
+                self._caches["midline"] = merged
+            if merged.midlines_3d is not None:
+                self._caches["reconstruction"] = merged
 
-            diag_dir = self._run_dir / "diagnostics"
-            for stage_key in (
-                "detection",
-                "tracking",
-                "association",
-                "midline",
-                "reconstruction",
-            ):
-                cache_path = diag_dir / f"{stage_key}_cache.pkl"
-                if cache_path.exists():
-                    self._caches[stage_key] = load_stage_cache(cache_path)
+    def _load_caches(self) -> None:
+        """Load individual chunk caches from the diagnostics directory.
+
+        Populates ``self._chunk_caches`` with one PipelineContext per chunk,
+        preserving chunk boundaries for association sweeps. Falls back to
+        loading the merged context as a single "chunk" for legacy runs.
+        """
+        from aquapose.core.context import load_chunk_cache
+
+        diag_dir = self._run_dir / "diagnostics"
+        if not diag_dir.exists():
+            return
+
+        chunk_dirs = sorted(diag_dir.glob("chunk_*"))
+        for chunk_dir in chunk_dirs:
+            cache_path = chunk_dir / "cache.pkl"
+            if cache_path.exists():
+                self._chunk_caches.append(load_chunk_cache(cache_path))
 
     def sweep_association(self) -> TuningResult:
         """Sweep association parameters over a joint 2D grid then carry-forward.
 
-        Evaluates metrics on all frames (no subsampling) since centroid
-        reprojection is cheap compared to re-running association.
+        Runs association per-chunk (matching how the pipeline executes) and
+        aggregates metrics across all chunks. This preserves the chunk-local
+        tracklet counts that association was designed for.
 
         Returns:
             TuningResult with winner, baseline, and all combo results.
@@ -431,25 +370,22 @@ class TuningOrchestrator:
         Raises:
             FileNotFoundError: If required caches are missing.
         """
-        from aquapose.core.association.stage import AssociationStage
+        if not self._chunk_caches:
+            raise FileNotFoundError(
+                f"No chunk caches found in '{self._run_dir / 'diagnostics'}'. "
+                f"Re-run the pipeline in diagnostic mode to generate them."
+            )
 
-        # Load required caches
-        tracking_ctx = self._require_cache("tracking")
-        midline_ctx = self._require_cache("midline")
-
-        frame_count = tracking_ctx.frame_count or 0
-        all_indices = list(range(frame_count))
-
+        total_frames = sum(c.frame_count or 0 for c in self._chunk_caches)
         grid = ASSOCIATION_DEFAULT_GRID
         n_animals = self._config.n_animals
 
-        # Compute baseline metrics
-        baseline_assoc, baseline_recon = self._evaluate_association_combo(
-            tracking_ctx, midline_ctx, self._config, all_indices, n_animals
+        # Compute baseline metrics from cached association results
+        baseline_assoc, baseline_recon = self._evaluate_chunks_association(
+            self._chunk_caches, n_animals
         )
-        _compute_association_score(baseline_assoc, baseline_recon)
 
-        # Phase 1: Joint 3D grid over ray_distance_threshold x score_min x keypoint_confidence_floor
+        # Phase 1: Joint 3D grid
         joint_params = [
             "ray_distance_threshold",
             "score_min",
@@ -461,22 +397,21 @@ class TuningOrchestrator:
         all_results: list[dict[str, Any]] = []
         joint_grid_results: list[dict[str, Any]] = []
 
-        print(f"Joint grid: {len(joint_combos)} combos ({frame_count} frames)")
+        n_chunks = len(self._chunk_caches)
+        print(
+            f"Joint grid: {len(joint_combos)} combos "
+            f"({total_frames} frames, {n_chunks} chunks)"
+        )
         for combo_vals in joint_combos:
             params = dict(zip(joint_params, combo_vals, strict=True))
             config = self._patch_association_config(params)
-            ctx_copy = copy.copy(tracking_ctx)
 
             try:
-                assoc_stage = AssociationStage(config=config)
-                ctx_copy = assoc_stage.run(ctx_copy)
+                assoc_m, recon_m = self._run_association_per_chunk(config, n_animals)
             except Exception as exc:
                 print(f"  {params} -> ERROR: {exc}")
                 continue
 
-            assoc_m, recon_m = self._evaluate_association_with_ctx(
-                ctx_copy, midline_ctx, config, all_indices, n_animals
-            )
             score = _compute_association_score(assoc_m, recon_m)
             entry = {
                 "params": params,
@@ -517,18 +452,15 @@ class TuningOrchestrator:
             for val in values:
                 candidate_params = {**best_params, param: val}
                 config = self._patch_association_config(candidate_params)
-                ctx_copy = copy.copy(tracking_ctx)
 
                 try:
-                    assoc_stage = AssociationStage(config=config)
-                    ctx_copy = assoc_stage.run(ctx_copy)
+                    assoc_m, recon_m = self._run_association_per_chunk(
+                        config, n_animals
+                    )
                 except Exception as exc:
                     print(f"  {param}={val} -> ERROR: {exc}")
                     continue
 
-                assoc_m, recon_m = self._evaluate_association_with_ctx(
-                    ctx_copy, midline_ctx, config, all_indices, n_animals
-                )
                 score = _compute_association_score(assoc_m, recon_m)
                 entry = {
                     "params": candidate_params,
@@ -915,6 +847,94 @@ class TuningOrchestrator:
         models = self._get_projection_models()
         recon_m = _compute_centroid_reprojection(
             tracklet_groups, models, sampled_indices, n_animals
+        )
+
+        return assoc_m, recon_m
+
+    def _run_association_per_chunk(
+        self,
+        config: Any,
+        n_animals: int,
+    ) -> tuple[AssociationMetrics, ReconstructionMetrics]:
+        """Run association per-chunk and aggregate metrics.
+
+        Mirrors how the pipeline executes: association runs independently
+        on each chunk's tracklets, then metrics are aggregated.
+
+        Args:
+            config: PipelineConfig with association params to test.
+            n_animals: Expected number of fish.
+
+        Returns:
+            Tuple of aggregated (AssociationMetrics, ReconstructionMetrics).
+        """
+        from aquapose.core.association.stage import AssociationStage
+
+        all_midline_sets: list[dict[int, dict[str, Any]]] = []
+        all_tracklet_groups: list[Any] = []
+        total_frames = 0
+
+        for chunk_ctx in self._chunk_caches:
+            ctx_copy = copy.copy(chunk_ctx)
+            assoc_stage = AssociationStage(config=config)
+            ctx_copy = assoc_stage.run(ctx_copy)
+
+            chunk_frames = ctx_copy.frame_count or 0
+            chunk_indices = list(range(chunk_frames))
+            chunk_groups = ctx_copy.tracklet_groups or []
+
+            chunk_midlines = _build_midline_sets(ctx_copy, chunk_groups, chunk_indices)
+            all_midline_sets.extend(chunk_midlines)
+            all_tracklet_groups.extend(chunk_groups)
+            total_frames += chunk_frames
+
+        assoc_m = evaluate_association(all_midline_sets, n_animals)
+
+        models = self._get_projection_models()
+        all_indices = list(range(total_frames))
+        recon_m = _compute_centroid_reprojection(
+            all_tracklet_groups, models, all_indices, n_animals
+        )
+
+        return assoc_m, recon_m
+
+    def _evaluate_chunks_association(
+        self,
+        chunk_caches: list[PipelineContext],
+        n_animals: int,
+    ) -> tuple[AssociationMetrics, ReconstructionMetrics]:
+        """Evaluate baseline metrics from cached per-chunk association results.
+
+        Uses the already-computed tracklet_groups from each chunk cache
+        (no re-run of association).
+
+        Args:
+            chunk_caches: Per-chunk PipelineContexts with cached results.
+            n_animals: Expected number of fish.
+
+        Returns:
+            Tuple of aggregated (AssociationMetrics, ReconstructionMetrics).
+        """
+        all_midline_sets: list[dict[int, dict[str, Any]]] = []
+        all_tracklet_groups: list[Any] = []
+        total_frames = 0
+
+        for chunk_ctx in chunk_caches:
+            chunk_frames = chunk_ctx.frame_count or 0
+            chunk_indices = list(range(chunk_frames))
+            chunk_groups = chunk_ctx.tracklet_groups or []
+
+            chunk_midlines = _build_midline_sets(chunk_ctx, chunk_groups, chunk_indices)
+            all_midline_sets.extend(chunk_midlines)
+            all_tracklet_groups.extend(chunk_groups)
+            total_frames += chunk_frames
+
+        assoc_m = evaluate_association(all_midline_sets, n_animals)
+
+        models = self._get_projection_models()
+        all_indices = list(range(total_frames))
+        recon_m = _compute_centroid_reprojection(
+            all_tracklet_groups, models, all_indices, n_animals
         )
 
         return assoc_m, recon_m

@@ -68,7 +68,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-10 pending todos — see .planning/todos/pending/ (review for relevance)
+12 pending todos — see .planning/todos/pending/ (review for relevance)
 
 ### Roadmap Evolution
 

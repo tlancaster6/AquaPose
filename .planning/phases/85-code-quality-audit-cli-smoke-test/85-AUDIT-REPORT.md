@@ -127,6 +127,19 @@
 
 `interpolate_gaps()` in `keypoint_tracker.py` fails with `ValueError: x must be strictly increasing sequence` when frame indices contain duplicates. This caused chunk 2 to fail during the smoke test. The orchestrator handles it gracefully (catch + skip), but the root cause should be fixed.
 
+**Root cause — deeper than it first appears:** The immediate trigger is duplicate frame indices passed to `CubicSpline`, but the real problem is a design issue in the cross-chunk handoff.
+
+`_SinglePassTracker.get_state()` serializes the **entire builders dict** — every frame's keypoints, centroids, bboxes, confidences, and statuses for every track across the full chunk. `from_state()` restores all of this into the next chunk's tracker. But `TrackingStage.run()` uses `enumerate(detections)` (line 120 of `stage.py`), so frame indices are always 0-based per chunk. The restored builders already contain frames `[0..chunk_size-1]` from the previous chunk, and the new chunk appends another `[0..chunk_size-1]` — every frame collides, not just the boundary.
+
+This also means the handoff is carrying far more data than intended. The builders have already been consumed by `get_tracklets()` and written to `context.tracks_2d` before `get_state()` is called. There's no reason to carry them forward — the only state needed for tracking continuity is the active track KF states (`x`, `P`), track metadata (`time_since_update`, `hit_streak`, `detected_count`, `state`), OCR state (`pre_coast_x/P`, `obs_history`), and the `next_track_id` counter.
+
+**Origin:** New bug from this milestone (Phase 83 — custom tracker implementation). Not pre-existing.
+
+**Recommended fix:** Remove builders from `get_state()`/`from_state()` serialization. On restore, initialize empty builders for each active track. This:
+1. Eliminates the duplicate frame bug at the source (no stale history to collide with)
+2. Makes the handoff lightweight as originally intended
+3. Means each chunk's `get_tracklets()` returns only that chunk's tracklet segments, which is correct — downstream code already handles per-chunk tracklets independently
+
 ### 3.4 augment_count CLI Parameter Not Wired
 
 `training/data_cli.py:76` has an `--augment-count` CLI option that's never passed to `generate_variants()`. The function is hardcoded to produce 4 variants. Either wire the parameter or remove the CLI option.
@@ -146,11 +159,11 @@ The v3.7 codebase is now in a clean state for continued development:
 The items in Section 3 are quality-of-life improvements, not blocking issues:
 - Dead code at 60% confidence is mostly false positives; the genuine items are internal helpers, not public API
 - The misnamed test directory is cosmetic
-- The spline interpolation bug is handled by the orchestrator's error recovery
+- The spline interpolation bug is a design issue in the cross-chunk handoff (builders carried unnecessarily, local frame indices collide)
 - The unwired CLI param is low-priority
 
 If Phase 86 is pursued, recommended scope:
-1. Fix `interpolate_gaps()` spline bug (highest priority -- affects production reliability)
+1. Fix cross-chunk handoff: stop serializing builders in `get_state()`/`from_state()`, initialize empty builders on restore (highest priority -- affects production reliability on multi-chunk runs)
 2. Investigate and clean 60%-confidence dead code candidates
 3. Rename `tests/unit/segmentation/` directory
 4. Wire `augment_count` to `generate_variants()` or remove the CLI option

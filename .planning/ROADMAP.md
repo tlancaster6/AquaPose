@@ -226,7 +226,7 @@ Full details: `.planning/milestones/v3.7-ROADMAP.md`
 - [x] **Phase 90: Group Validation with Changepoint Detection** - Add validation.py replacing refinement.py; temporal ID swap splitting and outlier eviction (completed 2026-03-11)
 - [x] **Phase 91: Singleton Recovery** - Assign or split-assign singletons to existing groups; enforce same-camera overlap constraint (completed 2026-03-11)
 - [x] **Phase 91.1: Association Bottleneck Investigation & Remediation** - Fix association stage wall-time (452s to <30s per chunk) via vectorization (INSERTED) (completed 2026-03-11)
-- [ ] **Phase 92: Parameter Tuning Pass** - Calibrate new config parameters on real data; confirm improvement over v3.7 baseline
+- [x] **Phase 92: Parameter Tuning Pass** - Calibrate new config parameters on real data; confirm improvement over v3.7 baseline (completed 2026-03-12)
 
 ## Phase Details
 

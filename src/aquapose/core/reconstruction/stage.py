@@ -1,10 +1,9 @@
 """ReconstructionStage -- Stage 5 of the 5-stage AquaPose pipeline.
 
-Reads tracklet_groups (Stage 3) and detections (Stage 2, enriched with
-keypoints by PoseStage), assembles per-frame MidlineSets by interpolating
-raw 6-keypoint poses to dense 15-point Midline2D objects, and produces 3D
-B-spline midlines via the configured backend. Populates
-PipelineContext.midlines_3d.
+Reads tracklet_groups (Stage 4) and their per-frame keypoints, assembles
+per-frame MidlineSets by interpolating raw 6-keypoint poses to dense
+15-point Midline2D objects, and produces 3D B-spline midlines via the
+configured backend. Populates PipelineContext.midlines_3d.
 
 Camera membership is determined by the tracklet_groups produced by the
 Association stage -- no RANSAC cross-view matching is required. Frames where
@@ -24,7 +23,6 @@ import scipy.interpolate
 
 from aquapose.core.context import PipelineContext
 from aquapose.core.reconstruction.backends import get_backend
-from aquapose.core.types.detection import Detection
 from aquapose.core.types.midline import Midline2D
 from aquapose.core.types.reconstruction import Midline3D
 
@@ -37,10 +35,10 @@ _DEFAULT_MIN_CAMERAS: int = 3
 _DEFAULT_MAX_INTERP_GAP: int = 5
 _DEFAULT_N_CONTROL_POINTS: int = 7
 
-# Arc-length parameter values for the 6 anatomical keypoints produced by PoseStage.
-# These match the default keypoint_t_values in PoseConfig.
+# Default arc-length parameter values for the 6 anatomical keypoints.
+# Used only when keypoint_t_values is not provided via config.
 # Order: nose(0.0), head(0.1), spine1(0.3), spine2(0.5), spine3(0.7), tail(1.0)
-_KEYPOINT_T_VALUES: np.ndarray = np.array(
+_DEFAULT_KEYPOINT_T_VALUES: np.ndarray = np.array(
     [0.0, 0.1, 0.3, 0.5, 0.7, 1.0], dtype=np.float64
 )
 
@@ -114,8 +112,8 @@ class ReconstructionStage:
 
     Runs after PoseStage (Stage 2), TrackingStage (Stage 3), and AssociationStage
     (Stage 4). For each TrackletGroup (fish), determines per-frame camera membership
-    from the group's constituent Tracklet2D objects, looks up the corresponding
-    Detection keypoints, interpolates them to a dense Midline2D, assembles a
+    from the group's constituent Tracklet2D objects, reads keypoints directly
+    from each tracklet, interpolates them to a dense Midline2D, assembles a
     MidlineSet, and delegates triangulation to the configured backend.
 
     Frames with fewer than ``min_cameras`` cameras are dropped. Consecutive
@@ -129,6 +127,8 @@ class ReconstructionStage:
         min_cameras: Minimum cameras to attempt triangulation per fish per frame.
         max_interp_gap: Maximum consecutive dropped frames to interpolate.
         n_control_points: Fixed B-spline control point count per fish per frame.
+        keypoint_t_values: Per-keypoint arc-fraction values in [0, 1]. If
+            ``None``, uses default uniform spacing ``[0, 0.1, 0.3, 0.5, 0.7, 1]``.
         **backend_kwargs: Additional keyword arguments forwarded to the backend
             constructor (e.g. ``outlier_threshold``).
 
@@ -145,12 +145,18 @@ class ReconstructionStage:
         min_cameras: int = _DEFAULT_MIN_CAMERAS,
         max_interp_gap: int = _DEFAULT_MAX_INTERP_GAP,
         n_control_points: int = _DEFAULT_N_CONTROL_POINTS,
+        keypoint_t_values: list[float] | None = None,
         **backend_kwargs: object,
     ) -> None:
         self._calibration_path = Path(calibration_path)
         self._min_cameras = min_cameras
         self._max_interp_gap = max_interp_gap
         self._n_control_points = n_control_points
+        self._keypoint_t_values: np.ndarray = (
+            np.array(keypoint_t_values, dtype=np.float64)
+            if keypoint_t_values is not None
+            else _DEFAULT_KEYPOINT_T_VALUES
+        )
 
         # Build kwargs for the backend constructor
         combined_kwargs: dict[str, object] = {
@@ -214,26 +220,19 @@ class ReconstructionStage:
         """Reconstruct using known camera membership from tracklet groups.
 
         For each fish (TrackletGroup), determines which cameras observe the
-        fish in each frame, looks up the corresponding Detection keypoints,
+        fish in each frame, reads keypoints directly from tracklet data,
         interpolates them to a dense Midline2D, builds a MidlineSet, and
         triangulates. Short gaps are interpolated.
 
         Args:
-            context: Pipeline context with detections populated.
+            context: Pipeline context (tracklet_groups must be populated).
             tracklet_groups: Non-empty list of TrackletGroup objects.
 
         Returns:
             Context with midlines_3d populated.
         """
-        if context.detections is None:
-            raise ValueError(
-                "ReconstructionStage requires context.detections -- "
-                "it is not populated. Ensure PoseStage has run.",
-            )
-
         t0 = time.perf_counter()
-        detections = context.detections
-        frame_count = context.frame_count or len(detections)
+        frame_count = context.frame_count or 0
 
         # Per-fish reconstruction results: fish_id -> {frame_idx -> Midline3D}
         per_fish_results: dict[int, dict[int, Midline3D]] = {}
@@ -273,35 +272,29 @@ class ReconstructionStage:
                 # Build MidlineSet for this fish+frame
                 cam_midlines: dict[str, Midline2D] = {}
                 for cam_id, tracklet, tidx in cameras:
-                    if frame_idx >= len(detections):
+                    if tracklet.keypoints is None:
                         continue
-                    frame_dets = detections[frame_idx]
-                    if cam_id not in frame_dets:
-                        continue
-
-                    centroid = tracklet.centroids[tidx]
-                    det = _find_matching_detection(frame_dets[cam_id], centroid)
-                    if det is not None and det.keypoints is not None:
-                        kpts_conf = (
-                            det.keypoint_conf
-                            if det.keypoint_conf is not None
-                            else np.ones(len(det.keypoints), dtype=np.float32)
-                        )
-                        points, point_conf = _keypoints_to_midline(
-                            det.keypoints,
-                            _KEYPOINT_T_VALUES,
-                            kpts_conf,
-                            n_points=15,
-                        )
-                        midline = Midline2D(
-                            points=points,
-                            half_widths=np.zeros(len(points), dtype=np.float32),
-                            fish_id=fish_id,
-                            camera_id=cam_id,
-                            frame_index=frame_idx,
-                            point_confidence=point_conf,
-                        )
-                        cam_midlines[cam_id] = midline
+                    kpts_xy = tracklet.keypoints[tidx]  # (K, 2)
+                    kpts_conf = (
+                        tracklet.keypoint_conf[tidx]
+                        if tracklet.keypoint_conf is not None
+                        else np.ones(kpts_xy.shape[0], dtype=np.float32)
+                    )
+                    points, point_conf = _keypoints_to_midline(
+                        kpts_xy,
+                        self._keypoint_t_values,
+                        kpts_conf,
+                        n_points=15,
+                    )
+                    midline = Midline2D(
+                        points=points,
+                        half_widths=np.zeros(len(points), dtype=np.float32),
+                        fish_id=fish_id,
+                        camera_id=cam_id,
+                        frame_index=frame_idx,
+                        point_confidence=point_conf,
+                    )
+                    cam_midlines[cam_id] = midline
 
                 # Re-check after lookup (some cameras may not have keypoints)
                 if len(cam_midlines) < self._min_cameras:
@@ -406,39 +399,3 @@ class ReconstructionStage:
                     is_low_confidence=True,
                 )
                 fish_results[start_f + g] = interp_midline
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-def _find_matching_detection(
-    detection_list: list[Detection],
-    centroid: tuple[float, float],
-    tolerance: float = 10.0,
-) -> Detection | None:
-    """Find the Detection closest to a tracklet centroid.
-
-    Args:
-        detection_list: List of Detection objects.
-        centroid: (u, v) centroid from the tracklet.
-        tolerance: Maximum pixel distance for matching.
-
-    Returns:
-        Closest Detection, or None if none within tolerance.
-    """
-    best_det = None
-    best_dist = tolerance
-
-    for det in detection_list:
-        bx, by, bw, bh = det.bbox
-        cx = bx + bw / 2
-        cy = by + bh / 2
-        dist = ((cx - centroid[0]) ** 2 + (cy - centroid[1]) ** 2) ** 0.5
-
-        if dist < best_dist:
-            best_dist = dist
-            best_det = det
-
-    return best_det

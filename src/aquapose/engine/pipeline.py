@@ -340,6 +340,7 @@ def build_stages(
         min_cameras=config.reconstruction.min_cameras,
         max_interp_gap=config.reconstruction.max_interp_gap,
         n_control_points=config.reconstruction.n_control_points,
+        keypoint_t_values=config.pose.keypoint_t_values,
         z_flattening_enabled=config.reconstruction.z_denoising.enabled,
     )
 

@@ -114,12 +114,20 @@ def _make_tracklet(
     centroids: tuple | None = None,
     frame_status: tuple | None = None,
 ) -> Tracklet2D:
-    """Create a Tracklet2D with given camera/frames."""
+    """Create a Tracklet2D with given camera/frames and 6-keypoint poses."""
     if centroids is None:
         centroids = tuple((50.0, 50.0) for _ in frames)
     if frame_status is None:
         frame_status = tuple("detected" for _ in frames)
     bboxes = tuple((40.0, 40.0, 20.0, 20.0) for _ in frames)
+    # Build keypoints: 6 keypoints evenly spaced along a horizontal line
+    # through the centroid, matching _make_detection_with_keypoints layout.
+    n_kpts = 6
+    kpts_list = []
+    for cx, cy in centroids:
+        kpts_list.append([[cx + (i - 2.5) * 4, cy] for i in range(n_kpts)])
+    keypoints = np.array(kpts_list, dtype=np.float32)  # (T, 6, 2)
+    keypoint_conf = np.ones((len(frames), n_kpts), dtype=np.float32)
     return Tracklet2D(
         camera_id=camera_id,
         track_id=track_id,
@@ -127,6 +135,8 @@ def _make_tracklet(
         centroids=centroids,
         bboxes=bboxes,
         frame_status=frame_status,
+        keypoints=keypoints,
+        keypoint_conf=keypoint_conf,
     )
 
 
@@ -144,6 +154,9 @@ def _build_stage(
     stage._calibration_path = calib_file
     stage._min_cameras = min_cameras
     stage._max_interp_gap = max_interp_gap
+    stage._keypoint_t_values = np.array(
+        [0.0, 0.1, 0.3, 0.5, 0.7, 1.0], dtype=np.float64
+    )
     stage._n_control_points = 7
 
     if mock_backend is not None:

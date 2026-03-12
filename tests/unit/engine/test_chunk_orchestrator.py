@@ -370,13 +370,18 @@ def test_manifest_start_frame(tmp_path: pathlib.Path) -> None:
     ctx = PipelineContext()
     ctx.frame_count = 100
 
-    # Simulate PipelineComplete to trigger manifest write
+    # Simulate PipelineComplete (no longer writes to disk — deferred to flush_cache)
     observer.on_event(
         PipelineComplete(run_id="test-run", elapsed_seconds=1.0, context=ctx)
     )
 
+    # Flush the cache (orchestrator does this after identity stitching)
+    observer.flush_cache()
+
     manifest_path = tmp_path / "diagnostics" / "manifest.json"
-    assert manifest_path.exists(), "manifest.json should have been written"
+    assert manifest_path.exists(), (
+        "manifest.json should have been written after flush_cache()"
+    )
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     chunks = manifest.get("chunks", [])

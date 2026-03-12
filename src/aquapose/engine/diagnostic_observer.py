@@ -269,18 +269,30 @@ class DiagnosticObserver:
         logger.info("Manifest written: %s", manifest_path)
 
     def _on_pipeline_complete(self, event: PipelineComplete) -> None:
-        """Write chunk cache and update manifest when the pipeline completes.
+        """Update stored context reference when the pipeline completes.
+
+        Disk writes are deferred to ``flush_cache()``, which the orchestrator
+        calls after identity stitching has remapped fish IDs to global values.
 
         Args:
             event: The PipelineComplete event (may carry context).
         """
-        if self._output_dir is None:
-            return
-
         # Use event context if available; otherwise fall back to last StageComplete context
         context = getattr(event, "context", None) or self._last_context
+        if context is not None:
+            self._last_context = context
+
+    def flush_cache(self) -> None:
+        """Write chunk cache and manifest using the stored context.
+
+        Called by the orchestrator after identity stitching has remapped
+        fish IDs in the context. No-op if output_dir is None or no context
+        is available.
+        """
+        if self._output_dir is None:
+            return
+        context = self._last_context
         if context is None:
             return
-
         self._write_chunk_cache(context)
         self._write_manifest(context)

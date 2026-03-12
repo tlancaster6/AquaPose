@@ -34,7 +34,7 @@ def _fire_full_pipeline(
 def test_diagnostic_observer_writes_cache_on_pipeline_complete(
     tmp_path: pytest.TempPathFactory,
 ) -> None:
-    """DiagnosticObserver writes diagnostics/chunk_000/cache.pkl on PipelineComplete."""
+    """DiagnosticObserver writes diagnostics/chunk_000/cache.pkl after flush_cache()."""
     observer = DiagnosticObserver(output_dir=tmp_path, chunk_idx=0)
 
     ctx = PipelineContext()
@@ -43,6 +43,7 @@ def test_diagnostic_observer_writes_cache_on_pipeline_complete(
     ctx.detections = [{} for _ in range(5)]
 
     _fire_full_pipeline(observer, ctx)
+    observer.flush_cache()
 
     cache_path = tmp_path / "diagnostics" / "chunk_000" / "cache.pkl"
     assert cache_path.exists(), f"Expected cache file at {cache_path}"
@@ -89,6 +90,7 @@ def test_diagnostic_observer_cache_round_trips_with_load_stage_cache(
 
     observer.on_event(_make_stage_complete("TrackingStage", ctx))
     observer.on_event(PipelineComplete(context=ctx))
+    observer.flush_cache()
 
     cache_path = tmp_path / "diagnostics" / "chunk_000" / "cache.pkl"
     assert cache_path.exists()
@@ -111,6 +113,7 @@ def test_diagnostic_observer_captures_run_id_from_pipeline_start(
 
     observer.on_event(_make_stage_complete("AssociationStage", ctx))
     observer.on_event(PipelineComplete(context=ctx))
+    observer.flush_cache()
 
     cache_path = tmp_path / "diagnostics" / "chunk_000" / "cache.pkl"
     assert cache_path.exists()

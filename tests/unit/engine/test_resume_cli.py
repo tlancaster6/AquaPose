@@ -89,8 +89,11 @@ def test_end_to_end_cache_write_and_reload(tmp_path: Path) -> None:
         )
     )
 
-    # Fire PipelineComplete to trigger cache write (new layout)
+    # Fire PipelineComplete (deferred — no disk writes yet)
     observer.on_event(PipelineComplete(context=ctx))
+
+    # Flush the cache (orchestrator does this after identity stitching)
+    observer.flush_cache()
 
     # Verify cache file was written at the new chunk-aware path
     cache_path = tmp_path / "diagnostics" / "chunk_000" / "cache.pkl"

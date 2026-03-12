@@ -239,6 +239,7 @@ def test_chunk_000_cache_written(tmp_path: Path) -> None:
     """DiagnosticObserver with chunk_idx=0 writes cache to diagnostics/chunk_000/cache.pkl."""
     observer = DiagnosticObserver(output_dir=tmp_path, chunk_idx=0)
     _fire_pipeline(observer)
+    observer.flush_cache()
 
     cache_path = tmp_path / "diagnostics" / "chunk_000" / "cache.pkl"
     assert cache_path.exists(), f"Expected cache at {cache_path}"
@@ -248,6 +249,7 @@ def test_chunk_002_cache_written(tmp_path: Path) -> None:
     """DiagnosticObserver with chunk_idx=2 writes cache to diagnostics/chunk_002/cache.pkl."""
     observer = DiagnosticObserver(output_dir=tmp_path, chunk_idx=2)
     _fire_pipeline(observer)
+    observer.flush_cache()
 
     cache_path = tmp_path / "diagnostics" / "chunk_002" / "cache.pkl"
     assert cache_path.exists(), f"Expected cache at {cache_path}"
@@ -257,6 +259,7 @@ def test_chunk_cache_contains_full_context(tmp_path: Path) -> None:
     """Cache envelope contains full PipelineContext (not per-stage snapshots)."""
     observer = DiagnosticObserver(output_dir=tmp_path, chunk_idx=0)
     original_ctx = _fire_pipeline(observer)
+    observer.flush_cache()
 
     cache_path = tmp_path / "diagnostics" / "chunk_000" / "cache.pkl"
     envelope = pickle.loads(cache_path.read_bytes())
@@ -272,6 +275,7 @@ def test_chunk_cache_envelope_schema(tmp_path: Path) -> None:
     """Cache envelope has run_id, timestamp, version_fingerprint, context keys."""
     observer = DiagnosticObserver(output_dir=tmp_path, chunk_idx=0)
     _fire_pipeline(observer, run_id="run_xyz")
+    observer.flush_cache()
 
     cache_path = tmp_path / "diagnostics" / "chunk_000" / "cache.pkl"
     envelope = pickle.loads(cache_path.read_bytes())
@@ -283,7 +287,7 @@ def test_chunk_cache_envelope_schema(tmp_path: Path) -> None:
 
 
 def test_only_one_cache_per_chunk_written_on_pipeline_complete(tmp_path: Path) -> None:
-    """Only one cache.pkl per chunk is written (on PipelineComplete, not per-stage)."""
+    """Only one cache.pkl per chunk is written (via flush_cache, not per-stage or PipelineComplete)."""
     observer = DiagnosticObserver(output_dir=tmp_path, chunk_idx=0)
 
     observer.on_event(PipelineStart(run_id="run_test"))
@@ -307,7 +311,14 @@ def test_only_one_cache_per_chunk_written_on_pipeline_complete(tmp_path: Path) -
 
     observer.on_event(PipelineComplete(context=ctx))
 
-    # After PipelineComplete: exactly one cache.pkl
+    # After PipelineComplete but before flush_cache: still no cache (deferred)
+    pkl_files_after_pc = list(chunk_dir.glob("*.pkl")) if chunk_dir.exists() else []
+    assert len(pkl_files_after_pc) == 0, (
+        "Cache should not be written on PipelineComplete (deferred to flush_cache)"
+    )
+
+    # After flush_cache: exactly one cache.pkl
+    observer.flush_cache()
     pkl_files_after = list(chunk_dir.glob("*.pkl"))
     assert len(pkl_files_after) == 1
     assert pkl_files_after[0].name == "cache.pkl"
@@ -317,6 +328,7 @@ def test_no_per_stage_cache_files_written(tmp_path: Path) -> None:
     """No per-stage cache files (detection_cache.pkl etc.) are written."""
     observer = DiagnosticObserver(output_dir=tmp_path, chunk_idx=0)
     _fire_pipeline(observer)
+    observer.flush_cache()
 
     diagnostics_dir = tmp_path / "diagnostics"
     # Ensure no old-style *_cache.pkl files exist at the top level
@@ -335,18 +347,20 @@ def test_inmemory_stages_dict_still_works(tmp_path: Path) -> None:
 
 
 def test_manifest_written_on_pipeline_complete(tmp_path: Path) -> None:
-    """manifest.json is written at diagnostics/manifest.json after PipelineComplete."""
+    """manifest.json is written at diagnostics/manifest.json after flush_cache()."""
     observer = DiagnosticObserver(output_dir=tmp_path, chunk_idx=0)
     _fire_pipeline(observer, run_id="run_abc")
+    observer.flush_cache()
 
     manifest_path = tmp_path / "diagnostics" / "manifest.json"
-    assert manifest_path.exists(), "manifest.json should exist after PipelineComplete"
+    assert manifest_path.exists(), "manifest.json should exist after flush_cache()"
 
 
 def test_manifest_schema(tmp_path: Path) -> None:
     """manifest.json has run_id, total_frames, chunk_size, chunks, version_fingerprint."""
     observer = DiagnosticObserver(output_dir=tmp_path, chunk_idx=0)
     _fire_pipeline(observer, run_id="run_schema")
+    observer.flush_cache()
 
     manifest_path = tmp_path / "diagnostics" / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
@@ -364,6 +378,7 @@ def test_manifest_chunk_entry_schema(tmp_path: Path) -> None:
     """Each chunk entry in manifest.json has index, start_frame, end_frame, stages_cached."""
     observer = DiagnosticObserver(output_dir=tmp_path, chunk_idx=0)
     _fire_pipeline(observer, run_id="run_entry")
+    observer.flush_cache()
 
     manifest_path = tmp_path / "diagnostics" / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
@@ -381,6 +396,7 @@ def test_manifest_appended_for_multiple_chunks(tmp_path: Path) -> None:
     for chunk_idx in range(3):
         observer = DiagnosticObserver(output_dir=tmp_path, chunk_idx=chunk_idx)
         _fire_pipeline(observer, run_id="run_multi")
+        observer.flush_cache()
 
     manifest_path = tmp_path / "diagnostics" / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
@@ -396,6 +412,7 @@ def test_load_chunk_cache_loads_new_format(tmp_path: Path) -> None:
 
     observer = DiagnosticObserver(output_dir=tmp_path, chunk_idx=0)
     original_ctx = _fire_pipeline(observer)
+    observer.flush_cache()
 
     cache_path = tmp_path / "diagnostics" / "chunk_000" / "cache.pkl"
     loaded_ctx = load_chunk_cache(cache_path)
@@ -436,9 +453,45 @@ def test_load_stage_cache_still_works_with_new_format(tmp_path: Path) -> None:
     """load_stage_cache works with the new chunk cache format (backward compat)."""
     observer = DiagnosticObserver(output_dir=tmp_path, chunk_idx=0)
     original_ctx = _fire_pipeline(observer)
+    observer.flush_cache()
 
     cache_path = tmp_path / "diagnostics" / "chunk_000" / "cache.pkl"
     loaded_ctx = load_stage_cache(cache_path)
 
     assert isinstance(loaded_ctx, PipelineContext)
     assert loaded_ctx.frame_count == original_ctx.frame_count
+
+
+def test_pipeline_complete_does_not_write_cache(tmp_path: Path) -> None:
+    """PipelineComplete no longer triggers disk writes — cache write is deferred to flush_cache()."""
+    observer = DiagnosticObserver(output_dir=tmp_path, chunk_idx=0)
+    _fire_pipeline(observer)
+
+    # After full pipeline event sequence, no files should exist on disk
+    diagnostics_dir = tmp_path / "diagnostics"
+    cache_path = diagnostics_dir / "chunk_000" / "cache.pkl"
+    manifest_path = diagnostics_dir / "manifest.json"
+
+    assert not cache_path.exists(), (
+        "cache.pkl should NOT be written on PipelineComplete (deferred)"
+    )
+    assert not manifest_path.exists(), (
+        "manifest.json should NOT be written on PipelineComplete (deferred)"
+    )
+
+
+def test_flush_cache_writes_cache_and_manifest(tmp_path: Path) -> None:
+    """flush_cache() writes both cache.pkl and manifest.json."""
+    observer = DiagnosticObserver(output_dir=tmp_path, chunk_idx=0)
+    _fire_pipeline(observer, run_id="run_flush")
+
+    # Neither file should exist before flush_cache
+    cache_path = tmp_path / "diagnostics" / "chunk_000" / "cache.pkl"
+    manifest_path = tmp_path / "diagnostics" / "manifest.json"
+    assert not cache_path.exists()
+    assert not manifest_path.exists()
+
+    # After flush_cache both files should exist
+    observer.flush_cache()
+    assert cache_path.exists(), "cache.pkl should be written after flush_cache()"
+    assert manifest_path.exists(), "manifest.json should be written after flush_cache()"

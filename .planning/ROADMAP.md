@@ -277,9 +277,10 @@ Plans:
   2. The B-spline fitting function is callable as a standalone utility on a raw-keypoint Midline3D
   3. Midline3D can represent both raw-keypoint and spline-fitted states without type errors
   4. A pipeline run with spline enabled produces output numerically equivalent to the pre-refactor baseline
-**Plans**: 1 plan
+**Plans**: 2 plans
 Plans:
-- [ ] 94-01-PLAN.md — Delete scalar fallback, helper, constants, stale comments, and equivalence tests
+- [ ] 95-01-PLAN.md — Extend Midline3D type, add spline_enabled config, refactor DltBackend
+- [ ] 95-02-PLAN.md — Update HDF5 writer, evaluation, and pipeline wiring for raw-keypoint mode
 
 ### Phase 96: Z-Denoising and Documentation
 **Goal**: Z-denoising operates correctly on raw 6-keypoint arrays, and all docstrings and type documentation reflect the keypoint-native, variable-point-count reconstruction output
@@ -289,9 +290,9 @@ Plans:
   1. Running z-denoising on a raw 6-keypoint reconstruction array produces a denoised array with the same shape (no shape errors or silent dimension mismatches)
   2. The stage.py module docstring describes N-point keypoint-native output, not a fixed 15-point midline
   3. Midline2D and Midline3D type docstrings describe variable point counts and distinguish raw-keypoint vs spline-fitted representations
-**Plans**: 1 plan
+**Plans**: TBD
 Plans:
-- [ ] 94-01-PLAN.md — Delete scalar fallback, helper, constants, stale comments, and equivalence tests
+- TBD
 
 ## Progress
 
@@ -302,5 +303,5 @@ Phases execute in numeric order: 93 → 94 → 95 → 96
 |-------|----------------|--------|-----------|
 | 93. Config Plumbing | 1/1 | Complete    | 2026-03-13 |
 | 94. Dead Code Removal | 1/1 | Complete    | 2026-03-13 |
-| 95. Spline Refactoring | 0/TBD | Not started | - |
+| 95. Spline Refactoring | 0/2 | Not started | - |
 | 96. Z-Denoising and Documentation | 0/TBD | Not started | - |

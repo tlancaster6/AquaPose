@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -552,8 +551,6 @@ class TestModuleConstants:
 
     def test_module_constants_exist(self) -> None:
         from aquapose.core.reconstruction.backends.dlt import (
-            _COS_MIN_RAY_ANGLE,
-            _MIN_RAY_ANGLE_DEG,
             DEFAULT_LOW_CONFIDENCE_FRACTION,
             DEFAULT_N_CONTROL_POINTS,
             DEFAULT_OUTLIER_THRESHOLD,
@@ -562,10 +559,6 @@ class TestModuleConstants:
         assert DEFAULT_OUTLIER_THRESHOLD == 10.0
         assert DEFAULT_N_CONTROL_POINTS == 7
         assert DEFAULT_LOW_CONFIDENCE_FRACTION == 0.2
-        assert _MIN_RAY_ANGLE_DEG == 5.0
-        assert math.isclose(
-            _COS_MIN_RAY_ANGLE, math.cos(math.radians(5.0)), rel_tol=1e-6
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -661,166 +654,3 @@ class TestTriangulationResultStructure:
             cam_midlines, water_z=10.0
         )
         assert not vec_result.valid_mask.any()
-
-
-# ---------------------------------------------------------------------------
-# Task 2 TDD: Wire _reconstruct_fish to vectorized path + equivalence tests
-# ---------------------------------------------------------------------------
-
-
-class TestVectorizedEquivalence:
-    """Vectorized _triangulate_fish_vectorized matches scalar _triangulate_body_point."""
-
-    def test_vectorized_matches_scalar_positions(
-        self,
-        dlt_backend: DltBackend,  # type: ignore[name-defined]  # noqa: F821
-    ) -> None:
-        """3-camera synthetic data: vectorized and scalar 3D positions agree within 1e-4 m."""
-        midline_set = _make_midline_set(n_body_points=15)
-        cam_midlines = midline_set[0]
-        water_z = 0.0
-
-        # Scalar baseline
-        scalar_pts: dict[int, np.ndarray] = {}
-        for i in range(15):
-            result = dlt_backend._triangulate_body_point(i, cam_midlines, water_z)
-            if result is not None:
-                scalar_pts[i] = result[0].detach().cpu().numpy()
-
-        # Vectorized
-        vec_result = dlt_backend._triangulate_fish_vectorized(cam_midlines, water_z)
-        vec_pts = {
-            i: vec_result.pts_3d[i].detach().cpu().numpy()
-            for i in range(15)
-            if vec_result.valid_mask[i].item()
-        }
-
-        # Valid sets should agree for 3-camera synthetic data
-        assert set(scalar_pts.keys()) == set(vec_pts.keys())
-        for i in scalar_pts:
-            np.testing.assert_allclose(scalar_pts[i], vec_pts[i], atol=1e-4)
-
-    def test_vectorized_matches_scalar_with_nan(
-        self,
-        dlt_backend: DltBackend,  # type: ignore[name-defined]  # noqa: F821
-    ) -> None:
-        """NaN in one camera: both paths agree on valid set and positions."""
-        midline_set = _make_midline_set(
-            nan_camera="cam0", nan_point_idx=7, n_body_points=15
-        )
-        cam_midlines = midline_set[0]
-        water_z = 0.0
-
-        scalar_pts: dict[int, np.ndarray] = {}
-        for i in range(15):
-            result = dlt_backend._triangulate_body_point(i, cam_midlines, water_z)
-            if result is not None:
-                scalar_pts[i] = result[0].detach().cpu().numpy()
-
-        vec_result = dlt_backend._triangulate_fish_vectorized(cam_midlines, water_z)
-        vec_pts = {
-            i: vec_result.pts_3d[i].detach().cpu().numpy()
-            for i in range(15)
-            if vec_result.valid_mask[i].item()
-        }
-
-        assert set(scalar_pts.keys()) == set(vec_pts.keys())
-        for i in scalar_pts:
-            np.testing.assert_allclose(scalar_pts[i], vec_pts[i], atol=1e-4)
-
-    def test_vectorized_matches_scalar_with_confidence(
-        self,
-        dlt_backend: DltBackend,  # type: ignore[name-defined]  # noqa: F821
-    ) -> None:
-        """Non-uniform confidence: both paths produce similar 3D positions."""
-        midline_set = _make_midline_set(n_body_points=15, include_confidence=True)
-        cam_midlines = midline_set[0]
-        water_z = 0.0
-
-        scalar_pts: dict[int, np.ndarray] = {}
-        for i in range(15):
-            result = dlt_backend._triangulate_body_point(i, cam_midlines, water_z)
-            if result is not None:
-                scalar_pts[i] = result[0].detach().cpu().numpy()
-
-        vec_result = dlt_backend._triangulate_fish_vectorized(cam_midlines, water_z)
-        vec_pts = {
-            i: vec_result.pts_3d[i].detach().cpu().numpy()
-            for i in range(15)
-            if vec_result.valid_mask[i].item()
-        }
-
-        assert set(scalar_pts.keys()) == set(vec_pts.keys())
-        for i in scalar_pts:
-            np.testing.assert_allclose(scalar_pts[i], vec_pts[i], atol=1e-4)
-
-    def test_vectorized_result_structure(
-        self,
-        dlt_backend: DltBackend,  # type: ignore[name-defined]  # noqa: F821
-    ) -> None:
-        """_TriangulationResult has correct shapes and types."""
-        midline_set = _make_midline_set(n_body_points=15)
-        cam_midlines = midline_set[0]
-        vec_result = dlt_backend._triangulate_fish_vectorized(cam_midlines, water_z=0.0)
-
-        N = 15
-        C = 3  # cam0, cam1, cam2
-        assert vec_result.pts_3d.shape == (N, 3)
-        assert vec_result.valid_mask.shape == (N,)
-        assert vec_result.valid_mask.dtype == torch.bool
-        assert vec_result.inlier_masks.shape == (N, C)
-        assert vec_result.mean_residuals.shape == (N,)
-        assert len(vec_result.inlier_cam_ids) == N
-
-    def test_known_differences_are_rare(
-        self,
-        dlt_backend: DltBackend,  # type: ignore[name-defined]  # noqa: F821
-    ) -> None:
-        """Document: 2-cam ray-angle filter and first-pass water check are dropped.
-
-        For standard 3-camera synthetic data, these differences should affect 0 body points
-        since all points have 3 cameras and are well below the water surface.
-        """
-        midline_set = _make_midline_set(n_body_points=15)
-        cam_midlines = midline_set[0]
-        water_z = 0.0
-
-        scalar_valid: set[int] = set()
-        for i in range(15):
-            result = dlt_backend._triangulate_body_point(i, cam_midlines, water_z)
-            if result is not None:
-                scalar_valid.add(i)
-
-        vec_result = dlt_backend._triangulate_fish_vectorized(cam_midlines, water_z)
-        vec_valid = {i for i in range(15) if vec_result.valid_mask[i].item()}
-
-        # For 3-camera data: sets should be identical (no 2-cam or water edge cases)
-        assert scalar_valid == vec_valid
-
-    def test_reconstruct_fish_uses_vectorized_path(
-        self,
-        dlt_backend: DltBackend,  # type: ignore[name-defined]  # noqa: F821
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """_reconstruct_fish() calls _triangulate_fish_vectorized, not body-point loop."""
-        call_log: list[str] = []
-
-        original_vec = dlt_backend._triangulate_fish_vectorized
-        original_scalar = dlt_backend._triangulate_body_point
-
-        def patched_vec(cam_midlines, water_z):  # type: ignore[no-untyped-def]
-            call_log.append("vectorized")
-            return original_vec(cam_midlines, water_z)
-
-        def patched_scalar(point_idx, cam_midlines, water_z):  # type: ignore[no-untyped-def]
-            call_log.append("scalar")
-            return original_scalar(point_idx, cam_midlines, water_z)
-
-        monkeypatch.setattr(dlt_backend, "_triangulate_fish_vectorized", patched_vec)
-        monkeypatch.setattr(dlt_backend, "_triangulate_body_point", patched_scalar)
-
-        midline_set = _make_midline_set(n_body_points=15)
-        dlt_backend.reconstruct_frame(frame_idx=0, midline_set=midline_set)
-
-        assert "vectorized" in call_log
-        assert "scalar" not in call_log

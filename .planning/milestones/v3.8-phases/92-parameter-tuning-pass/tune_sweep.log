@@ -1,0 +1,66 @@
+/home/tlancaster6/Projects/AquaPose/src/aquapose/core/association/recovery.py:811: RuntimeWarning: Mean of empty slice
+  before_means = np.nanmean(residuals[:, :split_idx], axis=1)
+/home/tlancaster6/Projects/AquaPose/src/aquapose/core/association/recovery.py:812: RuntimeWarning: Mean of empty slice
+  after_means = np.nanmean(residuals[:, split_idx:], axis=1)
+Joint grid: 27 combos (1800 frames)
+  {'ray_distance_threshold': 0.01, 'score_min': 0.03, 'keypoint_confidence_floor': 0.2} -> ERROR: list index out of range
+  {'ray_distance_threshold': 0.01, 'score_min': 0.03, 'keypoint_confidence_floor': 0.3} -> ERROR: list index out of range
+  {'ray_distance_threshold': 0.01, 'score_min': 0.03, 'keypoint_confidence_floor': 0.4} -> ERROR: list index out of range
+  ray_dist=0.010 score_min=0.150 kpt_floor=0.20 -> yield=0.0% error=infpx
+  {'ray_distance_threshold': 0.01, 'score_min': 0.15, 'keypoint_confidence_floor': 0.3} -> ERROR: list index out of range
+  ray_dist=0.010 score_min=0.150 kpt_floor=0.40 -> yield=0.0% error=3.32px
+  ray_dist=0.010 score_min=0.300 kpt_floor=0.20 -> yield=0.0% error=19.76px
+  {'ray_distance_threshold': 0.01, 'score_min': 0.3, 'keypoint_confidence_floor': 0.3} -> ERROR: list index out of range
+  ray_dist=0.010 score_min=0.300 kpt_floor=0.40 -> yield=0.0% error=4.40px
+  {'ray_distance_threshold': 0.02, 'score_min': 0.03, 'keypoint_confidence_floor': 0.2} -> ERROR: list index out of range
+  ray_dist=0.020 score_min=0.030 kpt_floor=0.30 -> yield=0.0% error=2.60px
+  {'ray_distance_threshold': 0.02, 'score_min': 0.03, 'keypoint_confidence_floor': 0.4} -> ERROR: list index out of range
+  ray_dist=0.020 score_min=0.150 kpt_floor=0.20 -> yield=0.0% error=3.01px
+  {'ray_distance_threshold': 0.02, 'score_min': 0.15, 'keypoint_confidence_floor': 0.3} -> ERROR: list index out of range
+  ray_dist=0.020 score_min=0.150 kpt_floor=0.40 -> yield=0.0% error=infpx
+  ray_dist=0.020 score_min=0.300 kpt_floor=0.20 -> yield=0.0% error=infpx
+  ray_dist=0.020 score_min=0.300 kpt_floor=0.30 -> yield=0.0% error=2.93px
+  ray_dist=0.020 score_min=0.300 kpt_floor=0.40 -> yield=0.0% error=infpx
+  {'ray_distance_threshold': 0.03, 'score_min': 0.03, 'keypoint_confidence_floor': 0.2} -> ERROR: list index out of range
+  {'ray_distance_threshold': 0.03, 'score_min': 0.03, 'keypoint_confidence_floor': 0.3} -> ERROR: list index out of range
+  {'ray_distance_threshold': 0.03, 'score_min': 0.03, 'keypoint_confidence_floor': 0.4} -> ERROR: list index out of range
+  {'ray_distance_threshold': 0.03, 'score_min': 0.15, 'keypoint_confidence_floor': 0.2} -> ERROR: list index out of range
+  ray_dist=0.030 score_min=0.150 kpt_floor=0.30 -> yield=0.0% error=2.93px
+  ray_dist=0.030 score_min=0.150 kpt_floor=0.40 -> yield=0.0% error=9.83px
+  {'ray_distance_threshold': 0.03, 'score_min': 0.3, 'keypoint_confidence_floor': 0.2} -> ERROR: list index out of range
+  ray_dist=0.030 score_min=0.300 kpt_floor=0.30 -> yield=0.0% error=2.93px
+  ray_dist=0.030 score_min=0.300 kpt_floor=0.40 -> yield=0.0% error=2.93px
+  eviction_reproj_threshold=0.02 -> ERROR: list index out of range
+  eviction_reproj_threshold=0.03 -> ERROR: list index out of range
+  eviction_reproj_threshold=0.05 -> ERROR: list index out of range
+  leiden_resolution=0.5 -> yield=0.0% error=19.76px
+  leiden_resolution=1.0 -> yield=0.0% error=infpx
+  leiden_resolution=2.0 -> yield=0.0% error=2.86px
+  early_k=5.0 -> yield=0.0% error=2.78px
+  early_k=10.0 -> ERROR: list index out of range
+  early_k=30.0 -> yield=0.0% error=3.13px
+Yield Matrix: ray_distance_threshold (rows) x score_min (cols)
+
+           0.030   0.150   0.300
+   0.010     ---    0.0%    0.0%
+   0.020    0.0%    0.0%    0.0%
+   0.030     ---    0.0%    0.0%
+
+Comparison: Baseline vs Winner
+------------------------------------------------------------
+Metric                           Baseline     Winner    Delta
+------------------------------------------------------------
+fish_yield_ratio                     0.0%       0.0%    +0.0%
+mean_reprojection_error               inf     2.7809     -inf
+max_reprojection_error                inf   102.3682     -inf
+singleton_rate                     100.0%      99.3%    -0.7%
+tier2_stability                       N/A        N/A         
+------------------------------------------------------------
+
+# Recommended config changes:
+association:
+  ray_distance_threshold: 0.02
+  score_min: 0.03
+  leiden_resolution: 2
+  early_k: 5
+

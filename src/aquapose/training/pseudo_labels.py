@@ -65,6 +65,17 @@ def reproject_spline_keypoints(
         - pixels: float64 array of shape ``(N, 2)`` with (u, v) pixel coords.
         - valid: bool array of shape ``(N,)``, True if projection succeeded.
     """
+    if (
+        midline.knots is None
+        or midline.control_points is None
+        or midline.degree is None
+    ):
+        raise ValueError(
+            "reproject_spline_keypoints requires a spline-fitted Midline3D "
+            "(knots, control_points, and degree must be non-None). "
+            "Use spline_enabled=True in ReconstructionConfig."
+        )
+
     # Map t-values from [0, 1] to the spline's knot domain
     knots = midline.knots
     t_min = knots[midline.degree]
@@ -290,6 +301,8 @@ def detect_gaps(
     """
     if midline.per_camera_residuals is None:
         return []
+    if midline.control_points is None:
+        return []
 
     contributing = set(midline.per_camera_residuals.keys())
     if len(contributing) < min_cameras:
@@ -339,6 +352,8 @@ def _classify_gap(
         One of ``'no-detection'``, ``'no-tracklet'``, ``'failed-midline'``.
     """
     # Project 3D centroid into this camera
+    if midline.control_points is None:
+        return "failed-midline"
     centroid_3d = midline.control_points.mean(axis=0)
     px, valid = proj_model.project(
         torch.from_numpy(centroid_3d[None].astype(np.float32))

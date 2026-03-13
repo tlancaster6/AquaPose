@@ -150,6 +150,7 @@ class ReconstructionStage:
         n_control_points: int = _DEFAULT_N_CONTROL_POINTS,
         n_sample_points: int = _DEFAULT_N_SAMPLE_POINTS,
         keypoint_t_values: list[float] | None = None,
+        spline_enabled: bool = False,
         **backend_kwargs: object,
     ) -> None:
         self._calibration_path = Path(calibration_path)
@@ -157,6 +158,7 @@ class ReconstructionStage:
         self._max_interp_gap = max_interp_gap
         self._n_control_points = n_control_points
         self._n_sample_points = n_sample_points
+        self._spline_enabled = spline_enabled
         self._keypoint_t_values: np.ndarray = (
             np.array(keypoint_t_values, dtype=np.float64)
             if keypoint_t_values is not None
@@ -166,6 +168,7 @@ class ReconstructionStage:
         # Build kwargs for the backend constructor
         combined_kwargs: dict[str, object] = {
             "calibration_path": calibration_path,
+            "spline_enabled": spline_enabled,
             **backend_kwargs,
         }
         self._backend = get_backend(backend, **combined_kwargs)
@@ -381,26 +384,54 @@ class ReconstructionStage:
             start_m = fish_results[start_f]
             end_m = fish_results[end_f]
 
-            start_cp = np.asarray(start_m.control_points, dtype=np.float32)
-            end_cp = np.asarray(end_m.control_points, dtype=np.float32)
+            if start_m.control_points is not None:
+                # Spline-fitted mode: interpolate control points linearly.
+                start_cp = np.asarray(start_m.control_points, dtype=np.float32)
+                end_cp = np.asarray(end_m.control_points, dtype=np.float32)
 
-            for g in range(1, gap + 1):
-                t = g / (gap + 1)
-                interp_cp = (1.0 - t) * start_cp + t * end_cp
+                for g in range(1, gap + 1):
+                    t = g / (gap + 1)
+                    interp_cp = (1.0 - t) * start_cp + t * end_cp
 
-                interp_midline = Midline3D(
-                    fish_id=start_m.fish_id,
-                    frame_index=start_f + g,
-                    control_points=interp_cp,
-                    knots=start_m.knots.copy(),
-                    degree=start_m.degree,
-                    arc_length=float(
-                        (1.0 - t) * start_m.arc_length + t * end_m.arc_length
-                    ),
-                    half_widths=start_m.half_widths.copy(),
-                    n_cameras=0,
-                    mean_residual=0.0,
-                    max_residual=0.0,
-                    is_low_confidence=True,
-                )
-                fish_results[start_f + g] = interp_midline
+                    interp_midline = Midline3D(
+                        fish_id=start_m.fish_id,
+                        frame_index=start_f + g,
+                        half_widths=start_m.half_widths.copy(),
+                        n_cameras=0,
+                        mean_residual=0.0,
+                        max_residual=0.0,
+                        control_points=interp_cp,
+                        knots=start_m.knots.copy()
+                        if start_m.knots is not None
+                        else None,
+                        degree=start_m.degree,
+                        arc_length=float(
+                            (1.0 - t) * start_m.arc_length + t * end_m.arc_length
+                        )
+                        if start_m.arc_length is not None
+                        and end_m.arc_length is not None
+                        else None,
+                        is_low_confidence=True,
+                    )
+                    fish_results[start_f + g] = interp_midline
+            elif start_m.points is not None and end_m.points is not None:
+                # Raw-keypoint mode: interpolate points linearly.
+                start_pts = np.asarray(start_m.points, dtype=np.float32)
+                end_pts = np.asarray(end_m.points, dtype=np.float32)
+
+                for g in range(1, gap + 1):
+                    t = g / (gap + 1)
+                    # Linear interpolation; NaN in either endpoint propagates
+                    interp_pts = (1.0 - t) * start_pts + t * end_pts
+
+                    interp_midline = Midline3D(
+                        fish_id=start_m.fish_id,
+                        frame_index=start_f + g,
+                        half_widths=start_m.half_widths.copy(),
+                        n_cameras=0,
+                        mean_residual=0.0,
+                        max_residual=0.0,
+                        points=interp_pts,
+                        is_low_confidence=True,
+                    )
+                    fish_results[start_f + g] = interp_midline

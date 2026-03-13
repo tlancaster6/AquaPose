@@ -167,6 +167,10 @@ class Midline3DWriter:
                 break
 
             self._buf_fish_id[i, slot] = fish_id
+            if midline.control_points is None or midline.arc_length is None:
+                # Raw-keypoint midlines (spline_enabled=False) are not yet
+                # serializable by this spline-based writer; skip for now.
+                continue
             self._buf_control_points[i, slot] = midline.control_points.astype(
                 np.float32
             )

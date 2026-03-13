@@ -199,11 +199,29 @@ def mock_models() -> dict[str, MagicMock]:
 
 @pytest.fixture
 def dlt_backend(mock_models: dict[str, MagicMock]) -> DltBackend:  # type: ignore[name-defined]  # noqa: F821
-    """DltBackend with _load_models patched to return mock models."""
+    """DltBackend with _load_models patched to return mock models.
+
+    Uses spline_enabled=True to preserve existing test expectations
+    (control_points field, knots, degree, arc_length populated).
+    """
     from aquapose.core.reconstruction.backends.dlt import DltBackend
 
     with patch.object(DltBackend, "_load_models", return_value=mock_models):
-        backend = DltBackend(calibration_path="/fake/path/calib.json")
+        backend = DltBackend(
+            calibration_path="/fake/path/calib.json", spline_enabled=True
+        )
+    return backend
+
+
+@pytest.fixture
+def dlt_backend_raw(mock_models: dict[str, MagicMock]) -> DltBackend:  # type: ignore[name-defined]  # noqa: F821
+    """DltBackend with spline_enabled=False (raw-keypoint mode)."""
+    from aquapose.core.reconstruction.backends.dlt import DltBackend
+
+    with patch.object(DltBackend, "_load_models", return_value=mock_models):
+        backend = DltBackend(
+            calibration_path="/fake/path/calib.json", spline_enabled=False
+        )
     return backend
 
 
@@ -456,13 +474,15 @@ class TestInsufficientBodyPoints:
     def test_fish_skipped_when_too_few_points(
         self, mock_models: dict[str, MagicMock]
     ) -> None:
-        """With only 5 body points (need 9), fish should be skipped."""
+        """With only 5 body points (need 9 for spline), fish should be skipped."""
         from aquapose.core.reconstruction.backends.dlt import DltBackend
 
         midline_set = _make_midline_set(n_body_points=5)
 
         with patch.object(DltBackend, "_load_models", return_value=mock_models):
-            backend = DltBackend(calibration_path="/fake/calib.json")
+            backend = DltBackend(
+                calibration_path="/fake/calib.json", spline_enabled=True
+            )
         result = backend.reconstruct_frame(frame_idx=0, midline_set=midline_set)
         assert 0 not in result
 
@@ -654,3 +674,103 @@ class TestTriangulationResultStructure:
             cam_midlines, water_z=10.0
         )
         assert not vec_result.valid_mask.any()
+
+
+# ---------------------------------------------------------------------------
+# Test 11: Spline-disabled mode
+# ---------------------------------------------------------------------------
+
+
+class TestSplineDisabled:
+    """DltBackend with spline_enabled=False produces raw-keypoint Midline3D."""
+
+    def test_spline_disabled_returns_points_not_control_points(
+        self,
+        dlt_backend_raw: DltBackend,  # type: ignore[name-defined]  # noqa: F821
+    ) -> None:
+        """spline_enabled=False: points non-None, control_points None."""
+        midline_set = _make_midline_set(fish_id=0, n_body_points=6)
+        result = dlt_backend_raw.reconstruct_frame(frame_idx=0, midline_set=midline_set)
+
+        assert 0 in result
+        m3d = result[0]
+        assert m3d.points is not None
+        assert m3d.control_points is None
+        assert m3d.knots is None
+        assert m3d.degree is None
+        assert m3d.arc_length is None
+
+    def test_spline_disabled_points_shape(
+        self,
+        dlt_backend_raw: DltBackend,  # type: ignore[name-defined]  # noqa: F821
+    ) -> None:
+        """points.shape == (n_body_points, 3) in raw-keypoint mode."""
+        n_body_points = 6
+        midline_set = _make_midline_set(fish_id=0, n_body_points=n_body_points)
+        result = dlt_backend_raw.reconstruct_frame(frame_idx=0, midline_set=midline_set)
+
+        assert 0 in result
+        m3d = result[0]
+        assert m3d.points is not None
+        assert m3d.points.shape == (n_body_points, 3)
+        assert m3d.points.dtype == np.float32
+
+    def test_spline_disabled_accepts_fewer_body_points(
+        self, mock_models: dict[str, MagicMock]
+    ) -> None:
+        """spline_enabled=False succeeds with n_body_points=4 (below spline minimum of 9)."""
+        from aquapose.core.reconstruction.backends.dlt import DltBackend
+
+        with patch.object(DltBackend, "_load_models", return_value=mock_models):
+            backend = DltBackend(
+                calibration_path="/fake/calib.json", spline_enabled=False
+            )
+
+        midline_set = _make_midline_set(fish_id=0, n_body_points=4)
+        result = backend.reconstruct_frame(frame_idx=0, midline_set=midline_set)
+        # 4 body points is below the spline minimum of 9 but above raw minimum of 2
+        assert 0 in result
+        assert result[0].points is not None
+        assert result[0].control_points is None
+
+
+# ---------------------------------------------------------------------------
+# Test 12: Spline-enabled mode (backward compat)
+# ---------------------------------------------------------------------------
+
+
+class TestSplineEnabled:
+    """DltBackend with spline_enabled=True produces spline-fitted Midline3D."""
+
+    def test_spline_enabled_returns_control_points(
+        self,
+        dlt_backend: DltBackend,  # type: ignore[name-defined]  # noqa: F821
+    ) -> None:
+        """spline_enabled=True: control_points shape (7,3), knots, degree populated."""
+        midline_set = _make_midline_set(fish_id=0, n_body_points=15)
+        result = dlt_backend.reconstruct_frame(frame_idx=0, midline_set=midline_set)
+
+        assert 0 in result
+        m3d = result[0]
+        assert m3d.control_points is not None
+        assert m3d.control_points.shape == (7, 3)
+        assert m3d.knots is not None
+        assert m3d.knots.shape == (11,)
+        assert m3d.degree == 3
+
+    def test_spline_enabled_backward_compat(
+        self,
+        dlt_backend: DltBackend,  # type: ignore[name-defined]  # noqa: F821
+    ) -> None:
+        """Existing 15-point reconstruction still works with spline_enabled=True."""
+        midline_set = _make_midline_set(fish_id=0, n_body_points=15)
+        result = dlt_backend.reconstruct_frame(frame_idx=0, midline_set=midline_set)
+
+        assert 0 in result
+        m3d = result[0]
+        assert isinstance(m3d, Midline3D)
+        assert m3d.fish_id == 0
+        assert m3d.frame_index == 0
+        assert m3d.control_points is not None
+        assert m3d.arc_length is not None
+        assert m3d.arc_length > 0.0

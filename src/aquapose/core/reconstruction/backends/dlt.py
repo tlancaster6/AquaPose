@@ -4,7 +4,16 @@ Implements a stripped-down reconstruction backend that replaces the complex
 multi-strategy triangulation logic (pairwise exhaustive search, epipolar
 refinement, orientation alignment) with a single uniform algorithm:
 
-    triangulate all cameras → reject outliers → re-triangulate inliers → fit spline
+    triangulate all cameras → reject outliers → re-triangulate inliers → (optional) fit spline
+
+The ``spline_enabled`` toggle controls the output representation:
+
+- ``spline_enabled=False`` (default): Raw triangulated keypoints are returned
+  directly in ``Midline3D.points``.  Spline fitting is skipped entirely.
+  Any fish with >= 2 valid body points is included in the output.
+- ``spline_enabled=True``: B-spline fitting is performed (backward-compatible
+  behavior) and ``Midline3D.control_points`` is populated.  Requires at least
+  ``n_control_points + 2`` valid body points (default: 9).
 
 This eliminates camera-count branching and upstream correspondence assumptions.
 Upstream (pose estimation backend) provides ordered keypoints, so orientation
@@ -56,7 +65,14 @@ _MAX_ENDPOINT_GAP: float = 0.2
 
 If the first valid body point has u > _MAX_ENDPOINT_GAP or the last has
 u < 1.0 - _MAX_ENDPOINT_GAP, the reconstruction is rejected rather than
-relying on spline extrapolation into unsupported regions."""
+relying on spline extrapolation into unsupported regions.  Only enforced
+when ``spline_enabled=True``."""
+
+_MIN_RAW_BODY_POINTS: int = 2
+"""Minimum valid body points required when spline fitting is disabled.
+
+Triangulation of a single point provides no spatial information — require
+at least 2 to have a meaningful reconstruction."""
 
 __all__ = ["DltBackend"]
 
@@ -100,7 +116,13 @@ class DltBackend:
     2. Compute per-camera reprojection residuals.
     3. Reject cameras whose residual exceeds outlier_threshold.
     4. Re-triangulate with inlier cameras only.
-    5. Fit a B-spline to valid body points.
+    5. (Optional) Fit a B-spline to valid body points.
+
+    The ``spline_enabled`` toggle controls the output representation.  When
+    ``False`` (default), raw triangulated keypoints are returned in
+    ``Midline3D.points`` and control_points is None.  When ``True``, spline
+    fitting is performed and ``Midline3D.control_points`` is populated
+    (backward-compatible behavior).
 
     Key simplifications over TriangulationBackend:
     - No orientation alignment (upstream pose backend provides ordered keypoints).
@@ -114,6 +136,8 @@ class DltBackend:
         n_control_points: Number of B-spline control points per midline.
         low_confidence_fraction: Fraction of body points with <3 inlier cameras
             above which is_low_confidence is set True.
+        spline_enabled: Whether to fit a B-spline to the triangulated body
+            points.  Default False (raw keypoints as primary output).
 
     Raises:
         FileNotFoundError: If calibration_path does not exist.
@@ -128,11 +152,13 @@ class DltBackend:
         *,
         models: dict[str, Any] | None = None,
         z_flattening_enabled: bool = True,
+        spline_enabled: bool = False,
     ) -> None:
         self._outlier_threshold = outlier_threshold
         self._n_control_points = n_control_points
         self._low_confidence_fraction = low_confidence_fraction
         self._z_flattening_enabled = z_flattening_enabled
+        self._spline_enabled = spline_enabled
 
         if models is not None:
             self._models = models
@@ -141,9 +167,13 @@ class DltBackend:
         else:
             raise TypeError("DltBackend requires either calibration_path or models.")
 
-        # Precompute spline parameters
-        self._spline_knots = build_spline_knots(n_control_points)
-        self._min_body_points = n_control_points + 2
+        if spline_enabled:
+            # Precompute spline parameters only when spline fitting is active
+            self._spline_knots = build_spline_knots(n_control_points)
+            self._min_body_points = n_control_points + 2
+        else:
+            self._spline_knots = None
+            self._min_body_points = _MIN_RAW_BODY_POINTS
 
     @classmethod
     def from_models(
@@ -153,6 +183,7 @@ class DltBackend:
         n_control_points: int = DEFAULT_N_CONTROL_POINTS,
         low_confidence_fraction: float = DEFAULT_LOW_CONFIDENCE_FRACTION,
         z_flattening_enabled: bool = True,
+        spline_enabled: bool = False,
     ) -> DltBackend:
         """Create a DltBackend from pre-built projection models.
 
@@ -168,6 +199,8 @@ class DltBackend:
                 cameras above which is_low_confidence is set True.
             z_flattening_enabled: Whether to flatten body points to centroid z
                 before spline fitting.
+            spline_enabled: Whether to fit a B-spline to the triangulated body
+                points.  Default False (raw keypoints as primary output).
 
         Returns:
             Configured DltBackend instance.
@@ -178,6 +211,7 @@ class DltBackend:
             low_confidence_fraction=low_confidence_fraction,
             models=models,
             z_flattening_enabled=z_flattening_enabled,
+            spline_enabled=spline_enabled,
         )
 
     def reconstruct_frame(
@@ -284,10 +318,87 @@ class DltBackend:
             )
             return None
 
+        pts_3d_arr = np.stack(pts_3d_list, axis=0)  # shape (M, 3)
+
+        # --- Z-flattening: set all body points to centroid z ---
+        centroid_z: float | None = None
+        z_offsets_valid: np.ndarray | None = None
+
+        if self._z_flattening_enabled:
+            centroid_z = float(pts_3d_arr[:, 2].mean())
+            z_offsets_valid = (pts_3d_arr[:, 2] - centroid_z).astype(np.float32)
+            pts_3d_arr[:, 2] = centroid_z
+
+        # Build z_offsets array: NaN for non-triangulated points,
+        # actual offsets for valid body points.
+        z_off: np.ndarray | None = None
+        if self._z_flattening_enabled and z_offsets_valid is not None:
+            z_off = np.full(n_body_points, np.nan, dtype=np.float32)
+            for vi, body_idx in enumerate(valid_indices):
+                z_off[body_idx] = float(z_offsets_valid[vi])
+
+        # Build full-body arrays: NaN/empty for non-triangulated points.
+        pts_3d_arr_full = np.full((n_body_points, 3), np.nan, dtype=np.float32)
+        tri_inlier_cams: list[list[str]] = [[] for _ in range(n_body_points)]
+        for vi, body_idx in enumerate(valid_indices):
+            pts_3d_arr_full[body_idx] = pts_3d_list[vi]
+            tri_inlier_cams[body_idx] = per_point_inlier_ids[vi]
+
+        min_n_cams = min(per_point_n_cams) if per_point_n_cams else 0
+        n_weak = sum(1 for nc in per_point_n_cams if nc < 3)
+        is_low_confidence = n_weak > self._low_confidence_fraction * len(
+            per_point_n_cams
+        )
+
         # Build arc-length parameter preserving original body positions
         u_param = np.array(
             [i / (n_body_points - 1) for i in valid_indices], dtype=np.float64
         )
+
+        # Convert half-widths to world metres via pinhole approximation.
+        # Skip when all pixel half-widths are zero (keypoint-only pipeline
+        # does not produce width estimates).
+        if any(hw > 0.0 for hw in per_point_hw_px):
+            hw_metres_all = self._convert_half_widths(
+                per_point_hw_px=per_point_hw_px,
+                per_point_depths=per_point_depths,
+                per_point_inlier_ids=per_point_inlier_ids,
+                u_param=u_param,
+                n_body_points=n_body_points,
+            )
+        else:
+            hw_metres_all = np.zeros(n_body_points, dtype=np.float32)
+
+        if not self._spline_enabled:
+            # --- Raw-keypoint mode: skip spline fitting entirely ---
+            # Use per-point triangulation residuals directly.
+            mean_residual = (
+                float(np.mean(per_point_residuals)) if per_point_residuals else 0.0
+            )
+            max_residual_val = (
+                float(np.max(per_point_residuals)) if per_point_residuals else 0.0
+            )
+
+            return Midline3D(
+                fish_id=fish_id,
+                frame_index=frame_idx,
+                half_widths=hw_metres_all,
+                n_cameras=min_n_cams,
+                mean_residual=mean_residual,
+                max_residual=max_residual_val,
+                points=pts_3d_arr_full,
+                control_points=None,
+                knots=None,
+                degree=None,
+                arc_length=None,
+                is_low_confidence=is_low_confidence,
+                centroid_z=centroid_z,
+                z_offsets=z_off,
+                triangulated_points=pts_3d_arr_full,
+                per_point_inlier_cameras=tri_inlier_cams,
+            )
+
+        # --- Spline-enabled mode (backward-compatible path) ---
 
         # Reject if valid body points don't cover the endpoints — spline
         # extrapolation beyond the observed range is unreliable and can
@@ -303,17 +414,9 @@ class DltBackend:
             )
             return None
 
-        pts_3d_arr = np.stack(pts_3d_list, axis=0)  # shape (M, 3)
-
-        # --- Z-flattening: set all body points to centroid z ---
-        centroid_z: float | None = None
-        z_offsets_valid: np.ndarray | None = None
-
-        if self._z_flattening_enabled:
-            centroid_z = float(pts_3d_arr[:, 2].mean())
-            z_offsets_valid = (pts_3d_arr[:, 2] - centroid_z).astype(np.float32)
-            pts_3d_arr[:, 2] = centroid_z
-
+        assert (
+            self._spline_knots is not None
+        )  # guaranteed: spline_enabled=True precomputes knots
         spline_result = fit_spline(
             u_param,
             pts_3d_arr,
@@ -325,20 +428,6 @@ class DltBackend:
             return None
 
         control_points, arc_length = spline_result
-
-        # Convert half-widths to world metres via pinhole approximation.
-        # Skip when all pixel half-widths are zero (keypoint-only pipeline
-        # does not produce width estimates).
-        if any(hw > 0.0 for hw in per_point_hw_px):
-            hw_metres_all = self._convert_half_widths(
-                per_point_hw_px=per_point_hw_px,
-                per_point_depths=per_point_depths,
-                per_point_inlier_ids=per_point_inlier_ids,
-                u_param=u_param,
-                n_body_points=n_body_points,
-            )
-        else:
-            hw_metres_all = np.zeros(n_body_points, dtype=np.float32)
 
         # Compute spline-based per-camera residuals
         spline_obj = scipy.interpolate.BSpline(
@@ -373,44 +462,23 @@ class DltBackend:
         mean_residual = float(np.mean(all_residuals)) if all_residuals else 0.0
         max_residual_val = float(np.max(all_residuals)) if all_residuals else 0.0
 
-        min_n_cams = min(per_point_n_cams) if per_point_n_cams else 0
-        n_weak = sum(1 for nc in per_point_n_cams if nc < 3)
-        is_low_confidence = n_weak > self._low_confidence_fraction * len(
-            per_point_n_cams
-        )
-
-        # Build z_offsets array: NaN for non-triangulated points,
-        # actual offsets for valid body points.
-        z_off: np.ndarray | None = None
-        if self._z_flattening_enabled and z_offsets_valid is not None:
-            z_off = np.full(n_body_points, np.nan, dtype=np.float32)
-            for vi, body_idx in enumerate(valid_indices):
-                z_off[body_idx] = float(z_offsets_valid[vi])
-
-        # Build raw triangulated points and inlier camera lists for all body
-        # points. Points that failed triangulation get NaN / empty list.
-        tri_pts = np.full((n_body_points, 3), np.nan, dtype=np.float32)
-        tri_inlier_cams: list[list[str]] = [[] for _ in range(n_body_points)]
-        for vi, body_idx in enumerate(valid_indices):
-            tri_pts[body_idx] = pts_3d_list[vi]
-            tri_inlier_cams[body_idx] = per_point_inlier_ids[vi]
-
         return Midline3D(
             fish_id=fish_id,
             frame_index=frame_idx,
-            control_points=control_points,
-            knots=self._spline_knots.astype(np.float32),
-            degree=SPLINE_K,
-            arc_length=arc_length,
             half_widths=hw_metres_all,
             n_cameras=min_n_cams,
             mean_residual=mean_residual,
             max_residual=max_residual_val,
+            points=pts_3d_arr_full,
+            control_points=control_points,
+            knots=self._spline_knots.astype(np.float32),
+            degree=SPLINE_K,
+            arc_length=arc_length,
             is_low_confidence=is_low_confidence,
             per_camera_residuals=cam_residuals,
             centroid_z=centroid_z,
             z_offsets=z_off,
-            triangulated_points=tri_pts,
+            triangulated_points=pts_3d_arr_full,
             per_point_inlier_cameras=tri_inlier_cams,
         )
 

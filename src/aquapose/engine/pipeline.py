@@ -343,6 +343,7 @@ def build_stages(
         n_sample_points=config.reconstruction.n_sample_points,
         keypoint_t_values=config.pose.keypoint_t_values,
         z_flattening_enabled=config.reconstruction.z_denoising.enabled,
+        spline_enabled=config.reconstruction.spline_enabled,
     )
 
     def _truncate(stages: list) -> list:

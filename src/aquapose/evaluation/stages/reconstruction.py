@@ -270,7 +270,7 @@ def compute_z_denoising_metrics(
 
     for frame_idx, midline_dict in frame_results:
         for fish_id, m3d in midline_dict.items():
-            if m3d.control_points is None:
+            if m3d.control_points is None or m3d.knots is None or m3d.degree is None:
                 continue
             try:
                 spl = scipy.interpolate.BSpline(
@@ -378,7 +378,7 @@ def compute_per_point_error(
         frame_ms = midline_sets_by_frame[frame_idx]
 
         for fish_id, m3d in midline_dict.items():
-            if m3d.control_points is None:
+            if m3d.control_points is None or m3d.knots is None or m3d.degree is None:
                 continue
             if fish_id not in frame_ms:
                 continue

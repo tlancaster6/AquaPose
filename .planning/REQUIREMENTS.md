@@ -63,22 +63,22 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CFG-01 | — | Pending |
-| CFG-02 | — | Pending |
-| SPL-01 | — | Pending |
-| SPL-02 | — | Pending |
-| SPL-03 | — | Pending |
-| CLEAN-01 | — | Pending |
-| CLEAN-02 | — | Pending |
-| ZDEN-01 | — | Pending |
-| DOC-01 | — | Pending |
-| DOC-02 | — | Pending |
+| CFG-01 | Phase 93 | Pending |
+| CFG-02 | Phase 93 | Pending |
+| SPL-01 | Phase 95 | Pending |
+| SPL-02 | Phase 95 | Pending |
+| SPL-03 | Phase 95 | Pending |
+| CLEAN-01 | Phase 94 | Pending |
+| CLEAN-02 | Phase 94 | Pending |
+| ZDEN-01 | Phase 96 | Pending |
+| DOC-01 | Phase 96 | Pending |
+| DOC-02 | Phase 96 | Pending |
 
 **Coverage:**
 - v3.9 requirements: 10 total
-- Mapped to phases: 0
-- Unmapped: 10 ⚠️
+- Mapped to phases: 10
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-13*
-*Last updated: 2026-03-13 after initial definition*
+*Last updated: 2026-03-13 after roadmap creation*

@@ -378,20 +378,30 @@ def compute_per_point_error(
         frame_ms = midline_sets_by_frame[frame_idx]
 
         for fish_id, m3d in midline_dict.items():
-            if m3d.control_points is None or m3d.knots is None or m3d.degree is None:
-                continue
             if fish_id not in frame_ms:
                 continue
 
-            # Evaluate 3D spline
-            try:
-                spl = scipy.interpolate.BSpline(
-                    m3d.knots.astype(np.float64),
-                    m3d.control_points.astype(np.float64),
-                    SPLINE_K,
-                )
-                pts_3d = spl(u_sample).astype(np.float32)  # (N, 3)
-            except Exception:
+            # Resolve 3D points: spline mode or raw-keypoint mode
+            if (
+                m3d.control_points is not None
+                and m3d.knots is not None
+                and m3d.degree is not None
+            ):
+                # Spline mode: evaluate B-spline at uniform parameter values
+                try:
+                    spl = scipy.interpolate.BSpline(
+                        m3d.knots.astype(np.float64),
+                        m3d.control_points.astype(np.float64),
+                        SPLINE_K,
+                    )
+                    pts_3d = spl(u_sample).astype(np.float32)  # (N, 3)
+                except Exception:
+                    continue
+            elif m3d.points is not None and len(m3d.points) == n_body_points:
+                # Raw-keypoint mode: use the triangulated points directly
+                pts_3d = m3d.points.astype(np.float32)  # (N, 3)
+            else:
+                # Neither representation available or point count mismatch
                 continue
 
             cam_map = frame_ms[fish_id]

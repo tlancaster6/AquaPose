@@ -2,7 +2,7 @@
 
 Reads tracklet_groups (Stage 4) and their per-frame keypoints, assembles
 per-frame MidlineSets by interpolating raw 6-keypoint poses to dense
-15-point Midline2D objects, and produces 3D B-spline midlines via the
+n_sample_points Midline2D objects, and produces 3D B-spline midlines via the
 configured backend. Populates PipelineContext.midlines_3d.
 
 Camera membership is determined by the tracklet_groups produced by the
@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 _DEFAULT_MIN_CAMERAS: int = 3
 _DEFAULT_MAX_INTERP_GAP: int = 5
 _DEFAULT_N_CONTROL_POINTS: int = 7
+_DEFAULT_N_SAMPLE_POINTS: int = 6
 
 # Default arc-length parameter values for the 6 anatomical keypoints.
 # Used only when keypoint_t_values is not provided via config.
@@ -127,6 +128,8 @@ class ReconstructionStage:
         min_cameras: Minimum cameras to attempt triangulation per fish per frame.
         max_interp_gap: Maximum consecutive dropped frames to interpolate.
         n_control_points: Fixed B-spline control point count per fish per frame.
+        n_sample_points: Number of dense midline points interpolated from
+            keypoints before triangulation. Default 6 (identity mapping).
         keypoint_t_values: Per-keypoint arc-fraction values in [0, 1]. If
             ``None``, uses default uniform spacing ``[0, 0.1, 0.3, 0.5, 0.7, 1]``.
         **backend_kwargs: Additional keyword arguments forwarded to the backend
@@ -145,6 +148,7 @@ class ReconstructionStage:
         min_cameras: int = _DEFAULT_MIN_CAMERAS,
         max_interp_gap: int = _DEFAULT_MAX_INTERP_GAP,
         n_control_points: int = _DEFAULT_N_CONTROL_POINTS,
+        n_sample_points: int = _DEFAULT_N_SAMPLE_POINTS,
         keypoint_t_values: list[float] | None = None,
         **backend_kwargs: object,
     ) -> None:
@@ -152,6 +156,7 @@ class ReconstructionStage:
         self._min_cameras = min_cameras
         self._max_interp_gap = max_interp_gap
         self._n_control_points = n_control_points
+        self._n_sample_points = n_sample_points
         self._keypoint_t_values: np.ndarray = (
             np.array(keypoint_t_values, dtype=np.float64)
             if keypoint_t_values is not None
@@ -284,7 +289,7 @@ class ReconstructionStage:
                         kpts_xy,
                         self._keypoint_t_values,
                         kpts_conf,
-                        n_points=15,
+                        n_points=self._n_sample_points,
                     )
                     midline = Midline2D(
                         points=points,

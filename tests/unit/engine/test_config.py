@@ -291,10 +291,10 @@ def test_device_auto_detected() -> None:
     assert config.device in ("cuda:0", "cpu")
 
 
-def test_n_sample_points_default_is_15() -> None:
-    """PipelineConfig() n_sample_points defaults to 15."""
+def test_n_sample_points_default_is_6() -> None:
+    """PipelineConfig() n_sample_points defaults to 6 (6-keypoint identity mapping)."""
     config = PipelineConfig()
-    assert config.n_sample_points == 15
+    assert config.n_sample_points == 6
 
 
 def test_n_sample_points_propagates_to_reconstruction(tmp_path: Path) -> None:

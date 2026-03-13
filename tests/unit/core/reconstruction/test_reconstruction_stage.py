@@ -158,6 +158,7 @@ def _build_stage(
         [0.0, 0.1, 0.3, 0.5, 0.7, 1.0], dtype=np.float64
     )
     stage._n_control_points = 7
+    stage._n_sample_points = 6
 
     if mock_backend is not None:
         stage._backend = mock_backend

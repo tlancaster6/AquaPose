@@ -338,7 +338,7 @@ class ReconstructionConfig:
         n_control_points: Fixed B-spline control point count per fish per
             frame. Default 7.
         n_sample_points: Number of sample points along each midline for
-            triangulation output. Default 15. Propagated from top-level
+            triangulation output. Default 6. Propagated from top-level
             n_sample_points when not explicitly overridden.
         z_denoising: Z-denoising config (flatten body points to centroid z).
     """
@@ -348,7 +348,7 @@ class ReconstructionConfig:
     min_cameras: int = 3
     max_interp_gap: int = 5
     n_control_points: int = 7
-    n_sample_points: int = 15
+    n_sample_points: int = 6
     z_denoising: ZDenoisingConfig = dataclasses.field(default_factory=ZDenoisingConfig)
 
 
@@ -421,7 +421,7 @@ class PipelineConfig:
     mode: str = "production"
     n_animals: int = 0
     device: str = dataclasses.field(default_factory=_default_device)
-    n_sample_points: int = 15
+    n_sample_points: int = 6
     project_dir: str = ""
     detection: DetectionConfig = dataclasses.field(default_factory=DetectionConfig)
     pose: PoseConfig = dataclasses.field(default_factory=PoseConfig)
@@ -729,7 +729,7 @@ def load_config(
 
     # --- propagate n_sample_points to reconstruction.n_sample_points -------
     if "n_sample_points" not in rec_kwargs:
-        rec_kwargs["n_sample_points"] = top_kwargs.get("n_sample_points", 15)
+        rec_kwargs["n_sample_points"] = top_kwargs.get("n_sample_points", 6)
 
     # --- resolve nested sub-configs in reconstruction -----------------------
     # z_denoising may arrive as a plain dict from YAML; convert to

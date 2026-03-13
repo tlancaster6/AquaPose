@@ -290,9 +290,9 @@ Plans:
   1. Running z-denoising on a raw 6-keypoint reconstruction array produces a denoised array with the same shape (no shape errors or silent dimension mismatches)
   2. The stage.py module docstring describes N-point keypoint-native output, not a fixed 15-point midline
   3. Midline2D and Midline3D type docstrings describe variable point counts and distinguish raw-keypoint vs spline-fitted representations
-**Plans**: TBD
+**Plans**: 1 plan
 Plans:
-- TBD
+- [ ] 96-01-PLAN.md — Fix z-denoising for raw-keypoint mode and update all stale docstrings
 
 ## Progress
 
@@ -304,4 +304,4 @@ Phases execute in numeric order: 93 → 94 → 95 → 96
 | 93. Config Plumbing | 1/1 | Complete    | 2026-03-13 |
 | 94. Dead Code Removal | 1/1 | Complete    | 2026-03-13 |
 | 95. Spline Refactoring | 2/2 | Complete    | 2026-03-13 |
-| 96. Z-Denoising and Documentation | 0/TBD | Not started | - |
+| 96. Z-Denoising and Documentation | 0/1 | Not started | - |

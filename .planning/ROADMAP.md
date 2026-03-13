@@ -239,7 +239,7 @@ Full details: `.planning/milestones/v3.8-ROADMAP.md`
 
 - [x] **Phase 93: Config Plumbing** - Wire `n_sample_points` through to ReconstructionStage; default to 6 (completed 2026-03-13)
 - [x] **Phase 94: Dead Code Removal** - Remove scalar `_triangulate_body_point()` fallback and its comments (completed 2026-03-13)
-- [ ] **Phase 95: Spline Refactoring** - Move B-spline fitting to optional post-processing; raw keypoints as primary output
+- [x] **Phase 95: Spline Refactoring** - Move B-spline fitting to optional post-processing; raw keypoints as primary output (completed 2026-03-13)
 - [ ] **Phase 96: Z-Denoising and Documentation** - Adapt z-denoising for keypoint arrays; update all stale docstrings and type docs
 
 ## Phase Details
@@ -303,5 +303,5 @@ Phases execute in numeric order: 93 → 94 → 95 → 96
 |-------|----------------|--------|-----------|
 | 93. Config Plumbing | 1/1 | Complete    | 2026-03-13 |
 | 94. Dead Code Removal | 1/1 | Complete    | 2026-03-13 |
-| 95. Spline Refactoring | 1/2 | In Progress|  |
+| 95. Spline Refactoring | 2/2 | Complete   | 2026-03-13 |
 | 96. Z-Denoising and Documentation | 0/TBD | Not started | - |

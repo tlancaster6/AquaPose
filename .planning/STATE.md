@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-03-13)
 ## Current Position
 
 Phase: 95 of 96 (Spline Refactoring)
-Plan: 1 of 1 complete
+Plan: 2 of 2 complete
 Status: In progress
-Last activity: 2026-03-13 — Completed 95-01 (Midline3D raw-keypoint mode and DltBackend spline toggle)
+Last activity: 2026-03-13 — Completed 95-02 (downstream consumers: HDF5 writer and evaluation)
 
-Progress: [███░░░░░░░] 30%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -47,6 +47,7 @@ Progress: [███░░░░░░░] 30%
 *Updated after each plan completion*
 | Phase 94-dead-code-removal P01 | 8 | 2 tasks | 2 files |
 | Phase 95-spline-refactoring P01 | 8 | 2 tasks | 9 files |
+| Phase 95-spline-refactoring P02 | 8 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -63,6 +64,8 @@ Recent decisions affecting current work:
 - [Phase 95-01]: Raw keypoints as primary reconstruction output: spline_enabled defaults to False
 - [Phase 95-01]: Midline3D field reorder: required fields first, all optional fields with defaults
 - [Phase 95-01]: midline_writer skips raw-keypoint midlines; reproject_spline_keypoints raises ValueError for raw mode
+- [Phase 95-02]: Both points and control_points HDF5 datasets always present; unused one filled with NaN
+- [Phase 95-02]: compute_per_point_error() branches on spline vs raw-keypoint mode using points directly
 
 ### Pending Todos
 
@@ -80,5 +83,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Completed 95-01-PLAN.md (Midline3D raw-keypoint mode and DltBackend spline toggle)
+Stopped at: Completed 95-02-PLAN.md (downstream consumers: HDF5 writer and evaluation)
 Resume file: None

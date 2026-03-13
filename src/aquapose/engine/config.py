@@ -340,6 +340,12 @@ class ReconstructionConfig:
         n_sample_points: Number of sample points along each midline for
             triangulation output. Default 6. Propagated from top-level
             n_sample_points when not explicitly overridden.
+        spline_enabled: Whether to fit a B-spline to the triangulated body
+            points and return spline control points as the primary output.
+            When ``False`` (default), raw triangulated keypoints are returned
+            directly in ``Midline3D.points`` and control_points is None.
+            When ``True``, spline fitting is performed (backward-compatible
+            behavior) and ``Midline3D.control_points`` is populated.
         z_denoising: Z-denoising config (flatten body points to centroid z).
     """
 
@@ -349,6 +355,7 @@ class ReconstructionConfig:
     max_interp_gap: int = 5
     n_control_points: int = 7
     n_sample_points: int = 6
+    spline_enabled: bool = False
     z_denoising: ZDenoisingConfig = dataclasses.field(default_factory=ZDenoisingConfig)
 
 

@@ -233,7 +233,7 @@ Full details: `.planning/milestones/v3.8-ROADMAP.md`
 
 </details>
 
-### 🚧 v3.9 Reconstruction Modernization (In Progress)
+### v3.9 Reconstruction Modernization (In Progress)
 
 **Milestone Goal:** Make reconstruction keypoint-native — raw anatomical keypoints as primary output, B-spline as optional post-processing, dead code and stale config plumbing cleaned up.
 
@@ -252,7 +252,9 @@ Full details: `.planning/milestones/v3.8-ROADMAP.md`
   1. `ReconstructionConfig.n_sample_points` exists with default value 6
   2. Setting `n_sample_points` in project YAML overrides the default and the pipeline uses the new value without any code changes
   3. The previous hardcoded value of 15 no longer appears in reconstruction logic
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 93-01-PLAN.md — Wire n_sample_points end-to-end and change default to 6
 
 ### Phase 94: Dead Code Removal
 **Goal**: The scalar `_triangulate_body_point()` fallback path and all comments referencing it are deleted from dlt.py
@@ -292,7 +294,7 @@ Phases execute in numeric order: 93 → 94 → 95 → 96
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 93. Config Plumbing | 0/TBD | Not started | - |
+| 93. Config Plumbing | 0/1 | Planned | - |
 | 94. Dead Code Removal | 0/TBD | Not started | - |
 | 95. Spline Refactoring | 0/TBD | Not started | - |
 | 96. Z-Denoising and Documentation | 0/TBD | Not started | - |

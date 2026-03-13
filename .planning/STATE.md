@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.9
 milestone_name: Reconstruction Modernization
-status: ready_to_plan
+status: in_progress
 last_updated: "2026-03-13"
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 1
+  completed_plans: 1
 ---
 
 # Project State
@@ -23,24 +23,24 @@ See: .planning/PROJECT.md (updated 2026-03-13)
 ## Current Position
 
 Phase: 93 of 96 (Config Plumbing)
-Plan: — (not yet planned)
-Status: Ready to plan
-Last activity: 2026-03-13 — Roadmap created for v3.9
+Plan: 1 of 1 complete
+Status: In progress
+Last activity: 2026-03-13 — Completed 93-01 (n_sample_points config plumbing)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 10%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0
-- Average duration: —
-- Total execution time: —
+- Total plans completed: 1
+- Average duration: ~8 min
+- Total execution time: ~8 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 93 | 1 | ~8 min | ~8 min |
 
 *Updated after each plan completion*
 
@@ -53,6 +53,7 @@ Recent decisions affecting current work:
 - v3.9 scope: keypoint-native reconstruction, spline as optional post-processing, dead code removal
 - Z/XY anisotropy corrected from 132x to ~11x (real calibration, v3.5 revision)
 - Z-denoising: keep centroid flatten + smooth, adapt for keypoint arrays
+- 93-01: n_sample_points default changed from 15 to 6 for 6-keypoint identity mapping
 
 ### Pending Todos
 
@@ -70,5 +71,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Roadmap created — ready to plan Phase 93
+Stopped at: Completed 93-01-PLAN.md (n_sample_points config plumbing)
 Resume file: None

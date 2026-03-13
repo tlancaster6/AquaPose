@@ -9,8 +9,8 @@ Requirements for Reconstruction Modernization milestone. Each maps to roadmap ph
 
 ### Config Plumbing
 
-- [ ] **CFG-01**: `n_sample_points` propagated from ReconstructionConfig through pipeline.py to ReconstructionStage
-- [ ] **CFG-02**: Default `n_sample_points` changed from 15 to 6 (identity mapping: 6 keypoints → 6 body points)
+- [x] **CFG-01**: `n_sample_points` propagated from ReconstructionConfig through pipeline.py to ReconstructionStage
+- [x] **CFG-02**: Default `n_sample_points` changed from 15 to 6 (identity mapping: 6 keypoints → 6 body points)
 
 ### Spline Refactoring
 
@@ -63,8 +63,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CFG-01 | Phase 93 | Pending |
-| CFG-02 | Phase 93 | Pending |
+| CFG-01 | Phase 93 | Complete |
+| CFG-02 | Phase 93 | Complete |
 | SPL-01 | Phase 95 | Pending |
 | SPL-02 | Phase 95 | Pending |
 | SPL-03 | Phase 95 | Pending |

@@ -237,7 +237,7 @@ Full details: `.planning/milestones/v3.8-ROADMAP.md`
 
 **Milestone Goal:** Make reconstruction keypoint-native — raw anatomical keypoints as primary output, B-spline as optional post-processing, dead code and stale config plumbing cleaned up.
 
-- [ ] **Phase 93: Config Plumbing** - Wire `n_sample_points` through to ReconstructionStage; default to 6
+- [x] **Phase 93: Config Plumbing** - Wire `n_sample_points` through to ReconstructionStage; default to 6 (completed 2026-03-13)
 - [ ] **Phase 94: Dead Code Removal** - Remove scalar `_triangulate_body_point()` fallback and its comments
 - [ ] **Phase 95: Spline Refactoring** - Move B-spline fitting to optional post-processing; raw keypoints as primary output
 - [ ] **Phase 96: Z-Denoising and Documentation** - Adapt z-denoising for keypoint arrays; update all stale docstrings and type docs
@@ -252,7 +252,7 @@ Full details: `.planning/milestones/v3.8-ROADMAP.md`
   1. `ReconstructionConfig.n_sample_points` exists with default value 6
   2. Setting `n_sample_points` in project YAML overrides the default and the pipeline uses the new value without any code changes
   3. The previous hardcoded value of 15 no longer appears in reconstruction logic
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
 - [ ] 93-01-PLAN.md — Wire n_sample_points end-to-end and change default to 6
 
@@ -294,7 +294,7 @@ Phases execute in numeric order: 93 → 94 → 95 → 96
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 93. Config Plumbing | 0/1 | Planned | - |
+| 93. Config Plumbing | 1/1 | Complete   | 2026-03-13 |
 | 94. Dead Code Removal | 0/TBD | Not started | - |
 | 95. Spline Refactoring | 0/TBD | Not started | - |
 | 96. Z-Denoising and Documentation | 0/TBD | Not started | - |

@@ -14,9 +14,9 @@ Requirements for Reconstruction Modernization milestone. Each maps to roadmap ph
 
 ### Spline Refactoring
 
-- [ ] **SPL-01**: B-spline fitting moved out of core reconstruction path into optional post-processing utility
-- [ ] **SPL-02**: Reconstruction produces raw triangulated keypoints as primary Midline3D output when spline is disabled
-- [ ] **SPL-03**: Midline3D type updated to support both spline-based and raw-keypoint representations
+- [x] **SPL-01**: B-spline fitting moved out of core reconstruction path into optional post-processing utility
+- [x] **SPL-02**: Reconstruction produces raw triangulated keypoints as primary Midline3D output when spline is disabled
+- [x] **SPL-03**: Midline3D type updated to support both spline-based and raw-keypoint representations
 
 ### Dead Code Removal
 
@@ -65,9 +65,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | CFG-01 | Phase 93 | Complete |
 | CFG-02 | Phase 93 | Complete |
-| SPL-01 | Phase 95 | Pending |
-| SPL-02 | Phase 95 | Pending |
-| SPL-03 | Phase 95 | Pending |
+| SPL-01 | Phase 95 | Complete |
+| SPL-02 | Phase 95 | Complete |
+| SPL-03 | Phase 95 | Complete |
 | CLEAN-01 | Phase 94 | Complete |
 | CLEAN-02 | Phase 94 | Complete |
 | ZDEN-01 | Phase 96 | Pending |

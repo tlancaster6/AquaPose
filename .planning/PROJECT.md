@@ -14,7 +14,7 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 - ✓ Load calibration data from AquaCal (CALIB-01) — v1.0
 - ✓ Differentiable refractive projection 3D→pixel and ray casting pixel→ray (CALIB-02, CALIB-03) — v1.0
-- ✓ Z-reconstruction uncertainty quantified for 13-camera rig (CALIB-04) — v1.0 (132x Z/XY anisotropy)
+- ✓ Z-reconstruction uncertainty quantified for 13-camera rig (CALIB-04) — v1.0 (originally 132x Z/XY; revised to ~11x mean in v3.5 with real calibration + image bounds filtering)
 - ✓ MOG2 detection with ≥95% recall + YOLOv8 alternative detector (SEG-01) — v1.0
 - ✓ SAM2 pseudo-label generation from box prompts with quality filtering (SEG-02, SEG-03) — v1.0
 - ✓ U-Net segmentation on cropped detections, IoU 0.623 (SEG-04, SEG-05) — v1.0
@@ -131,7 +131,17 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ### Active
 
-(No active milestone — next milestone not yet defined)
+## Current Milestone: v3.9 Reconstruction Modernization
+
+**Goal:** Make reconstruction keypoint-native — raw anatomical keypoints as primary output, spline as optional post-processing, clean up dead code and stale config plumbing.
+
+**Target features:**
+- Wire `n_sample_points` config through to ReconstructionStage (currently hardcoded to 15)
+- Raw 6-keypoint 3D output as primary reconstruction result (flexible keypoint count)
+- Move B-spline fitting from core reconstruction to optional post-processing utility
+- Remove dead scalar `_triangulate_body_point()` fallback (~135 lines)
+- Adapt z-denoising (centroid flatten + smooth) for keypoint-native arrays
+- Update stale docstrings and module documentation
 
 ### Out of Scope
 
@@ -165,7 +175,7 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - **Core organization:** Shared types in `core/types/`, implementations in `core/<stage>/`, legacy top-level dirs eliminated
 - **Production models:** OBB (mAP50-95=0.781, run_20260310_115419), Pose (mAP50-95=0.974, run_20260310_171543) — retrained with all-source stratified data
 - **Tracking metrics:** 27 tracks on benchmark clip (vs 9-fish target, vs OC-SORT 30), 95% detection coverage, 0 gaps, continuity=1.000
-- **Known limitation:** Z-reconstruction uncertainty 132x larger than XY due to top-down camera geometry; ~27% singleton rate in association; ASSOC-01 keypoint centroid not active in current tracker (deferred to TRACK-V2-04)
+- **Known limitation:** Z-reconstruction uncertainty ~11x larger than XY (mean, range 7–15x; revised from early 132x estimate using real calibration in v3.5); singleton rate reduced to 5.4% in v3.8
 - **Import boundary:** Automated AST-based checker enforced via pre-commit hook -- core/ never imports engine/ at runtime
 
 ### Rig Geometry
@@ -216,7 +226,7 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Outlier rejection threshold 10.0 (not 50.0) | Empirical grid search on real data via evaluation harness | ✓ Good — best Tier 1 reprojection |
 | NPZ fixtures for offline evaluation | Flat slash-separated keys for numpy.load compatibility; versioned (v1.0/v2.0) | ✓ Good — enables data-driven parameter tuning |
 | Association params: keep defaults | Sweep showed marginal gains (~1% yield); ~70% singleton rate is upstream bottleneck | ✓ Good — no over-tuning |
-| XY-only tracking cost matrix | Z uncertainty 132x larger; XY-only prevents Z-noise ID swaps | Superseded — OC-SORT per-camera in v2.1 |
+| XY-only tracking cost matrix | Z uncertainty ~11x larger (revised from 132x); XY-only prevents Z-noise ID swaps | Superseded — OC-SORT per-camera in v2.1 |
 | Population-constrained tracking | 9 fish always; dead tracks recycled to unmatched observations | Superseded — Leiden clustering handles identity in v2.1 |
 | Stage Protocol via structural typing (not ABC) | typing.Protocol with runtime_checkable — no inheritance required | ✓ Good — clean 5-stage architecture |
 | Frozen dataclasses for config (not Pydantic) | Simpler, stdlib-only, hierarchical nesting | ✓ Good — defaults→YAML→CLI→freeze works well |
@@ -287,4 +297,4 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Association gains are architectural not parametric | 27-combo sweep confirmed defaults already optimal | ✓ Good — robust to parameter choice |
 
 ---
-*Last updated: 2026-03-12 after v3.8 Improved Association milestone completed*
+*Last updated: 2026-03-13 after v3.9 Reconstruction Modernization milestone started*

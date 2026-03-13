@@ -33,8 +33,9 @@ class Midline3D:
     Attributes:
         fish_id: Globally unique fish identifier.
         frame_index: Frame index within the video.
-        half_widths: Half-width of the fish at each sample body position
-            in world metres, shape (n_sample_points,), float32.
+        half_widths: Half-width of the fish at each body point in world metres,
+            shape (N,), float32.  N matches the point count in ``points`` (variable;
+            typically 6 for raw-keypoint mode, higher for interpolated midlines).
         n_cameras: Minimum number of camera observations across body points.
         mean_residual: Mean reprojection residual in pixels.  In spline mode,
             computed by evaluating the fitted spline at n_sample_points
@@ -42,11 +43,13 @@ class Midline3D:
             the pixel distance to the corresponding observed 2D midline point.
             In raw mode, the mean of per-point triangulation residuals.
         max_residual: Maximum single-point residual in pixels.
-        points: Raw triangulated 3D keypoints, shape (N, 3), float32.
-            This is the primary output in raw-keypoint mode (spline disabled).
-            NaN for body points that failed triangulation.  In spline mode,
-            populated with the same data as ``triangulated_points`` for
-            consistency.  None when not populated.
+        points: Raw triangulated 3D keypoints, shape (N, 3), float32.  N is
+            variable: typically 6 for raw-keypoint mode (one per anatomical
+            keypoint), or higher when keypoints were interpolated before
+            triangulation.  This is the primary output in raw-keypoint mode
+            (spline disabled).  NaN for body points that failed triangulation.
+            In spline mode, populated with the same data as
+            ``triangulated_points`` for consistency.  None when not populated.
         control_points: B-spline control points, shape (7, 3), float32.
             Populated only when spline fitting was performed.  None otherwise.
         knots: B-spline knot vector, shape (11,), float32.
@@ -64,9 +67,10 @@ class Midline3D:
             Used by temporal smoothing to reduce frame-to-frame z-jitter.
             None when z-flattening is disabled.
         z_offsets: Per-body-point z-offset from centroid before flattening,
-            shape (n_sample_points,), float32.  Preserves the raw z-structure
-            for potential future use.  NaN for body points that were not
-            triangulated.  None when z-flattening is disabled.
+            shape (N,), float32, matching the point count in ``points``.
+            Preserves the raw z-structure for potential future use.  NaN for
+            body points that were not triangulated.  None when z-flattening
+            is disabled.
         triangulated_points: Raw triangulated 3D body points before spline
             fitting.  Shape (n_body_points, 3), float32.  NaN for body points
             that failed triangulation.  None when not populated (backward

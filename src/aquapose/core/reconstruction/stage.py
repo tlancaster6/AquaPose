@@ -1,15 +1,25 @@
 """ReconstructionStage -- Stage 5 of the 5-stage AquaPose pipeline.
 
-Reads tracklet_groups (Stage 4) and their per-frame keypoints, assembles
-per-frame MidlineSets by interpolating raw 6-keypoint poses to dense
-n_sample_points Midline2D objects, and produces 3D B-spline midlines via the
-configured backend. Populates PipelineContext.midlines_3d.
+Reads tracklet_groups (Stage 4) and their per-frame keypoints and assembles
+per-frame MidlineSets for multi-view triangulation.  Populates
+PipelineContext.midlines_3d.
+
+**Primary mode (keypoint-native, spline_enabled=False):** Assembles Midline2D
+objects directly from the N anatomical keypoints (default N=6: nose, head,
+spine1, spine2, spine3, tail) and triangulates them into raw N-point Midline3D
+objects.  When n_sample_points equals the number of keypoints (the default),
+no interpolation is performed -- it is an identity mapping.
+
+**Optional spline mode (spline_enabled=True):** Interpolates keypoints to
+n_sample_points Midline2D objects before triangulation, then fits a B-spline
+to the triangulated points and stores control points.
 
 Camera membership is determined by the tracklet_groups produced by the
 Association stage -- no RANSAC cross-view matching is required. Frames where
 a fish is observed by fewer than min_cameras cameras are dropped. Short gaps
 (up to max_interp_gap consecutive frames) are filled by linear interpolation
-of control points with confidence=0.
+of raw keypoints (raw mode) or B-spline control points (spline mode) with
+confidence=0.
 """
 
 from __future__ import annotations
@@ -109,18 +119,25 @@ def _keypoints_to_midline(
 
 
 class ReconstructionStage:
-    """Stage 5: Triangulates tracked fish 2D midlines into 3D B-spline midlines.
+    """Stage 5: Triangulates tracked fish 2D midlines into 3D keypoints.
+
+    Optionally fits a B-spline to the triangulated keypoints when
+    ``spline_enabled=True``.
 
     Runs after PoseStage (Stage 2), TrackingStage (Stage 3), and AssociationStage
     (Stage 4). For each TrackletGroup (fish), determines per-frame camera membership
     from the group's constituent Tracklet2D objects, reads keypoints directly
-    from each tracklet, interpolates them to a dense Midline2D, assembles a
-    MidlineSet, and delegates triangulation to the configured backend.
+    from each tracklet, assembles a MidlineSet, and delegates triangulation to
+    the configured backend.
+
+    In keypoint-native mode (default), Midline2D objects contain the raw
+    anatomical keypoints (N points) without interpolation when n_sample_points
+    matches the number of keypoints.  In spline mode, keypoints are interpolated
+    to n_sample_points before triangulation.
 
     Frames with fewer than ``min_cameras`` cameras are dropped. Consecutive
-    dropped frames up to ``max_interp_gap`` are filled by linear interpolation
-    of B-spline control points; interpolated frames carry ``confidence=0`` and
-    ``is_low_confidence=True``.
+    dropped frames up to ``max_interp_gap`` are filled by linear interpolation;
+    interpolated frames carry ``confidence=0`` and ``is_low_confidence=True``.
 
     Args:
         calibration_path: Path to the AquaCal calibration JSON file.

@@ -1,7 +1,10 @@
 """Temporal smoothing of centroid z for z-denoising.
 
 Smooths per-fish centroid z across time within continuous track segments
-using Gaussian filtering, then shifts control points to match.
+using Gaussian filtering.  This module is representation-agnostic: it only
+computes the smoothed centroid z values.  Shifting the actual 3D points
+(control_points in spline mode or points in raw-keypoint mode) by the
+resulting delta is the caller's responsibility (see the z-denoise CLI command).
 """
 
 from __future__ import annotations

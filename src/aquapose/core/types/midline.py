@@ -11,12 +11,17 @@ import numpy as np
 class Midline2D:
     """Ordered 2D midline for a single fish in a single camera.
 
+    N is variable: in keypoint-native mode (the default), N equals the number
+    of anatomical keypoints (default 6: nose, head, spine1, spine2, spine3,
+    tail).  In interpolated mode, N equals n_sample_points.
+
     Attributes:
         points: Full-frame pixel coordinates, shape (N, 2), float32.
             Column order is (x, y). Ordered from head to tail when
             ``is_head_to_tail`` is True.
         half_widths: Half-width of the fish at each midline point,
-            shape (N,), float32, in full-frame pixels.
+            shape (N,), float32, in full-frame pixels.  N matches
+            the point count in ``points``.
         fish_id: Globally unique fish identifier.
         camera_id: Camera identifier string.
         frame_index: Frame index within the video.

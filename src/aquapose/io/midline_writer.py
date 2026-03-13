@@ -32,15 +32,22 @@ class Midline3DWriter:
 
     The HDF5 layout under ``/midlines/`` is::
 
-        frame_index       (N,)                   int64,   fillvalue=0
-        fish_id           (N, max_fish)           int32,   fillvalue=-1
-        control_points    (N, max_fish, 7, 3)     float32, fillvalue=NaN
-        arc_length        (N, max_fish)           float32, fillvalue=NaN
+        frame_index       (N,)                           int64,   fillvalue=0
+        fish_id           (N, max_fish)                  int32,   fillvalue=-1
+        points            (N, max_fish, n_sample_points, 3) float32, fillvalue=NaN
+        control_points    (N, max_fish, 7, 3)            float32, fillvalue=NaN
+        arc_length        (N, max_fish)                  float32, fillvalue=NaN
         half_widths       (N, max_fish, n_sample_points) float32, fillvalue=NaN
-        n_cameras         (N, max_fish)           int32,   fillvalue=0
-        mean_residual     (N, max_fish)           float32, fillvalue=-1.0
-        max_residual      (N, max_fish)           float32, fillvalue=-1.0
-        is_low_confidence (N, max_fish)           bool,    fillvalue=False
+        n_cameras         (N, max_fish)                  int32,   fillvalue=0
+        mean_residual     (N, max_fish)                  float32, fillvalue=-1.0
+        max_residual      (N, max_fish)                  float32, fillvalue=-1.0
+        is_low_confidence (N, max_fish)                  bool,    fillvalue=False
+
+    ``points`` stores raw 3D keypoints (raw-keypoint mode, ``spline_enabled=False``).
+    ``control_points`` stores B-spline control points (spline mode,
+    ``spline_enabled=True``).  The dataset not in use for a given frame is
+    filled with NaN.  Both datasets are always present for forward/backward
+    compatibility.
 
     Group attributes store the spline knot vector (``SPLINE_KNOTS``) and
     degree (``SPLINE_K``) as they are constant across all frames.
@@ -95,6 +102,7 @@ class Midline3DWriter:
 
         _make("frame_index", (), "int64", 0)
         _make("fish_id", (max_fish,), "int32", -1)
+        _make("points", (max_fish, n_sample_points, 3), "float32", np.nan)
         _make("control_points", (max_fish, _N_CTRL, 3), "float32", np.nan)
         _make("arc_length", (max_fish,), "float32", np.nan)
         _make("half_widths", (max_fish, n_sample_points), "float32", np.nan)
@@ -109,6 +117,9 @@ class Midline3DWriter:
         # Allocate in-memory buffer arrays (pre-allocated to chunk_frames size)
         self._buf_frame_index = np.zeros(chunk_frames, dtype=np.int64)
         self._buf_fish_id = np.full((chunk_frames, max_fish), -1, dtype=np.int32)
+        self._buf_points = np.full(
+            (chunk_frames, max_fish, n_sample_points, 3), np.nan, dtype=np.float32
+        )
         self._buf_control_points = np.full(
             (chunk_frames, max_fish, _N_CTRL, 3), np.nan, dtype=np.float32
         )
@@ -149,6 +160,7 @@ class Midline3DWriter:
         # Reset this row to fill-values
         self._buf_frame_index[i] = frame_index
         self._buf_fish_id[i] = -1
+        self._buf_points[i] = np.nan
         self._buf_control_points[i] = np.nan
         self._buf_arc_length[i] = np.nan
         self._buf_half_widths[i] = np.nan
@@ -167,14 +179,20 @@ class Midline3DWriter:
                 break
 
             self._buf_fish_id[i, slot] = fish_id
-            if midline.control_points is None or midline.arc_length is None:
-                # Raw-keypoint midlines (spline_enabled=False) are not yet
-                # serializable by this spline-based writer; skip for now.
-                continue
-            self._buf_control_points[i, slot] = midline.control_points.astype(
-                np.float32
-            )
-            self._buf_arc_length[i, slot] = float(midline.arc_length)
+
+            # Raw keypoints (raw-keypoint mode, spline_enabled=False)
+            if midline.points is not None:
+                pts = midline.points.astype(np.float32)
+                n_pts = min(len(pts), self._n_sample_points)
+                self._buf_points[i, slot, :n_pts] = pts[:n_pts]
+
+            # Spline control points (spline mode, spline_enabled=True)
+            if midline.control_points is not None and midline.arc_length is not None:
+                self._buf_control_points[i, slot] = midline.control_points.astype(
+                    np.float32
+                )
+                self._buf_arc_length[i, slot] = float(midline.arc_length)
+
             hw = midline.half_widths.astype(np.float32)
             n_hw = min(len(hw), self._n_sample_points)
             self._buf_half_widths[i, slot, :n_hw] = hw[:n_hw]
@@ -209,6 +227,7 @@ class Midline3DWriter:
 
         _extend("frame_index", self._buf_frame_index)
         _extend("fish_id", self._buf_fish_id)
+        _extend("points", self._buf_points)
         _extend("control_points", self._buf_control_points)
         _extend("arc_length", self._buf_arc_length)
         _extend("half_widths", self._buf_half_widths)
@@ -251,6 +270,8 @@ def read_midline3d_results(path: str | Path) -> dict[str, Any]:
 
         - ``frame_index``: shape ``(N,)``, int64
         - ``fish_id``: shape ``(N, max_fish)``, int32
+        - ``points``: shape ``(N, max_fish, n_sample_points, 3)``, float32,
+          or None for legacy files without this dataset
         - ``control_points``: shape ``(N, max_fish, 7, 3)``, float32
         - ``arc_length``: shape ``(N, max_fish)``, float32
         - ``half_widths``: shape ``(N, max_fish, n_sample_points)``, float32
@@ -279,6 +300,13 @@ def read_midline3d_results(path: str | Path) -> dict[str, Any]:
             "SPLINE_KNOTS": grp.attrs["SPLINE_KNOTS"],
             "SPLINE_K": int(cast(int, grp.attrs["SPLINE_K"])),
         }
+
+        # Raw keypoints dataset (backward compatible: None if missing in legacy files)
+        for key in ("points",):
+            if key in grp:
+                result[key] = cast(h5py.Dataset, grp[key])[()]
+            else:
+                result[key] = None
 
         # Z-denoising metadata (backward compatible: None if missing)
         for key in ("centroid_z", "z_offsets"):

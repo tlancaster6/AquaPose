@@ -682,3 +682,26 @@ def test_run_raises_if_tracklet_groups_missing(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match=r"tracklet_groups"):
         stage.run(ctx)
+
+
+# ---------------------------------------------------------------------------
+# n_sample_points constructor parameter (Phase 93-01)
+# ---------------------------------------------------------------------------
+
+
+def test_n_sample_points_stored() -> None:
+    """ReconstructionStage stores n_sample_points from constructor."""
+    stage = ReconstructionStage.__new__(ReconstructionStage)
+    stage._calibration_path = Path("/fake/cal.json")
+    stage._min_cameras = 3
+    stage._max_interp_gap = 5
+    stage._n_control_points = 7
+    stage._keypoint_t_values = np.array(
+        [0.0, 0.1, 0.3, 0.5, 0.7, 1.0], dtype=np.float64
+    )
+    stage._n_sample_points = 10
+    backend = MagicMock()
+    backend.reconstruct_frame = MagicMock(return_value={})
+    stage._backend = backend
+
+    assert stage._n_sample_points == 10

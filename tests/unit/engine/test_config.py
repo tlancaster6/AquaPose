@@ -486,3 +486,21 @@ def test_association_config_use_multi_keypoint_scoring_false() -> None:
 
     cfg = AssociationConfig(use_multi_keypoint_scoring=False)
     assert cfg.use_multi_keypoint_scoring is False
+
+
+# ---------------------------------------------------------------------------
+# 14. n_sample_points default changed to 6 (Phase 93-01)
+# ---------------------------------------------------------------------------
+
+
+def test_reconstruction_n_sample_points_default_is_6() -> None:
+    """ReconstructionConfig.n_sample_points defaults to 6."""
+    from aquapose.engine.config import ReconstructionConfig
+
+    assert ReconstructionConfig().n_sample_points == 6
+
+
+def test_pipeline_n_sample_points_default_is_6() -> None:
+    """PipelineConfig.n_sample_points defaults to 6."""
+    config = PipelineConfig()
+    assert config.n_sample_points == 6

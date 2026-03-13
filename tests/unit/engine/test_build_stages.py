@@ -331,3 +331,25 @@ class TestBuildStagesConfigDevice:
             # Verify n_points (config.n_sample_points=10) was passed to SyntheticDataStage
             call_kwargs = mock_syn.call_args[1]
             assert call_kwargs.get("n_points") == config.n_sample_points
+
+    def test_build_stages_passes_n_sample_points_to_reconstruction(self) -> None:
+        """build_stages passes config.reconstruction.n_sample_points to ReconstructionStage."""
+        config = PipelineConfig(
+            mode="synthetic",
+            calibration_path="/fake/cal.json",
+        )
+        with (
+            patch("aquapose.core.DetectionStage"),
+            patch("aquapose.core.PoseStage"),
+            patch("aquapose.core.SyntheticDataStage"),
+            patch("aquapose.core.ReconstructionStage") as mock_rec,
+        ):
+            from aquapose.engine.pipeline import build_stages
+
+            build_stages(config)
+            mock_rec.assert_called_once()
+            call_kwargs = mock_rec.call_args[1]
+            assert (
+                call_kwargs.get("n_sample_points")
+                == config.reconstruction.n_sample_points
+            )

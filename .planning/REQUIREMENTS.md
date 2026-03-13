@@ -25,12 +25,12 @@ Requirements for Reconstruction Modernization milestone. Each maps to roadmap ph
 
 ### Z-Denoising
 
-- [ ] **ZDEN-01**: Z-denoising (centroid flatten + temporal smooth) operates correctly on raw keypoint arrays (n_sample_points=6)
+- [x] **ZDEN-01**: Z-denoising (centroid flatten + temporal smooth) operates correctly on raw keypoint arrays (n_sample_points=6)
 
 ### Documentation & Types
 
-- [ ] **DOC-01**: stage.py module docstring updated to reflect keypoint-native N-point output
-- [ ] **DOC-02**: Midline2D and Midline3D type documentation updated for variable point counts
+- [x] **DOC-01**: stage.py module docstring updated to reflect keypoint-native N-point output
+- [x] **DOC-02**: Midline2D and Midline3D type documentation updated for variable point counts
 
 ## Future Requirements
 
@@ -70,9 +70,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SPL-03 | Phase 95 | Complete |
 | CLEAN-01 | Phase 94 | Complete |
 | CLEAN-02 | Phase 94 | Complete |
-| ZDEN-01 | Phase 96 | Pending |
-| DOC-01 | Phase 96 | Pending |
-| DOC-02 | Phase 96 | Pending |
+| ZDEN-01 | Phase 96 | Complete |
+| DOC-01 | Phase 96 | Complete |
+| DOC-02 | Phase 96 | Complete |
 
 **Coverage:**
 - v3.9 requirements: 10 total

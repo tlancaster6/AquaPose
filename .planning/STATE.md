@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.9
 milestone_name: Reconstruction Modernization
 status: unknown
-last_updated: "2026-03-13T22:38:19.251Z"
+last_updated: "2026-03-13T22:47:03.742Z"
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 4
-  completed_plans: 4
+  total_phases: 4
+  completed_phases: 4
+  total_plans: 5
+  completed_plans: 5
 ---
 
 # Project State
@@ -22,10 +22,10 @@ See: .planning/PROJECT.md (updated 2026-03-13)
 
 ## Current Position
 
-Phase: 95 of 96 (Spline Refactoring)
-Plan: 2 of 2 complete
-Status: In progress
-Last activity: 2026-03-13 — Completed 95-02 (downstream consumers: HDF5 writer and evaluation)
+Phase: 96 of 96 (Z-Denoising and Documentation)
+Plan: 1 of 1 complete
+Status: Complete
+Last activity: 2026-03-13 — Completed 96-01 (z-denoising fix and documentation)
 
 Progress: [█████░░░░░] 50%
 
@@ -48,6 +48,7 @@ Progress: [█████░░░░░] 50%
 | Phase 94-dead-code-removal P01 | 8 | 2 tasks | 2 files |
 | Phase 95-spline-refactoring P01 | 8 | 2 tasks | 9 files |
 | Phase 95-spline-refactoring P02 | 8 | 2 tasks | 2 files |
+| Phase 96-z-denoising-and-documentation P01 | 4 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,8 @@ Recent decisions affecting current work:
 - [Phase 95-01]: midline_writer skips raw-keypoint midlines; reproject_spline_keypoints raises ValueError for raw mode
 - [Phase 95-02]: Both points and control_points HDF5 datasets always present; unused one filled with NaN
 - [Phase 95-02]: compute_per_point_error() branches on spline vs raw-keypoint mode using points directly
+- [Phase 96-01]: NaN-safe dual shift: both control_points and points shifted by dz; NaN + dz == NaN keeps unused dataset unchanged
+- [Phase 96-01]: Backward compat: points dataset read returns None for legacy HDF5 files; shift is skipped when None
 
 ### Pending Todos
 
@@ -83,5 +86,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Completed 95-02-PLAN.md (downstream consumers: HDF5 writer and evaluation)
+Stopped at: Completed 96-01-PLAN.md (z-denoising fix and documentation)
 Resume file: None

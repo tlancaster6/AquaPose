@@ -303,5 +303,5 @@ Phases execute in numeric order: 93 → 94 → 95 → 96
 |-------|----------------|--------|-----------|
 | 93. Config Plumbing | 1/1 | Complete    | 2026-03-13 |
 | 94. Dead Code Removal | 1/1 | Complete    | 2026-03-13 |
-| 95. Spline Refactoring | 0/2 | Not started | - |
+| 95. Spline Refactoring | 1/2 | In Progress|  |
 | 96. Z-Denoising and Documentation | 0/TBD | Not started | - |

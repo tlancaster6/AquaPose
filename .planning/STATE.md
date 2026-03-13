@@ -18,32 +18,35 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-13)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.9 Reconstruction Modernization — Phase 94 (Dead Code Removal)
+**Current focus:** v3.9 Reconstruction Modernization — Phase 95 (Spline Refactoring)
 
 ## Current Position
 
-Phase: 94 of 96 (Dead Code Removal)
+Phase: 95 of 96 (Spline Refactoring)
 Plan: 1 of 1 complete
 Status: In progress
-Last activity: 2026-03-13 — Completed 94-01 (dead scalar triangulation path removal)
+Last activity: 2026-03-13 — Completed 95-01 (Midline3D raw-keypoint mode and DltBackend spline toggle)
 
-Progress: [██░░░░░░░░] 20%
+Progress: [███░░░░░░░] 30%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
+- Total plans completed: 3
 - Average duration: ~8 min
-- Total execution time: ~8 min
+- Total execution time: ~24 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 93 | 1 | ~8 min | ~8 min |
+| 94 | 1 | ~8 min | ~8 min |
+| 95 | 1 | ~8 min | ~8 min |
 
 *Updated after each plan completion*
 | Phase 94-dead-code-removal P01 | 8 | 2 tasks | 2 files |
+| Phase 95-spline-refactoring P01 | 8 | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -57,6 +60,9 @@ Recent decisions affecting current work:
 - 93-01: n_sample_points default changed from 15 to 6 for 6-keypoint identity mapping
 - [Phase 94-01]: Removed unused triangulate_rays and math imports alongside dead code deletion
 - [Phase 94-01]: dlt.py is now vectorized-only: _triangulate_body_point and _tri_rays deleted
+- [Phase 95-01]: Raw keypoints as primary reconstruction output: spline_enabled defaults to False
+- [Phase 95-01]: Midline3D field reorder: required fields first, all optional fields with defaults
+- [Phase 95-01]: midline_writer skips raw-keypoint midlines; reproject_spline_keypoints raises ValueError for raw mode
 
 ### Pending Todos
 
@@ -74,5 +80,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Completed 94-01-PLAN.md (dead scalar triangulation path removal)
+Stopped at: Completed 95-01-PLAN.md (Midline3D raw-keypoint mode and DltBackend spline toggle)
 Resume file: None

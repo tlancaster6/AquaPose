@@ -14,7 +14,6 @@ alignment and epipolar refinement are not needed.
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -23,13 +22,11 @@ import numpy as np
 import scipy.interpolate
 import torch
 
-from aquapose.calibration.projection import triangulate_rays
 from aquapose.core.reconstruction.utils import (
     SPLINE_K,
     build_spline_knots,
     fit_spline,
     pixel_half_width_to_metres,
-    weighted_triangulate_rays,
 )
 from aquapose.core.types.midline import Midline2D
 from aquapose.core.types.reconstruction import Midline3D, MidlineSet
@@ -53,14 +50,6 @@ DEFAULT_N_CONTROL_POINTS: int = 7
 DEFAULT_LOW_CONFIDENCE_FRACTION: float = 0.2
 """Fraction of body points with <3 inlier cameras above which the reconstruction
 is flagged as is_low_confidence=True."""
-
-_MIN_RAY_ANGLE_DEG: float = 5.0
-"""Minimum ray angle (degrees) between two cameras below which the 2-camera
-triangulation is considered ill-conditioned and skipped."""
-
-_COS_MIN_RAY_ANGLE: float = math.cos(math.radians(_MIN_RAY_ANGLE_DEG))
-"""Cosine of the minimum ray angle threshold. When |cos(angle)| > this value
-the rays are too nearly parallel for reliable DLT."""
 
 _MAX_ENDPOINT_GAP: float = 0.2
 """Maximum allowed gap at either endpoint of the valid body-point parameter range.
@@ -443,11 +432,8 @@ class DltBackend:
         initial triangulation enough to make ALL cameras appear as outliers.
         The loop runs at most C-2 times and exits early when no outliers remain.
 
-        Note: The 2-camera ray-angle filter (_MIN_RAY_ANGLE_DEG / _COS_MIN_RAY_ANGLE)
-        is deliberately omitted from this vectorized path. 2-camera body points are
-        uncommon (usually ≥3 cameras observe each point), and near-parallel rays
-        within those are rarer still. The scalar _triangulate_body_point() retains
-        the filter for reference.
+        Note: The 2-camera ray-angle filter is deliberately omitted — 2-camera body
+        points are uncommon and near-parallel rays within those are rarer still.
 
         Also omits the first-pass water-surface check (only applied after
         re-triangulation). Above-water initial triangulations virtually always remain
@@ -672,179 +658,6 @@ class DltBackend:
             mean_residuals=mean_residuals,
             inlier_cam_ids=inlier_cam_ids,
         )
-
-    def _triangulate_body_point(
-        self,
-        point_idx: int,
-        cam_midlines: dict[str, Midline2D],
-        water_z: float,
-    ) -> tuple[torch.Tensor, list[str], float] | None:
-        """Triangulate a single body point from all available cameras.
-
-        Algorithm: single-strategy, no camera-count branching.
-        1. Gather valid pixel observations from all cameras (skip NaN).
-        2. Apply ray-angle filter for 2-camera case.
-        3. Triangulate all cameras together (weighted or unweighted).
-        4. Reject points at or above the water surface (Z <= water_z).
-        5. Compute per-camera reprojection residuals.
-        6. Reject cameras with residual > outlier_threshold.
-        7. If <2 inlier cameras remain, drop the point.
-        8. Re-triangulate with inlier cameras only.
-        9. Apply water surface rejection again.
-
-        Args:
-            point_idx: Body point index.
-            cam_midlines: Per-camera 2D midlines for this fish.
-            water_z: Z coordinate of the water surface.
-
-        Returns:
-            Tuple of (point_3d, inlier_cam_ids, mean_residual) or None if dropped.
-        """
-        # Gather valid observations and cast rays
-        cam_ids: list[str] = []
-        origins: dict[str, torch.Tensor] = {}
-        directions: dict[str, torch.Tensor] = {}
-        pixels: dict[str, torch.Tensor] = {}
-        weights: dict[str, float] = {}
-
-        for cam_id, midline in cam_midlines.items():
-            if cam_id not in self._models:
-                continue
-            pt = midline.points[point_idx]
-            if np.any(np.isnan(pt)):
-                continue  # NaN pixel — skip this camera for this body point
-
-            px_tensor = torch.from_numpy(pt).float()  # (2,)
-            pixels[cam_id] = px_tensor
-
-            o, d = self._models[cam_id].cast_ray(px_tensor.unsqueeze(0))
-            origins[cam_id] = o[0]  # (3,)
-            directions[cam_id] = d[0]  # (3,)
-
-            # Collect confidence weight: sqrt(confidence) per plan spec
-            if midline.point_confidence is not None:
-                weights[cam_id] = float(np.sqrt(midline.point_confidence[point_idx]))
-            else:
-                weights[cam_id] = 1.0
-
-            cam_ids.append(cam_id)
-
-        if len(cam_ids) < 2:
-            return None
-
-        # Ray-angle filter for 2-camera case only
-        if len(cam_ids) == 2:
-            pa, pb = cam_ids[0], cam_ids[1]
-            cos_angle = float(torch.dot(directions[pa], directions[pb]).abs().item())
-            if cos_angle > _COS_MIN_RAY_ANGLE:
-                logger.debug(
-                    "2-cam pair (%s, %s) skipped: ray angle too small (cos=%.4f > %.4f)",
-                    pa,
-                    pb,
-                    cos_angle,
-                    _COS_MIN_RAY_ANGLE,
-                )
-                return None
-
-        # Initial triangulation: all cameras together (single strategy)
-        pt3d = self._tri_rays(cam_ids, origins, directions, weights)
-
-        # Water surface rejection: drop if Z <= water_z
-        if float(pt3d[2].item()) <= water_z:
-            logger.debug(
-                "Body point %d rejected (initial): Z=%.3f <= water_z=%.3f",
-                point_idx,
-                float(pt3d[2].item()),
-                water_z,
-            )
-            return None
-
-        # Compute per-camera reprojection residuals
-        pt3d_batch = pt3d.unsqueeze(0)  # (1, 3)
-        residuals: dict[str, float] = {}
-        for cam_id in cam_ids:
-            proj_px, valid = self._models[cam_id].project(pt3d_batch)
-            if valid[0]:
-                err = float(torch.linalg.norm(proj_px[0] - pixels[cam_id]).item())
-                residuals[cam_id] = err
-            else:
-                residuals[cam_id] = float("inf")
-
-        # Outlier rejection: keep cameras within threshold
-        inlier_ids = [
-            cid
-            for cid in cam_ids
-            if residuals.get(cid, float("inf")) <= self._outlier_threshold
-        ]
-
-        if len(inlier_ids) < 2:
-            logger.debug(
-                "Body point %d dropped: only %d inlier cameras after rejection",
-                point_idx,
-                len(inlier_ids),
-            )
-            return None
-
-        # Re-triangulate with inlier cameras only
-        pt3d = self._tri_rays(inlier_ids, origins, directions, weights)
-
-        # Water surface rejection again on re-triangulated point
-        if float(pt3d[2].item()) <= water_z:
-            logger.debug(
-                "Body point %d rejected (re-triangulated): Z=%.3f <= water_z=%.3f",
-                point_idx,
-                float(pt3d[2].item()),
-                water_z,
-            )
-            return None
-
-        # Compute mean residual among inlier cameras for the re-triangulated point
-        pt3d_batch = pt3d.unsqueeze(0)
-        inlier_residuals: list[float] = []
-        for cam_id in inlier_ids:
-            proj_px, valid = self._models[cam_id].project(pt3d_batch)
-            if valid[0]:
-                err = float(torch.linalg.norm(proj_px[0] - pixels[cam_id]).item())
-                inlier_residuals.append(err)
-        mean_res = float(np.mean(inlier_residuals)) if inlier_residuals else 0.0
-
-        return pt3d, inlier_ids, mean_res
-
-    def _tri_rays(
-        self,
-        cam_ids: list[str],
-        origins: dict[str, torch.Tensor],
-        directions: dict[str, torch.Tensor],
-        weights: dict[str, float],
-    ) -> torch.Tensor:
-        """Triangulate from the given camera IDs using weighted or unweighted DLT.
-
-        Weighted path is used when any weight differs from 1.0; otherwise falls
-        back to the unweighted triangulate_rays for backward compatibility.
-
-        Args:
-            cam_ids: Camera IDs to triangulate from.
-            origins: Ray origin tensors per camera, shape (3,).
-            directions: Unit ray direction tensors per camera, shape (3,).
-            weights: Per-camera scalar weights (sqrt of confidence).
-
-        Returns:
-            Triangulated 3D point, shape (3,).
-        """
-        origs = torch.stack([origins[cid] for cid in cam_ids])
-        dirs = torch.stack([directions[cid] for cid in cam_ids])
-
-        use_weights = any(weights.get(cid, 1.0) != 1.0 for cid in cam_ids)
-
-        if use_weights:
-            w = torch.tensor(
-                [weights.get(cid, 1.0) for cid in cam_ids],
-                dtype=origs.dtype,
-                device=origs.device,
-            )
-            return weighted_triangulate_rays(origs, dirs, w)
-
-        return triangulate_rays(origs, dirs)
 
     def _convert_half_widths(
         self,

@@ -264,7 +264,9 @@ Plans:
   1. `_triangulate_body_point()` does not exist anywhere in the codebase
   2. No comments in dlt.py or related files reference the scalar fallback or the removed function
   3. All tests pass after deletion (no test relied on the removed path)
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 94-01-PLAN.md — Delete scalar fallback, helper, constants, stale comments, and equivalence tests
 
 ### Phase 95: Spline Refactoring
 **Goal**: B-spline fitting is no longer in the core reconstruction path — reconstruction produces raw triangulated keypoints directly, and spline fitting is available as a separate optional utility
@@ -275,7 +277,9 @@ Plans:
   2. The B-spline fitting function is callable as a standalone utility on a raw-keypoint Midline3D
   3. Midline3D can represent both raw-keypoint and spline-fitted states without type errors
   4. A pipeline run with spline enabled produces output numerically equivalent to the pre-refactor baseline
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 94-01-PLAN.md — Delete scalar fallback, helper, constants, stale comments, and equivalence tests
 
 ### Phase 96: Z-Denoising and Documentation
 **Goal**: Z-denoising operates correctly on raw 6-keypoint arrays, and all docstrings and type documentation reflect the keypoint-native, variable-point-count reconstruction output
@@ -285,7 +289,9 @@ Plans:
   1. Running z-denoising on a raw 6-keypoint reconstruction array produces a denoised array with the same shape (no shape errors or silent dimension mismatches)
   2. The stage.py module docstring describes N-point keypoint-native output, not a fixed 15-point midline
   3. Midline2D and Midline3D type docstrings describe variable point counts and distinguish raw-keypoint vs spline-fitted representations
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 94-01-PLAN.md — Delete scalar fallback, helper, constants, stale comments, and equivalence tests
 
 ## Progress
 
@@ -295,6 +301,6 @@ Phases execute in numeric order: 93 → 94 → 95 → 96
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 93. Config Plumbing | 1/1 | Complete    | 2026-03-13 |
-| 94. Dead Code Removal | 0/TBD | Not started | - |
+| 94. Dead Code Removal | 0/1 | Not started | - |
 | 95. Spline Refactoring | 0/TBD | Not started | - |
 | 96. Z-Denoising and Documentation | 0/TBD | Not started | - |

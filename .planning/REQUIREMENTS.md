@@ -20,8 +20,8 @@ Requirements for Reconstruction Modernization milestone. Each maps to roadmap ph
 
 ### Dead Code Removal
 
-- [ ] **CLEAN-01**: Dead `_triangulate_body_point()` scalar fallback removed from dlt.py
-- [ ] **CLEAN-02**: Stale comments referencing scalar fallback path removed
+- [x] **CLEAN-01**: Dead `_triangulate_body_point()` scalar fallback removed from dlt.py
+- [x] **CLEAN-02**: Stale comments referencing scalar fallback path removed
 
 ### Z-Denoising
 
@@ -68,8 +68,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SPL-01 | Phase 95 | Pending |
 | SPL-02 | Phase 95 | Pending |
 | SPL-03 | Phase 95 | Pending |
-| CLEAN-01 | Phase 94 | Pending |
-| CLEAN-02 | Phase 94 | Pending |
+| CLEAN-01 | Phase 94 | Complete |
+| CLEAN-02 | Phase 94 | Complete |
 | ZDEN-01 | Phase 96 | Pending |
 | DOC-01 | Phase 96 | Pending |
 | DOC-02 | Phase 96 | Pending |

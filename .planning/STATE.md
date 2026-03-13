@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v3.9
 milestone_name: Reconstruction Modernization
 status: unknown
-last_updated: "2026-03-13T20:17:44.258Z"
+last_updated: "2026-03-13T22:11:57.656Z"
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
+  total_phases: 2
+  completed_phases: 2
+  total_plans: 2
+  completed_plans: 2
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-13)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.9 Reconstruction Modernization — Phase 93 (Config Plumbing)
+**Current focus:** v3.9 Reconstruction Modernization — Phase 94 (Dead Code Removal)
 
 ## Current Position
 
-Phase: 93 of 96 (Config Plumbing)
+Phase: 94 of 96 (Dead Code Removal)
 Plan: 1 of 1 complete
 Status: In progress
-Last activity: 2026-03-13 — Completed 93-01 (n_sample_points config plumbing)
+Last activity: 2026-03-13 — Completed 94-01 (dead scalar triangulation path removal)
 
-Progress: [█░░░░░░░░░] 10%
+Progress: [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
@@ -43,6 +43,7 @@ Progress: [█░░░░░░░░░] 10%
 | 93 | 1 | ~8 min | ~8 min |
 
 *Updated after each plan completion*
+| Phase 94-dead-code-removal P01 | 8 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -54,6 +55,8 @@ Recent decisions affecting current work:
 - Z/XY anisotropy corrected from 132x to ~11x (real calibration, v3.5 revision)
 - Z-denoising: keep centroid flatten + smooth, adapt for keypoint arrays
 - 93-01: n_sample_points default changed from 15 to 6 for 6-keypoint identity mapping
+- [Phase 94-01]: Removed unused triangulate_rays and math imports alongside dead code deletion
+- [Phase 94-01]: dlt.py is now vectorized-only: _triangulate_body_point and _tri_rays deleted
 
 ### Pending Todos
 
@@ -71,5 +74,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Completed 93-01-PLAN.md (n_sample_points config plumbing)
+Stopped at: Completed 94-01-PLAN.md (dead scalar triangulation path removal)
 Resume file: None

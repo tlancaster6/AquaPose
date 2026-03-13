@@ -238,7 +238,7 @@ Full details: `.planning/milestones/v3.8-ROADMAP.md`
 **Milestone Goal:** Make reconstruction keypoint-native — raw anatomical keypoints as primary output, B-spline as optional post-processing, dead code and stale config plumbing cleaned up.
 
 - [x] **Phase 93: Config Plumbing** - Wire `n_sample_points` through to ReconstructionStage; default to 6 (completed 2026-03-13)
-- [ ] **Phase 94: Dead Code Removal** - Remove scalar `_triangulate_body_point()` fallback and its comments
+- [x] **Phase 94: Dead Code Removal** - Remove scalar `_triangulate_body_point()` fallback and its comments (completed 2026-03-13)
 - [ ] **Phase 95: Spline Refactoring** - Move B-spline fitting to optional post-processing; raw keypoints as primary output
 - [ ] **Phase 96: Z-Denoising and Documentation** - Adapt z-denoising for keypoint arrays; update all stale docstrings and type docs
 
@@ -301,6 +301,6 @@ Phases execute in numeric order: 93 → 94 → 95 → 96
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 93. Config Plumbing | 1/1 | Complete    | 2026-03-13 |
-| 94. Dead Code Removal | 0/1 | Not started | - |
+| 94. Dead Code Removal | 1/1 | Complete   | 2026-03-13 |
 | 95. Spline Refactoring | 0/TBD | Not started | - |
 | 96. Z-Denoising and Documentation | 0/TBD | Not started | - |

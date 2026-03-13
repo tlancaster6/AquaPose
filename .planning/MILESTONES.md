@@ -1,5 +1,29 @@
 # Milestones
 
+## v3.8 Improved Association (Shipped: 2026-03-13)
+
+**Phases completed:** 7 phases (87-92 including 91.1 inserted), 12 plans
+**Timeline:** 2 days (2026-03-11 → 2026-03-12)
+**Codebase:** 31,066 LOC source
+**Git range:** 18 commits
+
+**Key accomplishments:**
+1. Multi-keypoint pairwise scoring replaces single-centroid ray casting — 6 anatomical keypoints per detection, confidence-filtered, vectorized via NumPy broadcasting
+2. Group validation with temporal changepoint detection — splits upstream ID swaps and evicts misassigned tracklets via per-tracklet residual series analysis
+3. Singleton recovery with swap-aware split-and-assign — reduces singleton rate from 27% (v3.7) to 5.4%, far exceeding 15% target
+4. Association wall-time reduced from 452s to <30s per chunk via batch ray casting vectorization in validation and recovery
+5. Fragment merging and refinement modules removed — simpler, cleaner association pipeline with fewer moving parts
+6. Parameter sweep confirms architecture-driven improvement — 27-combo grid search shows current defaults are already optimal; gains are structural not parametric
+
+**Delivered:** Complete association overhaul from single-centroid scoring to multi-keypoint ray-based scoring with swap-aware validation and recovery. Singleton rate reduced 80% (27% → 5.4%) through architectural improvements, not parameter tuning. Association stage performance improved 15x through vectorization.
+
+**Known gaps (accepted as tech debt):**
+- Phase 88 missing VERIFICATION.md (code verified via integration check, all tests pass)
+- Phase 88 SUMMARY.md missing YAML frontmatter requirements-completed field
+- 92-RESULTS.md documentation-code mismatch for early_k and eviction_reproj_threshold (sweep confirms identical metrics)
+
+---
+
 ## v3.7 Improved Tracking (Shipped: 2026-03-11)
 
 **Phases completed:** 10 phases (78-86, including 2 inserted, 1 skipped), 18 plans

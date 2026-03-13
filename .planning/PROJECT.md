@@ -122,18 +122,16 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - ✓ Tracker tuned to 27 tracks (vs OC-SORT 30) with 95% coverage on benchmark clip — v3.7
 - ✓ Zero type errors, 1,159 tests passing, full CLI smoke test — v3.7
 
+- ✓ Multi-keypoint pairwise scoring (6 keypoints, confidence-filtered, vectorized) replacing single-centroid ray casting — v3.8
+- ✓ Group validation with temporal changepoint detection — split upstream ID swaps, evict outliers — v3.8
+- ✓ Singleton recovery with swap-aware split-and-assign — singleton rate 27% → 5.4% — v3.8
+- ✓ Association wall-time 452s → <30s per chunk via batch ray casting vectorization — v3.8
+- ✓ Fragment merging and refinement.py removed; cleaner association pipeline — v3.8
+- ✓ Parameter sweep confirms defaults optimal; 1,200 tests passing — v3.8
+
 ### Active
 
-## Current Milestone: v3.8 Improved Association
-
-**Goal:** Replace single-centroid ray scoring with multi-keypoint association, add swap-aware group validation and singleton recovery, and tune on real data to reduce the ~27% singleton rate.
-
-**Target features:**
-- Multi-keypoint pairwise scoring (6 keypoints per detection, confidence-filtered)
-- Group validation with temporal changepoint detection for upstream ID swap splitting
-- Singleton recovery with swap-aware split-and-assign
-- Fragment merging and full refinement removed (simplification)
-- Parameter tuning pass with real-data evaluation against v3.7 baseline
+(No active milestone — next milestone not yet defined)
 
 ### Out of Scope
 
@@ -150,7 +148,7 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ## Context
 
-### Current State (v3.7 shipped)
+### Current State (v3.8 shipped)
 
 - **Codebase:** 29,525 LOC source across `src/aquapose/` (calibration, core/, engine/, io, evaluation, training, visualization)
 - **Architecture:** Event-driven 3-layer — Core Computation (5 stages) -> PosePipeline (orchestrator) -> Observers (3: console, timing, diagnostic). ChunkOrchestrator sits above PosePipeline managing chunk loop, identity stitching, and HDF5 output.
@@ -281,4 +279,12 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Bidirectional merge removed | Forward+backward merge added complexity without reducing fragmentation (44 vs 42 tracks) | ✓ Good — simpler single-pass architecture |
 
 ---
-*Last updated: 2026-03-11 after v3.8 Improved Association milestone started*
+| Multi-keypoint scoring over single-centroid | 6 anatomical keypoints per detection; richer pairwise affinity signal | ✓ Good — singleton rate 27% → 5.4% |
+| Changepoint-based group validation over residual thresholding | Temporal ID swaps detected and split; outliers evicted | ✓ Good — handles upstream tracking errors gracefully |
+| Swap-aware singleton recovery | Split-and-assign singletons matching two groups at different times | ✓ Good — recovers most singletons without forcing bad assignments |
+| Fragment merging removed | Worked against upstream fragmentation intent; simplifies pipeline | ✓ Good — one fewer post-processing step |
+| refinement.py replaced by validation.py | Richer multi-keypoint residuals + changepoint detection in one pass | ✓ Good — combines eviction + split logic |
+| Association gains are architectural not parametric | 27-combo sweep confirmed defaults already optimal | ✓ Good — robust to parameter choice |
+
+---
+*Last updated: 2026-03-12 after v3.8 Improved Association milestone completed*

@@ -1,63 +1,61 @@
 # Requirements: AquaPose
 
-**Defined:** 2026-03-11
+**Defined:** 2026-03-13
 **Core Value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
 
-## v3.8 Requirements
+## v3.9 Requirements
 
-Requirements for the Improved Association milestone. Each maps to roadmap phases.
+Requirements for Reconstruction Modernization milestone. Each maps to roadmap phases.
 
-### Data Contract
+### Config Plumbing
 
-- [ ] **DATA-01**: Tracklet2D carries per-frame keypoints array (T, K, 2) from tracker to association stage
-- [ ] **DATA-02**: Tracklet2D carries per-frame keypoint confidence array (T, K) with 0.0 for coasted frames
+- [ ] **CFG-01**: `n_sample_points` propagated from ReconstructionConfig through pipeline.py to ReconstructionStage
+- [ ] **CFG-02**: Default `n_sample_points` changed from 15 to 6 (identity mapping: 6 keypoints → 6 body points)
 
-### Scoring
+### Spline Refactoring
 
-- [ ] **SCORE-01**: Association scorer casts rays from multiple keypoints per detection per frame, not just one centroid
-- [ ] **SCORE-02**: Low-confidence keypoints (below configurable threshold) are excluded from scoring per frame
-- [ ] **SCORE-03**: Per-keypoint ray-ray distances are aggregated into a single pairwise score via configurable method (mean, trimmed mean)
-- [ ] **SCORE-04**: Multi-keypoint scoring is vectorized (NumPy broadcasting, no per-pair Python loop)
+- [ ] **SPL-01**: B-spline fitting moved out of core reconstruction path into optional post-processing utility
+- [ ] **SPL-02**: Reconstruction produces raw triangulated keypoints as primary Midline3D output when spline is disabled
+- [ ] **SPL-03**: Midline3D type updated to support both spline-based and raw-keypoint representations
 
-### Group Validation
+### Dead Code Removal
 
-- [x] **VALID-01**: After clustering, each tracklet's multi-keypoint residuals are computed against its group
-- [x] **VALID-02**: Changepoint detection identifies temporal ID swap points in per-tracklet residual series
-- [x] **VALID-03**: Swapped tracklets are split at the changepoint — consistent segment stays, inconsistent segment becomes singleton candidate
-- [x] **VALID-04**: Tracklets with high overall residual (no changepoint) are evicted to singleton status
+- [ ] **CLEAN-01**: Dead `_triangulate_body_point()` scalar fallback removed from dlt.py
+- [ ] **CLEAN-02**: Stale comments referencing scalar fallback path removed
 
-### Singleton Recovery
+### Z-Denoising
 
-- [x] **RECOV-01**: Each singleton is scored against all existing groups using multi-keypoint residuals
-- [x] **RECOV-02**: Singletons with strong overall match to one group are assigned to that group
-- [x] **RECOV-03**: Singletons with no overall match but a temporal split matching two different groups are split and assigned (swap-aware recovery)
-- [x] **RECOV-04**: Same-camera overlap constraint is enforced during singleton assignment (no two tracklets from same camera with overlapping frames in one group)
+- [ ] **ZDEN-01**: Z-denoising (centroid flatten + temporal smooth) operates correctly on raw keypoint arrays (n_sample_points=6)
 
-### Cleanup
+### Documentation & Types
 
-- [x] **CLEAN-01**: Fragment merging code and max_merge_gap config field removed
-- [x] **CLEAN-02**: Refinement module replaced by group validation (refinement.py deleted after consumer audit)
-
-### Evaluation
-
-- [x] **EVAL-01**: Parameter tuning pass on real data measuring singleton rate, reprojection error, and grouping quality vs v3.7 baseline
-- [x] **EVAL-02**: End-to-end pipeline run with tuned parameters confirms improvement over v3.7
+- [ ] **DOC-01**: stage.py module docstring updated to reflect keypoint-native N-point output
+- [ ] **DOC-02**: Midline2D and Midline3D type documentation updated for variable point counts
 
 ## Future Requirements
 
-### Association v2+
+Deferred to future release. Tracked but not in current roadmap.
 
-- **ASSOC-V2-01**: Appearance-based scoring for fish in close parallel (geometric ambiguity)
-- **ASSOC-V2-02**: Adaptive keypoint subset selection (learn which keypoints carry most signal per camera pair)
+### Width Estimation
+
+- **WIDTH-01**: Per-keypoint width estimation from segmentation data (requires seg backend reintroduction)
+
+### Advanced Z-Denoising
+
+- **ZDEN-02**: Per-keypoint independent z-smoothing as alternative to centroid flattening
+- **ZDEN-03**: Adaptive smoothing kernel width based on reconstruction confidence
 
 ## Out of Scope
 
+Explicitly excluded. Documented to prevent scope creep.
+
 | Feature | Reason |
 |---------|--------|
-| 3D volumetric voting / per-frame 3D association | Re-introduces fragility that caused v1.0→v2.0 restructuring |
-| Appearance features for re-identification | Requires training an appearance model; deferred to future milestone |
-| ruptures library for changepoint detection | Simple max-split sweep is sufficient for single-swap case; avoids new dependency |
-| Multi-swap detection within single tracklet | Rare edge case; recursive binary split handles it if needed |
+| Segmentation backend reintroduction | Removed in v3.7; keypoint-only pipeline is the direction |
+| Alternative triangulation backends | DLT is sole backend per v3.1 decision; curve optimizer removed |
+| Spline degree/control-point auto-tuning | Current 7-control-point cubic is sufficient; parameterize only |
+| Real-time reconstruction | Batch-only per project constraints |
+| Width profile from keypoints | No width signal in pose-only pipeline |
 
 ## Traceability
 
@@ -65,30 +63,22 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DATA-01 | Phase 87 | Pending |
-| DATA-02 | Phase 87 | Pending |
-| SCORE-01 | Phase 88 | Pending |
-| SCORE-02 | Phase 88 | Pending |
-| SCORE-03 | Phase 88 | Pending |
-| SCORE-04 | Phase 88 | Pending |
-| CLEAN-01 | Phase 89 | Complete |
-| VALID-01 | Phase 90 | Complete |
-| VALID-02 | Phase 90 | Complete |
-| VALID-03 | Phase 90 | Complete |
-| VALID-04 | Phase 90 | Complete |
-| CLEAN-02 | Phase 90 | Complete |
-| RECOV-01 | Phase 91 | Complete |
-| RECOV-02 | Phase 91 | Complete |
-| RECOV-03 | Phase 91 | Complete |
-| RECOV-04 | Phase 91 | Complete |
-| EVAL-01 | Phase 92 | Complete |
-| EVAL-02 | Phase 92 | Complete |
+| CFG-01 | — | Pending |
+| CFG-02 | — | Pending |
+| SPL-01 | — | Pending |
+| SPL-02 | — | Pending |
+| SPL-03 | — | Pending |
+| CLEAN-01 | — | Pending |
+| CLEAN-02 | — | Pending |
+| ZDEN-01 | — | Pending |
+| DOC-01 | — | Pending |
+| DOC-02 | — | Pending |
 
 **Coverage:**
-- v3.8 requirements: 18 total
-- Mapped to phases: 18
-- Unmapped: 0 ✓
+- v3.9 requirements: 10 total
+- Mapped to phases: 0
+- Unmapped: 10 ⚠️
 
 ---
-*Requirements defined: 2026-03-11*
-*Last updated: 2026-03-11 after roadmap creation*
+*Requirements defined: 2026-03-13*
+*Last updated: 2026-03-13 after initial definition*

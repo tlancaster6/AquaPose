@@ -538,11 +538,14 @@ def viz(
 def smooth_z_cmd(
     ctx: click.Context, run: str | None, sigma_frames: int, dry_run: bool
 ) -> None:
-    """Temporally smooth centroid z and shift control points in a midlines HDF5.
+    """Temporally smooth centroid z and shift control points and/or raw keypoints.
 
     Reads centroid_z per fish from a pipeline run's midlines.h5, applies
     Gaussian smoothing per-fish within continuous track segments, and shifts
-    all control point z-coordinates by the smoothing delta.
+    all z-coordinates by the smoothing delta.  Both ``control_points`` (spline
+    mode) and ``points`` (raw-keypoint mode) are shifted.  The dataset not in
+    use for a given frame contains NaN, so ``NaN + dz == NaN`` ensures the
+    unused dataset stays NaN.
     """
     import h5py
     import numpy as np
@@ -570,10 +573,14 @@ def smooth_z_cmd(
     fish_ids_all = data["fish_id"]  # (N, max_fish)
     centroid_z_all = data["centroid_z"]  # (N, max_fish)
     control_points = data["control_points"]  # (N, max_fish, 7, 3)
+    points = data[
+        "points"
+    ]  # (N, max_fish, n_sample_points, 3) or None for legacy files
 
     N, max_fish = fish_ids_all.shape
     smoothed_cz = centroid_z_all.copy()
     shifted_cp = control_points.copy()
+    shifted_pts = points.copy() if points is not None else None
 
     # Collect unique fish IDs (excluding fill value -1)
     unique_fish = set()
@@ -620,6 +627,8 @@ def smooth_z_cmd(
             dz = float(sm_cz[i] - raw_cz[i])
             smoothed_cz[fi, si] = float(sm_cz[i])
             shifted_cp[fi, si, :, 2] += dz
+            if shifted_pts is not None:
+                shifted_pts[fi, si, :, 2] += dz
             total_frames += 1
 
         # Track jitter reduction (skip pairs where either value is NaN)
@@ -661,6 +670,11 @@ def smooth_z_cmd(
         cp_ds = grp["control_points"]
         assert isinstance(cp_ds, h5py.Dataset)
         cp_ds[...] = shifted_cp
+
+        if shifted_pts is not None and "points" in grp:
+            pts_ds = grp["points"]
+            assert isinstance(pts_ds, h5py.Dataset)
+            pts_ds[...] = shifted_pts
 
     click.echo(f"Written to {input_path}")
 

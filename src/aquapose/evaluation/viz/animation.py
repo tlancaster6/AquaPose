@@ -25,33 +25,41 @@ def _eval_spline(
     spline: object,
     n_eval: int = _N_EVAL_POINTS,
 ) -> tuple[list[float], list[float], list[float]]:
-    """Evaluate a B-spline at n_eval points and return (x, y, z) lists.
+    """Evaluate a B-spline or extract raw keypoints and return (x, y, z) lists.
 
     Args:
-        spline: Spline3D object with control_points, knots, and degree attributes.
-        n_eval: Number of evaluation points along the spline.
+        spline: Midline3D-like object with optional control_points, knots,
+            degree, and points attributes.
+        n_eval: Number of evaluation points along the spline (ignored for raw
+            keypoints).
 
     Returns:
         Tuple of (x_list, y_list, z_list) for Plotly traces.
     """
     control_points = getattr(spline, "control_points", None)
-    if control_points is None:
-        return [], [], []
+    if control_points is not None:
+        cp = np.asarray(control_points, dtype=np.float64)
+        if not np.all(np.isnan(cp)):
+            knots = getattr(spline, "knots", None)
+            degree = getattr(spline, "degree", None)
+            if knots is not None and degree is not None:
+                try:
+                    bspl = scipy.interpolate.BSpline(
+                        np.asarray(knots, dtype=np.float64), cp, degree
+                    )
+                    t_vals = np.linspace(0.0, 1.0, n_eval)
+                    pts = bspl(t_vals)  # (N, 3)
+                    return pts[:, 0].tolist(), pts[:, 1].tolist(), pts[:, 2].tolist()
+                except Exception:
+                    pass
 
-    cp = np.asarray(control_points, dtype=np.float64)
-    knots = getattr(spline, "knots", None)
-    degree = getattr(spline, "degree", None)
-    if knots is None or degree is None:
-        return [], [], []
-    try:
-        bspl = scipy.interpolate.BSpline(
-            np.asarray(knots, dtype=np.float64), cp, degree
-        )
-        t_vals = np.linspace(0.0, 1.0, n_eval)
-        pts = bspl(t_vals)  # (N, 3)
-        return pts[:, 0].tolist(), pts[:, 1].tolist(), pts[:, 2].tolist()
-    except Exception:
-        return [], [], []
+    # Fall back to raw keypoints.
+    raw_pts = getattr(spline, "points", None)
+    if raw_pts is not None:
+        pts = np.asarray(raw_pts, dtype=np.float64)
+        if pts.ndim == 2 and pts.shape[1] == 3 and not np.all(np.isnan(pts)):
+            return pts[:, 0].tolist(), pts[:, 1].tolist(), pts[:, 2].tolist()
+    return [], [], []
 
 
 def _build_figure(
@@ -218,14 +226,19 @@ def _build_figure(
 class _H5Spline:
     """Lightweight spline-like object for _eval_spline compatibility."""
 
-    __slots__ = ("control_points", "degree", "knots")
+    __slots__ = ("control_points", "degree", "knots", "points")
 
     def __init__(
-        self, control_points: np.ndarray, knots: np.ndarray, degree: int
+        self,
+        control_points: np.ndarray,
+        knots: np.ndarray,
+        degree: int,
+        points: np.ndarray | None = None,
     ) -> None:
         self.control_points = control_points
         self.knots = knots
         self.degree = degree
+        self.points = points
 
 
 def _load_midlines_from_h5(h5_path: Path) -> list[dict[int, _H5Spline]]:
@@ -240,6 +253,7 @@ def _load_midlines_from_h5(h5_path: Path) -> list[dict[int, _H5Spline]]:
     data = read_midline3d_results(h5_path)
     fish_ids = data["fish_id"]  # (N, max_fish)
     control_points = data["control_points"]  # (N, max_fish, 7, 3)
+    raw_points = data.get("points")  # (N, max_fish, n_kpts, 3) or None
     knots = np.asarray(data["SPLINE_KNOTS"], dtype=np.float64)
     degree = int(data["SPLINE_K"])
     n_frames, max_fish = fish_ids.shape
@@ -250,7 +264,13 @@ def _load_midlines_from_h5(h5_path: Path) -> list[dict[int, _H5Spline]]:
         for s in range(max_fish):
             fid = int(fish_ids[fi, s])
             if fid >= 0:
-                frame_dict[fid] = _H5Spline(control_points[fi, s], knots, degree)
+                pts = raw_points[fi, s] if raw_points is not None else None
+                frame_dict[fid] = _H5Spline(
+                    control_points[fi, s],
+                    knots,
+                    degree,
+                    points=pts,
+                )
         frames.append(frame_dict)
     return frames
 

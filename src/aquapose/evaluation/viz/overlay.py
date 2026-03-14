@@ -63,10 +63,11 @@ _T_VALS: np.ndarray = np.linspace(0.0, 1.0, _N_SPLINE_EVAL)
 
 
 def _eval_spline_pts(spline: object) -> np.ndarray | None:
-    """Evaluate a B-spline at ``_N_SPLINE_EVAL`` uniform points.
+    """Evaluate a B-spline or return raw keypoints as 3D points.
 
     Args:
-        spline: Spline3D with control_points, knots, degree attributes.
+        spline: Midline3D (or similar) with optional control_points, knots,
+            degree, and points attributes.
 
     Returns:
         (N, 3) float64 array, or None on failure.
@@ -74,17 +75,30 @@ def _eval_spline_pts(spline: object) -> np.ndarray | None:
     cp = getattr(spline, "control_points", None)
     knots = getattr(spline, "knots", None)
     degree = getattr(spline, "degree", None)
-    if cp is None or knots is None or degree is None:
-        return None
-    try:
-        bspl = scipy.interpolate.BSpline(
-            np.asarray(knots, dtype=np.float64),
-            np.asarray(cp, dtype=np.float64),
-            degree,
-        )
-        return bspl(_T_VALS)  # (N, 3)
-    except Exception:
-        return None
+    if cp is not None and knots is not None and degree is not None:
+        cp_arr = np.asarray(cp, dtype=np.float64)
+        if not np.all(np.isnan(cp_arr)):
+            try:
+                bspl = scipy.interpolate.BSpline(
+                    np.asarray(knots, dtype=np.float64),
+                    cp_arr,
+                    degree,
+                )
+                return bspl(_T_VALS)  # (N, 3)
+            except Exception:
+                pass
+
+    # Fall back to raw keypoints.
+    pts = getattr(spline, "points", None)
+    if pts is not None:
+        pts_arr = np.asarray(pts, dtype=np.float64)
+        if (
+            pts_arr.ndim == 2
+            and pts_arr.shape[1] == 3
+            and not np.all(np.isnan(pts_arr))
+        ):
+            return pts_arr
+    return None
 
 
 def _batch_reproject(

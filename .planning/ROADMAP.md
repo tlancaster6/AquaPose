@@ -264,11 +264,13 @@ Full details: `.planning/milestones/v3.9-ROADMAP.md`
 **Depends on**: Nothing (first phase of milestone)
 **Requirements**: RUN-01
 **Success Criteria** (what must be TRUE):
-  1. `aquapose run` completes all 45 chunks (200 frames each) without crashing
+  1. `aquapose run` completes all chunks without crashing
   2. Per-chunk cache files exist for every chunk in the run directory
   3. HDF5 output is present and contains 3D reconstruction data for the full run
-  4. Run log shows production OBB model (run_20260310_115419) and Pose model (run_20260310_171543) used
-**Plans**: TBD
+  4. Run used the production models configured in config.yaml
+**Plans:** 1 plan
+Plans:
+- [ ] 97-01-PLAN.md — Launch full diagnostic pipeline run and verify outputs
 
 ### Phase 98: Performance Metrics
 **Goal**: Per-stage timing and end-to-end throughput numbers are extracted from the run and recorded
@@ -322,7 +324,7 @@ Full details: `.planning/milestones/v3.9-ROADMAP.md`
 | 94. Dead Code Removal | v3.9 | 1/1 | Complete | 2026-03-13 |
 | 95. Spline Refactoring | v3.9 | 2/2 | Complete | 2026-03-13 |
 | 96. Z-Denoising and Documentation | v3.9 | 1/1 | Complete | 2026-03-13 |
-| 97. Full Pipeline Run | v3.10 | 0/TBD | Not started | - |
+| 97. Full Pipeline Run | v3.10 | 0/1 | Not started | - |
 | 98. Performance Metrics | v3.10 | 0/TBD | Not started | - |
 | 99. Reconstruction Quality Metrics | v3.10 | 0/TBD | Not started | - |
 | 100. Tracking and Association Metrics | v3.10 | 0/TBD | Not started | - |

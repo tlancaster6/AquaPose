@@ -371,12 +371,35 @@ class DltBackend:
 
         if not self._spline_enabled:
             # --- Raw-keypoint mode: skip spline fitting entirely ---
-            # Use per-point triangulation residuals directly.
+            # Compute pixel-space reprojection residuals (same as spline path).
+            pts_3d_tensor = torch.from_numpy(pts_3d_arr_full.astype(np.float32))
+            all_residuals_raw: list[float] = []
+            cam_residuals_raw: dict[str, float] = {}
+            cam_ids_active = [cid for cid in cam_midlines if cid in self._models]
+            for cid in cam_ids_active:
+                proj_px, valid = self._models[cid].project(pts_3d_tensor)
+                proj_np = proj_px.detach().cpu().numpy()
+                valid_np = valid.detach().cpu().numpy()
+                obs_pts = cam_midlines[cid].points  # (n_body_points, 2)
+                cam_errs: list[float] = []
+                for j in range(n_body_points):
+                    if (
+                        valid_np[j]
+                        and not np.any(np.isnan(proj_np[j]))
+                        and not np.any(np.isnan(obs_pts[j]))
+                        and not np.any(np.isnan(pts_3d_arr_full[j]))
+                    ):
+                        err = float(np.linalg.norm(proj_np[j] - obs_pts[j]))
+                        cam_errs.append(err)
+                        all_residuals_raw.append(err)
+                if cam_errs:
+                    cam_residuals_raw[cid] = float(np.mean(cam_errs))
+
             mean_residual = (
-                float(np.mean(per_point_residuals)) if per_point_residuals else 0.0
+                float(np.mean(all_residuals_raw)) if all_residuals_raw else 0.0
             )
             max_residual_val = (
-                float(np.max(per_point_residuals)) if per_point_residuals else 0.0
+                float(np.max(all_residuals_raw)) if all_residuals_raw else 0.0
             )
 
             return Midline3D(
@@ -392,6 +415,7 @@ class DltBackend:
                 degree=None,
                 arc_length=None,
                 is_low_confidence=is_low_confidence,
+                per_camera_residuals=cam_residuals_raw,
                 centroid_z=centroid_z,
                 z_offsets=z_off,
                 triangulated_points=pts_3d_arr_full,

@@ -287,9 +287,9 @@ def test_default_grid_has_two_keys() -> None:
 
 
 def test_default_grid_key_names() -> None:
-    """DEFAULT_GRID has keys 'outlier_threshold' and 'n_points'."""
+    """DEFAULT_GRID has keys 'outlier_threshold' and 'min_cameras'."""
     assert "outlier_threshold" in DEFAULT_GRID
-    assert "n_points" in DEFAULT_GRID
+    assert "min_cameras" in DEFAULT_GRID
 
 
 def test_default_grid_outlier_threshold_has_19_values() -> None:
@@ -303,9 +303,9 @@ def test_default_grid_outlier_threshold_has_19_values() -> None:
         assert b - a == pytest.approx(5.0)
 
 
-def test_default_grid_n_points_has_four_values() -> None:
-    """n_points has exactly 4 values."""
-    assert len(DEFAULT_GRID["n_points"]) == 4
+def test_default_grid_min_cameras_has_three_values() -> None:
+    """min_cameras has exactly 3 values."""
+    assert len(DEFAULT_GRID["min_cameras"]) == 3
 
 
 def test_default_grid_values_are_floats() -> None:

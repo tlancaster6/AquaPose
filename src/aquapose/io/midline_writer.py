@@ -63,7 +63,7 @@ class Midline3DWriter:
         output_path: str | Path,
         max_fish: int = 9,
         chunk_frames: int = 1000,
-        n_sample_points: int = 15,
+        n_sample_points: int = 6,
     ) -> None:
         self._path = Path(output_path)
         self._max_fish = max_fish

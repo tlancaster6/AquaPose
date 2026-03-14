@@ -104,6 +104,7 @@ def _build_midline_sets(
     ctx: PipelineContext,
     tracklet_groups: list[Any],
     sampled_indices: list[int],
+    n_sample_points: int = 6,
 ) -> list[dict[int, dict[str, Any]]]:
     """Build per-frame MidlineSets from tracklet keypoints.
 
@@ -115,6 +116,7 @@ def _build_midline_sets(
         tracklet_groups: TrackletGroup list (may be from original cache or
             from an association sweep combo).
         sampled_indices: Frame indices to include.
+        n_sample_points: Number of points for midline interpolation.
 
     Returns:
         List of MidlineSet dicts, one per sampled frame.
@@ -159,7 +161,7 @@ def _build_midline_sets(
                     kpts_xy,
                     _DEFAULT_KEYPOINT_T_VALUES,
                     kpts_conf,
-                    n_points=15,
+                    n_points=n_sample_points,
                 )
                 midline = Midline2D(
                     points=points,
@@ -577,17 +579,13 @@ class TuningOrchestrator:
         best_params: dict[str, Any] = {}
         all_results: list[dict[str, Any]] = []
 
-        # 1D sequential carry-forward: outlier_threshold first, then n_points
-        sweep_order = ["outlier_threshold", "n_points"]
+        # 1D sequential carry-forward: outlier_threshold first, then min_cameras
+        sweep_order = ["outlier_threshold", "min_cameras"]
 
         for param in sweep_order:
             values = grid[param]
             best_score = None
-            best_val: float = (
-                getattr(self._config.reconstruction, param)
-                if param != "n_points"
-                else float(self._config.reconstruction.n_sample_points)
-            )
+            best_val: float = float(getattr(self._config.reconstruction, param))
 
             print(f"Sweeping {param}: {len(values)} values")
             for val in values:
@@ -668,13 +666,9 @@ class TuningOrchestrator:
                 "tier2_stability": baseline_recon.tier2_stability,
             }
 
-        # Normalize params: map n_points -> n_sample_points for output
-        normalized_params: dict[str, float] = {}
-        for k, v in winner_params_raw.items():
-            if k == "n_points":
-                normalized_params["n_sample_points"] = float(v)
-            else:
-                normalized_params[k] = float(v)
+        normalized_params: dict[str, float] = {
+            k: float(v) for k, v in winner_params_raw.items()
+        }
 
         baseline_metrics_dict = {
             "mean_reprojection_error": baseline_recon.mean_reprojection_error,
@@ -741,18 +735,15 @@ class TuningOrchestrator:
         """Create a PipelineConfig with patched reconstruction params.
 
         Args:
-            params: Reconstruction parameter overrides. The key ``"n_points"``
-                is mapped to ``"n_sample_points"`` in ReconstructionConfig.
+            params: Reconstruction parameter overrides. ``min_cameras`` is
+                cast to int to match ReconstructionConfig.
 
         Returns:
             PipelineConfig with patched ReconstructionConfig.
         """
-        clean_params: dict[str, Any] = {}
-        for k, v in params.items():
-            if k == "n_points":
-                clean_params["n_sample_points"] = int(v)
-            else:
-                clean_params[k] = v
+        clean_params = dict(params)
+        if "min_cameras" in clean_params:
+            clean_params["min_cameras"] = int(clean_params["min_cameras"])
 
         patched_recon = dataclasses.replace(self._config.reconstruction, **clean_params)
         return dataclasses.replace(self._config, reconstruction=patched_recon)
@@ -840,7 +831,10 @@ class TuningOrchestrator:
         """
         tracklet_groups = assoc_ctx.tracklet_groups or []
         midline_sets = _build_midline_sets(
-            midline_ctx, tracklet_groups, sampled_indices
+            midline_ctx,
+            tracklet_groups,
+            sampled_indices,
+            n_sample_points=self._config.reconstruction.n_sample_points,
         )
         assoc_m = evaluate_association(midline_sets, n_animals)
 
@@ -883,7 +877,12 @@ class TuningOrchestrator:
             chunk_indices = list(range(chunk_frames))
             chunk_groups = ctx_copy.tracklet_groups or []
 
-            chunk_midlines = _build_midline_sets(ctx_copy, chunk_groups, chunk_indices)
+            chunk_midlines = _build_midline_sets(
+                ctx_copy,
+                chunk_groups,
+                chunk_indices,
+                n_sample_points=self._config.reconstruction.n_sample_points,
+            )
             all_midline_sets.extend(chunk_midlines)
             all_tracklet_groups.extend(chunk_groups)
             total_frames += chunk_frames
@@ -924,7 +923,12 @@ class TuningOrchestrator:
             chunk_indices = list(range(chunk_frames))
             chunk_groups = chunk_ctx.tracklet_groups or []
 
-            chunk_midlines = _build_midline_sets(chunk_ctx, chunk_groups, chunk_indices)
+            chunk_midlines = _build_midline_sets(
+                chunk_ctx,
+                chunk_groups,
+                chunk_indices,
+                n_sample_points=self._config.reconstruction.n_sample_points,
+            )
             all_midline_sets.extend(chunk_midlines)
             all_tracklet_groups.extend(chunk_groups)
             total_frames += chunk_frames
@@ -966,6 +970,10 @@ class TuningOrchestrator:
             min_cameras=config.reconstruction.min_cameras,
             max_interp_gap=config.reconstruction.max_interp_gap,
             n_control_points=config.reconstruction.n_control_points,
+            n_sample_points=config.reconstruction.n_sample_points,
+            keypoint_t_values=config.pose.keypoint_t_values,
+            z_flattening_enabled=config.reconstruction.z_denoising.enabled,
+            spline_enabled=config.reconstruction.spline_enabled,
             outlier_threshold=config.reconstruction.outlier_threshold,
         )
         ctx_copy = recon_stage.run(ctx_copy)

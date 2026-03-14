@@ -338,10 +338,12 @@ class DltBackend:
                 z_off[body_idx] = float(z_offsets_valid[vi])
 
         # Build full-body arrays: NaN/empty for non-triangulated points.
+        # Use pts_3d_arr (post-z-flattening) so the flattened z propagates
+        # into raw-keypoint mode output.
         pts_3d_arr_full = np.full((n_body_points, 3), np.nan, dtype=np.float32)
         tri_inlier_cams: list[list[str]] = [[] for _ in range(n_body_points)]
         for vi, body_idx in enumerate(valid_indices):
-            pts_3d_arr_full[body_idx] = pts_3d_list[vi]
+            pts_3d_arr_full[body_idx] = pts_3d_arr[vi]
             tri_inlier_cams[body_idx] = per_point_inlier_ids[vi]
 
         min_n_cams = min(per_point_n_cams) if per_point_n_cams else 0

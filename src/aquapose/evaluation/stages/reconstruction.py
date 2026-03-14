@@ -16,7 +16,7 @@ from aquapose.evaluation.metrics import Tier2Result, compute_tier1
 
 DEFAULT_GRID: dict[str, list[float]] = {
     "outlier_threshold": [float(t) for t in range(10, 105, 5)],
-    "n_points": [7.0, 11.0, 15.0, 21.0],
+    "min_cameras": [2.0, 3.0, 4.0],
 }
 
 

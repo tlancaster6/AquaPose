@@ -324,25 +324,23 @@ class TestParameterMapping:
         assert isinstance(patched.early_k, int)
         assert patched.early_k == 15
 
-    def test_n_points_mapped_to_n_sample_points(self) -> None:
-        """Verify n_points grid key maps to n_sample_points in ReconstructionConfig."""
+    def test_min_cameras_cast_to_int(self) -> None:
+        """Verify min_cameras float from grid is cast to int in config patch."""
         import dataclasses
 
         from aquapose.engine.config import ReconstructionConfig
 
         base = ReconstructionConfig()
-        params = {"n_points": 21.0}
+        params: dict[str, Any] = {"min_cameras": 3.0}
 
         # Simulate the mapping logic
-        clean_params: dict[str, Any] = {}
-        for k, v in params.items():
-            if k == "n_points":
-                clean_params["n_sample_points"] = int(v)
-            else:
-                clean_params[k] = v
+        clean_params = dict(params)
+        if "min_cameras" in clean_params:
+            clean_params["min_cameras"] = int(clean_params["min_cameras"])
 
         patched = dataclasses.replace(base, **clean_params)
-        assert patched.n_sample_points == 21
+        assert isinstance(patched.min_cameras, int)
+        assert patched.min_cameras == 3
 
 
 # ---------------------------------------------------------------------------

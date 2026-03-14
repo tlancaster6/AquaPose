@@ -87,7 +87,7 @@ def test_write_read_round_trip(tmp_path: Path) -> None:
             }
         )
 
-    with Midline3DWriter(out_path, max_fish=max_fish) as w:
+    with Midline3DWriter(out_path, max_fish=max_fish, n_sample_points=15) as w:
         for frame_i, midlines in enumerate(frames_data):
             w.write_frame(frame_i, midlines)
 
@@ -273,7 +273,7 @@ def test_plane_metadata_round_trip(tmp_path: Path) -> None:
     m_with_z = _make_midline3d(0, frame_index=0, with_z_denoising=True)
     m_no_z = _make_midline3d(2, frame_index=0)  # No z-denoising data
 
-    with Midline3DWriter(out_path, max_fish=max_fish) as w:
+    with Midline3DWriter(out_path, max_fish=max_fish, n_sample_points=15) as w:
         w.write_frame(0, {0: m_with_z, 2: m_no_z})
 
     result = read_midline3d_results(out_path)

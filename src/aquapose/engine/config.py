@@ -401,7 +401,7 @@ class PipelineConfig:
             Auto-detected from :func:`_default_device` when absent from YAML.
             Propagates to DetectionStage and PoseStage via :func:`build_stages`.
         n_sample_points: Number of 2D midline points produced per detection and
-            used throughout the reconstruction pipeline. Default is 15. Propagates
+            used throughout the reconstruction pipeline. Default is 6. Propagates
             to ``reconstruction.n_sample_points`` when that field is not explicitly
             overridden.
         project_dir: Optional project root directory for resolving relative paths.

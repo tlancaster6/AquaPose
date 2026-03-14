@@ -564,8 +564,9 @@ class EvalRunner:
             _keypoints_to_midline,
         )
 
-        # Read keypoint_t_values from run config if available
+        # Read keypoint_t_values and n_sample_points from run config if available
         keypoint_t_values = _DEFAULT_KEYPOINT_T_VALUES
+        n_sample_points = 6
         try:
             from aquapose.engine.config import load_config
 
@@ -576,8 +577,9 @@ class EvalRunner:
                     keypoint_t_values = np.array(
                         run_config.pose.keypoint_t_values, dtype=np.float64
                     )
+                n_sample_points = run_config.reconstruction.n_sample_points
         except Exception:
-            pass  # Fall back to default t-values
+            pass  # Fall back to defaults
 
         tracklet_groups = ctx.tracklet_groups or []
 
@@ -628,7 +630,7 @@ class EvalRunner:
                             kpts_xy,
                             keypoint_t_values,
                             kpts_conf,
-                            n_points=15,
+                            n_points=n_sample_points,
                         )
                         midline = Midline2D(
                             points=points,

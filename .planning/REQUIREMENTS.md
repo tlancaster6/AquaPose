@@ -52,25 +52,25 @@ None — this is a metrics-only milestone.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RUN-01 | — | Pending |
-| RUN-02 | — | Pending |
-| RUN-03 | — | Pending |
-| RECON-01 | — | Pending |
-| RECON-02 | — | Pending |
-| RECON-03 | — | Pending |
-| TRACK-01 | — | Pending |
-| TRACK-02 | — | Pending |
-| TRACK-03 | — | Pending |
-| ASSOC-01 | — | Pending |
-| ASSOC-02 | — | Pending |
-| DOC-01 | — | Pending |
-| DOC-02 | — | Pending |
+| RUN-01 | Phase 97 | Pending |
+| RUN-02 | Phase 98 | Pending |
+| RUN-03 | Phase 98 | Pending |
+| RECON-01 | Phase 99 | Pending |
+| RECON-02 | Phase 99 | Pending |
+| RECON-03 | Phase 99 | Pending |
+| TRACK-01 | Phase 100 | Pending |
+| TRACK-02 | Phase 100 | Pending |
+| TRACK-03 | Phase 100 | Pending |
+| ASSOC-01 | Phase 100 | Pending |
+| ASSOC-02 | Phase 100 | Pending |
+| DOC-01 | Phase 101 | Pending |
+| DOC-02 | Phase 101 | Pending |
 
 **Coverage:**
 - v3.10 requirements: 13 total
-- Mapped to phases: 0
-- Unmapped: 13 ⚠️
+- Mapped to phases: 13
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-14*
-*Last updated: 2026-03-14 after initial definition*
+*Last updated: 2026-03-14 after roadmap creation*

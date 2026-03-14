@@ -16,6 +16,7 @@
 - ✅ **v3.7 Improved Tracking** — Phases 78-86 (shipped 2026-03-11)
 - ✅ **v3.8 Improved Association** — Phases 87-92 (shipped 2026-03-12)
 - ✅ **v3.9 Reconstruction Modernization** — Phases 93-96 (shipped 2026-03-14)
+- 🚧 **v3.10 Publication Metrics** — Phases 97-101 (in progress)
 
 ## Phases
 
@@ -246,6 +247,73 @@ Full details: `.planning/milestones/v3.9-ROADMAP.md`
 
 </details>
 
+### 🚧 v3.10 Publication Metrics (In Progress)
+
+**Milestone Goal:** Run full 5-minute diagnostic pipeline and produce comprehensive, publication-ready performance and accuracy metrics.
+
+- [ ] **Phase 97: Full Pipeline Run** - Execute 9,000-frame diagnostic run with production models
+- [ ] **Phase 98: Performance Metrics** - Extract per-stage timing breakdown and throughput
+- [ ] **Phase 99: Reconstruction Quality Metrics** - Report reprojection error distributions and camera coverage
+- [ ] **Phase 100: Tracking and Association Metrics** - Report fragmentation, identity consistency, singleton rate, and wall-time
+- [ ] **Phase 101: Results Document** - Compile all metrics into updated performance-accuracy.md
+
+## Phase Details
+
+### Phase 97: Full Pipeline Run
+**Goal**: A complete 9,000-frame diagnostic pipeline run completes successfully with production models and all chunk caches written to disk
+**Depends on**: Nothing (first phase of milestone)
+**Requirements**: RUN-01
+**Success Criteria** (what must be TRUE):
+  1. `aquapose run` completes all 45 chunks (200 frames each) without crashing
+  2. Per-chunk cache files exist for every chunk in the run directory
+  3. HDF5 output is present and contains 3D reconstruction data for the full run
+  4. Run log shows production OBB model (run_20260310_115419) and Pose model (run_20260310_171543) used
+**Plans**: TBD
+
+### Phase 98: Performance Metrics
+**Goal**: Per-stage timing and end-to-end throughput numbers are extracted from the run and recorded
+**Depends on**: Phase 97
+**Requirements**: RUN-02, RUN-03
+**Success Criteria** (what must be TRUE):
+  1. Per-stage wall-time reported for detection, pose, tracking, association, and reconstruction
+  2. End-to-end throughput reported as frames/sec and total wall-time for the full 9,000-frame run
+  3. Numbers are drawn from the actual Phase 97 run (not synthetic or estimated)
+**Plans**: TBD
+
+### Phase 99: Reconstruction Quality Metrics
+**Goal**: Reprojection error statistics and camera visibility statistics are measured and recorded from the full run
+**Depends on**: Phase 97
+**Requirements**: RECON-01, RECON-02, RECON-03
+**Success Criteria** (what must be TRUE):
+  1. Reprojection error distribution reported with mean, p50, p90, p99 across all frames in the run
+  2. Per-keypoint reprojection error breakdown shows all 6 keypoints individually
+  3. Camera visibility statistics reported (mean cameras per fish, distribution) across all frames
+  4. Metrics derived from `aquapose eval` output on Phase 97 run caches
+**Plans**: TBD
+
+### Phase 100: Tracking and Association Metrics
+**Goal**: Track fragmentation, identity consistency, detection coverage, singleton rate, and association wall-time are all measured from the full run
+**Depends on**: Phase 97
+**Requirements**: TRACK-01, TRACK-02, TRACK-03, ASSOC-01, ASSOC-02
+**Success Criteria** (what must be TRUE):
+  1. Track count and fragmentation metrics reported (total tracks, fragments per fish, longest continuous track)
+  2. Identity consistency across chunk boundaries reported (ID swap count or consistency rate)
+  3. Detection coverage reported as % frames with detections per camera across all cameras
+  4. Singleton rate reported for the full run
+  5. Association wall-time reported as seconds per chunk and total for full run
+**Plans**: TBD
+
+### Phase 101: Results Document
+**Goal**: A single performance-accuracy.md document contains all current full-run metrics with stale results replaced
+**Depends on**: Phase 98, Phase 99, Phase 100
+**Requirements**: DOC-01, DOC-02
+**Success Criteria** (what must be TRUE):
+  1. performance-accuracy.md exists and contains all metrics from Phases 98, 99, and 100
+  2. All previously stale or placeholder metric values are replaced with Phase 97 measurements
+  3. Supporting CSV files (if any) are present alongside the document
+  4. Document clearly attributes all numbers to the Phase 97 run (date, run directory, model versions)
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -254,3 +322,8 @@ Full details: `.planning/milestones/v3.9-ROADMAP.md`
 | 94. Dead Code Removal | v3.9 | 1/1 | Complete | 2026-03-13 |
 | 95. Spline Refactoring | v3.9 | 2/2 | Complete | 2026-03-13 |
 | 96. Z-Denoising and Documentation | v3.9 | 1/1 | Complete | 2026-03-13 |
+| 97. Full Pipeline Run | v3.10 | 0/TBD | Not started | - |
+| 98. Performance Metrics | v3.10 | 0/TBD | Not started | - |
+| 99. Reconstruction Quality Metrics | v3.10 | 0/TBD | Not started | - |
+| 100. Tracking and Association Metrics | v3.10 | 0/TBD | Not started | - |
+| 101. Results Document | v3.10 | 0/TBD | Not started | - |

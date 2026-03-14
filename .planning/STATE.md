@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.9
-milestone_name: Reconstruction Modernization
-status: complete
-last_updated: "2026-03-14T21:16:20.305Z"
+milestone: v3.10
+milestone_name: Publication Metrics
+status: active
+last_updated: "2026-03-14"
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 5
-  completed_plans: 5
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
@@ -18,12 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-14)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Planning next milestone
+**Current focus:** Defining requirements for v3.10 Publication Metrics
 
 ## Current Position
 
-Milestone v3.9 Reconstruction Modernization — SHIPPED 2026-03-14
-Next step: `/gsd:new-milestone` to define next milestone
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-14 — Milestone v3.10 started
 
 ## Accumulated Context
 
@@ -43,5 +45,5 @@ Next step: `/gsd:new-milestone` to define next milestone
 ## Session Continuity
 
 Last session: 2026-03-14
-Stopped at: v3.9 milestone completed and archived
+Stopped at: Defining v3.10 requirements
 Resume file: None

@@ -138,7 +138,16 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ### Active
 
-(No active requirements — next milestone not yet defined)
+## Current Milestone: v3.10 Publication Metrics
+
+**Goal:** Run full 5-minute diagnostic pipeline and produce comprehensive, publication-ready performance and accuracy metrics.
+
+**Target features:**
+- Full 5-minute (9,000 frame) diagnostic pipeline run with production models
+- End-to-end pipeline timing and per-stage breakdown
+- Full-run evaluation report (reprojection error distributions, per-keypoint, camera coverage, track quality)
+- Re-measurement of stale metrics (tracker benchmark, association wall-time)
+- Updated results document with all gaps filled
 
 ### Out of Scope
 
@@ -302,4 +311,4 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Dead scalar triangulation removed (not deprecated) | _triangulate_body_point was dead code since vectorized path; no callers | ✓ Good — 170 lines removed |
 
 ---
-*Last updated: 2026-03-14 after v3.9 Reconstruction Modernization milestone*
+*Last updated: 2026-03-14 after v3.10 Publication Metrics milestone started*

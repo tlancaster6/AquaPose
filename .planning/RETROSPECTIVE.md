@@ -410,6 +410,102 @@
 
 ---
 
+## Milestone: v3.7 — Improved Tracking
+
+**Shipped:** 2026-03-11
+**Phases:** 11 (1 skipped, 2 inserted) | **Plans:** 18 | **Timeline:** 2 days
+
+### What Was Built
+- Custom OKS-based keypoint tracker replacing OC-SORT/BoxMot (24-dim KF, OCM, ORU/OCR recovery)
+- Pipeline reordered: Detection → Pose → Tracking → Association → Reconstruction
+- Segmentation midline backend fully removed
+- Production OBB and Pose models retrained with all-source stratified data
+- BoxMot dependency completely removed
+- Tracker tuned to 27 tracks (vs OC-SORT 30) with 95% coverage
+
+### What Worked
+- **Investigation-before-action pattern:** Phase 78 occlusion investigation gave GO recommendation, avoiding unnecessary remediation work
+- **Production retrain as inserted phase:** 78.1 was cleanly scoped and delivered immediately useful models
+- **Complete dependency removal:** Removing BoxMot entirely (not just wrapping) eliminated a class of maintenance problems
+
+### What Was Inefficient
+- **ASSOC-01 implemented then deleted:** Keypoint centroid association was built for ocsort_wrapper, then deleted when BoxMot was removed — wasted effort
+- **Phase count inflation:** 11 phases for what was essentially tracker replacement + model retrain + cleanup — could have been tighter
+
+### Key Lessons
+1. **Don't build features for code you're about to delete** — ASSOC-01 targeting ocsort_wrapper was wasted when BoxMot was removed one phase later
+2. **Complete dependency removal is worth the extra effort** — leaving BoxMot as fallback would have created long-term maintenance burden
+
+---
+
+## Milestone: v3.8 — Improved Association
+
+**Shipped:** 2026-03-12
+**Phases:** 7 (1 inserted) | **Plans:** 12 | **Timeline:** 2 days
+
+### What Was Built
+- Multi-keypoint pairwise scoring replacing single-centroid ray casting
+- Group validation with temporal changepoint detection
+- Singleton recovery with swap-aware split-and-assign (27% → 5.4%)
+- Association wall-time 452s → <30s via batch ray casting vectorization
+- Fragment merging removed; cleaner pipeline
+
+### What Worked
+- **Architecture-first approach:** Gains came from structural changes (multi-keypoint scoring, changepoint detection), not parameter tuning — 27-combo sweep confirmed defaults already optimal
+- **Bottleneck investigation as inserted phase (91.1):** Identified vectorization opportunity for 15x speedup
+- **Remove-before-add pattern:** Deleting fragment merging (Phase 89) before adding validation (Phase 90) simplified the pipeline first
+
+### What Was Inefficient
+- **Phase 88 missing VERIFICATION.md and SUMMARY frontmatter:** Bookkeeping gap that required manual audit reconstruction
+
+### Key Lessons
+1. **Architectural improvements beat parameter tuning** — 80% singleton reduction came from richer signals, not tweaked thresholds
+2. **Profile bottlenecks during development** — the 452s→30s speedup was discovered via an inserted investigation phase; profiling earlier would have caught it sooner
+
+---
+
+## Milestone: v3.9 — Reconstruction Modernization
+
+**Shipped:** 2026-03-14
+**Phases:** 4 | **Plans:** 5 | **Timeline:** 2 days
+
+### What Was Built
+- `n_sample_points` config wired end-to-end, default changed from 15 to 6
+- Dead scalar triangulation code (~170 lines) removed from DltBackend
+- Raw-keypoint reconstruction as primary output; B-spline fitting optional via `spline_enabled` toggle
+- HDF5 dual-dataset layout (points + control_points, NaN-filled when unused)
+- Z-denoising CLI fixed for raw-keypoint mode (NaN-safe dual shift)
+- All reconstruction docstrings updated for keypoint-native variable-point-count output
+
+### What Worked
+- **Tight scope:** 4 phases, 5 plans, all completed in ~36 minutes total execution time — the most focused milestone yet
+- **TDD discipline:** Every phase started with failing tests, then implementation — zero regressions
+- **Clean phase ordering:** Independent phases (93, 94) followed by dependent phases (95→96) allowed natural progression
+- **Auto-fix pattern:** Type errors from making Midline3D fields optional were caught by typecheck and fixed in-task — no separate bug-fix phases needed
+- **Backward compatibility by default:** NaN-fill dual-dataset and None-returning legacy readers ensured no existing code broke
+
+### What Was Inefficient
+- **Tech debt items identified late:** INT-01/INT-02 (hardcoded n_points=15 in evaluation) were found by audit after all phases completed — could have been caught by reading downstream consumers during Phase 93 planning
+- **Audit identified doc inconsistency in config.py** that was already stale from Phase 93's change — the phase should have caught its own docstring
+
+### Patterns Established
+- Optional-field dataclass migration: make fields Optional with None defaults, add None guards at all access sites
+- NaN-fill dual-dataset HDF5 pattern: both representations always present, unused one NaN-filled
+- Backward-compat reader pattern: check dataset existence, return None for legacy files
+- Config toggle pattern: `spline_enabled` flows from config through constructor chain to algorithm branch
+
+### Key Lessons
+1. **Read downstream consumers when changing defaults** — changing n_sample_points default from 15 to 6 should have triggered a grep for hardcoded `15` across the entire codebase, not just the reconstruction module
+2. **Small, focused milestones execute cleanly** — 4 phases with clear dependencies and tight scope resulted in zero rework and fast execution
+3. **Audit before completion catches integration gaps** — INT-02 (evaluation hardcoded n_points) would have been a production issue without the milestone audit
+
+### Cost Observations
+- Model mix: ~70% sonnet (executors), ~20% opus (orchestrator), ~10% haiku (verifiers)
+- Sessions: 2 across 2 days
+- Notable: Most efficient per-phase execution — ~8 min average per plan, all plans zero-deviation
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -425,6 +521,9 @@
 | v3.4 | 1 day | 5 | Performance optimization; 8.2x speedup via batching + vectorization |
 | v3.5 | 2 days | 9 | Pseudo-labeling infrastructure; sample store; CLI cleanup |
 | v3.6 | 5 days | 8 | Model iteration loop; A/B curation comparison; code quality |
+| v3.7 | 2 days | 11 | Custom keypoint tracker; segmentation removal; pipeline reorder |
+| v3.8 | 2 days | 7 | Multi-keypoint association; singleton rate 27%→5.4% |
+| v3.9 | 2 days | 4 | Keypoint-native reconstruction; spline optional; dead code removal |
 
 ### Cumulative Quality
 
@@ -439,6 +538,9 @@
 | v3.4 | 22,754 source | ~840 | 0 |
 | v3.5 | 28,033 source | - | 4 |
 | v3.6 | 30,480 source | ~1142 | 3 |
+| v3.7 | 29,525 source | ~1159 | 0 |
+| v3.8 | 31,066 source | ~1200 | 0 |
+| v3.9 | 31,188 source | ~1208 | 0 |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -456,3 +558,7 @@
 12. Validate experimental features with A/B experiments before building infrastructure (v3.5)
 13. Human-in-the-loop phases need explicit artifact re-entry checklists — manual execution skips GSD workflow artifacts (v3.6)
 14. Quantify human curation value before committing to review workflows — A/B comparison justified CVAT review (v3.6)
+15. Don't build features for code you're about to delete — wasted effort on soon-to-be-removed modules (v3.7)
+16. Architectural improvements beat parameter tuning — richer signals outperform tweaked thresholds (v3.8)
+17. Read downstream consumers when changing defaults — grep for hardcoded values across the entire codebase (v3.9)
+18. Small focused milestones execute cleanly — tight scope with clear dependencies results in zero rework (v3.9)

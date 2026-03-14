@@ -129,19 +129,16 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - ✓ Fragment merging and refinement.py removed; cleaner association pipeline — v3.8
 - ✓ Parameter sweep confirms defaults optimal; 1,200 tests passing — v3.8
 
+- ✓ `n_sample_points` wired end-to-end from ReconstructionConfig through pipeline, default changed from 15 to 6 — v3.9
+- ✓ Dead scalar `_triangulate_body_point()` fallback (~170 lines) removed; DltBackend vectorized-only — v3.9
+- ✓ Raw-keypoint reconstruction as primary output via `spline_enabled` toggle; B-spline fitting optional — v3.9
+- ✓ HDF5 dual-dataset layout: both `points` and `control_points` always present, NaN-filled when unused — v3.9
+- ✓ Z-denoising CLI fixed for raw-keypoint mode with NaN-safe dual shift — v3.9
+- ✓ All reconstruction docstrings updated for keypoint-native variable-point-count output — v3.9
+
 ### Active
 
-## Current Milestone: v3.9 Reconstruction Modernization
-
-**Goal:** Make reconstruction keypoint-native — raw anatomical keypoints as primary output, spline as optional post-processing, clean up dead code and stale config plumbing.
-
-**Target features:**
-- Wire `n_sample_points` config through to ReconstructionStage (currently hardcoded to 15)
-- Raw 6-keypoint 3D output as primary reconstruction result (flexible keypoint count)
-- Move B-spline fitting from core reconstruction to optional post-processing utility
-- Remove dead scalar `_triangulate_body_point()` fallback (~135 lines)
-- Adapt z-denoising (centroid flatten + smooth) for keypoint-native arrays
-- Update stale docstrings and module documentation
+(No active requirements — next milestone not yet defined)
 
 ### Out of Scope
 
@@ -158,16 +155,16 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ## Context
 
-### Current State (v3.8 shipped)
+### Current State (v3.9 shipped)
 
-- **Codebase:** 29,525 LOC source across `src/aquapose/` (calibration, core/, engine/, io, evaluation, training, visualization)
+- **Codebase:** 31,188 LOC source across `src/aquapose/` (calibration, core/, engine/, io, evaluation, training, visualization)
 - **Architecture:** Event-driven 3-layer — Core Computation (5 stages) -> PosePipeline (orchestrator) -> Observers (3: console, timing, diagnostic). ChunkOrchestrator sits above PosePipeline managing chunk loop, identity stitching, and HDF5 output.
-- **Pipeline order:** Detection (YOLO-OBB) -> Pose Estimation (YOLO-pose, 6 keypoints) -> 2D Tracking (custom OKS keypoint tracker) -> Association (Leiden) -> Reconstruction (DLT triangulation + B-spline + z-denoising)
+- **Pipeline order:** Detection (YOLO-OBB) -> Pose Estimation (YOLO-pose, 6 keypoints) -> 2D Tracking (custom OKS keypoint tracker) -> Association (Leiden) -> Reconstruction (DLT triangulation + optional B-spline + z-denoising)
 - **Tracker:** Custom `KeypointTracker` with 24-dim KF (6 kpts x 2D pos+vel), OKS cost matrix, OCM direction consistency, ORU/OCR recovery, cubic spline gap interpolation, chunk handoff via serialized KF state. Configurable via `TrackingConfig` (base_r, lambda_ocm, max_gap_frames, match_cost_threshold, ocr_threshold, det_thresh, max_age).
 - **Chunk processing:** ChunkOrchestrator processes video in fixed-size temporal chunks (default 200 frames). ChunkHandoff carries tracker state + identity map across boundaries. Per-chunk HDF5 flush with global frame offsets.
 - **Performance:** 8.2x total pipeline speedup (914s -> 112s per chunk). Batched YOLO inference (detection 11.5x, pose 8.1x), background-thread frame prefetch, vectorized DLT reconstruction (7.0x), vectorized association scoring (3.8x). OOM retry with automatic batch halving.
 - **Tech stack:** Python 3.11, PyTorch, PyTorch3D, scikit-image, OpenCV, h5py, ultralytics (YOLO), Click (CLI), Plotly (3D viz), scipy (CubicSpline), leidenalg/igraph, hatch build system
-- **Reconstruction:** Single DLT backend -- vectorized confidence-weighted triangulation with outlier rejection (threshold=10.0), B-spline fitting (7 control points), z-denoising via centroid z-flattening + temporal Gaussian smoothing. Reads 6-keypoint poses and interpolates to 15-point midlines.
+- **Reconstruction:** Single DLT backend — vectorized confidence-weighted triangulation with outlier rejection (threshold=10.0). Primary output is raw N-keypoint Midline3D (default N=6, identity mapping from pose keypoints). B-spline fitting (7 control points) available as optional post-processing via `spline_enabled` toggle. Z-denoising via centroid z-flattening + temporal Gaussian smoothing operates on both raw and spline modes. HDF5 output includes both `points` and `control_points` datasets (NaN-filled when unused).
 - **Evaluation:** Per-chunk pickle caching (chunk_NNN/cache.pkl + manifest.json), five typed stage evaluators, `aquapose eval` (quality reports), `aquapose tune` (parameter sweeps with two-tier validation), `aquapose viz` (overlay, animation, trails from cached data)
 - **Pseudo-labeling:** Source A (consensus reprojection) + Source B (gap-fill) pseudo-labels with confidence scoring, elastic augmentation for curvature bias reduction
 - **Training infrastructure:** `aquapose train {obb, pose}` CLI subcommands; SQLite sample store with content-hash dedup, symlink-based assembly, model lineage tracking
@@ -297,4 +294,12 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Association gains are architectural not parametric | 27-combo sweep confirmed defaults already optimal | ✓ Good — robust to parameter choice |
 
 ---
-*Last updated: 2026-03-13 after v3.9 Reconstruction Modernization milestone started*
+| n_sample_points default 6 (not 15) | 6 keypoints = 6 body points identity mapping; no interpolation needed | ✓ Good — simpler, lossless |
+| Raw keypoints as primary reconstruction output | Spline fitting adds unnecessary processing for most use cases; raw keypoints preserve original triangulated positions | ✓ Good — spline_enabled=False default |
+| spline_enabled toggle (not removal) | B-spline still useful for smooth visualization; keep as optional | ✓ Good — backward compatible |
+| Dual-dataset HDF5 (points + control_points always present) | Both datasets always created, NaN-filled when unused; avoids conditional dataset existence checks | ✓ Good — forward/backward compatible |
+| NaN-safe dual z-shift | Both points and control_points shifted by dz; NaN + dz == NaN preserves unused dataset | ✓ Good — no branching needed |
+| Dead scalar triangulation removed (not deprecated) | _triangulate_body_point was dead code since vectorized path; no callers | ✓ Good — 170 lines removed |
+
+---
+*Last updated: 2026-03-14 after v3.9 Reconstruction Modernization milestone*

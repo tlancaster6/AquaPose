@@ -1,5 +1,29 @@
 # Milestones
 
+## v3.9 Reconstruction Modernization (Shipped: 2026-03-14)
+
+**Phases completed:** 4 phases (93-96), 5 plans, 10 tasks
+**Timeline:** 2 days (2026-03-13 → 2026-03-14)
+**Codebase:** 31,188 LOC source
+**Git range:** 20 commits, 28 files changed (+1,978 / -560)
+
+**Key accomplishments:**
+1. Wired `n_sample_points` config end-to-end from `ReconstructionConfig` through pipeline to `ReconstructionStage`, default changed from 15 to 6 for 6-keypoint identity mapping
+2. Deleted ~170 lines of dead scalar triangulation code (`_triangulate_body_point`, `_tri_rays`, constants) from DltBackend — now vectorized-only
+3. Split reconstruction into raw-keypoint (default) and spline-fitted paths via `spline_enabled` toggle — raw anatomical keypoints as primary output
+4. HDF5 writer dual-dataset layout: both `points` and `control_points` datasets always present, unused one NaN-filled for backward compatibility
+5. Fixed z-denoising CLI for raw-keypoint mode — NaN-safe dual shift of both `points` and `control_points` datasets
+6. Updated all reconstruction docstrings for keypoint-native, variable-point-count output (stage.py, Midline2D, Midline3D, temporal_smoothing)
+
+**Delivered:** Reconstruction modernized from fixed 15-point spline-only output to keypoint-native variable-point-count architecture. Raw 6-keypoint triangulated positions are the primary output; B-spline fitting is optional post-processing. Dead code removed, config plumbed, z-denoising adapted, documentation updated. All 10 requirements satisfied.
+
+**Known gaps (accepted as tech debt):**
+- INT-01: `Midline3DWriter.__init__` default `n_sample_points=15` should be 6 (orchestrator always passes correct value)
+- INT-02: `evaluation/runner.py:631` and `evaluation/tuning.py:162` hardcode `n_points=15` — raw-keypoint eval produces no per-point data
+- DOC: `PipelineConfig.n_sample_points` docstring says "Default is 15", actual is 6
+
+---
+
 ## v3.8 Improved Association (Shipped: 2026-03-13)
 
 **Phases completed:** 7 phases (87-92 including 91.1 inserted), 12 plans

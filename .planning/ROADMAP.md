@@ -252,7 +252,7 @@ Full details: `.planning/milestones/v3.9-ROADMAP.md`
 **Milestone Goal:** Run full 5-minute diagnostic pipeline and produce comprehensive, publication-ready performance and accuracy metrics.
 
 - [x] **Phase 97: Full Pipeline Run** - Execute 9,000-frame diagnostic run with production models
-- [ ] **Phase 98: Performance Metrics** - Extract per-stage timing breakdown and throughput
+- [x] **Phase 98: Performance Metrics** - Extract per-stage timing breakdown and throughput (completed 2026-03-15)
 - [x] **Phase 99: Reconstruction Quality Metrics** - Report reprojection error distributions and camera coverage (completed 2026-03-15)
 - [ ] **Phase 100: Tracking and Association Metrics** - Report fragmentation, identity consistency, singleton rate, and wall-time
 - [ ] **Phase 101: Results Document** - Compile all metrics into updated performance-accuracy.md
@@ -280,7 +280,7 @@ Plans:
   1. Per-stage wall-time reported for detection, pose, tracking, association, and reconstruction
   2. End-to-end throughput reported as frames/sec and total wall-time for the full 9,000-frame run
   3. Numbers are drawn from the actual Phase 97 run (not synthetic or estimated)
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
 - [ ] 98-01-PLAN.md — Parse timing data and record pipeline performance metrics
 
@@ -330,7 +330,7 @@ Plans:
 | 95. Spline Refactoring | v3.9 | 2/2 | Complete | 2026-03-13 |
 | 96. Z-Denoising and Documentation | v3.9 | 1/1 | Complete | 2026-03-13 |
 | 97. Full Pipeline Run | v3.10 | 1/1 | Complete | 2026-03-15 |
-| 98. Performance Metrics | v3.10 | 0/1 | Not started | - |
+| 98. Performance Metrics | 1/1 | Complete   | 2026-03-15 | - |
 | 99. Reconstruction Quality Metrics | v3.10 | 1/1 | Complete | 2026-03-15 |
 | 100. Tracking and Association Metrics | v3.10 | 0/1 | Not started | - |
 | 101. Results Document | v3.10 | 0/TBD | Not started | - |

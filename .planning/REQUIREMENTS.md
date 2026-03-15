@@ -10,8 +10,8 @@ Requirements for publication-ready metrics. Each maps to roadmap phases.
 ### Pipeline Run
 
 - [x] **RUN-01**: Full 5-minute diagnostic pipeline run (9,000 frames) completes with production models
-- [ ] **RUN-02**: Per-stage timing breakdown recorded (detection, pose, tracking, association, reconstruction)
-- [ ] **RUN-03**: End-to-end throughput measured (frames/sec, wall-time)
+- [x] **RUN-02**: Per-stage timing breakdown recorded (detection, pose, tracking, association, reconstruction)
+- [x] **RUN-03**: End-to-end throughput measured (frames/sec, wall-time)
 
 ### Reconstruction Quality
 
@@ -53,8 +53,8 @@ None — this is a metrics-only milestone.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | RUN-01 | Phase 97 | Complete |
-| RUN-02 | Phase 98 | Pending |
-| RUN-03 | Phase 98 | Pending |
+| RUN-02 | Phase 98 | Complete |
+| RUN-03 | Phase 98 | Complete |
 | RECON-01 | Phase 99 | Complete |
 | RECON-02 | Phase 99 | Complete |
 | RECON-03 | Phase 99 | Complete |

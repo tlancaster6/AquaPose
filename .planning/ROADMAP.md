@@ -16,7 +16,7 @@
 - ✅ **v3.7 Improved Tracking** — Phases 78-86 (shipped 2026-03-11)
 - ✅ **v3.8 Improved Association** — Phases 87-92 (shipped 2026-03-12)
 - ✅ **v3.9 Reconstruction Modernization** — Phases 93-96 (shipped 2026-03-14)
-- 🚧 **v3.10 Publication Metrics** — Phases 97-101 (in progress)
+- ✅ **v3.10 Publication Metrics** — Phases 97-101 (shipped 2026-03-15)
 
 ## Phases
 
@@ -247,7 +247,7 @@ Full details: `.planning/milestones/v3.9-ROADMAP.md`
 
 </details>
 
-### v3.10 Publication Metrics (In Progress)
+### v3.10 Publication Metrics (Complete)
 
 **Milestone Goal:** Run full 5-minute diagnostic pipeline and produce comprehensive, publication-ready performance and accuracy metrics.
 
@@ -255,7 +255,7 @@ Full details: `.planning/milestones/v3.9-ROADMAP.md`
 - [x] **Phase 98: Performance Metrics** - Extract per-stage timing breakdown and throughput (completed 2026-03-15)
 - [x] **Phase 99: Reconstruction Quality Metrics** - Report reprojection error distributions and camera coverage (completed 2026-03-15)
 - [x] **Phase 100: Tracking and Association Metrics** - Report fragmentation, identity consistency, singleton rate, and wall-time (completed 2026-03-15)
-- [ ] **Phase 101: Results Document** - Compile all metrics into updated performance-accuracy.md
+- [x] **Phase 101: Results Document** - Compile all metrics into updated performance-accuracy.md (completed 2026-03-15)
 
 ## Phase Details
 
@@ -282,7 +282,7 @@ Plans:
   3. Numbers are drawn from the actual Phase 97 run (not synthetic or estimated)
 **Plans:** 1/1 plans complete
 Plans:
-- [ ] 98-01-PLAN.md — Parse timing data and record pipeline performance metrics
+- [x] 98-01-PLAN.md — Parse timing data and record pipeline performance metrics
 
 ### Phase 99: Reconstruction Quality Metrics
 **Goal**: Reprojection error statistics and camera visibility statistics are measured and recorded from the full run
@@ -309,7 +309,7 @@ Plans:
   5. Association wall-time reported as seconds per chunk and total for full run
 **Plans:** 1/1 plans complete
 Plans:
-- [ ] 100-01-PLAN.md — Run eval and record tracking/association metrics from full run
+- [x] 100-01-PLAN.md — Run eval and record tracking/association metrics from full run
 
 ### Phase 101: Results Document
 **Goal**: A single performance-accuracy.md document contains all current full-run metrics with stale results replaced
@@ -320,9 +320,9 @@ Plans:
   2. All previously stale or placeholder metric values are replaced with Phase 97 measurements
   3. Supporting CSV files (if any) are present alongside the document
   4. Document clearly attributes all numbers to the Phase 97 run (date, run directory, model versions)
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
-- [ ] 101-01-PLAN.md — Finalize performance-accuracy.md and clear stale results
+- [x] 101-01-PLAN.md — Finalize performance-accuracy.md and clear stale results
 
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -335,4 +335,4 @@ Plans:
 | 98. Performance Metrics | 1/1 | Complete    | 2026-03-15 | - |
 | 99. Reconstruction Quality Metrics | v3.10 | 1/1 | Complete | 2026-03-15 |
 | 100. Tracking and Association Metrics | 1/1 | Complete    | 2026-03-15 | - |
-| 101. Results Document | v3.10 | 0/1 | Not started | - |
+| 101. Results Document | v3.10 | 1/1 | Complete | 2026-03-15 |

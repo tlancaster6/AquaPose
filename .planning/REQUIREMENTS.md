@@ -32,8 +32,8 @@ Requirements for publication-ready metrics. Each maps to roadmap phases.
 
 ### Results Document
 
-- [ ] **DOC-01**: performance-accuracy.md updated with all new full-run metrics and CSVs
-- [ ] **DOC-02**: Stale results section cleared (replaced by current measurements)
+- [x] **DOC-01**: performance-accuracy.md updated with all new full-run metrics and CSVs
+- [x] **DOC-02**: Stale results section cleared (replaced by current measurements)
 
 ## Future Requirements
 
@@ -63,8 +63,8 @@ None — this is a metrics-only milestone.
 | TRACK-03 | Phase 100 | Complete |
 | ASSOC-01 | Phase 100 | Complete |
 | ASSOC-02 | Phase 100 | Complete |
-| DOC-01 | Phase 101 | Pending |
-| DOC-02 | Phase 101 | Pending |
+| DOC-01 | Phase 101 | Complete |
+| DOC-02 | Phase 101 | Complete |
 
 **Coverage:**
 - v3.10 requirements: 13 total

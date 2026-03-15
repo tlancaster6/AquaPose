@@ -320,7 +320,9 @@ Plans:
   2. All previously stale or placeholder metric values are replaced with Phase 97 measurements
   3. Supporting CSV files (if any) are present alongside the document
   4. Document clearly attributes all numbers to the Phase 97 run (date, run directory, model versions)
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 101-01-PLAN.md — Finalize performance-accuracy.md and clear stale results
 
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -333,4 +335,4 @@ Plans:
 | 98. Performance Metrics | 1/1 | Complete    | 2026-03-15 | - |
 | 99. Reconstruction Quality Metrics | v3.10 | 1/1 | Complete | 2026-03-15 |
 | 100. Tracking and Association Metrics | 1/1 | Complete    | 2026-03-15 | - |
-| 101. Results Document | v3.10 | 0/TBD | Not started | - |
+| 101. Results Document | v3.10 | 0/1 | Not started | - |

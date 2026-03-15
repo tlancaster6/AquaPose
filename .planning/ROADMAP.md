@@ -327,6 +327,6 @@ Plans:
 | 96. Z-Denoising and Documentation | v3.9 | 1/1 | Complete | 2026-03-13 |
 | 97. Full Pipeline Run | 1/1 | Complete   | 2026-03-15 | 2026-03-15 |
 | 98. Performance Metrics | v3.10 | 0/TBD | Not started | - |
-| 99. Reconstruction Quality Metrics | 1/1 | Complete   | 2026-03-15 | - |
+| 99. Reconstruction Quality Metrics | 1/1 | Complete    | 2026-03-15 | - |
 | 100. Tracking and Association Metrics | v3.10 | 0/TBD | Not started | - |
 | 101. Results Document | v3.10 | 0/TBD | Not started | - |

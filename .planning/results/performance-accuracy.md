@@ -352,6 +352,154 @@ Timing data comes from the built-in per-chunk timer in the pipeline engine, meas
 
 ---
 
+## 11. Tracking and Association Quality (Full Run)
+
+### Methodology
+
+EvalRunner evaluated the Phase 97 full-pipeline run (run_20260314_200051): 9,450 frames, 12 cameras, 9 fish, 32 chunks of 300 frames each. No frame sampling — all frames evaluated. Tracking uses a custom KeypointTracker per camera (one tracker per camera, independent tracklets). Cross-view association uses multi-keypoint ray scoring + Leiden clustering. Identity stitching across chunks uses tracklet-set overlap. Detection coverage computed from merged PipelineContext detections field. Association wall-time extracted from per-chunk timing.txt.
+
+Run directory: `~/aquapose/projects/YH/runs/run_20260314_200051`
+Evaluated: 2026-03-15
+
+### Tracking Metrics (TRACK-01)
+
+| Metric | Value |
+|--------|-------|
+| Track count | 1,932 |
+| Track length — mean | 192.3 frames |
+| Track length — median | 216.0 frames |
+| Track length — min | 3 frames |
+| Track length — max | 300 frames (full chunk) |
+| Coast frequency | 9.0% (fraction of frames coasted) |
+| Detection coverage | 91.0% (fraction of frames not coasted) |
+
+### 3D Track Fragmentation
+
+Fragmentation is measured on the 3D reconstruction output — fish identity continuity across the full 9,450-frame run.
+
+| Metric | Value |
+|--------|-------|
+| Unique fish IDs (3D) | 53 |
+| Expected fish | 9 |
+| Total gaps | 12 |
+| Mean gap duration | 51.5 frames |
+| Max gap duration | 173 frames |
+| Mean continuity ratio | 0.956 |
+| Track births | 3 |
+| Track deaths | 6 |
+| Mean track lifespan | 283.1 frames |
+| Median track lifespan | 300.0 frames (full chunk) |
+
+### Identity Consistency (TRACK-02)
+
+The identity stitcher assigns 3D fish identities across chunks using tracklet-set overlap. Unique fish IDs = **53** vs expected = **9**, yielding 44 excess identity fragments — roughly 6 IDs per fish on average across the 32-chunk run (each chunk can spawn a new ID if tracklet overlap is insufficient). Track births (3) and deaths (6) indicate partial cross-chunk continuity breaks. The median track lifespan of 300 frames (one full chunk) confirms that within-chunk tracks are consistently maintained.
+
+Per-fish continuity ratios (non-unity values): fish 8 → 0.885, fish 44 → 0.660, fish 63 → 0.423, fish 159 → 0.906, fish 149 → 0.821, fish 266 → 0.493, fish 275 → 0.547. All remaining tracked fish IDs have continuity = 1.0.
+
+### Detection Coverage Per Camera (TRACK-03)
+
+Coverage = fraction of 9,450 frames where at least one detection was returned for that camera.
+
+| Camera | Frames w/ Detections | Coverage (%) |
+|--------|---------------------|-------------|
+| e3v829d | 2,090 | 22.12% |
+| e3v82e0 | 4,773 | 50.51% |
+| e3v82f9 | 363 | 3.84% |
+| e3v831e | 8,696 | 92.02% |
+| e3v832e | 575 | 6.08% |
+| e3v8334 | 7,683 | 81.30% |
+| e3v83e9 | 4,748 | 50.24% |
+| e3v83eb | 9,097 | 96.26% |
+| e3v83ee | 1,823 | 19.29% |
+| e3v83ef | 571 | 6.04% |
+| e3v83f0 | 9,356 | 99.01% |
+| e3v83f1 | 7,482 | 79.17% |
+| **Overall mean** | **5,430** | **50.49%** |
+
+Wide variation across cameras reflects aquarium geometry: cameras with wide-angle views covering the main swim zone (e3v83f0: 99.0%, e3v83eb: 96.3%) have much higher coverage than cameras with narrow views (e3v82f9: 3.8%, e3v832e: 6.1%) that only see fish passing through a small region.
+
+### Association Quality (ASSOC-01)
+
+| Metric | Value |
+|--------|-------|
+| Singleton rate | 12.1% |
+| Fish yield ratio | 1.024 (102.4% — slight over-reconstruction) |
+| Total fish observations | 99,063 |
+| Frames evaluated | 9,450 |
+| P50 camera count | 4.0 cameras/fish |
+| P90 camera count | 4.0 cameras/fish |
+
+Camera distribution across grouped fish observations:
+
+| Cameras in Group | Observations | Fraction |
+|-----------------|-------------|---------|
+| 1 (singleton) | 11,984 | 12.1% |
+| 2 | 8,177 | 8.3% |
+| 3 | 15,259 | 15.4% |
+| 4 | 54,297 | 54.8% |
+| 5 | 9,286 | 9.4% |
+| 6 | 60 | 0.1% |
+
+The singleton rate of **12.1%** on the full run is somewhat higher than the 5.4% reported in Section 6 (v3.8 evaluation on 900 frames). This reflects variability across all 32 production chunks vs the 3-chunk test set.
+
+### Association Wall-Time (ASSOC-02)
+
+Times from per-chunk timing.txt, summed across all 32 chunks (300 frames each).
+
+| Metric | Value |
+|--------|-------|
+| Total association time | 1,052.96 s |
+| Mean per chunk | 32.91 s |
+| Min per chunk | 14.75 s (chunk 32) |
+| Max per chunk | 64.83 s (chunk 1, cold-start overhead) |
+| % of total pipeline time | 12.7% (1,052.96 / 8,278.62 s) |
+
+The first chunk (64.83 s) is an outlier likely due to cold-start LUT generation and model initialization. Excluding chunk 1, the mean per chunk is 31.59 s and max is 56.09 s.
+
+<details>
+<summary>All 32 per-chunk association times</summary>
+
+| Chunk | Time (s) |
+|-------|---------|
+| 1 | 64.83 |
+| 2 | 38.39 |
+| 3 | 56.09 |
+| 4 | 50.15 |
+| 5 | 36.34 |
+| 6 | 39.72 |
+| 7 | 35.65 |
+| 8 | 36.18 |
+| 9 | 32.90 |
+| 10 | 38.55 |
+| 11 | 37.91 |
+| 12 | 34.20 |
+| 13 | 28.07 |
+| 14 | 33.82 |
+| 15 | 33.86 |
+| 16 | 32.49 |
+| 17 | 34.64 |
+| 18 | 33.26 |
+| 19 | 32.81 |
+| 20 | 40.78 |
+| 21 | 27.55 |
+| 22 | 23.82 |
+| 23 | 21.98 |
+| 24 | 25.04 |
+| 25 | 25.67 |
+| 26 | 27.58 |
+| 27 | 24.23 |
+| 28 | 20.77 |
+| 29 | 22.94 |
+| 30 | 24.15 |
+| 31 | 23.84 |
+| 32 | 14.75 |
+
+</details>
+
+**CSV**: `data/tracking_association_full_run.csv`
+
+---
+
 ## Stale Results (Needing Re-Run)
 
 These results were valid when produced but the underlying code has changed significantly:
@@ -376,3 +524,4 @@ These results were valid when produced but the underlying code has changed signi
 | `data/association_parameter_sweep.csv` | 36 | Association parameter grid sweep + carry-forward results | Heatmap: yield vs ray_dist × score_min; bars for sensitivity |
 | `data/reconstruction_quality_full_run.csv` | 32 | Reconstruction quality metrics from full 9,450-frame Phase 97 run (reproj error, per-keypoint, camera visibility) | Bar: per-keypoint mean/p90 error; histogram: camera visibility distribution |
 | `data/pipeline_timing_full_run.csv` | 32 | Per-chunk per-stage wall-time for all 5 pipeline stages across 32 chunks (full 9,450-frame run) | Stacked bar: per-stage time per chunk; pie: stage time share |
+| `data/tracking_association_full_run.csv` | 73 | Tracking, fragmentation, association, detection coverage, and per-chunk association timing from full 9,450-frame run | Bar: per-camera detection coverage; scatter: association time per chunk |

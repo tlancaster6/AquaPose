@@ -352,6 +352,8 @@ def format_eval_report(result: EvalRunnerResult) -> str:
             lines.append(_row("p90_reprojection_error", r.p90_reprojection_error))
         if r.p95_reprojection_error is not None:
             lines.append(_row("p95_reprojection_error", r.p95_reprojection_error))
+        if r.p99_reprojection_error is not None:
+            lines.append(_row("p99_reprojection_error", r.p99_reprojection_error))
         lines.append(_row("fish_reconstructed", r.fish_reconstructed))
         lines.append(_row("fish_available", r.fish_available))
         lines.append(_row("inlier_ratio", r.inlier_ratio))
@@ -362,6 +364,40 @@ def format_eval_report(result: EvalRunnerResult) -> str:
                 f"    {cam_id:<{_W_METRIC - 2}}"
                 f" mean={stats['mean_px']:.2f} max={stats['max_px']:.2f}"
             )
+        if r.camera_visibility is not None:
+            cv = r.camera_visibility
+            lines.append("")
+            lines.append("  Camera Visibility (cameras per fish)")
+            lines.append("  " + "-" * 40)
+            lines.append(
+                _row(
+                    "mean_cameras_per_fish",
+                    float(cv["mean"]),
+                )
+            )
+            lines.append(
+                _row(
+                    "median_cameras_per_fish",
+                    float(cv["median"]),
+                )
+            )
+            lines.append(
+                _row(
+                    "min_cameras_per_fish",
+                    int(cv["min"]),
+                )
+            )
+            lines.append(
+                _row(
+                    "max_cameras_per_fish",
+                    int(cv["max"]),
+                )
+            )
+            dist = cv.get("distribution")
+            if isinstance(dist, dict):
+                lines.append("  camera_visibility_distribution:")
+                for n_cams, count in sorted(dist.items()):
+                    lines.append(f"    {n_cams} camera(s):{count:>{_W_VALUE}}")
         if r.per_point_error is not None:
             lines.append("")
             lines.append("  Per-Keypoint Reprojection Error")

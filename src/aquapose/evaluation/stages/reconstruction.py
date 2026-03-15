@@ -55,6 +55,8 @@ class ReconstructionMetrics:
     p50_reprojection_error: float | None = None
     p90_reprojection_error: float | None = None
     p95_reprojection_error: float | None = None
+    p99_reprojection_error: float | None = None
+    camera_visibility: dict[str, float | int] | None = None
     per_point_error: dict[int, dict[str, float]] | None = None
     curvature_stratified: dict[str, dict[str, float | int | str]] | None = None
 
@@ -96,6 +98,10 @@ class ReconstructionMetrics:
             "p95_reprojection_error": float(self.p95_reprojection_error)
             if self.p95_reprojection_error is not None
             else None,
+            "p99_reprojection_error": float(self.p99_reprojection_error)
+            if self.p99_reprojection_error is not None
+            else None,
+            "camera_visibility": self.camera_visibility,
             "per_point_error": {
                 str(k): {sk: float(sv) for sk, sv in v.items()}
                 for k, v in self.per_point_error.items()
@@ -170,14 +176,37 @@ def evaluate_reconstruction(
         for midline3d in midline_dict.values()
     ]
     if len(all_residuals) > 0:
-        pcts = np.percentile(all_residuals, [50, 90, 95])
+        pcts = np.percentile(all_residuals, [50, 90, 95, 99])
         p50_err: float | None = float(pcts[0])
         p90_err: float | None = float(pcts[1])
         p95_err: float | None = float(pcts[2])
+        p99_err: float | None = float(pcts[3])
     else:
         p50_err = None
         p90_err = None
         p95_err = None
+        p99_err = None
+
+    # Compute camera visibility statistics from n_cameras on each Midline3D
+    all_n_cameras = [
+        midline3d.n_cameras
+        for _frame_idx, midline_dict in frame_results
+        for midline3d in midline_dict.values()
+    ]
+    camera_visibility: dict[str, float | int] | None = None
+    if all_n_cameras:
+        cam_arr = np.array(all_n_cameras, dtype=np.int32)
+        distribution: dict[int, int] = {}
+        for val in cam_arr:
+            key = int(val)
+            distribution[key] = distribution.get(key, 0) + 1
+        camera_visibility = {
+            "mean": float(np.mean(cam_arr)),
+            "median": float(np.median(cam_arr)),
+            "min": int(np.min(cam_arr)),
+            "max": int(np.max(cam_arr)),
+            "distribution": distribution,
+        }
 
     return ReconstructionMetrics(
         mean_reprojection_error=tier1.overall_mean_px,
@@ -192,6 +221,8 @@ def evaluate_reconstruction(
         p50_reprojection_error=p50_err,
         p90_reprojection_error=p90_err,
         p95_reprojection_error=p95_err,
+        p99_reprojection_error=p99_err,
+        camera_visibility=camera_visibility,
         per_point_error=per_point_error,
         curvature_stratified=curvature_stratified,
     )
@@ -244,7 +275,7 @@ class ZDenoisingMetrics:
 
 def compute_z_denoising_metrics(
     frame_results: list[tuple[int, dict[int, Midline3D]]],
-    n_sample_points: int = 15,
+    n_sample_points: int = 6,
     *,
     residual_delta_px: float | None = None,
 ) -> ZDenoisingMetrics:
@@ -347,7 +378,7 @@ def compute_per_point_error(
     frame_results: list[tuple[int, dict[int, Midline3D]]],
     midline_sets_by_frame: dict[int, MidlineSet],
     projection_models: dict[str, Any],
-    n_body_points: int = 15,
+    n_body_points: int = 6,
 ) -> dict[int, dict[str, float]] | None:
     """Compute per-keypoint reprojection error from 3D spline reprojection.
 

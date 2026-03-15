@@ -1,6 +1,6 @@
 # AquaPose Performance & Accuracy Results
 
-All results below are validated as current against the v3.9 codebase (2026-03-14). Results that have become stale due to code changes are listed in the [Stale Results](#stale-results-needing-re-run) section.
+All results below are validated as current against the v3.10 codebase (2026-03-15). All full-run metrics (Sections 9-11) are from the Phase 97 production run (run_20260314_200051): 9,450 frames, 12 cameras, 9 fish.
 
 ---
 
@@ -502,11 +502,7 @@ The first chunk (64.83 s) is an outlier likely due to cold-start LUT generation 
 
 ## Stale Results (Needing Re-Run)
 
-These results were valid when produced but the underlying code has changed significantly:
-
-| Result | Version | Why Stale | Worth Re-Running? |
-|--------|---------|-----------|-------------------|
-| Tracker benchmark (27 tracks, 95% coverage) | v3.7 | Production detection/pose models were retrained after this evaluation | Yes — re-run `scripts/evaluate_custom_tracker.py` with current models |
+All results in this document are current as of v3.10 (2026-03-15). No stale entries.
 
 ---
 

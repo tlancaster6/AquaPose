@@ -330,7 +330,7 @@ Plans:
 | 95. Spline Refactoring | v3.9 | 2/2 | Complete | 2026-03-13 |
 | 96. Z-Denoising and Documentation | v3.9 | 1/1 | Complete | 2026-03-13 |
 | 97. Full Pipeline Run | v3.10 | 1/1 | Complete | 2026-03-15 |
-| 98. Performance Metrics | 1/1 | Complete   | 2026-03-15 | - |
+| 98. Performance Metrics | 1/1 | Complete    | 2026-03-15 | - |
 | 99. Reconstruction Quality Metrics | v3.10 | 1/1 | Complete | 2026-03-15 |
 | 100. Tracking and Association Metrics | v3.10 | 0/1 | Not started | - |
 | 101. Results Document | v3.10 | 0/TBD | Not started | - |

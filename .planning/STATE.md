@@ -47,8 +47,14 @@ Full decision log in PROJECT.md Key Decisions table.
 
 None.
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 27 | Implement post-Leiden disjoint-camera merge pass in association clustering to fix fish splitting | 2026-03-15 | e2d70c9 | [27-implement-post-leiden-disjoint-camera-me](./quick/27-implement-post-leiden-disjoint-camera-me/) |
+
 ## Session Continuity
 
-Last session: 2026-03-15
+Last activity: 2026-03-15 - Completed quick task 27: Implement post-Leiden disjoint-camera merge pass in association clustering to fix fish splitting
 Stopped at: v3.10 milestone completed and archived
 Resume file: None

@@ -247,7 +247,7 @@ Full details: `.planning/milestones/v3.9-ROADMAP.md`
 
 </details>
 
-### 🚧 v3.10 Publication Metrics (In Progress)
+### v3.10 Publication Metrics (In Progress)
 
 **Milestone Goal:** Run full 5-minute diagnostic pipeline and produce comprehensive, publication-ready performance and accuracy metrics.
 
@@ -280,7 +280,9 @@ Plans:
   1. Per-stage wall-time reported for detection, pose, tracking, association, and reconstruction
   2. End-to-end throughput reported as frames/sec and total wall-time for the full 9,000-frame run
   3. Numbers are drawn from the actual Phase 97 run (not synthetic or estimated)
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 98-01-PLAN.md — Parse timing data and record pipeline performance metrics
 
 ### Phase 99: Reconstruction Quality Metrics
 **Goal**: Reprojection error statistics and camera visibility statistics are measured and recorded from the full run
@@ -293,7 +295,7 @@ Plans:
   4. Metrics derived from `aquapose eval` output on Phase 97 run caches
 **Plans:** 1/1 plans complete
 Plans:
-- [ ] 99-01-PLAN.md — Add p99/camera visibility stats and run full evaluation
+- [x] 99-01-PLAN.md — Add p99/camera visibility stats and run full evaluation
 
 ### Phase 100: Tracking and Association Metrics
 **Goal**: Track fragmentation, identity consistency, detection coverage, singleton rate, and association wall-time are all measured from the full run
@@ -325,8 +327,8 @@ Plans:
 | 94. Dead Code Removal | v3.9 | 1/1 | Complete | 2026-03-13 |
 | 95. Spline Refactoring | v3.9 | 2/2 | Complete | 2026-03-13 |
 | 96. Z-Denoising and Documentation | v3.9 | 1/1 | Complete | 2026-03-13 |
-| 97. Full Pipeline Run | 1/1 | Complete   | 2026-03-15 | 2026-03-15 |
-| 98. Performance Metrics | v3.10 | 0/TBD | Not started | - |
-| 99. Reconstruction Quality Metrics | 1/1 | Complete    | 2026-03-15 | - |
+| 97. Full Pipeline Run | v3.10 | 1/1 | Complete | 2026-03-15 |
+| 98. Performance Metrics | v3.10 | 0/1 | Not started | - |
+| 99. Reconstruction Quality Metrics | v3.10 | 1/1 | Complete | 2026-03-15 |
 | 100. Tracking and Association Metrics | v3.10 | 0/TBD | Not started | - |
 | 101. Results Document | v3.10 | 0/TBD | Not started | - |

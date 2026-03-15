@@ -86,6 +86,115 @@ def build_must_not_link(
 
 
 # ---------------------------------------------------------------------------
+# Disjoint-camera merge pass (post-Leiden)
+# ---------------------------------------------------------------------------
+
+
+def _merge_disjoint_clusters(
+    clusters: dict[int, list[int]],
+    sub_key_list: list[TrackletKey],
+    scores: dict[tuple[TrackletKey, TrackletKey], float],
+    must_not_link: set[frozenset[TrackletKey]],
+    config: ClusteringConfigLike,
+) -> dict[int, list[int]]:
+    """Merge Leiden sub-clusters whose camera sets are fully disjoint.
+
+    After Leiden partitioning, a single fish visible in many cameras can be
+    split into two communities because the cameras form spatial sub-clusters
+    with dense internal edges and weaker (but still above threshold)
+    cross-cluster edges.  This pass iteratively merges any pair of clusters
+    that satisfy all three conditions:
+
+    1. Camera sets are fully disjoint (no shared camera between the two clusters).
+    2. The merge would not introduce a must-not-link violation.
+    3. The mean cross-cluster affinity score is >= ``config.score_min``.
+
+    Args:
+        clusters: Mutable mapping from cluster ID to list of subgraph node indices.
+            Modified in-place and returned.
+        sub_key_list: Ordered list of ``TrackletKey`` for the subgraph nodes,
+            so ``sub_key_list[node_idx]`` gives the tracklet key.
+        scores: Pairwise affinity scores keyed by ``(key_a, key_b)``.
+        must_not_link: Set of frozen tracklet-key pairs that must not be
+            placed in the same cluster.
+        config: Clustering configuration; ``score_min`` is the merge threshold.
+
+    Returns:
+        The (potentially modified) ``clusters`` dict with merged entries.
+    """
+    converged = False
+    merge_count = 0
+
+    while not converged:
+        converged = True
+        cluster_ids = sorted(clusters.keys())
+
+        for idx_a in range(len(cluster_ids)):
+            for idx_b in range(idx_a + 1, len(cluster_ids)):
+                cid_a = cluster_ids[idx_a]
+                cid_b = cluster_ids[idx_b]
+
+                if cid_a not in clusters or cid_b not in clusters:
+                    # One was already merged away in a previous inner iteration
+                    continue
+
+                members_a = clusters[cid_a]
+                members_b = clusters[cid_b]
+
+                keys_a = [sub_key_list[m] for m in members_a]
+                keys_b = [sub_key_list[m] for m in members_b]
+
+                cam_a = {k[0] for k in keys_a}
+                cam_b = {k[0] for k in keys_b}
+
+                # Condition 1: camera sets must be disjoint
+                if cam_a & cam_b:
+                    continue
+
+                # Condition 2: no must-not-link violation
+                mnl_violation = False
+                for ki in keys_a:
+                    for kj in keys_b:
+                        if frozenset({ki, kj}) in must_not_link:
+                            mnl_violation = True
+                            break
+                    if mnl_violation:
+                        break
+                if mnl_violation:
+                    continue
+
+                # Condition 3: mean cross-cluster score >= score_min
+                total = 0.0
+                count = 0
+                for ki in keys_a:
+                    for kj in keys_b:
+                        s = scores.get((ki, kj), 0.0) + scores.get((kj, ki), 0.0)
+                        if s > 0:
+                            total += s
+                            count += 1
+                if count == 0:
+                    continue
+                mean_score = total / count
+                if mean_score < config.score_min:
+                    continue
+
+                # Merge cluster B into cluster A
+                clusters[cid_a] = members_a + members_b
+                del clusters[cid_b]
+                merge_count += 1
+                converged = False
+                break  # Restart outer loop with updated cluster list
+
+            if not converged:
+                break  # Break outer loop too, so we restart from scratch
+
+    if merge_count > 0:
+        logger.debug("Disjoint-camera merge: performed %d merge(s)", merge_count)
+
+    return clusters
+
+
+# ---------------------------------------------------------------------------
 # Leiden clustering (SPECSEED Steps 2-3)
 # ---------------------------------------------------------------------------
 
@@ -176,6 +285,11 @@ def cluster_tracklets(
         clusters: dict[int, list[int]] = {}
         for node_idx, cluster_id in enumerate(partition.membership):
             clusters.setdefault(cluster_id, []).append(node_idx)
+
+        # Post-Leiden disjoint-camera merge pass
+        clusters = _merge_disjoint_clusters(
+            clusters, sub_key_list, scores, must_not_link, config
+        )
 
         # Must-not-link enforcement
         for _cluster_id, members in list(clusters.items()):

@@ -12,6 +12,7 @@ from aquapose.core.tracking.types import Tracklet2D
 leidenalg = pytest.importorskip("leidenalg")
 
 from aquapose.core.association.clustering import (  # noqa: E402
+    _merge_disjoint_clusters,
     build_must_not_link,
     cluster_tracklets,
 )
@@ -226,6 +227,201 @@ class TestClusterTracklets:
 
         assert any("cluster count" in msg.lower() for msg in caplog.messages)
         assert len(groups) != 5
+
+
+# ---------------------------------------------------------------------------
+# Disjoint-camera merge tests
+# ---------------------------------------------------------------------------
+
+
+class TestDisjointCameraMerge:
+    """Tests for _merge_disjoint_clusters and integration into cluster_tracklets."""
+
+    def _make_scores(
+        self,
+        pairs: list[tuple[TrackletKey, TrackletKey, float]],
+    ) -> dict[tuple[TrackletKey, TrackletKey], float]:
+        """Build a scores dict from (key_a, key_b, score) triples."""
+        return {(ka, kb): s for ka, kb, s in pairs}
+
+    def test_disjoint_camera_merge_basic(self) -> None:
+        """Two clusters with disjoint cameras and good cross-score merge into one."""
+        # Cluster 0: nodes 0,1,2  (cam_a, cam_b, cam_c)
+        # Cluster 1: nodes 3,4,5  (cam_d, cam_e, cam_f)
+        sub_key_list: list[TrackletKey] = [
+            ("cam_a", 1),
+            ("cam_b", 1),
+            ("cam_c", 1),
+            ("cam_d", 1),
+            ("cam_e", 1),
+            ("cam_f", 1),
+        ]
+        clusters = {0: [0, 1, 2], 1: [3, 4, 5]}
+
+        # Build cross-cluster scores >= score_min
+        scores: dict[tuple[TrackletKey, TrackletKey], float] = {}
+        for i in range(3):
+            for j in range(3, 6):
+                ka = sub_key_list[i]
+                kb = sub_key_list[j]
+                scores[(ka, kb)] = 0.5
+
+        must_not_link: set[frozenset[TrackletKey]] = set()
+        config = MockClusteringConfig(score_min=0.3)
+
+        result = _merge_disjoint_clusters(
+            clusters, sub_key_list, scores, must_not_link, config
+        )
+
+        assert len(result) == 1
+        merged = next(iter(result.values()))
+        assert set(merged) == {0, 1, 2, 3, 4, 5}
+
+    def test_disjoint_camera_merge_blocked_by_overlap(self) -> None:
+        """Two clusters sharing a camera are NOT merged."""
+        # Both clusters have cam_a -> not disjoint
+        sub_key_list: list[TrackletKey] = [
+            ("cam_a", 1),
+            ("cam_b", 1),
+            ("cam_a", 2),
+            ("cam_c", 1),
+        ]
+        clusters = {0: [0, 1], 1: [2, 3]}
+
+        scores: dict[tuple[TrackletKey, TrackletKey], float] = {
+            (("cam_a", 1), ("cam_a", 2)): 0.8,
+            (("cam_a", 1), ("cam_c", 1)): 0.8,
+            (("cam_b", 1), ("cam_a", 2)): 0.8,
+            (("cam_b", 1), ("cam_c", 1)): 0.8,
+        }
+
+        must_not_link: set[frozenset[TrackletKey]] = set()
+        config = MockClusteringConfig(score_min=0.3)
+
+        result = _merge_disjoint_clusters(
+            clusters, sub_key_list, scores, must_not_link, config
+        )
+
+        # Should remain 2 clusters — cam_a appears in both
+        assert len(result) == 2
+
+    def test_disjoint_camera_merge_blocked_by_low_score(self) -> None:
+        """Disjoint cameras but mean cross-score < score_min prevents merge."""
+        sub_key_list: list[TrackletKey] = [
+            ("cam_a", 1),
+            ("cam_b", 1),
+            ("cam_c", 1),
+            ("cam_d", 1),
+        ]
+        clusters = {0: [0, 1], 1: [2, 3]}
+
+        # Cross-cluster scores below score_min
+        scores: dict[tuple[TrackletKey, TrackletKey], float] = {
+            (("cam_a", 1), ("cam_c", 1)): 0.1,
+            (("cam_a", 1), ("cam_d", 1)): 0.1,
+            (("cam_b", 1), ("cam_c", 1)): 0.1,
+            (("cam_b", 1), ("cam_d", 1)): 0.1,
+        }
+
+        must_not_link: set[frozenset[TrackletKey]] = set()
+        config = MockClusteringConfig(score_min=0.3)
+
+        result = _merge_disjoint_clusters(
+            clusters, sub_key_list, scores, must_not_link, config
+        )
+
+        assert len(result) == 2
+
+    def test_disjoint_camera_merge_blocked_by_mnl(self) -> None:
+        """Disjoint cameras and good cross-score, but MNL violation blocks merge."""
+        sub_key_list: list[TrackletKey] = [
+            ("cam_a", 1),
+            ("cam_b", 1),
+            ("cam_c", 1),
+            ("cam_d", 1),
+        ]
+        clusters = {0: [0, 1], 1: [2, 3]}
+
+        scores: dict[tuple[TrackletKey, TrackletKey], float] = {
+            (("cam_a", 1), ("cam_c", 1)): 0.8,
+            (("cam_a", 1), ("cam_d", 1)): 0.8,
+            (("cam_b", 1), ("cam_c", 1)): 0.8,
+            (("cam_b", 1), ("cam_d", 1)): 0.8,
+        }
+
+        # MNL constraint between cam_a-1 and cam_c-1
+        must_not_link = {frozenset({("cam_a", 1), ("cam_c", 1)})}
+        config = MockClusteringConfig(score_min=0.3)
+
+        result = _merge_disjoint_clusters(
+            clusters, sub_key_list, scores, must_not_link, config
+        )
+
+        # Should remain 2 clusters due to MNL
+        assert len(result) == 2
+
+    def test_disjoint_camera_merge_iterative(self) -> None:
+        """Three pairwise-disjoint clusters with good cross-scores all merge to 1."""
+        sub_key_list: list[TrackletKey] = [
+            ("cam_a", 1),
+            ("cam_b", 1),
+            ("cam_c", 1),
+        ]
+        clusters = {0: [0], 1: [1], 2: [2]}
+
+        scores: dict[tuple[TrackletKey, TrackletKey], float] = {
+            (("cam_a", 1), ("cam_b", 1)): 0.7,
+            (("cam_a", 1), ("cam_c", 1)): 0.6,
+            (("cam_b", 1), ("cam_c", 1)): 0.8,
+        }
+
+        must_not_link: set[frozenset[TrackletKey]] = set()
+        config = MockClusteringConfig(score_min=0.3)
+
+        result = _merge_disjoint_clusters(
+            clusters, sub_key_list, scores, must_not_link, config
+        )
+
+        assert len(result) == 1
+        merged = next(iter(result.values()))
+        assert set(merged) == {0, 1, 2}
+
+    def test_disjoint_camera_merge_integration_via_cluster_tracklets(self) -> None:
+        """cluster_tracklets merges Leiden-split disjoint-camera sub-clusters."""
+        # 6 cameras, 1 tracklet each
+        cams = ["cam_a", "cam_b", "cam_c", "cam_d", "cam_e", "cam_f"]
+        tracklets = [_make_tracklet(cam, 1, tuple(range(20))) for cam in cams]
+        tracks_2d = {cam: [t] for cam, t in zip(cams, tracklets, strict=True)}
+
+        keys: list[TrackletKey] = [(cam, 1) for cam in cams]
+
+        # Intra-subclique: first 3 cameras pairwise 0.9, last 3 cameras pairwise 0.9
+        # Cross-subclique: 0.4 (above score_min=0.3)
+        scores: dict[tuple[TrackletKey, TrackletKey], float] = {}
+        for i in range(3):
+            for j in range(i + 1, 3):
+                scores[(keys[i], keys[j])] = 0.9
+        for i in range(3, 6):
+            for j in range(i + 1, 6):
+                scores[(keys[i], keys[j])] = 0.9
+        for i in range(3):
+            for j in range(3, 6):
+                scores[(keys[i], keys[j])] = 0.4
+
+        must_not_link: set[frozenset[TrackletKey]] = set()
+        # High resolution to encourage over-partitioning
+        config = MockClusteringConfig(
+            score_min=0.3, expected_fish_count=1, leiden_resolution=5.0
+        )
+
+        groups = cluster_tracklets(scores, tracks_2d, must_not_link, config)
+
+        # All tracklets should end up in a single group
+        multi_groups = [g for g in groups if len(g.tracklets) > 1]
+        assert len(multi_groups) == 1
+        assert len(multi_groups[0].tracklets) == 6
+        result_cams = {t.camera_id for t in multi_groups[0].tracklets}
+        assert result_cams == set(cams)
 
 
 # ---------------------------------------------------------------------------

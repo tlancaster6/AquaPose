@@ -1,0 +1,74 @@
+metric,value,unit,source
+track_count,1932,count,eval_results.json stages.tracking
+length_mean,192.33,frames,eval_results.json stages.tracking
+length_median,216.0,frames,eval_results.json stages.tracking
+length_min,3,frames,eval_results.json stages.tracking
+length_max,300,frames,eval_results.json stages.tracking
+coast_frequency,0.0901,fraction,eval_results.json stages.tracking
+detection_coverage,0.9099,fraction,eval_results.json stages.tracking
+total_gaps,12,count,eval_results.json stages.fragmentation
+mean_gap_duration,51.5,frames,eval_results.json stages.fragmentation
+max_gap_duration,173,frames,eval_results.json stages.fragmentation
+mean_continuity_ratio,0.9564,fraction,eval_results.json stages.fragmentation
+unique_fish_ids,53,count,eval_results.json stages.fragmentation
+expected_fish,9,count,eval_results.json stages.fragmentation
+track_births,3,count,eval_results.json stages.fragmentation
+track_deaths,6,count,eval_results.json stages.fragmentation
+mean_track_lifespan,283.06,frames,eval_results.json stages.fragmentation
+median_track_lifespan,300.0,frames,eval_results.json stages.fragmentation
+singleton_rate,0.1210,fraction,eval_results.json stages.association
+fish_yield_ratio,1.0239,fraction,eval_results.json stages.association
+total_fish_observations,99063,count,eval_results.json stages.association
+frames_evaluated,9450,count,eval_results.json stages.association
+p50_camera_count,4.0,cameras,eval_results.json stages.association
+p90_camera_count,4.0,cameras,eval_results.json stages.association
+detection_coverage_e3v829d,22.12,percent,tmp_coverage.py (ctx.detections)
+detection_coverage_e3v82e0,50.51,percent,tmp_coverage.py (ctx.detections)
+detection_coverage_e3v82f9,3.84,percent,tmp_coverage.py (ctx.detections)
+detection_coverage_e3v831e,92.02,percent,tmp_coverage.py (ctx.detections)
+detection_coverage_e3v832e,6.08,percent,tmp_coverage.py (ctx.detections)
+detection_coverage_e3v8334,81.30,percent,tmp_coverage.py (ctx.detections)
+detection_coverage_e3v83e9,50.24,percent,tmp_coverage.py (ctx.detections)
+detection_coverage_e3v83eb,96.26,percent,tmp_coverage.py (ctx.detections)
+detection_coverage_e3v83ee,19.29,percent,tmp_coverage.py (ctx.detections)
+detection_coverage_e3v83ef,6.04,percent,tmp_coverage.py (ctx.detections)
+detection_coverage_e3v83f0,99.01,percent,tmp_coverage.py (ctx.detections)
+detection_coverage_e3v83f1,79.17,percent,tmp_coverage.py (ctx.detections)
+assoc_time_chunk_01,64.83,seconds,timing.txt AssociationStage
+assoc_time_chunk_02,38.39,seconds,timing.txt AssociationStage
+assoc_time_chunk_03,56.09,seconds,timing.txt AssociationStage
+assoc_time_chunk_04,50.15,seconds,timing.txt AssociationStage
+assoc_time_chunk_05,36.34,seconds,timing.txt AssociationStage
+assoc_time_chunk_06,39.72,seconds,timing.txt AssociationStage
+assoc_time_chunk_07,35.65,seconds,timing.txt AssociationStage
+assoc_time_chunk_08,36.18,seconds,timing.txt AssociationStage
+assoc_time_chunk_09,32.90,seconds,timing.txt AssociationStage
+assoc_time_chunk_10,38.55,seconds,timing.txt AssociationStage
+assoc_time_chunk_11,37.91,seconds,timing.txt AssociationStage
+assoc_time_chunk_12,34.20,seconds,timing.txt AssociationStage
+assoc_time_chunk_13,28.07,seconds,timing.txt AssociationStage
+assoc_time_chunk_14,33.82,seconds,timing.txt AssociationStage
+assoc_time_chunk_15,33.86,seconds,timing.txt AssociationStage
+assoc_time_chunk_16,32.49,seconds,timing.txt AssociationStage
+assoc_time_chunk_17,34.64,seconds,timing.txt AssociationStage
+assoc_time_chunk_18,33.26,seconds,timing.txt AssociationStage
+assoc_time_chunk_19,32.81,seconds,timing.txt AssociationStage
+assoc_time_chunk_20,40.78,seconds,timing.txt AssociationStage
+assoc_time_chunk_21,27.55,seconds,timing.txt AssociationStage
+assoc_time_chunk_22,23.82,seconds,timing.txt AssociationStage
+assoc_time_chunk_23,21.98,seconds,timing.txt AssociationStage
+assoc_time_chunk_24,25.04,seconds,timing.txt AssociationStage
+assoc_time_chunk_25,25.67,seconds,timing.txt AssociationStage
+assoc_time_chunk_26,27.58,seconds,timing.txt AssociationStage
+assoc_time_chunk_27,24.23,seconds,timing.txt AssociationStage
+assoc_time_chunk_28,20.77,seconds,timing.txt AssociationStage
+assoc_time_chunk_29,22.94,seconds,timing.txt AssociationStage
+assoc_time_chunk_30,24.15,seconds,timing.txt AssociationStage
+assoc_time_chunk_31,23.84,seconds,timing.txt AssociationStage
+assoc_time_chunk_32,14.75,seconds,timing.txt AssociationStage
+assoc_time_total,1052.96,seconds,timing.txt AssociationStage (sum)
+assoc_time_mean,32.91,seconds,timing.txt AssociationStage (mean)
+assoc_time_min,14.75,seconds,timing.txt AssociationStage (min)
+assoc_time_max,64.83,seconds,timing.txt AssociationStage (max)
+assoc_fraction_of_pipeline,12.7,percent,timing.txt (1052.96/8278.62)
+pipeline_total_time,8278.62,seconds,timing.txt TOTAL (sum of 32 chunks)

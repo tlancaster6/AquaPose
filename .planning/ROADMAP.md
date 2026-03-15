@@ -291,7 +291,9 @@ Plans:
   2. Per-keypoint reprojection error breakdown shows all 6 keypoints individually
   3. Camera visibility statistics reported (mean cameras per fish, distribution) across all frames
   4. Metrics derived from `aquapose eval` output on Phase 97 run caches
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 99-01-PLAN.md — Add p99/camera visibility stats and run full evaluation
 
 ### Phase 100: Tracking and Association Metrics
 **Goal**: Track fragmentation, identity consistency, detection coverage, singleton rate, and association wall-time are all measured from the full run
@@ -316,7 +318,6 @@ Plans:
   4. Document clearly attributes all numbers to the Phase 97 run (date, run directory, model versions)
 **Plans**: TBD
 
-## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -326,6 +327,6 @@ Plans:
 | 96. Z-Denoising and Documentation | v3.9 | 1/1 | Complete | 2026-03-13 |
 | 97. Full Pipeline Run | 1/1 | Complete   | 2026-03-15 | 2026-03-15 |
 | 98. Performance Metrics | v3.10 | 0/TBD | Not started | - |
-| 99. Reconstruction Quality Metrics | v3.10 | 0/TBD | Not started | - |
+| 99. Reconstruction Quality Metrics | v3.10 | 0/1 | Planned | - |
 | 100. Tracking and Association Metrics | v3.10 | 0/TBD | Not started | - |
 | 101. Results Document | v3.10 | 0/TBD | Not started | - |

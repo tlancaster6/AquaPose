@@ -506,6 +506,46 @@
 
 ---
 
+## Milestone: v3.10 — Publication Metrics
+
+**Shipped:** 2026-03-15
+**Phases:** 5 | **Plans:** 5
+
+### What Was Built
+- Full 9,450-frame diagnostic pipeline run (32 chunks, 12 cameras, 9 fish) with production models
+- Per-stage timing extraction: 1.14 fps end-to-end, detection+pose dominate at 59.6%
+- Reconstruction quality metrics: 3.41px mean reprojection error, p99=14.41px, 3.60 mean cameras/fish
+- Tracking and association metrics: 1,932 tracklets, 12.1% singleton rate, 53 unique IDs across chunks
+- Consolidated results document with 11 sections and 11 supporting CSVs
+
+### What Worked
+- **Existing eval infrastructure carried the milestone** — Phases 98-100 ran `aquapose eval` on cached data without writing new code (only 2 source files changed, +70 lines). The v3.2 evaluation ecosystem investment paid off.
+- **Parallel phase execution** — Phases 98, 99, 100 all depended only on Phase 97, enabling independent execution without ordering constraints.
+- **Auto-advance pipeline** — Plan → verify → execute → verify chain ran smoothly with `--auto` flag, reducing orchestration overhead.
+- **CSV + markdown dual output** — Raw data in CSVs alongside narrative in performance-accuracy.md makes metrics both machine-readable and human-readable.
+
+### What Was Inefficient
+- **Phase 97 missing VERIFICATION.md** — Execution-only phase (no code changes) wasn't formally verified. The run output was consumed by all downstream phases, confirming success empirically, but the missing artifact created an audit flag.
+- **Uncommitted runner.py change** — A Phase 99 code change (n_sample_points config read) was left unstaged. Should have been committed during Phase 99 execution.
+- **Section numbering mismatch** — Phase 100 plan specified Section 10 but Phase 98 had already claimed it. Not a real problem (executor adapted correctly) but the plan was written with stale assumptions.
+
+### Patterns Established
+- Metrics-only milestones require minimal code changes — invest in evaluation infrastructure early
+- Full-run metrics should be attributed to a specific run directory for reproducibility
+- CSV companion files for every metrics section enable downstream analysis
+
+### Key Lessons
+1. **Execution-only phases still need verification artifacts** — even if "no code changed," the verification step catches missing documentation
+2. **Metrics milestones validate prior infrastructure decisions** — v3.10 proved the v3.2 eval ecosystem, v3.3 chunk caching, and v3.4 performance investments were sound
+3. **Auto-advance works well for small, sequential milestones** — 5 simple phases with clear dependencies executed without manual intervention
+
+### Cost Observations
+- Model mix: ~60% sonnet (executors/verifiers), ~40% opus (orchestrator)
+- Sessions: 1 (all 5 phases in single session)
+- Notable: Fastest milestone relative to scope — mostly eval + documentation, minimal code
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -524,6 +564,7 @@
 | v3.7 | 2 days | 11 | Custom keypoint tracker; segmentation removal; pipeline reorder |
 | v3.8 | 2 days | 7 | Multi-keypoint association; singleton rate 27%→5.4% |
 | v3.9 | 2 days | 4 | Keypoint-native reconstruction; spline optional; dead code removal |
+| v3.10 | 29 days | 5 | Publication metrics; eval-only milestone; auto-advance pipeline |
 
 ### Cumulative Quality
 
@@ -541,6 +582,7 @@
 | v3.7 | 29,525 source | ~1159 | 0 |
 | v3.8 | 31,066 source | ~1200 | 0 |
 | v3.9 | 31,188 source | ~1208 | 0 |
+| v3.10 | 31,268 source | ~1208 | 0 |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -562,3 +604,5 @@
 16. Architectural improvements beat parameter tuning — richer signals outperform tweaked thresholds (v3.8)
 17. Read downstream consumers when changing defaults — grep for hardcoded values across the entire codebase (v3.9)
 18. Small focused milestones execute cleanly — tight scope with clear dependencies results in zero rework (v3.9)
+19. Execution-only phases still need verification artifacts — missing docs create audit flags even when output is correct (v3.10)
+20. Metrics milestones validate prior infrastructure decisions — they prove (or disprove) that eval/caching/perf investments were sound (v3.10)

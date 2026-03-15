@@ -1,0 +1,33 @@
+metric,value,unit,notes
+mean_reprojection_error,3.4075,px,Overall mean across all fish-frames and cameras
+p50_reprojection_error,2.6781,px,Median
+p90_reprojection_error,6.2196,px,90th percentile
+p95_reprojection_error,8.4886,px,95th percentile
+p99_reprojection_error,14.4089,px,99th percentile
+max_reprojection_error,273.9438,px,Absolute maximum (outlier fish-frame)
+fish_reconstructed,80103,count,Fish-frame pairs successfully reconstructed
+fish_available,85050,count,Fish-frame pairs available
+inlier_ratio,0.9666,ratio,Fraction not flagged as low-confidence
+low_confidence_flag_rate,0.0334,ratio,Fraction flagged as low-confidence
+per_point_0_mean,4.0447,px,Point index 0 (tail)
+per_point_0_p90,6.2975,px,Point index 0 (tail) p90
+per_point_1_mean,2.7256,px,Point index 1
+per_point_1_p90,3.9966,px,Point index 1 p90
+per_point_2_mean,2.8245,px,Point index 2
+per_point_2_p90,4.6299,px,Point index 2 p90
+per_point_3_mean,3.0517,px,Point index 3
+per_point_3_p90,5.0467,px,Point index 3 p90
+per_point_4_mean,3.6281,px,Point index 4
+per_point_4_p90,5.7622,px,Point index 4 p90
+per_point_5_mean,5.3510,px,Point index 5 (head)
+per_point_5_p90,8.4378,px,Point index 5 (head) p90
+camera_visibility_mean,3.5984,cameras,Mean cameras per fish per frame
+camera_visibility_median,4.0,cameras,Median cameras per fish per frame
+camera_visibility_min,0,cameras,Minimum cameras per fish per frame
+camera_visibility_max,6,cameras,Maximum cameras per fish per frame
+camera_dist_0,1201,fish-frames,Fish-frames with 0 cameras
+camera_dist_2,3686,fish-frames,Fish-frames with 2 cameras
+camera_dist_3,22227,fish-frames,Fish-frames with 3 cameras
+camera_dist_4,50778,fish-frames,Fish-frames with 4 cameras
+camera_dist_5,2191,fish-frames,Fish-frames with 5 cameras
+camera_dist_6,20,fish-frames,Fish-frames with 6 cameras

@@ -21,14 +21,14 @@ Requirements for publication-ready metrics. Each maps to roadmap phases.
 
 ### Tracking Quality
 
-- [ ] **TRACK-01**: Track count and fragmentation metrics on full run
-- [ ] **TRACK-02**: Identity consistency across chunk boundaries on full run
-- [ ] **TRACK-03**: Detection coverage (% frames with detections per camera) on full run
+- [x] **TRACK-01**: Track count and fragmentation metrics on full run
+- [x] **TRACK-02**: Identity consistency across chunk boundaries on full run
+- [x] **TRACK-03**: Detection coverage (% frames with detections per camera) on full run
 
 ### Association Quality
 
-- [ ] **ASSOC-01**: Singleton rate measured on full run
-- [ ] **ASSOC-02**: Association wall-time measured on full run
+- [x] **ASSOC-01**: Singleton rate measured on full run
+- [x] **ASSOC-02**: Association wall-time measured on full run
 
 ### Results Document
 
@@ -58,11 +58,11 @@ None — this is a metrics-only milestone.
 | RECON-01 | Phase 99 | Complete |
 | RECON-02 | Phase 99 | Complete |
 | RECON-03 | Phase 99 | Complete |
-| TRACK-01 | Phase 100 | Pending |
-| TRACK-02 | Phase 100 | Pending |
-| TRACK-03 | Phase 100 | Pending |
-| ASSOC-01 | Phase 100 | Pending |
-| ASSOC-02 | Phase 100 | Pending |
+| TRACK-01 | Phase 100 | Complete |
+| TRACK-02 | Phase 100 | Complete |
+| TRACK-03 | Phase 100 | Complete |
+| ASSOC-01 | Phase 100 | Complete |
+| ASSOC-02 | Phase 100 | Complete |
 | DOC-01 | Phase 101 | Pending |
 | DOC-02 | Phase 101 | Pending |
 

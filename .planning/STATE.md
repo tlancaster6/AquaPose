@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v3.10
 milestone_name: Publication Metrics
 status: unknown
-last_updated: "2026-03-15T12:59:13.529Z"
+last_updated: "2026-03-15T12:59:30.339Z"
 progress:
   total_phases: 4
   completed_phases: 4
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-14)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** Phase 98 — Performance Metrics (complete); ready for next phase
+**Current focus:** Phase 100 — Tracking and Association Metrics (complete); ready for next phase
 
 ## Current Position
 
-Phase: 98 of 101 (Performance Metrics)
-Plan: 98-01 complete
-Status: Phase 98 plan 01 complete; ready for next plan
-Last activity: 2026-03-15 — Phase 98-01 complete, RUN-02/RUN-03 timing metrics recorded from full 9450-frame run
+Phase: 100 of 101 (Tracking and Association Metrics)
+Plan: 100-01 complete
+Status: Phase 100 plan 01 complete; ready for next plan
+Last activity: 2026-03-15 — Phase 100-01 complete, TRACK-01/02/03 and ASSOC-01/02 metrics recorded from full 9450-frame run
 
-Progress: [████░░░░░░] 40%
+Progress: [██████░░░░] 60%
 
 ## Performance Metrics
 
@@ -45,6 +45,7 @@ Progress: [████░░░░░░] 40%
 | 98. Performance Metrics | 1/1 | 8min | 8min |
 
 *Updated after each plan completion*
+| Phase 100-tracking-and-association-metrics P01 | 25min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -56,6 +57,8 @@ Progress: [████░░░░░░] 40%
 - [Phase 99]: camera_visibility stored as dict with nested distribution sub-dict for JSON compatibility
 - [Phase 99]: All RECON metrics derived from aquapose eval on run_20260314_200051, no estimates
 - [Phase 98-performance-metrics]: Used full 32-chunk run timing data for Phase 98 (not 6-chunk clean-machine run); stale v3.4 timing entry removed from performance-accuracy.md
+- [Phase 100-01]: Section numbering: Phase 98 claimed Section 10 for pipeline timing; tracking/association became Section 11
+- [Phase 100-01]: Per-camera detection coverage computed from ctx.detections (frames with any detection), not per_camera_counts
 
 ### Pending Todos
 
@@ -68,5 +71,5 @@ Progress: [████░░░░░░] 40%
 ## Session Continuity
 
 Last session: 2026-03-15
-Stopped at: Completed 98-01-PLAN.md
+Stopped at: Completed 100-01-PLAN.md
 Resume file: None

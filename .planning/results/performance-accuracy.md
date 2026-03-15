@@ -312,13 +312,52 @@ Most fish-frames (63.4%) are observed by exactly 4 cameras. The 1.5% with 0 came
 
 ---
 
+## 10. Pipeline Performance (Full Run)
+
+### Methodology
+
+Timing data comes from the built-in per-chunk timer in the pipeline engine, measured during the complete Phase 97 full-pipeline run (run_20260314_200051) executed on 2026-03-14. The run processed 9,450 frames from the YH aquarium video across 32 chunks (31 full chunks of 300 frames + 1 partial chunk of 150 frames), with 12 cameras and 9 fish. All 5 pipeline stages were timed per chunk; chunk 31 is a partial chunk and its values reflect the proportionally smaller workload.
+
+**Note:** This run was executed on the development workstation (GPU workstation, not a dedicated benchmarking machine). Absolute numbers will vary by hardware; relative stage shares are hardware-independent.
+
+### Per-Stage Timing
+
+| Stage | Total Time (s) | Mean/Chunk (s) | Share (%) |
+|-------|----------------|----------------|-----------|
+| Detection | 2,392.8 | 74.78 | 28.9% |
+| Pose | 2,545.0 | 79.53 | 30.7% |
+| Tracking | 82.1 | 2.57 | 1.0% |
+| Association | 1,053.0 | 32.91 | 12.7% |
+| Reconstruction | 2,205.5 | 68.92 | 26.6% |
+| **Total** | **8,278.6** | **258.7** | **100%** |
+
+### End-to-End Throughput
+
+| Metric | Value |
+|--------|-------|
+| Total wall-time | 8,278.6 s (2.30 h) |
+| Frames processed | 9,450 |
+| Throughput | **1.14 frames/sec** |
+| Mean chunk time | 258.7 s/chunk |
+
+### Key Observations
+
+- **Pose and detection dominate**: Together they account for 59.6% of total wall-time, driven by GPU inference on 12 cameras × 300 frames per chunk.
+- **Tracking is negligible**: At 1.0% share, the Kalman tracker adds essentially zero overhead — its per-chunk cost is ~2.6s vs ~80s for detection or pose.
+- **Reconstruction is non-trivial**: At 26.6%, refractive triangulation (6 keypoints × 9 fish × all frames) is the third-largest cost, substantially faster than the v3.4 era when it shared time with legacy spline fitting.
+- **Association varies**: Chunk-to-chunk association time ranges from 14.8s to 64.8s (4.3x range), reflecting scene-complexity variation. The v3.4 pre-optimization baseline was 452s/chunk (see Section 6 note); current mean is 32.9s — consistent with the >10x speedup design goal.
+
+**CSV**: `data/pipeline_timing_full_run.csv`
+**Suggested plot**: Stacked bar chart of mean per-stage time per chunk; pie chart of stage time share.
+
+---
+
 ## Stale Results (Needing Re-Run)
 
 These results were valid when produced but the underlying code has changed significantly:
 
 | Result | Version | Why Stale | Worth Re-Running? |
 |--------|---------|-----------|-------------------|
-| Pipeline end-to-end timing (8.2x speedup, 112s/chunk) | v3.4 | Association rewritten (v3.8), reconstruction modernized (v3.9), tracker replaced (v3.7) | Yes — run `aquapose -p YH run` and time it |
 | Tracker benchmark (27 tracks, 95% coverage) | v3.7 | Production detection/pose models were retrained after this evaluation | Yes — re-run `scripts/evaluate_custom_tracker.py` with current models |
 
 ---
@@ -336,3 +375,4 @@ These results were valid when produced but the underlying code has changed signi
 | `data/reconstruction_parameter_sweep.csv` | 22 | Reconstruction parameter sweep (19 outlier_threshold + 3 min_cameras) | Line: error vs outlier_threshold; bar: error/coverage vs min_cameras |
 | `data/association_parameter_sweep.csv` | 36 | Association parameter grid sweep + carry-forward results | Heatmap: yield vs ray_dist × score_min; bars for sensitivity |
 | `data/reconstruction_quality_full_run.csv` | 32 | Reconstruction quality metrics from full 9,450-frame Phase 97 run (reproj error, per-keypoint, camera visibility) | Bar: per-keypoint mean/p90 error; histogram: camera visibility distribution |
+| `data/pipeline_timing_full_run.csv` | 32 | Per-chunk per-stage wall-time for all 5 pipeline stages across 32 chunks (full 9,450-frame run) | Stacked bar: per-stage time per chunk; pie: stage time share |

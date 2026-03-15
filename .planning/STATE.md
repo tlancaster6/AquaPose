@@ -1,64 +1,43 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.10
-milestone_name: Publication Metrics
-status: unknown
-last_updated: "2026-03-15T13:11:43.870Z"
+milestone: null
+milestone_name: null
+status: complete
+last_updated: "2026-03-15T14:00:00.000Z"
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 5
-  completed_plans: 5
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-14)
+See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.10 Publication Metrics milestone complete
+**Current focus:** v3.10 Publication Metrics shipped — planning next milestone
 
 ## Current Position
 
-Phase: 101 of 101 (Results Document)
-Plan: 101-01 complete
-Status: Phase 101 complete; v3.10 milestone shipped
-Last activity: 2026-03-15 — Phase 101-01 complete, performance-accuracy.md finalized with v3.10 header and stale results cleared
+No active milestone. v3.10 completed 2026-03-15.
 
-Progress: [██████████] 100%
+Progress: N/A
 
 ## Performance Metrics
 
-**Velocity:**
-- Total plans completed: 2 (this milestone)
-- Average duration: ~1.5h
-- Total execution time: ~3h 8min
-
-**By Phase:**
-
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 97. Full Pipeline Run | 1/1 | ~3h | ~3h |
-| 99. Reconstruction Quality Metrics | 1/? | 35min | 35min |
-| 98. Performance Metrics | 1/1 | 8min | 8min |
-
-*Updated after each plan completion*
-| Phase 100-tracking-and-association-metrics P01 | 25min | 2 tasks | 2 files |
+**v3.10 Velocity:**
+- Phases: 5 (97-101)
+- Plans: 5
+- Timeline: 29 days (2026-02-14 → 2026-03-15)
 
 ## Accumulated Context
 
 ### Decisions
 
-- v3.9 shipped: keypoint-native reconstruction, spline as optional, dead code removed
-- Phase 97: split into two runs — full 32-chunk for eval data, 6-chunk for clean-machine timing
-- Full decision log in PROJECT.md Key Decisions table
-- [Phase 99]: camera_visibility stored as dict with nested distribution sub-dict for JSON compatibility
-- [Phase 99]: All RECON metrics derived from aquapose eval on run_20260314_200051, no estimates
-- [Phase 98-performance-metrics]: Used full 32-chunk run timing data for Phase 98 (not 6-chunk clean-machine run); stale v3.4 timing entry removed from performance-accuracy.md
-- [Phase 100-01]: Section numbering: Phase 98 claimed Section 10 for pipeline timing; tracking/association became Section 11
-- [Phase 100-01]: Per-camera detection coverage computed from ctx.detections (frames with any detection), not per_camera_counts
+Full decision log in PROJECT.md Key Decisions table.
 
 ### Pending Todos
 
@@ -66,10 +45,10 @@ Progress: [██████████] 100%
 
 ### Blockers/Concerns
 
-- None (6-chunk timing run blocker resolved — full 32-chunk run data used for Phase 98)
+None.
 
 ## Session Continuity
 
 Last session: 2026-03-15
-Stopped at: Completed 101-01-PLAN.md — v3.10 milestone shipped
+Stopped at: v3.10 milestone completed and archived
 Resume file: None

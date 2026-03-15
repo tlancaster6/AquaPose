@@ -247,92 +247,16 @@ Full details: `.planning/milestones/v3.9-ROADMAP.md`
 
 </details>
 
-### v3.10 Publication Metrics (Complete)
+<details>
+<summary>✅ v3.10 Publication Metrics (Phases 97-101) — SHIPPED 2026-03-15</summary>
 
-**Milestone Goal:** Run full 5-minute diagnostic pipeline and produce comprehensive, publication-ready performance and accuracy metrics.
+- [x] Phase 97: Full Pipeline Run (1/1 plans) — completed 2026-03-15
+- [x] Phase 98: Performance Metrics (1/1 plans) — completed 2026-03-15
+- [x] Phase 99: Reconstruction Quality Metrics (1/1 plans) — completed 2026-03-15
+- [x] Phase 100: Tracking and Association Metrics (1/1 plans) — completed 2026-03-15
+- [x] Phase 101: Results Document (1/1 plans) — completed 2026-03-15
 
-- [x] **Phase 97: Full Pipeline Run** - Execute 9,000-frame diagnostic run with production models
-- [x] **Phase 98: Performance Metrics** - Extract per-stage timing breakdown and throughput (completed 2026-03-15)
-- [x] **Phase 99: Reconstruction Quality Metrics** - Report reprojection error distributions and camera coverage (completed 2026-03-15)
-- [x] **Phase 100: Tracking and Association Metrics** - Report fragmentation, identity consistency, singleton rate, and wall-time (completed 2026-03-15)
-- [x] **Phase 101: Results Document** - Compile all metrics into updated performance-accuracy.md (completed 2026-03-15)
+**5 phases, 5 plans total**
+Full details: `.planning/milestones/v3.10-ROADMAP.md`
 
-## Phase Details
-
-### Phase 97: Full Pipeline Run
-**Goal**: A complete 9,000-frame diagnostic pipeline run completes successfully with production models and all chunk caches written to disk
-**Depends on**: Nothing (first phase of milestone)
-**Requirements**: RUN-01
-**Success Criteria** (what must be TRUE):
-  1. `aquapose run` completes all chunks without crashing
-  2. Per-chunk cache files exist for every chunk in the run directory
-  3. HDF5 output is present and contains 3D reconstruction data for the full run
-  4. Run used the production models configured in config.yaml
-**Plans:** 1/1 plans complete
-Plans:
-- [x] 97-01-PLAN.md — Launch full diagnostic pipeline run and verify outputs
-
-### Phase 98: Performance Metrics
-**Goal**: Per-stage timing and end-to-end throughput numbers are extracted from the run and recorded
-**Depends on**: Phase 97
-**Requirements**: RUN-02, RUN-03
-**Success Criteria** (what must be TRUE):
-  1. Per-stage wall-time reported for detection, pose, tracking, association, and reconstruction
-  2. End-to-end throughput reported as frames/sec and total wall-time for the full 9,000-frame run
-  3. Numbers are drawn from the actual Phase 97 run (not synthetic or estimated)
-**Plans:** 1/1 plans complete
-Plans:
-- [x] 98-01-PLAN.md — Parse timing data and record pipeline performance metrics
-
-### Phase 99: Reconstruction Quality Metrics
-**Goal**: Reprojection error statistics and camera visibility statistics are measured and recorded from the full run
-**Depends on**: Phase 97
-**Requirements**: RECON-01, RECON-02, RECON-03
-**Success Criteria** (what must be TRUE):
-  1. Reprojection error distribution reported with mean, p50, p90, p99 across all frames in the run
-  2. Per-keypoint reprojection error breakdown shows all 6 keypoints individually
-  3. Camera visibility statistics reported (mean cameras per fish, distribution) across all frames
-  4. Metrics derived from `aquapose eval` output on Phase 97 run caches
-**Plans:** 1/1 plans complete
-Plans:
-- [x] 99-01-PLAN.md — Add p99/camera visibility stats and run full evaluation
-
-### Phase 100: Tracking and Association Metrics
-**Goal**: Track fragmentation, identity consistency, detection coverage, singleton rate, and association wall-time are all measured from the full run
-**Depends on**: Phase 97
-**Requirements**: TRACK-01, TRACK-02, TRACK-03, ASSOC-01, ASSOC-02
-**Success Criteria** (what must be TRUE):
-  1. Track count and fragmentation metrics reported (total tracks, fragments per fish, longest continuous track)
-  2. Identity consistency across chunk boundaries reported (ID swap count or consistency rate)
-  3. Detection coverage reported as % frames with detections per camera across all cameras
-  4. Singleton rate reported for the full run
-  5. Association wall-time reported as seconds per chunk and total for full run
-**Plans:** 1/1 plans complete
-Plans:
-- [x] 100-01-PLAN.md — Run eval and record tracking/association metrics from full run
-
-### Phase 101: Results Document
-**Goal**: A single performance-accuracy.md document contains all current full-run metrics with stale results replaced
-**Depends on**: Phase 98, Phase 99, Phase 100
-**Requirements**: DOC-01, DOC-02
-**Success Criteria** (what must be TRUE):
-  1. performance-accuracy.md exists and contains all metrics from Phases 98, 99, and 100
-  2. All previously stale or placeholder metric values are replaced with Phase 97 measurements
-  3. Supporting CSV files (if any) are present alongside the document
-  4. Document clearly attributes all numbers to the Phase 97 run (date, run directory, model versions)
-**Plans:** 1/1 plans complete
-Plans:
-- [x] 101-01-PLAN.md — Finalize performance-accuracy.md and clear stale results
-
-
-| Phase | Milestone | Plans Complete | Status | Completed |
-|-------|-----------|----------------|--------|-----------|
-| 93. Config Plumbing | v3.9 | 1/1 | Complete | 2026-03-13 |
-| 94. Dead Code Removal | v3.9 | 1/1 | Complete | 2026-03-13 |
-| 95. Spline Refactoring | v3.9 | 2/2 | Complete | 2026-03-13 |
-| 96. Z-Denoising and Documentation | v3.9 | 1/1 | Complete | 2026-03-13 |
-| 97. Full Pipeline Run | v3.10 | 1/1 | Complete | 2026-03-15 |
-| 98. Performance Metrics | 1/1 | Complete    | 2026-03-15 | - |
-| 99. Reconstruction Quality Metrics | v3.10 | 1/1 | Complete | 2026-03-15 |
-| 100. Tracking and Association Metrics | 1/1 | Complete    | 2026-03-15 | - |
-| 101. Results Document | v3.10 | Complete    | 2026-03-15 | 2026-03-15 |
+</details>

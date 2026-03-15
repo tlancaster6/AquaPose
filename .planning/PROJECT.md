@@ -136,18 +136,16 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - ✓ Z-denoising CLI fixed for raw-keypoint mode with NaN-safe dual shift — v3.9
 - ✓ All reconstruction docstrings updated for keypoint-native variable-point-count output — v3.9
 
+- ✓ Full 9,450-frame diagnostic pipeline run with production models (RUN-01) — v3.10
+- ✓ Per-stage timing breakdown and end-to-end throughput: 1.14 fps (RUN-02, RUN-03) — v3.10
+- ✓ Reprojection error distribution: mean 3.41px, p99 14.41px (RECON-01, RECON-02, RECON-03) — v3.10
+- ✓ Tracking metrics: 1,932 tracklets, 91% detection coverage, identity fragmentation quantified (TRACK-01, TRACK-02, TRACK-03) — v3.10
+- ✓ Association quality: 12.1% singleton rate, 32.9s/chunk wall-time (ASSOC-01, ASSOC-02) — v3.10
+- ✓ Consolidated results document with 11 sections, all stale metrics replaced (DOC-01, DOC-02) — v3.10
+
 ### Active
 
-## Current Milestone: v3.10 Publication Metrics
-
-**Goal:** Run full 5-minute diagnostic pipeline and produce comprehensive, publication-ready performance and accuracy metrics.
-
-**Target features:**
-- Full 5-minute (9,000 frame) diagnostic pipeline run with production models
-- End-to-end pipeline timing and per-stage breakdown
-- Full-run evaluation report (reprojection error distributions, per-keypoint, camera coverage, track quality)
-- Re-measurement of stale metrics (tracker benchmark, association wall-time)
-- Updated results document with all gaps filled
+(No active milestone — v3.10 shipped, next milestone TBD)
 
 ### Out of Scope
 
@@ -164,9 +162,9 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 ## Context
 
-### Current State (v3.9 shipped)
+### Current State (v3.10 shipped)
 
-- **Codebase:** 31,188 LOC source across `src/aquapose/` (calibration, core/, engine/, io, evaluation, training, visualization)
+- **Codebase:** 31,268 LOC source across `src/aquapose/` (calibration, core/, engine/, io, evaluation, training, visualization)
 - **Architecture:** Event-driven 3-layer — Core Computation (5 stages) -> PosePipeline (orchestrator) -> Observers (3: console, timing, diagnostic). ChunkOrchestrator sits above PosePipeline managing chunk loop, identity stitching, and HDF5 output.
 - **Pipeline order:** Detection (YOLO-OBB) -> Pose Estimation (YOLO-pose, 6 keypoints) -> 2D Tracking (custom OKS keypoint tracker) -> Association (Leiden) -> Reconstruction (DLT triangulation + optional B-spline + z-denoising)
 - **Tracker:** Custom `KeypointTracker` with 24-dim KF (6 kpts x 2D pos+vel), OKS cost matrix, OCM direction consistency, ORU/OCR recovery, cubic spline gap interpolation, chunk handoff via serialized KF state. Configurable via `TrackingConfig` (base_r, lambda_ocm, max_gap_frames, match_cost_threshold, ocr_threshold, det_thresh, max_age).
@@ -181,6 +179,7 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - **Core organization:** Shared types in `core/types/`, implementations in `core/<stage>/`, legacy top-level dirs eliminated
 - **Production models:** OBB (mAP50-95=0.781, run_20260310_115419), Pose (mAP50-95=0.974, run_20260310_171543) — retrained with all-source stratified data
 - **Tracking metrics:** 27 tracks on benchmark clip (vs 9-fish target, vs OC-SORT 30), 95% detection coverage, 0 gaps, continuity=1.000
+- **Full-run metrics (v3.10):** 1.14 fps end-to-end, 3.41px mean reprojection error (p99=14.41px), 3.60 mean cameras/fish, 12.1% singleton rate, 91% detection coverage. Full results: `.planning/results/performance-accuracy.md`
 - **Known limitation:** Z-reconstruction uncertainty ~11x larger than XY (mean, range 7–15x; revised from early 132x estimate using real calibration in v3.5); singleton rate reduced to 5.4% in v3.8
 - **Import boundary:** Automated AST-based checker enforced via pre-commit hook -- core/ never imports engine/ at runtime
 
@@ -311,4 +310,4 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Dead scalar triangulation removed (not deprecated) | _triangulate_body_point was dead code since vectorized path; no callers | ✓ Good — 170 lines removed |
 
 ---
-*Last updated: 2026-03-14 after v3.10 Publication Metrics milestone started*
+*Last updated: 2026-03-15 after v3.10 Publication Metrics milestone completed*

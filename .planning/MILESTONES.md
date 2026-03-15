@@ -1,5 +1,29 @@
 # Milestones
 
+## v3.10 Publication Metrics (Shipped: 2026-03-15)
+
+**Phases completed:** 5 phases (97-101), 5 plans, 10 tasks
+**Timeline:** 29 days (2026-02-14 → 2026-03-15)
+**Codebase:** 31,268 LOC source
+**Git range:** 21 commits, 2 source files changed (+70 / -3)
+
+**Key accomplishments:**
+1. Full 9,450-frame (5-minute) diagnostic pipeline run completed across 32 chunks with production models — per-chunk caches, HDF5 output, and timing data all captured
+2. Per-stage timing extracted: 1.14 fps end-to-end (8,278.6s total), detection+pose dominate at 59.6% combined wall-time
+3. Reconstruction quality measured: 3.41px mean reprojection error, p99=14.41px, mean 3.60 cameras per fish
+4. Tracking metrics: 1,932 per-camera tracklets, 91% detection coverage, 53 unique fish IDs across 32 chunks (identity fragmentation at chunk boundaries)
+5. Association quality: 12.1% singleton rate, 32.91s mean association time per chunk (12.7% of pipeline)
+6. Consolidated results document with 11 sections and 11 supporting CSVs — all stale metrics replaced with current measurements
+
+**Delivered:** Comprehensive publication-ready performance and accuracy metrics for the AquaPose 3D fish pose estimation pipeline, measured on a full 5-minute recording (9,450 frames, 12 cameras, 9 fish). All metrics traceable to a single production run (run_20260314_200051) with supporting CSVs for reproducibility.
+
+**Known gaps (accepted as tech debt):**
+- Phase 97 missing VERIFICATION.md (execution-only phase, all downstream phases consumed its output successfully)
+- Uncommitted change in `src/aquapose/evaluation/runner.py` (n_sample_points config read — safe but untracked)
+- Section numbering deviation in Phase 100 (10 → 11, correctly adapted at runtime)
+
+---
+
 ## v3.9 Reconstruction Modernization (Shipped: 2026-03-14)
 
 **Phases completed:** 4 phases (93-96), 5 plans, 10 tasks

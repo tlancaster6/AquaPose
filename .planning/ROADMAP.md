@@ -253,7 +253,7 @@ Full details: `.planning/milestones/v3.9-ROADMAP.md`
 
 - [x] **Phase 97: Full Pipeline Run** - Execute 9,000-frame diagnostic run with production models
 - [ ] **Phase 98: Performance Metrics** - Extract per-stage timing breakdown and throughput
-- [ ] **Phase 99: Reconstruction Quality Metrics** - Report reprojection error distributions and camera coverage
+- [x] **Phase 99: Reconstruction Quality Metrics** - Report reprojection error distributions and camera coverage (completed 2026-03-15)
 - [ ] **Phase 100: Tracking and Association Metrics** - Report fragmentation, identity consistency, singleton rate, and wall-time
 - [ ] **Phase 101: Results Document** - Compile all metrics into updated performance-accuracy.md
 
@@ -291,7 +291,7 @@ Plans:
   2. Per-keypoint reprojection error breakdown shows all 6 keypoints individually
   3. Camera visibility statistics reported (mean cameras per fish, distribution) across all frames
   4. Metrics derived from `aquapose eval` output on Phase 97 run caches
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
 - [ ] 99-01-PLAN.md — Add p99/camera visibility stats and run full evaluation
 
@@ -327,6 +327,6 @@ Plans:
 | 96. Z-Denoising and Documentation | v3.9 | 1/1 | Complete | 2026-03-13 |
 | 97. Full Pipeline Run | 1/1 | Complete   | 2026-03-15 | 2026-03-15 |
 | 98. Performance Metrics | v3.10 | 0/TBD | Not started | - |
-| 99. Reconstruction Quality Metrics | v3.10 | 0/1 | Planned | - |
+| 99. Reconstruction Quality Metrics | 1/1 | Complete   | 2026-03-15 | - |
 | 100. Tracking and Association Metrics | v3.10 | 0/TBD | Not started | - |
 | 101. Results Document | v3.10 | 0/TBD | Not started | - |

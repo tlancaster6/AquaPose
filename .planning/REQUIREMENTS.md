@@ -15,9 +15,9 @@ Requirements for publication-ready metrics. Each maps to roadmap phases.
 
 ### Reconstruction Quality
 
-- [ ] **RECON-01**: Reprojection error distribution reported (mean, p50, p90, p99) on full run
-- [ ] **RECON-02**: Per-keypoint reprojection error breakdown on full run
-- [ ] **RECON-03**: Camera visibility statistics (mean cameras per fish, distribution) on full run
+- [x] **RECON-01**: Reprojection error distribution reported (mean, p50, p90, p99) on full run
+- [x] **RECON-02**: Per-keypoint reprojection error breakdown on full run
+- [x] **RECON-03**: Camera visibility statistics (mean cameras per fish, distribution) on full run
 
 ### Tracking Quality
 
@@ -55,9 +55,9 @@ None — this is a metrics-only milestone.
 | RUN-01 | Phase 97 | Complete |
 | RUN-02 | Phase 98 | Pending |
 | RUN-03 | Phase 98 | Pending |
-| RECON-01 | Phase 99 | Pending |
-| RECON-02 | Phase 99 | Pending |
-| RECON-03 | Phase 99 | Pending |
+| RECON-01 | Phase 99 | Complete |
+| RECON-02 | Phase 99 | Complete |
+| RECON-03 | Phase 99 | Complete |
 | TRACK-01 | Phase 100 | Pending |
 | TRACK-02 | Phase 100 | Pending |
 | TRACK-03 | Phase 100 | Pending |

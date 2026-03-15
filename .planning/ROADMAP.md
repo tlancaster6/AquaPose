@@ -307,7 +307,9 @@ Plans:
   3. Detection coverage reported as % frames with detections per camera across all cameras
   4. Singleton rate reported for the full run
   5. Association wall-time reported as seconds per chunk and total for full run
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 100-01-PLAN.md — Run eval and record tracking/association metrics from full run
 
 ### Phase 101: Results Document
 **Goal**: A single performance-accuracy.md document contains all current full-run metrics with stale results replaced
@@ -330,5 +332,5 @@ Plans:
 | 97. Full Pipeline Run | v3.10 | 1/1 | Complete | 2026-03-15 |
 | 98. Performance Metrics | v3.10 | 0/1 | Not started | - |
 | 99. Reconstruction Quality Metrics | v3.10 | 1/1 | Complete | 2026-03-15 |
-| 100. Tracking and Association Metrics | v3.10 | 0/TBD | Not started | - |
+| 100. Tracking and Association Metrics | v3.10 | 0/1 | Not started | - |
 | 101. Results Document | v3.10 | 0/TBD | Not started | - |

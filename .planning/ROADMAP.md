@@ -251,7 +251,7 @@ Full details: `.planning/milestones/v3.9-ROADMAP.md`
 
 **Milestone Goal:** Run full 5-minute diagnostic pipeline and produce comprehensive, publication-ready performance and accuracy metrics.
 
-- [ ] **Phase 97: Full Pipeline Run** - Execute 9,000-frame diagnostic run with production models
+- [x] **Phase 97: Full Pipeline Run** - Execute 9,000-frame diagnostic run with production models
 - [ ] **Phase 98: Performance Metrics** - Extract per-stage timing breakdown and throughput
 - [ ] **Phase 99: Reconstruction Quality Metrics** - Report reprojection error distributions and camera coverage
 - [ ] **Phase 100: Tracking and Association Metrics** - Report fragmentation, identity consistency, singleton rate, and wall-time
@@ -268,9 +268,9 @@ Full details: `.planning/milestones/v3.9-ROADMAP.md`
   2. Per-chunk cache files exist for every chunk in the run directory
   3. HDF5 output is present and contains 3D reconstruction data for the full run
   4. Run used the production models configured in config.yaml
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
-- [ ] 97-01-PLAN.md — Launch full diagnostic pipeline run and verify outputs
+- [x] 97-01-PLAN.md — Launch full diagnostic pipeline run and verify outputs
 
 ### Phase 98: Performance Metrics
 **Goal**: Per-stage timing and end-to-end throughput numbers are extracted from the run and recorded
@@ -324,7 +324,7 @@ Plans:
 | 94. Dead Code Removal | v3.9 | 1/1 | Complete | 2026-03-13 |
 | 95. Spline Refactoring | v3.9 | 2/2 | Complete | 2026-03-13 |
 | 96. Z-Denoising and Documentation | v3.9 | 1/1 | Complete | 2026-03-13 |
-| 97. Full Pipeline Run | v3.10 | 0/1 | Not started | - |
+| 97. Full Pipeline Run | 1/1 | Complete   | 2026-03-15 | 2026-03-15 |
 | 98. Performance Metrics | v3.10 | 0/TBD | Not started | - |
 | 99. Reconstruction Quality Metrics | v3.10 | 0/TBD | Not started | - |
 | 100. Tracking and Association Metrics | v3.10 | 0/TBD | Not started | - |

@@ -14,6 +14,7 @@ Implements the single-pass keypoint tracker:
 - _KptTrackletBuilder: mutable per-track accumulator with keypoint storage.
 - _SinglePassTracker: predict/match/update/birth/death per-frame loop.
 - interpolate_gaps: Cubic-spline gap filling for small temporal gaps.
+- interpolate_low_confidence_keypoints: Per-keypoint cubic spline fill for low-confidence keypoints.
 - KeypointTracker: Public wrapper running a single forward pass with gap
   interpolation. The bidirectional merge was removed after Phase 84-01
   investigation showed it produced 44 duplicate-inflated tracks vs 37 for
@@ -46,6 +47,7 @@ __all__ = [
     "compute_ocm_matrix",
     "compute_oks_matrix",
     "interpolate_gaps",
+    "interpolate_low_confidence_keypoints",
 ]
 
 # ---------------------------------------------------------------------------
@@ -1094,6 +1096,81 @@ def interpolate_gaps(
     return out
 
 
+def interpolate_low_confidence_keypoints(
+    builder: _KptTrackletBuilder,
+    conf_threshold: float = 0.3,
+) -> _KptTrackletBuilder:
+    """Fill low-confidence keypoints using per-keypoint cubic spline interpolation.
+
+    For each keypoint index, identifies frames where the keypoint's confidence
+    is below ``conf_threshold`` and replaces the position with a cubic spline
+    value estimated from the confident frames (those with conf >= conf_threshold).
+
+    This is designed to run *after* :func:`interpolate_gaps`, so that whole-frame
+    gap-filled ("coasted") frames can also receive better keypoint estimates when
+    they have a low-confidence placeholder. Coasted frames have conf=0.0 for all
+    keypoints and are therefore treated as low-confidence targets, not knot sources.
+
+    Args:
+        builder: Mutable tracklet builder. Modified in-place and returned.
+        conf_threshold: Confidence value below which a keypoint is considered
+            low-confidence and eligible for interpolation. Default 0.3.
+
+    Returns:
+        The same builder, with low-confidence keypoints replaced where possible.
+        Keypoints that were interpolated have their conf entry set to 0.0.
+        If a keypoint has fewer than 2 confident frames, it is left unchanged.
+    """
+    if len(builder.frames) < 2:
+        return builder
+
+    # Sort all frame data by frame index
+    order = sorted(range(len(builder.frames)), key=lambda i: builder.frames[i])
+    frames_arr = np.array([builder.frames[i] for i in order], dtype=np.float64)
+    kpts_arr = np.stack([builder.keypoints[i] for i in order], axis=0).astype(
+        np.float64
+    )  # (T, K, 2)
+    conf_arr = np.stack([builder.keypoint_conf[i] for i in order], axis=0).astype(
+        np.float64
+    )  # (T, K)
+
+    _T, K, _ = kpts_arr.shape
+
+    for k in range(K):
+        conf_k = conf_arr[:, k]
+        confident_mask = conf_k >= conf_threshold
+
+        # Need at least 2 confident frames to build a cubic spline
+        if confident_mask.sum() < 2:
+            continue
+
+        low_conf_mask = ~confident_mask
+
+        # No low-confidence frames for this keypoint — nothing to do
+        if not low_conf_mask.any():
+            continue
+
+        knot_frames = frames_arr[confident_mask]
+        knot_x = kpts_arr[confident_mask, k, 0]
+        knot_y = kpts_arr[confident_mask, k, 1]
+
+        cs_x = CubicSpline(knot_frames, knot_x)
+        cs_y = CubicSpline(knot_frames, knot_y)
+
+        for t in np.where(low_conf_mask)[0]:
+            f_val = frames_arr[t]
+            kpts_arr[t, k, 0] = cs_x(f_val)
+            kpts_arr[t, k, 1] = cs_y(f_val)
+            conf_arr[t, k] = 0.0
+
+    # Write updated arrays back into the builder in sorted order
+    for new_i, orig_i in enumerate(order):
+        builder.keypoints[orig_i] = kpts_arr[new_i].astype(np.float32)
+        builder.keypoint_conf[orig_i] = conf_arr[new_i].astype(np.float32)
+
+    return builder
+
+
 # ---------------------------------------------------------------------------
 # KeypointTracker — public single-pass wrapper
 # ---------------------------------------------------------------------------
@@ -1121,6 +1198,9 @@ class KeypointTracker:
         lambda_ocm: OCM weight in the cost matrix.
         sigmas: Per-keypoint OKS sigmas. Defaults to DEFAULT_SIGMAS.
         max_gap_frames: Maximum gap size to fill via spline interpolation.
+        kpt_conf_threshold: Confidence threshold below which individual
+            keypoints are considered low-confidence and eligible for
+            per-keypoint spline interpolation. Default 0.3.
         centroid_keypoint_index: Keypoint index used as centroid (unused in
             _SinglePassTracker but retained for API compatibility).
         centroid_confidence_floor: Confidence floor for centroid selection
@@ -1137,6 +1217,7 @@ class KeypointTracker:
         lambda_ocm: float = 0.2,
         sigmas: np.ndarray | None = None,
         max_gap_frames: int = 5,
+        kpt_conf_threshold: float = 0.3,
         match_cost_threshold: float = 1.2,
         ocr_threshold: float = 0.5,
         max_match_distance: float = 75.0,
@@ -1155,6 +1236,7 @@ class KeypointTracker:
         self._lambda_ocm = lambda_ocm
         self._sigmas = sigmas if sigmas is not None else DEFAULT_SIGMAS.copy()
         self._max_gap_frames = max_gap_frames
+        self._kpt_conf_threshold = kpt_conf_threshold
         self._match_cost_threshold = match_cost_threshold
         self._ocr_threshold = ocr_threshold
         self._max_match_distance = max_match_distance
@@ -1203,11 +1285,14 @@ class KeypointTracker:
             if b.detected_count >= self._n_init and b.frames
         ]
 
-        # Apply gap interpolation and convert to Tracklet2D
+        # Apply gap interpolation and per-keypoint confidence interpolation
         gap_filled: list[_KptTrackletBuilder] = []
         for builder in fwd_builders:
             gap_filled.append(
-                interpolate_gaps(builder, max_gap_frames=self._max_gap_frames)
+                interpolate_low_confidence_keypoints(
+                    interpolate_gaps(builder, max_gap_frames=self._max_gap_frames),
+                    conf_threshold=self._kpt_conf_threshold,
+                )
             )
 
         # Preserve internal tracker IDs (globally unique via _next_track_id
@@ -1236,6 +1321,7 @@ class KeypointTracker:
             "lambda_ocm": self._lambda_ocm,
             "sigmas": self._sigmas.tolist(),
             "max_gap_frames": self._max_gap_frames,
+            "kpt_conf_threshold": self._kpt_conf_threshold,
             "match_cost_threshold": self._match_cost_threshold,
             "ocr_threshold": self._ocr_threshold,
             "max_match_distance": self._max_match_distance,
@@ -1266,6 +1352,7 @@ class KeypointTracker:
             lambda_ocm=state["lambda_ocm"],
             sigmas=sigmas,
             max_gap_frames=state["max_gap_frames"],
+            kpt_conf_threshold=state.get("kpt_conf_threshold", 0.3),
             match_cost_threshold=state.get("match_cost_threshold", 1.2),
             ocr_threshold=state.get("ocr_threshold", 0.5),
             max_match_distance=state.get("max_match_distance", 75.0),

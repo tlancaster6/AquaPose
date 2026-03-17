@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import math
 from dataclasses import dataclass
@@ -149,7 +150,7 @@ def _merge_chunk_contexts(
     merged_detections: list | None = None
     merged_midlines_3d: list | None = None
 
-    for _, ctx in chunks:
+    for start_frame, ctx in chunks:
         if ctx.detections is not None:
             if merged_detections is None:
                 merged_detections = []
@@ -158,7 +159,16 @@ def _merge_chunk_contexts(
         if ctx.midlines_3d is not None:
             if merged_midlines_3d is None:
                 merged_midlines_3d = []
-            merged_midlines_3d.extend(ctx.midlines_3d)
+            for frame_entry in ctx.midlines_3d:
+                if frame_entry is None or start_frame == 0:
+                    merged_midlines_3d.append(frame_entry)
+                else:
+                    offset_entry = {}
+                    for fish_id, m3d in frame_entry.items():
+                        offset_entry[fish_id] = dataclasses.replace(
+                            m3d, frame_index=m3d.frame_index + start_frame
+                        )
+                    merged_midlines_3d.append(offset_entry)
 
     # Merge tracks_2d: extend per-camera tracklet lists with frame-offset tracklets
     merged_tracks_2d: dict | None = None
@@ -376,6 +386,18 @@ class EvalRunner:
             sampled_indices = list(range(frame_count))
             frames_evaluated = frame_count
 
+        # Read n_sample_points from run config (used for per-point eval)
+        n_sample_points = 6
+        try:
+            from aquapose.engine.config import load_config
+
+            config_path = self._run_dir / "config.yaml"
+            if config_path.exists():
+                run_config = load_config(config_path)
+                n_sample_points = run_config.reconstruction.n_sample_points
+        except Exception:
+            pass
+
         # Evaluate each present stage.
         detection_metrics: DetectionMetrics | None = None
         tracking_metrics: TrackingMetrics | None = None
@@ -442,7 +464,10 @@ class EvalRunner:
             projection_models = self._load_projection_models()
             if projection_models:
                 per_point_result = compute_per_point_error(
-                    frame_results, midline_sets_by_frame, projection_models
+                    frame_results,
+                    midline_sets_by_frame,
+                    projection_models,
+                    n_body_points=n_sample_points,
                 )
 
             # Curvature stratification (no projection models needed)

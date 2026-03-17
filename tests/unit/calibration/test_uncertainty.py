@@ -144,8 +144,7 @@ class TestComputeTriangulationUncertainty:
     def test_output_shapes_match_depths(self, result) -> None:
         """All output arrays must have the same length as the depth input."""
         n = result.depths.shape[0]
-        assert result.x_errors.shape == (n,)
-        assert result.y_errors.shape == (n,)
+        assert result.xy_errors.shape == (n,)
         assert result.z_errors.shape == (n,)
         assert result.n_cameras_visible.shape == (n,)
 
@@ -165,25 +164,18 @@ class TestComputeTriangulationUncertainty:
         visible = result.n_cameras_visible >= 2
         assert visible.any(), "Need at least one depth with 2+ cameras visible"
 
-        x_err = result.x_errors[visible]
-        y_err = result.y_errors[visible]
+        xy_err = result.xy_errors[visible]
         z_err = result.z_errors[visible]
 
         # Filter to finite values
-        finite_mask = (
-            torch.isfinite(x_err) & torch.isfinite(y_err) & torch.isfinite(z_err)
-        )
+        finite_mask = torch.isfinite(xy_err) & torch.isfinite(z_err)
         assert finite_mask.any(), "Need at least one finite error value"
 
-        mean_xy = (x_err[finite_mask] + y_err[finite_mask]) / 2.0
-        mean_z = z_err[finite_mask]
-
         # Z error should be larger than XY on average for top-down geometry
-        assert (mean_z > mean_xy).any(), (
+        assert (z_err[finite_mask] > xy_err[finite_mask]).any(), (
             "Expected Z errors to exceed XY errors for top-down cameras. "
-            f"Mean X: {x_err[finite_mask].mean():.4f}, "
-            f"Mean Y: {y_err[finite_mask].mean():.4f}, "
-            f"Mean Z: {mean_z.mean():.4f}"
+            f"Mean XY: {xy_err[finite_mask].mean():.4f}, "
+            f"Mean Z: {z_err[finite_mask].mean():.4f}"
         )
 
     def test_n_cameras_visible_positive_for_deep_points(self, result) -> None:

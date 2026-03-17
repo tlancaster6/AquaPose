@@ -32,16 +32,16 @@ class UncertaintyResult:
 
     Attributes:
         depths: Evaluated Z depths (world frame), shape (D,).
-        x_errors: Mean absolute X error at each depth (meters), shape (D,).
-        y_errors: Mean absolute Y error at each depth (meters), shape (D,).
-        z_errors: Mean absolute Z error at each depth (meters), shape (D,).
+        xy_errors: XY RMSE at each depth (meters), computed as
+            sqrt(mean(dx² + dy²)) — Euclidean norm, matching AquaCal's
+            convention. Shape (D,).
+        z_errors: Z RMSE at each depth (meters), shape (D,).
         n_cameras_visible: Number of cameras that saw each depth point, shape (D,).
         xy_position: (X, Y) world coordinates of the test point.
     """
 
     depths: torch.Tensor
-    x_errors: torch.Tensor
-    y_errors: torch.Tensor
+    xy_errors: torch.Tensor
     z_errors: torch.Tensor
     n_cameras_visible: torch.Tensor
     xy_position: tuple[float, float]
@@ -53,100 +53,107 @@ def compute_triangulation_uncertainty(
     pixel_noise: float = 0.5,
     xy_position: tuple[float, float] | None = None,
     image_size: tuple[int, int] = (1600, 1200),
+    n_trials: int = 1000,
+    seed: int = 42,
 ) -> UncertaintyResult:
     """Compute X/Y/Z reconstruction error as a function of tank depth.
 
-    For each depth, projects a ground-truth point into all cameras, perturbs
-    the pixels by ±pixel_noise, casts rays from the perturbed pixels, and
-    triangulates to measure reconstruction error.
+    For each depth, projects a ground-truth point into all visible cameras,
+    then runs Monte Carlo trials: each trial adds independent Gaussian noise
+    (std = ``pixel_noise``) to each camera's pixel, casts one refracted ray
+    per camera, and triangulates. Per-axis RMSE across trials gives the
+    reconstruction uncertainty.
 
     Args:
         models: List of RefractiveProjectionModel instances, one per camera.
         depths: 1D tensor of Z values to evaluate (underwater, Z > water_z
             for each camera), shape (D,), float32.
-        pixel_noise: Half-pixel perturbation magnitude in pixels (default 0.5).
+        pixel_noise: Standard deviation of Gaussian pixel noise (default 0.5).
         xy_position: (X, Y) world coordinates of the test point. If None,
             uses the origin (0, 0) — directly below the reference camera.
         image_size: (width, height) in pixels for bounds checking. Projections
             outside this frame are treated as invisible.
+        n_trials: Number of Monte Carlo noise trials per depth (default 1000).
+        seed: Random seed for reproducibility.
 
     Returns:
-        UncertaintyResult with per-depth error statistics.
+        UncertaintyResult with per-depth RMSE error statistics.
     """
-    # Determine XY test position (default: origin, i.e. under reference camera)
+    import numpy as np
+
     if xy_position is None:
         test_x, test_y = 0.0, 0.0
     else:
         test_x, test_y = xy_position
 
     img_w, img_h = image_size
+    rng = np.random.default_rng(seed)
 
     n_depths = depths.shape[0]
-    x_errors = torch.zeros(n_depths)
-    y_errors = torch.zeros(n_depths)
+    xy_errors = torch.zeros(n_depths)
     z_errors = torch.zeros(n_depths)
     n_visible = torch.zeros(n_depths, dtype=torch.int32)
-
-    # 4 perturbation directions per camera: ±x, ±y in pixel space
-    perturbations = torch.tensor(
-        [
-            [pixel_noise, 0.0],
-            [-pixel_noise, 0.0],
-            [0.0, pixel_noise],
-            [0.0, -pixel_noise],
-        ]
-    )  # (4, 2)
 
     for i, depth in enumerate(depths):
         gt_point = torch.tensor([[test_x, test_y, depth.item()]])  # (1, 3)
 
-        all_origins: list[torch.Tensor] = []
-        all_directions: list[torch.Tensor] = []
-        n_cams_visible = 0
+        # Find visible cameras and their clean pixel projections
+        visible_models: list[RefractiveProjectionModel] = []
+        clean_pixels: list[torch.Tensor] = []
 
         for model in models:
             pixels, valid = model.project(gt_point)
             if not valid[0]:
                 continue
 
-            # Check image bounds
             u, v = pixels[0, 0].item(), pixels[0, 1].item()
             if u < 0 or u >= img_w or v < 0 or v >= img_h:
                 continue
 
-            n_cams_visible += 1
-            center_px = pixels[0]  # (2,)
+            visible_models.append(model)
+            clean_pixels.append(pixels[0])  # (2,)
 
-            # 4 perturbed pixel positions for this camera
-            perturbed_px = center_px.unsqueeze(0) + perturbations  # (4, 2)
-            origins_cam, dirs_cam = model.cast_ray(perturbed_px)  # (4, 3) each
-            all_origins.append(origins_cam)
-            all_directions.append(dirs_cam)
-
+        n_cams_visible = len(visible_models)
         n_visible[i] = n_cams_visible
 
         if n_cams_visible < 2:
-            # Cannot triangulate with fewer than 2 cameras
-            x_errors[i] = float("nan")
-            y_errors[i] = float("nan")
+            xy_errors[i] = float("nan")
             z_errors[i] = float("nan")
             continue
 
-        origins = torch.cat(all_origins, dim=0)  # (N_rays, 3)
-        directions = torch.cat(all_directions, dim=0)  # (N_rays, 3)
+        # Monte Carlo: independent Gaussian noise per camera per trial
+        gt_vec = gt_point[0]  # (3,)
+        sq_errs_xy = torch.zeros(n_trials)
+        sq_errs_z = torch.zeros(n_trials)
 
-        with torch.no_grad():
-            est_point = triangulate_rays(origins, directions)  # (3,)
+        for t in range(n_trials):
+            trial_origins: list[torch.Tensor] = []
+            trial_dirs: list[torch.Tensor] = []
 
-        gt = gt_point[0]  # (3,)
-        x_errors[i] = torch.abs(est_point[0] - gt[0])
-        y_errors[i] = torch.abs(est_point[1] - gt[1])
-        z_errors[i] = torch.abs(est_point[2] - gt[2])
+            for ci in range(n_cams_visible):
+                noise = torch.tensor(
+                    rng.normal(0.0, pixel_noise, 2), dtype=torch.float32
+                )
+                noisy_px = (clean_pixels[ci] + noise).unsqueeze(0)  # (1, 2)
+                o, d = visible_models[ci].cast_ray(noisy_px)
+                trial_origins.append(o)
+                trial_dirs.append(d)
+
+            origins = torch.cat(trial_origins, dim=0)
+            directions = torch.cat(trial_dirs, dim=0)
+
+            with torch.no_grad():
+                est = triangulate_rays(origins, directions)
+
+            sq_errs_xy[t] = (est[0] - gt_vec[0]) ** 2 + (est[1] - gt_vec[1]) ** 2
+            sq_errs_z[t] = (est[2] - gt_vec[2]) ** 2
+
+        xy_errors[i] = sq_errs_xy.mean().sqrt()
+        z_errors[i] = sq_errs_z.mean().sqrt()
 
     return UncertaintyResult(
         depths=depths,
-        x_errors=x_errors,
-        y_errors=y_errors,
+        xy_errors=xy_errors,
         z_errors=z_errors,
         n_cameras_visible=n_visible,
         xy_position=(test_x, test_y),
@@ -155,6 +162,7 @@ def compute_triangulation_uncertainty(
 
 def build_rig_from_calibration(
     calibration_path: str | Path,
+    exclude_cameras: set[str] | None = None,
 ) -> list[RefractiveProjectionModel]:
     """Build projection models from a real AquaCal calibration file.
 
@@ -164,22 +172,30 @@ def build_rig_from_calibration(
 
     Args:
         calibration_path: Path to AquaCal calibration JSON file.
+        exclude_cameras: Optional set of camera names to skip (e.g.
+            ``{"e3v8250"}`` to exclude the wide-angle center camera).
 
     Returns:
         List of RefractiveProjectionModel instances, one per camera,
         sorted by camera name.
     """
-    from .loader import load_calibration_data
+    from .loader import compute_undistortion_maps, load_calibration_data
 
     cal = load_calibration_data(calibration_path)
     models: list[RefractiveProjectionModel] = []
+    skip = exclude_cameras or set()
 
     for name in sorted(cal.cameras.keys()):
+        if name in skip:
+            continue
         cam = cal.cameras[name]
-        # Intentionally uses raw cam.K (not K_new) — uncertainty analysis
-        # characterizes the original calibration, not the undistorted model.
+        # Use K_new (undistorted intrinsics) so that image-bounds visibility
+        # matches the pipeline's working space.  Raw cam.K has a narrower
+        # pinhole FOV that ignores barrel distortion, under-counting visible
+        # cameras.
+        undist = compute_undistortion_maps(cam)
         model = RefractiveProjectionModel(
-            K=cam.K,
+            K=undist.K_new,
             R=cam.R,
             t=cam.t,
             water_z=cal.water_z,
@@ -301,24 +317,20 @@ def generate_uncertainty_report(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     depths_m = result.depths.numpy()
-    x_mm = result.x_errors.numpy() * 1000.0
-    y_mm = result.y_errors.numpy() * 1000.0
+    xy_mm = result.xy_errors.numpy() * 1000.0
     z_mm = result.z_errors.numpy() * 1000.0
     n_cams = result.n_cameras_visible.numpy()
 
     # Mask NaN values (depths with < 2 cameras)
-    valid = np.isfinite(x_mm) & np.isfinite(y_mm) & np.isfinite(z_mm)
+    valid = np.isfinite(xy_mm) & np.isfinite(z_mm)
 
-    # --- Plot 1: X/Y/Z error vs depth ---
+    # --- Plot 1: XY/Z error vs depth ---
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(depths_m[valid], x_mm[valid], "b-o", label="X error", markersize=5)
-    ax.plot(depths_m[valid], y_mm[valid], "g-s", label="Y error", markersize=5)
+    ax.plot(depths_m[valid], xy_mm[valid], "b-o", label="XY error", markersize=5)
     ax.plot(depths_m[valid], z_mm[valid], "r-^", label="Z error", markersize=5)
     ax.set_xlabel("Depth (m)")
-    ax.set_ylabel("Reconstruction Error (mm)")
-    ax.set_title(
-        "Triangulation Error vs. Tank Depth\n(0.5px pixel noise, 13-camera rig)"
-    )
+    ax.set_ylabel("Reconstruction RMSE (mm)")
+    ax.set_title("Triangulation Error vs. Tank Depth")
     ax.legend()
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -326,22 +338,21 @@ def generate_uncertainty_report(
     fig.savefig(plot1_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    # --- Plot 2: Z/X error ratio vs depth ---
-    xy_mean_mm = (x_mm + y_mm) / 2.0
-    ratio = np.where(xy_mean_mm > 0, z_mm / xy_mean_mm, np.nan)
+    # --- Plot 2: Z/XY error ratio vs depth ---
+    ratio = np.where(xy_mm > 0, z_mm / xy_mm, np.nan)
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.plot(
         depths_m[valid],
         ratio[valid],
         "m-D",
-        label="Z / mean(X,Y) ratio",
+        label="Z / XY ratio",
         markersize=5,
     )
     ax.axhline(
         y=1.0, color="gray", linestyle="--", linewidth=1, label="Equal (ratio=1)"
     )
     ax.set_xlabel("Depth (m)")
-    ax.set_ylabel("Z Error / XY Error Ratio")
+    ax.set_ylabel("Z RMSE / XY RMSE Ratio")
     ax.set_title("Z/XY Anisotropy vs. Tank Depth")
     ax.legend()
     ax.spines["top"].set_visible(False)
@@ -369,19 +380,17 @@ def generate_uncertainty_report(
     plt.close(fig)
 
     # --- Compute summary statistics ---
-    x_mean = float(np.nanmean(x_mm[valid]))
-    y_mean = float(np.nanmean(y_mm[valid]))
+    xy_mean = float(np.nanmean(xy_mm[valid]))
     z_mean = float(np.nanmean(z_mm[valid]))
-    x_max = float(np.nanmax(x_mm[valid]))
-    y_max = float(np.nanmax(y_mm[valid]))
-    z_max = float(np.nanmax(z_mm[valid]))
-    x_min = float(np.nanmin(x_mm[valid]))
-    y_min = float(np.nanmin(y_mm[valid]))
+    xy_max = float(np.nanmax(xy_mm[valid]))
+    z_max_val = float(np.nanmax(z_mm[valid]))
+    xy_min = float(np.nanmin(xy_mm[valid]))
     z_min = float(np.nanmin(z_mm[valid]))
 
     ratio_valid = ratio[valid]
     mean_ratio = float(np.nanmean(ratio_valid))
     max_ratio = float(np.nanmax(ratio_valid))
+    min_ratio = float(np.nanmin(ratio_valid))
 
     worst_z_idx = int(np.nanargmax(z_mm[valid]))
     best_z_idx = int(np.nanargmin(z_mm[valid]))
@@ -396,19 +405,13 @@ def generate_uncertainty_report(
     table_rows = []
     for j in range(len(depths_m)):
         depth_val = depths_m[j]
-        x_val = x_mm[j]
-        y_val = y_mm[j]
+        xy_val = xy_mm[j]
         z_val = z_mm[j]
-        xy_val = (
-            (x_val + y_val) / 2.0
-            if math.isfinite(x_val) and math.isfinite(y_val)
-            else float("nan")
-        )
         r_val = z_val / xy_val if math.isfinite(xy_val) and xy_val > 0 else float("nan")
         n_val = int(n_cams[j])
 
         table_rows.append(
-            f"| {depth_val:.3f} | {_fmt(x_val)} | {_fmt(y_val)} | {_fmt(z_val)} "
+            f"| {depth_val:.3f} | {_fmt(xy_val)} | {_fmt(z_val)} "
             f"| {_fmt(r_val)} | {n_val} |"
         )
 
@@ -417,42 +420,36 @@ def generate_uncertainty_report(
     report = f"""# Z-Uncertainty Characterization Report
 
 **Rig:** {rig_description}
-**Method:** Ray simulation with {pixel_noise}px pixel noise perturbation
-**Point:** ({result.xy_position[0]}, {result.xy_position[1]}, Z) projected through all cameras, triangulated via SVD
+**Method:** Monte Carlo ray simulation with {pixel_noise}px pixel noise (sigma)
+**Point:** ({result.xy_position[0]}, {result.xy_position[1]}, Z) projected through all cameras, triangulated via least-squares
 
 ## Error vs. Depth Table
 
-| Depth (m) | X error (mm) | Y error (mm) | Z error (mm) | Z/XY ratio | Cameras visible |
-|-----------|-------------|-------------|-------------|------------|-----------------|
+| Depth (m) | XY RMSE (mm) | Z RMSE (mm) | Z/XY ratio | Cameras visible |
+|-----------|-------------|-------------|------------|-----------------|
 {chr(10).join(table_rows)}
 
 ## Summary Statistics
 
-| Metric | X error | Y error | Z error |
-|--------|---------|---------|---------|
-| Mean   | {x_mean:.3f} mm | {y_mean:.3f} mm | {z_mean:.3f} mm |
-| Min    | {x_min:.3f} mm | {y_min:.3f} mm | {z_min:.3f} mm |
-| Max    | {x_max:.3f} mm | {y_max:.3f} mm | {z_max:.3f} mm |
+| Metric | XY RMSE | Z RMSE |
+|--------|---------|--------|
+| Mean   | {xy_mean:.3f} mm | {z_mean:.3f} mm |
+| Min    | {xy_min:.3f} mm | {z_min:.3f} mm |
+| Max    | {xy_max:.3f} mm | {z_max_val:.3f} mm |
 
 **Z/XY anisotropy ratio:**
 - Mean: {mean_ratio:.1f}x
-- Max: {max_ratio:.1f}x
+- Range: {min_ratio:.1f}x - {max_ratio:.1f}x
 - Best depth (lowest Z error): {best_depth:.3f} m
 - Worst depth (highest Z error): {worst_depth:.3f} m
 
 ## Interpretation
 
-Z uncertainty is approximately **{mean_ratio:.0f}x** worse than XY uncertainty for this
-top-down camera geometry (range: {min(ratio_valid):.1f}x to {max_ratio:.1f}x across the
+Z uncertainty is approximately **{mean_ratio:.1f}x** worse than XY uncertainty for this
+top-down camera geometry (range: {min_ratio:.1f}x to {max_ratio:.1f}x across the
 depth range). This confirms that top-down cameras have substantially poorer Z-axis
 observability than X/Y observability: rays from top-down cameras converge nearly
 parallel in the Z direction, so small pixel errors produce large depth errors.
-
-**Implication for optimizer (Phase 4):** The loss function should weight X and Y
-reprojection errors more aggressively than Z, or equivalently, apply a
-prior/regularizer on Z that is approximately {mean_ratio:.0f}x stronger than the
-equivalent X/Y constraint. This anisotropy is a fundamental geometric property of
-the rig, not a calibration deficiency.
 
 ## Plots
 

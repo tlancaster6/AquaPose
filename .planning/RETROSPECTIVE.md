@@ -37,7 +37,7 @@
 ### Key Lessons
 1. **Segmentation quality gates reconstruction quality** — investing in better masks earlier would have prevented weeks of debugging noisy midlines downstream
 2. **Architecture pivots are cheaper than sunk-cost optimization** — the ABS-to-triangulation pivot saved the project from a 30-min/sec dead end
-3. **Z-reconstruction is fundamentally limited by top-down geometry** — ~11x Z/XY anisotropy (revised from early 132x estimate) means XY-only approaches are often superior to full 3D
+3. **Z-reconstruction is fundamentally limited by top-down geometry** — ~3x Z/XY anisotropy (grid-averaged; revised from 132x v1.0 and ~11x v3.5 after fixing methodology in v3.11) means Z is the limiting axis but less extreme than previously thought
 4. **Synthetic data is essential for debugging** — real data has too many confounds; synthetic data isolated individual failure modes
 
 ### Cost Observations

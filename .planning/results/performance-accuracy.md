@@ -1,6 +1,6 @@
 # AquaPose Performance & Accuracy Results
 
-All results below are validated as current against the v3.10 codebase (2026-03-15). All full-run metrics (Sections 9-11) are from the Phase 97 production run (run_20260314_200051): 9,450 frames, 12 cameras, 9 fish.
+All results below are validated as current against the v3.10 codebase (2026-03-15). All full-run metrics (Sections 9-11) are from run_20260315_142347: 9,450 frames, 12 cameras, 9 fish.
 
 ---
 
@@ -25,7 +25,7 @@ Training: YOLO11 (Ultralytics), OBB at imgsz=640, Pose at imgsz=320, 100 epochs 
 
 | Model | Val Set | mAP50 | mAP50-95 | Precision | Recall |
 |-------|---------|-------|----------|-----------|--------|
-| Baseline | Manual-only | 0.935 | 0.689 | — | — |
+| Baseline | Manual-only | 0.935 | 0.689 | 0.933 | 0.800 |
 | + Pseudo-labels | Manual-only | 0.961 | 0.721 | 0.907 | 0.903 |
 | + Curated labels | Manual-only | 0.973 | 0.700 | 0.896 | 0.938 |
 | Baseline | Corrected PL | 0.958 | 0.708 | 0.981 | 0.804 |
@@ -84,16 +84,44 @@ Key result: Elastic augmentation + curation provides the largest gain on high-cu
 
 ## 3. Elastic Augmentation A/B Experiment (v3.5)
 
+### Motivation
+
+Fish pose estimation models trained on limited manual annotations tend to under-represent curved body postures, leading to systematic accuracy degradation on high-curvature fish — the poses that matter most for behavioral analysis. The elastic augmentation experiment tests whether synthetically deforming fish midlines can reduce this curvature bias without requiring additional manual labeling.
+
 ### Methodology
 
-Controlled experiment comparing a baseline pose model (257 train images) to an augmented model (257 originals + 1,028 elastic variants = 1,285 train images). Both evaluated on the same 65-image validation set.
+Controlled A/B experiment comparing a baseline pose model (257 train images) to an augmented model (257 originals + 1,028 elastic variants = 1,285 train images). Both evaluated on the same 65-image validation set. The train/val split was curvature-stratified (80/20) to ensure balanced curvature representation in both sets. Ground-truth curvature is the mean unsigned curvature of the 6-keypoint midline polyline, measured in the image plane.
 
-Elastic augmentation applies thin-plate spline (TPS) deformations to fish midlines:
-- Angle range: 5-15 degrees
-- 4 variants per image: 2 C-curve (parabolic profile), 2 S-curve (sin(2*pi*t) profile)
-- Only visible keypoints deformed; flanking control points at ±25px along normals prevent lateral blur
+Both models: YOLO11-pose, imgsz=320, 100 epochs.
 
-Both models: YOLO11-pose, imgsz=320, 100 epochs, curvature-stratified 80/20 split.
+#### Deformation Pipeline
+
+Each training image is augmented with 4 elastic variants, cycling through: C-curve positive, S-curve positive, C-curve negative, S-curve negative. Each variant independently samples a random deformation angle from the 5–15° range. The pipeline has three stages:
+
+1. **Keypoint deformation**: Midline keypoints are displaced laterally (perpendicular to the chord) along a parametric profile:
+   - **C-curve**: Parabolic profile `4t(1-t)` — zero at nose and tail, maximum at midpoint. Pixel amplitude = `chord_length × tan(angle)`. Produces single-direction bending.
+   - **S-curve**: Sinusoidal profile `sin(2πt)` — zero at endpoints and midpoint, positive hump in first half, negative in second. Amplitude halved relative to C-curve so peak-to-peak excursion matches. Produces opposing bends in head and tail halves.
+   - Only visible keypoints are deformed; invisible keypoints (occluded, out-of-frame) remain at their original coordinates. This prevents chord-length distortion from (0,0) sentinel values on partially-visible fish.
+
+2. **TPS image warping**: A thin-plate spline (via `scipy.interpolate.RBFInterpolator`) warps the crop image to match the deformed keypoints. Control points include:
+   - The 6 midline keypoints (visible only) as primary control points
+   - 12 flanking points at ±25px along the local midline normal at each keypoint — these ensure the full fish cross-section moves uniformly, preventing lateral blur where displacement tapers off-midline
+   - 4 corner identity anchors that pin the image borders in place
+   - Backward mapping (`cv2.remap`) with bilinear interpolation and border replication
+
+3. **Label regeneration**: New OBB and pose labels are computed from the deformed keypoints via PCA-based oriented bounding box fitting.
+
+After deformation, each variant's centroid is re-centered to match the original to prevent positional drift.
+
+#### Bug Fixes During Development
+
+Several issues were discovered and fixed during the augmentation experiment (all committed to `dev`):
+- **TPS singular matrix**: Using all 6 keypoints (including invisible ones at (0,0)) as TPS control points caused the RBF matrix to become singular. Fix: only use visible keypoints.
+- **S-curve produced C-shape**: Original profile `sin(πt)` has the same shape as a C-curve. Fix: changed to `sin(2πt)` for a true S-shape with opposing lobes.
+- **C-curve too subtle**: Original circular-arc math produced barely visible deformations. Fix: replaced with parabolic profile using `tan(angle)` scaling for more intuitive amplitude control.
+- **Lateral blur**: TPS displacement tapered to zero away from the midline, blurring the fish body edges. Fix: added flanking control points at ±25px along keypoint normals.
+- **Weak augmentation on partial-visibility images**: Deforming invisible keypoints at (0,0) distorted chord length and amplitude. Fix: deform only visible keypoints; reconstruct full array afterward.
+- **S-curve too aggressive**: At the same angle, the S-curve's full-period sine produced ~2x the peak excursion of the C-curve. Fix: halved the S-curve amplitude for visual parity.
 
 ### Results
 
@@ -101,9 +129,21 @@ Both models: YOLO11-pose, imgsz=320, 100 epochs, curvature-stratified 80/20 spli
 |--------|----------|-----------|
 | Mean OKS | 0.712 | 0.707 |
 
-Mean OKS is similar, but the key metric is the **OKS-vs-curvature regression slope**, which measures how much accuracy degrades as fish curvature increases. The per-image data is in the CSV — regression slopes should be computed from it.
+Mean OKS is similar, but the key metric is the **OKS-vs-curvature regression slope**, which measures how much accuracy degrades as fish curvature increases:
 
-**Note**: The `eval_results.json` source file records identical slopes (-0.297) for both models, which appears to be a bug in the evaluation script (likely using the same curvature array for the regression). The project records document slopes of -0.71 (baseline) and -0.30 (augmented) from the scatter plot analysis — these should be verified by recomputing from the per-image CSV data.
+| Metric | Baseline | Augmented |
+|--------|----------|-----------|
+| OKS-vs-curvature slope | **-0.71** | **-0.30** |
+
+The augmented model's shallower slope means it degrades ~2.4x less with increasing curvature. Slopes verified by linear regression on the per-image CSV data (baseline: r²=0.19, p<0.001; augmented: r²=0.04, p=0.12).
+
+The augmented model does show two images with OKS=0.0 (complete detection failures) at curvatures of 0.21 and 0.29 — instances where the baseline scored 0.87 and 0.78 respectively. These outliers pull the augmented mean OKS down slightly but do not materially affect the slope comparison.
+
+**Note**: The `eval_results.json` source file records identical slopes (-0.297) for both models due to a bug in the evaluation script (used the same curvature array for both regressions). The values above are computed directly from the CSV and are authoritative.
+
+### Relationship to Section 2
+
+This standalone A/B experiment (Section 3) established that elastic augmentation reduces curvature bias. The curvature-stratified results in Section 2 show the downstream impact when elastic augmentation is combined with curated pseudo-labels in the full iterative training pipeline: the curated+aug model achieves 0.780 mean OKS on the high-curvature tercile vs 0.436 for the baseline — a +79% improvement that reflects both better training data (curation) and better pose diversity (augmentation).
 
 **CSV**: `data/augmentation_oks_per_image.csv` — 65 rows with columns: `stem, curvature, oks_baseline, oks_augmented`
 **Suggested plot**: OKS vs curvature scatter with two series and linear regression lines.
@@ -131,32 +171,48 @@ The augmented model converges to higher pose mAP50-95 earlier and maintains it, 
 
 ---
 
-## 5. Z/XY Reconstruction Anisotropy (v3.5, corrected)
+## 5. Z/XY Reconstruction Anisotropy (v3.11, corrected)
 
 ### Methodology
 
-Monte Carlo ray perturbation analysis on the calibrated 12-camera rig:
-1. Place a ground-truth 3D point at a given depth in the aquarium
-2. Project to all cameras with visibility (within image bounds)
-3. Perturb each 2D projection by ±0.5px (simulating detection noise)
-4. Triangulate the perturbed rays via DLT
-5. Measure reconstruction error in X, Y, Z separately
-6. Compute the Z/XY anisotropy ratio
+Monte Carlo ray perturbation analysis on the 12-camera rig (e3v8250 wide-angle center camera excluded, matching the AquaCal convention). For each test depth and XY position:
+1. Project a ground-truth 3D point into all cameras using undistorted intrinsics (K_new)
+2. Exclude cameras where the projection falls outside the 1600×1200 image bounds
+3. Run 500 Monte Carlo trials: each trial adds independent Gaussian noise (σ = 0.5px) to each camera's pixel, casts one refracted ray per camera, and triangulates via least-squares
+4. Compute per-axis RMSE across trials
 
-The analysis uses real calibration parameters (not synthetic), with image-bounds filtering to exclude cameras that cannot see the test point.
+Grid-averaged results use a 7×7 XY grid (±0.5m around rig centroid at (-0.34, 0.55)), matching the AquaCal synthetic validation grid. Per-depth results are averaged across all 49 grid positions.
 
 ### Results
 
+XY error uses the Euclidean norm √(dx²+dy²), matching AquaCal's convention.
+
 | Metric | Value |
 |--------|-------|
-| Mean Z/XY anisotropy | **~11x** |
-| Range | ~7x – ~15x (PROJECT.md documents "7–15x") |
-| Previous (v1.0) estimate | 132x (synthetic, overstated) |
+| Mean Z/XY anisotropy (grid-averaged) | **~2.9x** |
+| Range across depth | 2.8x – 3.1x |
+| Mean XY RMSE | 0.32 mm |
+| Mean Z RMSE | 0.95 mm |
+| Average cameras visible | 3–7 (varies with depth) |
+| Previous estimates | 132x (v1.0, synthetic), ~11x (v3.5, methodological artifact) |
 
-The top-down camera geometry (cameras above looking down into water) makes Z-reconstruction inherently ~11x less precise than XY. This is a fundamental property of the rig, not a software limitation.
+The top-down camera geometry makes Z-reconstruction inherently ~3x less precise than XY. This is a fundamental property of the rig, not a software limitation.
+
+#### Comparison with AquaCal synthetic validation
+
+AquaCal's tutorial (`02_synthetic_validation.ipynb`, Experiment 3) reports ~2.3x on the same rig geometry with the same 7×7 grid. Both use the Euclidean norm XY metric. The remaining gap (2.9x vs 2.3x) is because AquaCal triangulates using calibrated parameters (fit to noisy data, 0.498px RMS residual), which inflates both XY and Z absolute errors by ~2x. AquaPose uses exact calibration parameters, measuring only the pixel-noise floor. The centroid-only result (2.3x, see below) matches AquaCal exactly, confirming that the grid-averaged difference comes from edge positions where fewer cameras are visible.
+
+#### Centroid-only results (12 cameras visible)
+
+At the rig centroid (-0.34, 0.57), where all 12 cameras converge at depths ≥1.60m:
+
+| Depth Range | Cameras | XY RMSE (mm) | Z RMSE (mm) | Ratio |
+|-------------|---------|-------------|-------------|-------|
+| 1.45–1.55m | 3–10 | 0.22–0.74 | 0.47–1.96 | 2.1–2.7x |
+| 1.60–2.00m | 12 | 0.21–0.24 | 0.44–0.62 | 2.1–2.6x |
 
 **Code**: `src/aquapose/calibration/uncertainty.py`
-**No CSV** — this is a single summary statistic. Could be re-run with `generate_uncertainty_report()` to produce per-depth profiles if needed.
+**Reports**: `.planning/results/uncertainty_grid_avg/`, `.planning/results/uncertainty_12cam_knew/`
 
 ---
 
@@ -232,14 +288,14 @@ Metrics: mean reprojection error (px) and fish coverage (reconstructed / availab
 | outlier_threshold | 25 | 2.89 | 254 | 270 | |
 | outlier_threshold | 30 | 2.90 | 254 | 270 | |
 | outlier_threshold | 35–100 | 2.91 | 254 | 270 | Saturates at 35 |
-| min_cameras | 2 | 3.00 | 271 | 270 | Over-reconstruction; ill-conditioned |
+| min_cameras | 2 | 3.00 | 271 | 270 | Duplicate 3D fish from ill-conditioned 2-camera DLT |
 | min_cameras | 3 (default) | 2.87 | 254 | 270 | Winner |
 | min_cameras | 4 | 2.87 | 237 | 270 | 6% coverage loss, no error gain |
 
 ### Key Findings
 
 - **outlier_threshold** is nearly flat across 10–100px (2.87–2.91px). Inlier ratio is already ~99%, so outlier rejection does minimal work.
-- **min_cameras=2** produces spurious over-reconstruction (271 > 270 available) because 2-camera refractive DLT is ill-conditioned.
+- **min_cameras=2** produces duplicate 3D fish (271 > 270 available): the low 2-camera threshold allows multiple camera subsets to independently triangulate the same physical fish, creating spurious extra midlines.
 - **min_cameras=4** costs 6% coverage with no error improvement.
 - **min_cameras=3** is the sweet spot: best error with solid coverage.
 - Current defaults are already optimal.
@@ -253,44 +309,45 @@ Metrics: mean reprojection error (px) and fish coverage (reconstructed / availab
 
 ### Methodology
 
-EvalRunner evaluated the complete Phase 97 full-pipeline run (run_20260314_200051): 9,450 frames, 12 cameras, 9 fish, 32 chunks of 300 frames each. No frame sampling — all frames evaluated. Reconstruction uses v3.9 raw-keypoint triangulation (6 keypoints per fish, min_cameras=3, outlier_threshold=10). Per-keypoint errors are computed by reprojecting the 6 triangulated 3D points through each observing camera's refractive model and measuring pixel distance to the 2D detections. Camera visibility counts the minimum cameras across body points for each Midline3D (field `n_cameras` set by the reconstruction backend).
+EvalRunner evaluated the complete full-pipeline run (run_20260315_142347): 9,450 frames, 12 cameras, 9 fish, 32 chunks of 300 frames each. No frame sampling — all frames evaluated. Reconstruction uses v3.9 raw-keypoint triangulation (6 keypoints per fish, min_cameras=3, outlier_threshold=10). Per-keypoint errors are computed by reprojecting the 6 triangulated 3D points through each observing camera's refractive model and measuring pixel distance to the 2D detections. Camera visibility counts the minimum cameras across body points for each Midline3D (field `n_cameras` set by the reconstruction backend).
 
-Run directory: `~/aquapose/projects/YH/runs/run_20260314_200051`
+Run directory: `~/aquapose/projects/YH/runs/run_20260315_142347`
 Evaluated: 2026-03-15
 
 ### Reprojection Error Distribution
 
 | Statistic | Value (px) |
 |-----------|-----------|
-| Mean | 3.41 |
-| p50 (median) | 2.68 |
-| p90 | 6.22 |
-| p99 | 14.41 |
+| Mean | 3.45 |
+| p50 (median) | 2.72 |
+| p90 | 6.32 |
+| p95 | 8.65 |
+| p99 | 14.52 |
 | Max | 273.94 |
 
-- Fish-frames reconstructed: 80,103 / 85,050 (94.2% coverage)
-- Inlier ratio (not low-confidence): 96.7%
+- Fish-frames reconstructed: 82,333 / 85,050 (96.8% coverage)
+- Inlier ratio (not low-confidence): 97.6%
 
 ### Per-Keypoint Reprojection Error
 
-Points are indexed 0 (tail) through 5 (head) along the fish midline.
+Points are indexed 0 (nose) through 5 (tail) along the fish midline.
 
 | Point | Mean (px) | P90 (px) |
 |-------|-----------|----------|
-| 0 (tail) | 4.04 | 6.30 |
-| 1 | 2.73 | 4.00 |
-| 2 | 2.82 | 4.63 |
-| 3 | 3.05 | 5.05 |
-| 4 | 3.63 | 5.76 |
-| 5 (head) | 5.35 | 8.44 |
+| 0 (nose) | 4.10 | 6.33 |
+| 1 (head) | 2.77 | 4.02 |
+| 2 (spine1) | 2.87 | 4.67 |
+| 3 (spine2) | 3.10 | 5.09 |
+| 4 (spine3) | 3.69 | 5.81 |
+| 5 (tail) | 5.42 | 8.48 |
 
-Head (point 5) and tail (point 0) have higher error than mid-body points, consistent with higher pose uncertainty at the extremities.
+Nose (point 0) and tail (point 5) have higher error than mid-body points, consistent with higher pose uncertainty at the extremities.
 
 ### Camera Visibility Statistics
 
 | Statistic | Value |
 |-----------|-------|
-| Mean cameras per fish | 3.60 |
+| Mean cameras per fish | 3.68 |
 | Median cameras per fish | 4.0 |
 | Min | 0 |
 | Max | 6 |
@@ -299,16 +356,42 @@ Camera count distribution across all fish-frame pairs:
 
 | Cameras | Fish-Frames | Fraction |
 |---------|-------------|---------|
-| 0 | 1,201 | 1.5% |
-| 2 | 3,686 | 4.6% |
-| 3 | 22,227 | 27.7% |
-| 4 | 50,778 | 63.4% |
-| 5 | 2,191 | 2.7% |
-| 6 | 20 | <0.1% |
+| 0 | 903 | 1.1% |
+| 2 | 2,884 | 3.5% |
+| 3 | 19,263 | 23.4% |
+| 4 | 56,685 | 68.8% |
+| 5 | 2,549 | 3.1% |
+| 6 | 49 | 0.1% |
 
-Most fish-frames (63.4%) are observed by exactly 4 cameras. The 1.5% with 0 cameras are low-confidence reconstructions retained by the pipeline.
+Most fish-frames (68.8%) are observed by exactly 4 cameras. Note that `n_cameras` is the *minimum* across body points, not the total observing cameras. There are zero fish-frames with exactly 1 camera.
 
 **CSV**: `data/reconstruction_quality_full_run.csv`
+
+### Temporal Z-Smoothing
+
+Post-hoc Gaussian smoothing of per-fish centroid z across time (sigma=3 frames), applied within continuous track segments. The smoothing delta is applied uniformly to all keypoints in each fish-frame.
+
+| Metric | Value |
+|--------|-------|
+| Fish processed | 25 |
+| Frames processed | 82,324 |
+| Mean F2F centroid z jitter (before) | 0.291 cm |
+| Mean F2F centroid z jitter (after) | 0.054 cm |
+| Jitter reduction | 5.4x |
+
+**Reprojection error impact** (measured by reprojecting pre- and post-smoothing 3D points through the refractive model against 2D detections, 82,330 fish-frames, 1,970,504 residuals):
+
+| Statistic | Before (px) | After (px) | Delta (px) |
+|-----------|-------------|------------|------------|
+| Mean | 3.656 | 3.699 | +0.043 |
+| Median (p50) | 2.298 | 2.322 | +0.024 |
+| p90 | 5.820 | 5.928 | +0.108 |
+| p95 | 8.371 | 8.546 | +0.176 |
+| p99 | 36.720 | 36.966 | +0.246 |
+
+Temporal z-smoothing increases mean reprojection error by +0.043 px (1.2%), consistent with the ~3x Z/XY anisotropy — small z-shifts produce negligible pixel-space displacement through the refractive projection model. The cost is well within noise and far smaller than the 5.4x reduction in frame-to-frame centroid z jitter.
+
+**Script**: `tmp/compare_z_smoothing_reproj.py`
 
 ---
 
@@ -316,7 +399,7 @@ Most fish-frames (63.4%) are observed by exactly 4 cameras. The 1.5% with 0 came
 
 ### Methodology
 
-Timing data comes from the built-in per-chunk timer in the pipeline engine, measured during the complete Phase 97 full-pipeline run (run_20260314_200051) executed on 2026-03-14. The run processed 9,450 frames from the YH aquarium video across 32 chunks (31 full chunks of 300 frames + 1 partial chunk of 150 frames), with 12 cameras and 9 fish. All 5 pipeline stages were timed per chunk; chunk 31 is a partial chunk and its values reflect the proportionally smaller workload.
+Timing data comes from the built-in per-chunk `stage_timing` in the PipelineContext, measured during the complete full-pipeline run (run_20260315_142347) executed on 2026-03-15. The run processed 9,450 frames from the YH aquarium video across 32 chunks (31 full chunks of 300 frames + 1 partial chunk of 150 frames), with 12 cameras and 9 fish. All 5 pipeline stages were timed per chunk; chunk 31 is a partial chunk and its values reflect the proportionally smaller workload.
 
 **Note:** This run was executed on the development workstation (GPU workstation, not a dedicated benchmarking machine). Absolute numbers will vary by hardware; relative stage shares are hardware-independent.
 
@@ -324,28 +407,28 @@ Timing data comes from the built-in per-chunk timer in the pipeline engine, meas
 
 | Stage | Total Time (s) | Mean/Chunk (s) | Share (%) |
 |-------|----------------|----------------|-----------|
-| Detection | 2,392.8 | 74.78 | 28.9% |
-| Pose | 2,545.0 | 79.53 | 30.7% |
-| Tracking | 82.1 | 2.57 | 1.0% |
-| Association | 1,053.0 | 32.91 | 12.7% |
-| Reconstruction | 2,205.5 | 68.92 | 26.6% |
-| **Total** | **8,278.6** | **258.7** | **100%** |
+| Detection | 2,328.6 | 72.77 | 27.7% |
+| Pose | 2,564.4 | 80.14 | 30.5% |
+| Tracking | 78.6 | 2.46 | 0.9% |
+| Association | 1,114.6 | 34.83 | 13.3% |
+| Reconstruction | 2,322.5 | 72.58 | 27.6% |
+| **Total** | **8,408.7** | **262.8** | **100%** |
 
 ### End-to-End Throughput
 
 | Metric | Value |
 |--------|-------|
-| Total wall-time | 8,278.6 s (2.30 h) |
+| Total wall-time | 8,408.7 s (2.34 h) |
 | Frames processed | 9,450 |
-| Throughput | **1.14 frames/sec** |
-| Mean chunk time | 258.7 s/chunk |
+| Throughput | **1.12 frames/sec** |
+| Mean chunk time | 262.8 s/chunk |
 
 ### Key Observations
 
-- **Pose and detection dominate**: Together they account for 59.6% of total wall-time, driven by GPU inference on 12 cameras × 300 frames per chunk.
-- **Tracking is negligible**: At 1.0% share, the Kalman tracker adds essentially zero overhead — its per-chunk cost is ~2.6s vs ~80s for detection or pose.
-- **Reconstruction is non-trivial**: At 26.6%, refractive triangulation (6 keypoints × 9 fish × all frames) is the third-largest cost, substantially faster than the v3.4 era when it shared time with legacy spline fitting.
-- **Association varies**: Chunk-to-chunk association time ranges from 14.8s to 64.8s (4.3x range), reflecting scene-complexity variation. The v3.4 pre-optimization baseline was 452s/chunk (see Section 6 note); current mean is 32.9s — consistent with the >10x speedup design goal.
+- **Pose and detection dominate**: Together they account for 58.2% of total wall-time, driven by GPU inference on 12 cameras × 300 frames per chunk.
+- **Tracking is negligible**: At 0.9% share, the Kalman tracker adds essentially zero overhead — its per-chunk cost is ~2.5s vs ~73-80s for detection or pose.
+- **Reconstruction is comparable to detection**: At 27.6%, refractive triangulation (6 keypoints × 9 fish × all frames) takes nearly as long as detection, substantially faster than the v3.4 era when it shared time with legacy spline fitting.
+- **Association varies**: Chunk-to-chunk association time ranges from 14.1s to 42.9s (3.1x range), reflecting scene-complexity variation. The v3.4 pre-optimization baseline was 452s/chunk (see Section 6 note); current mean is 34.8s — consistent with the >10x speedup design goal.
 
 **CSV**: `data/pipeline_timing_full_run.csv`
 **Suggested plot**: Stacked bar chart of mean per-stage time per chunk; pie chart of stage time share.
@@ -356,9 +439,9 @@ Timing data comes from the built-in per-chunk timer in the pipeline engine, meas
 
 ### Methodology
 
-EvalRunner evaluated the Phase 97 full-pipeline run (run_20260314_200051): 9,450 frames, 12 cameras, 9 fish, 32 chunks of 300 frames each. No frame sampling — all frames evaluated. Tracking uses a custom KeypointTracker per camera (one tracker per camera, independent tracklets). Cross-view association uses multi-keypoint ray scoring + Leiden clustering. Identity stitching across chunks uses tracklet-set overlap. Detection coverage computed from merged PipelineContext detections field. Association wall-time extracted from per-chunk timing.txt.
+EvalRunner evaluated the complete full-pipeline run (run_20260315_142347): 9,450 frames, 12 cameras, 9 fish, 32 chunks of 300 frames each. No frame sampling — all frames evaluated. Tracking uses a custom KeypointTracker per camera (one tracker per camera, independent tracklets). Cross-view association uses multi-keypoint ray scoring + Leiden clustering. Identity stitching across chunks uses tracklet-set overlap. Detection coverage computed from merged PipelineContext detections field. Association wall-time extracted from per-chunk stage_timing.
 
-Run directory: `~/aquapose/projects/YH/runs/run_20260314_200051`
+Run directory: `~/aquapose/projects/YH/runs/run_20260315_142347`
 Evaluated: 2026-03-15
 
 ### Tracking Metrics (TRACK-01)
@@ -379,22 +462,22 @@ Fragmentation is measured on the 3D reconstruction output — fish identity cont
 
 | Metric | Value |
 |--------|-------|
-| Unique fish IDs (3D) | 53 |
+| Unique fish IDs (3D) | 25 |
 | Expected fish | 9 |
-| Total gaps | 12 |
-| Mean gap duration | 51.5 frames |
-| Max gap duration | 173 frames |
-| Mean continuity ratio | 0.956 |
-| Track births | 3 |
-| Track deaths | 6 |
-| Mean track lifespan | 283.1 frames |
-| Median track lifespan | 300.0 frames (full chunk) |
+| Total gaps | 99 |
+| Mean gap duration | 16.5 frames |
+| Max gap duration | 134 frames |
+| Mean continuity ratio | 0.941 |
+| Track births | 16 |
+| Track deaths | 16 |
+| Mean track lifespan | 3,358.7 frames |
+| Median track lifespan | 1,563.0 frames (~5.2 chunks) |
 
 ### Identity Consistency (TRACK-02)
 
-The identity stitcher assigns 3D fish identities across chunks using tracklet-set overlap. Unique fish IDs = **53** vs expected = **9**, yielding 44 excess identity fragments — roughly 6 IDs per fish on average across the 32-chunk run (each chunk can spawn a new ID if tracklet overlap is insufficient). Track births (3) and deaths (6) indicate partial cross-chunk continuity breaks. The median track lifespan of 300 frames (one full chunk) confirms that within-chunk tracks are consistently maintained.
+The identity stitcher assigns 3D fish identities across chunks using tracklet-set overlap. Unique fish IDs = **25** vs expected = **9**, yielding 16 excess identity fragments — roughly 2.8 IDs per fish on average across the 32-chunk run. The median track lifespan of ~1,563 frames (~5.2 chunks) means the typical fish identity survives about 5 chunk boundaries before being reassigned a new ID.
 
-Per-fish continuity ratios (non-unity values): fish 8 → 0.885, fish 44 → 0.660, fish 63 → 0.423, fish 159 → 0.906, fish 149 → 0.821, fish 266 → 0.493, fish 275 → 0.547. All remaining tracked fish IDs have continuity = 1.0.
+Per-fish continuity ratios range from 0.306 (fish 135) to 1.000 (fish 3, 5, 53, 128, 248, 263). 6 of 25 fish IDs have continuity = 1.0 (no gaps within their lifespan).
 
 ### Detection Coverage Per Camera (TRACK-03)
 
@@ -414,85 +497,84 @@ Coverage = fraction of 9,450 frames where at least one detection was returned fo
 | e3v83ef | 571 | 6.04% |
 | e3v83f0 | 9,356 | 99.01% |
 | e3v83f1 | 7,482 | 79.17% |
-| **Overall mean** | **5,430** | **50.49%** |
+| **Overall mean** | **4,771** | **50.49%** |
 
-Wide variation across cameras reflects aquarium geometry: cameras with wide-angle views covering the main swim zone (e3v83f0: 99.0%, e3v83eb: 96.3%) have much higher coverage than cameras with narrow views (e3v82f9: 3.8%, e3v832e: 6.1%) that only see fish passing through a small region.
+Wide variation across cameras reflects aquarium geometry: cameras with wide-angle views covering the main swim zone (e3v83f0: 99.0%, e3v83eb: 96.3%) have much higher coverage than cameras with narrow views (e3v82f9: 3.8%, e3v83ef: 6.0%) that only see fish passing through a small region.
 
 ### Association Quality (ASSOC-01)
 
 | Metric | Value |
 |--------|-------|
-| Singleton rate | 12.1% |
-| Fish yield ratio | 1.024 (102.4% — slight over-reconstruction) |
-| Total fish observations | 99,063 |
+| Singleton rate | 7.0% |
+| Fish yield ratio | 0.988 (98.8%) |
+| Total fish observations | 90,301 |
 | Frames evaluated | 9,450 |
 | P50 camera count | 4.0 cameras/fish |
-| P90 camera count | 4.0 cameras/fish |
+| P90 camera count | 5.0 cameras/fish |
 
 Camera distribution across grouped fish observations:
 
 | Cameras in Group | Observations | Fraction |
 |-----------------|-------------|---------|
-| 1 (singleton) | 11,984 | 12.1% |
-| 2 | 8,177 | 8.3% |
-| 3 | 15,259 | 15.4% |
-| 4 | 54,297 | 54.8% |
-| 5 | 9,286 | 9.4% |
-| 6 | 60 | 0.1% |
+| 1 (singleton) | 6,311 | 7.0% |
+| 2 | 2,560 | 2.8% |
+| 3 | 10,296 | 11.4% |
+| 4 | 60,057 | 66.5% |
+| 5 | 10,920 | 12.1% |
+| 6 | 153 | 0.2% |
+| 7 | 4 | <0.1% |
 
-The singleton rate of **12.1%** on the full run is somewhat higher than the 5.4% reported in Section 6 (v3.8 evaluation on 900 frames). This reflects variability across all 32 production chunks vs the 3-chunk test set.
+The singleton rate of **7.0%** on the full run is somewhat higher than the 5.4% reported in Section 6 (v3.8 evaluation on 900 frames). This reflects variability across all 32 production chunks vs the 3-chunk test set.
 
 ### Association Wall-Time (ASSOC-02)
 
-Times from per-chunk timing.txt, summed across all 32 chunks (300 frames each).
+Times from per-chunk stage_timing, summed across all 32 chunks (300 frames each).
 
 | Metric | Value |
 |--------|-------|
-| Total association time | 1,052.96 s |
-| Mean per chunk | 32.91 s |
-| Min per chunk | 14.75 s (chunk 32) |
-| Max per chunk | 64.83 s (chunk 1, cold-start overhead) |
-| % of total pipeline time | 12.7% (1,052.96 / 8,278.62 s) |
-
-The first chunk (64.83 s) is an outlier likely due to cold-start LUT generation and model initialization. Excluding chunk 1, the mean per chunk is 31.59 s and max is 56.09 s.
+| Total association time | 1,114.59 s |
+| Mean per chunk | 34.83 s |
+| Min per chunk | 14.05 s (chunk 32) |
+| Max per chunk | 42.94 s (chunk 26) |
+| % of total pipeline time | 13.3% (1,114.59 / 8,408.71 s) |
 
 <details>
 <summary>All 32 per-chunk association times</summary>
 
 | Chunk | Time (s) |
 |-------|---------|
-| 1 | 64.83 |
-| 2 | 38.39 |
-| 3 | 56.09 |
-| 4 | 50.15 |
-| 5 | 36.34 |
-| 6 | 39.72 |
-| 7 | 35.65 |
-| 8 | 36.18 |
-| 9 | 32.90 |
-| 10 | 38.55 |
-| 11 | 37.91 |
-| 12 | 34.20 |
-| 13 | 28.07 |
-| 14 | 33.82 |
-| 15 | 33.86 |
-| 16 | 32.49 |
-| 17 | 34.64 |
-| 18 | 33.26 |
-| 19 | 32.81 |
-| 20 | 40.78 |
-| 21 | 27.55 |
-| 22 | 23.82 |
-| 23 | 21.98 |
-| 24 | 25.04 |
-| 25 | 25.67 |
-| 26 | 27.58 |
-| 27 | 24.23 |
-| 28 | 20.77 |
-| 29 | 22.94 |
-| 30 | 24.15 |
-| 31 | 23.84 |
-| 32 | 14.75 |
+| 1 | 31.57 |
+| 2 | 36.71 |
+| 3 | 40.18 |
+| 4 | 32.04 |
+| 5 | 29.52 |
+| 6 | 34.37 |
+| 7 | 29.67 |
+| 8 | 39.89 |
+| 9 | 41.65 |
+| 10 | 35.19 |
+| 11 | 38.10 |
+| 12 | 36.66 |
+| 13 | 34.27 |
+| 14 | 37.11 |
+| 15 | 39.36 |
+| 16 | 33.71 |
+| 17 | 34.68 |
+| 18 | 31.83 |
+| 19 | 27.45 |
+| 20 | 30.09 |
+| 21 | 29.70 |
+| 22 | 34.88 |
+| 23 | 29.90 |
+| 24 | 40.36 |
+| 25 | 40.03 |
+| 26 | 42.94 |
+| 27 | 35.69 |
+| 28 | 38.69 |
+| 29 | 34.65 |
+| 30 | 37.69 |
+| 31 | 41.96 |
+| 32 | 14.05 |
 
 </details>
 
@@ -518,6 +600,6 @@ All results in this document are current as of v3.10 (2026-03-15). No stale entr
 | `data/curvature_stratified_oks.csv` | 9 | Mean OKS by curvature tercile for 3 model variants | Grouped bar: OKS by curvature bin and model |
 | `data/reconstruction_parameter_sweep.csv` | 22 | Reconstruction parameter sweep (19 outlier_threshold + 3 min_cameras) | Line: error vs outlier_threshold; bar: error/coverage vs min_cameras |
 | `data/association_parameter_sweep.csv` | 36 | Association parameter grid sweep + carry-forward results | Heatmap: yield vs ray_dist × score_min; bars for sensitivity |
-| `data/reconstruction_quality_full_run.csv` | 32 | Reconstruction quality metrics from full 9,450-frame Phase 97 run (reproj error, per-keypoint, camera visibility) | Bar: per-keypoint mean/p90 error; histogram: camera visibility distribution |
+| `data/reconstruction_quality_full_run.csv` | 32 | Reconstruction quality metrics from full 9,450-frame run (reproj error, per-keypoint, camera visibility) | Bar: per-keypoint mean/p90 error; histogram: camera visibility distribution |
 | `data/pipeline_timing_full_run.csv` | 32 | Per-chunk per-stage wall-time for all 5 pipeline stages across 32 chunks (full 9,450-frame run) | Stacked bar: per-stage time per chunk; pie: stage time share |
 | `data/tracking_association_full_run.csv` | 73 | Tracking, fragmentation, association, detection coverage, and per-chunk association timing from full 9,450-frame run | Bar: per-camera detection coverage; scatter: association time per chunk |

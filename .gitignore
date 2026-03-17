@@ -95,3 +95,4 @@ tmp/
 *.pt
 *.mp4
 runs/
+.planning/

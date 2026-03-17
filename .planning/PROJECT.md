@@ -14,7 +14,7 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 
 - ✓ Load calibration data from AquaCal (CALIB-01) — v1.0
 - ✓ Differentiable refractive projection 3D→pixel and ray casting pixel→ray (CALIB-02, CALIB-03) — v1.0
-- ✓ Z-reconstruction uncertainty quantified for 13-camera rig (CALIB-04) — v1.0 (originally 132x Z/XY; revised to ~11x mean in v3.5 with real calibration + image bounds filtering)
+- ✓ Z-reconstruction uncertainty quantified for 12-camera rig (CALIB-04) — v1.0 (originally 132x; revised to ~3x mean in v3.11 with Monte Carlo method, K_new, grid-averaged)
 - ✓ MOG2 detection with ≥95% recall + YOLOv8 alternative detector (SEG-01) — v1.0
 - ✓ SAM2 pseudo-label generation from box prompts with quality filtering (SEG-02, SEG-03) — v1.0
 - ✓ U-Net segmentation on cropped detections, IoU 0.623 (SEG-04, SEG-05) — v1.0
@@ -180,7 +180,7 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 - **Production models:** OBB (mAP50-95=0.781, run_20260310_115419), Pose (mAP50-95=0.974, run_20260310_171543) — retrained with all-source stratified data
 - **Tracking metrics:** 27 tracks on benchmark clip (vs 9-fish target, vs OC-SORT 30), 95% detection coverage, 0 gaps, continuity=1.000
 - **Full-run metrics (v3.10):** 1.14 fps end-to-end, 3.41px mean reprojection error (p99=14.41px), 3.60 mean cameras/fish, 12.1% singleton rate, 91% detection coverage. Full results: `.planning/results/performance-accuracy.md`
-- **Known limitation:** Z-reconstruction uncertainty ~11x larger than XY (mean, range 7–15x; revised from early 132x estimate using real calibration in v3.5); singleton rate reduced to 5.4% in v3.8
+- **Known limitation:** Z-reconstruction uncertainty ~3x larger than XY (grid-averaged, 12 cameras; revised from 132x v1.0 and ~11x v3.5 estimates after fixing methodological artifacts in v3.11); singleton rate reduced to 5.4% in v3.8
 - **Import boundary:** Automated AST-based checker enforced via pre-commit hook -- core/ never imports engine/ at runtime
 
 ### Rig Geometry
@@ -231,7 +231,7 @@ Accurate 3D fish midline reconstruction from multi-view silhouettes via refracti
 | Outlier rejection threshold 10.0 (not 50.0) | Empirical grid search on real data via evaluation harness | ✓ Good — best Tier 1 reprojection |
 | NPZ fixtures for offline evaluation | Flat slash-separated keys for numpy.load compatibility; versioned (v1.0/v2.0) | ✓ Good — enables data-driven parameter tuning |
 | Association params: keep defaults | Sweep showed marginal gains (~1% yield); ~70% singleton rate is upstream bottleneck | ✓ Good — no over-tuning |
-| XY-only tracking cost matrix | Z uncertainty ~11x larger (revised from 132x); XY-only prevents Z-noise ID swaps | Superseded — OC-SORT per-camera in v2.1 |
+| XY-only tracking cost matrix | Z uncertainty ~3x larger (revised from 132x/11x); XY-only prevents Z-noise ID swaps | Superseded — OC-SORT per-camera in v2.1 |
 | Population-constrained tracking | 9 fish always; dead tracks recycled to unmatched observations | Superseded — Leiden clustering handles identity in v2.1 |
 | Stage Protocol via structural typing (not ABC) | typing.Protocol with runtime_checkable — no inheritance required | ✓ Good — clean 5-stage architecture |
 | Frozen dataclasses for config (not Pydantic) | Simpler, stdlib-only, hierarchical nesting | ✓ Good — defaults→YAML→CLI→freeze works well |

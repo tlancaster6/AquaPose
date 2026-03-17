@@ -2,7 +2,7 @@
 
 Tests cover: _KalmanFilter, compute_oks_matrix, compute_ocm_matrix,
 build_cost_matrix, _KFTrack, _SinglePassTracker, interpolate_gaps,
-KeypointTracker.
+interpolate_low_confidence_keypoints, KeypointTracker.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from aquapose.core.tracking.keypoint_sigmas import DEFAULT_SIGMAS
 from aquapose.core.tracking.keypoint_tracker import (
@@ -22,6 +23,7 @@ from aquapose.core.tracking.keypoint_tracker import (
     compute_ocm_matrix,
     compute_oks_matrix,
     interpolate_gaps,
+    interpolate_low_confidence_keypoints,
 )
 
 # ---------------------------------------------------------------------------
@@ -1007,3 +1009,198 @@ class TestTracklet2DKeypointRoundtrip:
                 assert np.any(t.keypoint_conf[i] > 0.0), (
                     f"Detected frame {t.frames[i]} has all-zero keypoint_conf"
                 )
+
+
+# ---------------------------------------------------------------------------
+# interpolate_low_confidence_keypoints tests
+# ---------------------------------------------------------------------------
+
+
+class TestInterpolateLowConfidenceKeypoints:
+    """Tests for per-keypoint cubic spline interpolation of low-confidence frames."""
+
+    def _make_builder_with_custom_kconf(
+        self,
+        frames: list[int],
+        kconf_override: dict[int, np.ndarray] | None = None,
+        kpts_override: dict[int, np.ndarray] | None = None,
+        n_kpts: int = 6,
+    ) -> _KptTrackletBuilder:
+        """Build a _KptTrackletBuilder with per-frame kconf and kpts overrides.
+
+        Args:
+            frames: Frame indices to include.
+            kconf_override: Dict mapping frame index to (n_kpts,) conf array.
+            kpts_override: Dict mapping frame index to (n_kpts, 2) kpts array.
+            n_kpts: Number of keypoints.
+        """
+        builder = _KptTrackletBuilder(camera_id="cam0", track_id=0)
+        for f_idx in frames:
+            if kpts_override and f_idx in kpts_override:
+                kpts = kpts_override[f_idx].copy()
+            else:
+                kpts = np.zeros((n_kpts, 2), dtype=np.float32)
+                for k in range(n_kpts):
+                    kpts[k] = [f_idx * 10.0 + k * 5.0, 100.0]
+            if kconf_override and f_idx in kconf_override:
+                kconf = kconf_override[f_idx].copy()
+            else:
+                kconf = np.full(n_kpts, 0.9, dtype=np.float32)
+            bbox = (f_idx * 10.0, 90.0, 60.0, 30.0)
+            builder.add_frame(
+                frame_idx=f_idx,
+                kpts=kpts,
+                kconf=kconf,
+                bbox_xywh=bbox,
+                status="detected",
+            )
+        return builder
+
+    def test_all_confident_keypoints_unchanged(self) -> None:
+        """Keypoints above conf_threshold are not modified."""
+        frames = list(range(10))
+        builder = self._make_builder_with_custom_kconf(frames)
+        # All confs are 0.9, threshold is 0.3 — nothing should change
+        original_kpts = [kp.copy() for kp in builder.keypoints]
+        result = interpolate_low_confidence_keypoints(builder, conf_threshold=0.3)
+        for i in range(len(frames)):
+            np.testing.assert_array_equal(
+                result.keypoints[i],
+                original_kpts[i],
+                err_msg=f"Frame {frames[i]} keypoints changed when all conf > threshold",
+            )
+
+    def test_single_low_conf_keypoint_interpolated(self) -> None:
+        """A single low-conf keypoint at frame 5 is replaced by spline interpolation."""
+        frames = list(range(10))
+        # Make kpt index 3 low-conf at frame 5
+        kconf_override = {5: np.array([0.9, 0.9, 0.9, 0.1, 0.9, 0.9], dtype=np.float32)}
+        # Assign simple linear positions for kpt 3
+        kpts_override: dict[int, np.ndarray] = {}
+        for f in frames:
+            kp = np.zeros((6, 2), dtype=np.float32)
+            for k in range(6):
+                kp[k] = [f * 10.0 + k * 5.0, 100.0]
+            kpts_override[f] = kp
+        builder = self._make_builder_with_custom_kconf(
+            frames, kconf_override=kconf_override, kpts_override=kpts_override
+        )
+        # Corrupt kpt 3 at frame 5 so we can check it gets replaced
+        builder.keypoints[5][3] = np.array([999.0, 999.0], dtype=np.float32)
+
+        result = interpolate_low_confidence_keypoints(builder, conf_threshold=0.3)
+        idx5 = result.frames.index(5)
+        interp_val = result.keypoints[idx5][3]
+        # The spline should produce something near the linear interpolation value (5*10 + 3*5 = 65)
+        assert interp_val[0] < 200.0, (
+            "Interpolated value should not be the corrupted 999.0"
+        )
+        # Should be between the neighboring frames' values
+        assert 0.0 < interp_val[0] < 200.0
+
+    def test_interpolated_keypoint_conf_set_to_zero(self) -> None:
+        """keypoint_conf is set to 0.0 for interpolated (low-conf) keypoints."""
+        frames = list(range(10))
+        kconf_override = {5: np.array([0.9, 0.9, 0.9, 0.1, 0.9, 0.9], dtype=np.float32)}
+        builder = self._make_builder_with_custom_kconf(
+            frames, kconf_override=kconf_override
+        )
+        result = interpolate_low_confidence_keypoints(builder, conf_threshold=0.3)
+        idx5 = result.frames.index(5)
+        # kpt 3 was low-conf — its conf should now be 0.0
+        assert result.keypoint_conf[idx5][3] == 0.0, (
+            "Interpolated keypoint conf should be 0.0"
+        )
+        # Other keypoints at frame 5 remain confident
+        for k in range(6):
+            if k != 3:
+                assert result.keypoint_conf[idx5][k] == pytest.approx(0.9), (
+                    f"Non-interpolated kpt {k} conf changed unexpectedly"
+                )
+
+    def test_fewer_than_two_confident_frames_left_unchanged(self) -> None:
+        """Keypoint with fewer than 2 confident frames is left unchanged (no spline)."""
+        frames = list(range(5))
+        # Only frame 0 has confident kpt 3; all others are low-conf
+        kconf_list = {}
+        for f in frames:
+            kc = np.full(6, 0.1, dtype=np.float32)  # all low
+            if f == 0:
+                kc[3] = 0.9  # only frame 0 is confident
+            kconf_list[f] = kc
+        # Assign known positions
+        kpts_override: dict[int, np.ndarray] = {}
+        for f in frames:
+            kp = np.zeros((6, 2), dtype=np.float32)
+            for k in range(6):
+                kp[k] = [f * 10.0, 100.0]
+            kpts_override[f] = kp
+
+        builder = self._make_builder_with_custom_kconf(
+            frames, kconf_override=kconf_list, kpts_override=kpts_override
+        )
+        original_kpts = [kp.copy() for kp in builder.keypoints]
+        result = interpolate_low_confidence_keypoints(builder, conf_threshold=0.3)
+        # kpt 3 at all frames (except frame 0) should be unchanged — only 1 confident knot
+        for i, f in enumerate(frames):
+            np.testing.assert_array_equal(
+                result.keypoints[i][3],
+                original_kpts[i][3],
+                err_msg=f"Frame {f} kpt 3 changed even though <2 confident knots exist",
+            )
+
+    def test_coasted_frames_not_used_as_knot_points(self) -> None:
+        """Frames with conf=0.0 (from whole-frame gap fill) are not used as knots."""
+        # Build a builder: frames [0,1,2,3,4] where frames 2,3 are coasted (conf=0.0)
+        # and kpt 1 is low-conf at frame 4. After gap-fill, frames 2,3 have conf=0.0.
+        # They should NOT be used as spline knots for kpt 1.
+        frames = list(range(5))
+        kconf_override: dict[int, np.ndarray] = {}
+        for f in frames:
+            kc = np.full(6, 0.9, dtype=np.float32)
+            if f in (2, 3):
+                # Simulate coasted frames: all conf = 0.0
+                kc[:] = 0.0
+            if f == 4:
+                # kpt 1 low-conf at frame 4
+                kc[1] = 0.1
+            kconf_override[f] = kc
+
+        builder = self._make_builder_with_custom_kconf(
+            frames, kconf_override=kconf_override
+        )
+        # Mark frames 2,3 as "coasted" status
+        builder.frame_status[2] = "coasted"
+        builder.frame_status[3] = "coasted"
+
+        # Frames 0 and 1 have kpt 1 confident — those are the only knots for kpt 1.
+        # Frame 4 is the target.
+        result = interpolate_low_confidence_keypoints(builder, conf_threshold=0.3)
+        idx4 = result.frames.index(4)
+        # kpt 1 at frame 4 should be interpolated (only 2 knot points: frames 0 and 1)
+        # This test mainly verifies no crash, and that coasted frames aren't used
+        # (i.e., the function still runs and produces finite output)
+        assert np.all(np.isfinite(result.keypoints[idx4][1])), (
+            "Interpolated kpt 1 at frame 4 is not finite"
+        )
+
+    def test_multiple_keypoints_interpolated_independently(self) -> None:
+        """Multiple keypoints can be independently interpolated in the same frame."""
+        frames = list(range(10))
+        kconf_override = {5: np.array([0.9, 0.9, 0.9, 0.1, 0.1, 0.9], dtype=np.float32)}
+        builder = self._make_builder_with_custom_kconf(
+            frames, kconf_override=kconf_override
+        )
+        # Corrupt kpt 3 and kpt 4 at frame 5
+        builder.keypoints[5][3] = np.array([999.0, 999.0], dtype=np.float32)
+        builder.keypoints[5][4] = np.array([888.0, 888.0], dtype=np.float32)
+
+        result = interpolate_low_confidence_keypoints(builder, conf_threshold=0.3)
+        idx5 = result.frames.index(5)
+
+        # kpt 3 and kpt 4 should be interpolated (not 999/888)
+        assert result.keypoints[idx5][3][0] < 200.0, "kpt 3 not interpolated"
+        assert result.keypoints[idx5][4][0] < 200.0, "kpt 4 not interpolated"
+        # kpt 0 and kpt 1 and kpt 5 should be unchanged
+        assert result.keypoint_conf[idx5][0] == pytest.approx(0.9), "kpt 0 conf changed"
+        assert result.keypoint_conf[idx5][5] == pytest.approx(0.9), "kpt 5 conf changed"

@@ -52,9 +52,10 @@ None.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 27 | Implement post-Leiden disjoint-camera merge pass in association clustering to fix fish splitting | 2026-03-15 | e2d70c9 | [27-implement-post-leiden-disjoint-camera-me](./quick/27-implement-post-leiden-disjoint-camera-me/) |
+| 28 | Add per-keypoint cubic spline interpolation to fill low-confidence keypoints within detected frames | 2026-03-17 | a7f072d | [28-add-per-keypoint-interpolation-to-tempor](./quick/28-add-per-keypoint-interpolation-to-tempor/) |
 
 ## Session Continuity
 
-Last activity: 2026-03-15 - Completed quick task 27: Implement post-Leiden disjoint-camera merge pass in association clustering to fix fish splitting
-Stopped at: v3.10 milestone completed and archived
+Last activity: 2026-03-17 - Completed quick task 28: Add per-keypoint cubic spline interpolation to KeypointTracker
+Stopped at: Quick task 28 complete
 Resume file: None

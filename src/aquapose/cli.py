@@ -425,7 +425,9 @@ def tune_cmd(
     help="Custom output directory (default: {run_dir}/viz/).",
 )
 @click.option(
-    "--overlay", is_flag=True, help="Generate 2D reprojection overlay mosaic video."
+    "--overlay",
+    is_flag=True,
+    help="Generate 2D reprojection overlay mosaic from midlines HDF5.",
 )
 @click.option(
     "--animation", is_flag=True, help="Generate interactive 3D midline animation HTML."
@@ -433,7 +435,7 @@ def tune_cmd(
 @click.option(
     "--trails",
     is_flag=True,
-    help="Generate per-camera trail videos and association mosaic.",
+    help="Generate association mosaic video from 3D midline reprojections.",
 )
 @click.option(
     "--fade-trails",
@@ -448,11 +450,35 @@ def tune_cmd(
     help="Generate detection overlay mosaic PNG (OBB boxes colored by confidence).",
 )
 @click.option(
+    "--only-with-detections",
+    is_flag=True,
+    default=False,
+    help="For detection mosaics, only show camera views that have detections.",
+)
+@click.option(
+    "--unstitched",
+    is_flag=True,
+    default=False,
+    help="Force trail viz to use midlines.h5 even if midlines_stitched.h5 exists.",
+)
+@click.option(
     "--stride",
     type=int,
     default=1,
     show_default=True,
     help="Animation frame stride: keep every Nth frame (reduces HTML size for long videos).",
+)
+@click.option(
+    "--mp4",
+    is_flag=True,
+    help="Export 3D animation as MP4 video instead of interactive HTML (requires ffmpeg).",
+)
+@click.option(
+    "--fps",
+    type=int,
+    default=30,
+    show_default=True,
+    help="Frames per second for MP4 output.",
 )
 @click.pass_context
 def viz(
@@ -463,10 +489,14 @@ def viz(
     animation: bool,
     trails: bool,
     fade_trails: bool,
+    unstitched: bool,
     detections: bool,
+    only_with_detections: bool,
     stride: int,
+    mp4: bool,
+    fps: int,
 ) -> None:
-    """Generate visualizations from diagnostic run caches.
+    """Generate visualizations from midlines HDF5 data.
 
     With no flags, generates all visualizations. Pass one or more flags to
     select specific outputs.
@@ -492,10 +522,16 @@ def viz(
         selected = {k: True for k in selected}
 
     generators: dict[str, Any] = {
-        "overlay": lambda: generate_overlay(run_path, out_dir),
-        "animation": lambda: generate_animation(run_path, out_dir, stride=stride),
-        "detections": lambda: generate_detection_overlay(run_path, out_dir),
-        "trails": lambda: generate_trails(run_path, out_dir, fade_trails=fade_trails),
+        "overlay": lambda: generate_overlay(run_path, out_dir, unstitched=unstitched),
+        "animation": lambda: generate_animation(
+            run_path, out_dir, stride=stride, mp4=mp4, fps=fps, unstitched=unstitched
+        ),
+        "detections": lambda: generate_detection_overlay(
+            run_path, out_dir, only_with_detections=only_with_detections
+        ),
+        "trails": lambda: generate_trails(
+            run_path, out_dir, fade_trails=fade_trails, unstitched=unstitched
+        ),
     }
 
     succeeded: list[str] = []

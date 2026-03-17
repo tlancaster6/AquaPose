@@ -1,4 +1,4 @@
-"""Overlay visualization: reprojected 3D midlines on camera frames across all chunks."""
+"""Overlay visualization: reprojected 3D midlines on camera frames."""
 
 from __future__ import annotations
 
@@ -14,7 +14,11 @@ import numpy as np
 import scipy.interpolate
 
 from aquapose.evaluation.viz._frames import synthetic_frame_iter
-from aquapose.evaluation.viz._loader import load_all_chunk_caches, read_config_yaml
+from aquapose.evaluation.viz._loader import (
+    load_midlines_from_h5,
+    read_config_yaml,
+    resolve_h5_path,
+)
 
 if TYPE_CHECKING:
     from aquapose.calibration.projection import RefractiveProjectionModel
@@ -193,54 +197,6 @@ def _draw_midline_points(
         cv2.circle(frame, (pt[0], pt[1]), radius, color, -1)
 
 
-def _draw_detection_bbox(
-    frame: np.ndarray,
-    bbox: object,
-    color: tuple[int, int, int],
-    obb_points: np.ndarray | None = None,
-    fish_id: int | None = None,
-    confidence: float | None = None,
-    thickness: int = 2,
-) -> None:
-    """Draw an OBB polygon or AABB bounding box with optional label.
-
-    Args:
-        frame: BGR image to draw on (modified in-place).
-        bbox: Bounding box as (x, y, w, h) tuple (used when obb_points is None).
-        color: BGR color tuple.
-        obb_points: OBB corners as (4, 2) array (overrides bbox when provided).
-        fish_id: Fish ID to display as label (optional).
-        confidence: Confidence score appended to label (optional).
-        thickness: Line thickness in pixels.
-    """
-    if obb_points is not None:
-        pts = obb_points.astype(np.int32).reshape((-1, 1, 2))
-        cv2.polylines(frame, [pts], isClosed=True, color=color, thickness=thickness)
-        label_x = int(obb_points[:, 0].min())
-        label_y = int(obb_points[:, 1].min()) - 5
-    else:
-        if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
-            return
-        x, y, w, h = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
-        cv2.rectangle(frame, (x, y), (x + w, y + h), color, thickness)
-        label_x = x
-        label_y = y - 5
-
-    if fish_id is not None:
-        label = (
-            f"{fish_id} {confidence:.2f}" if confidence is not None else str(fish_id)
-        )
-        cv2.putText(
-            frame,
-            label,
-            (label_x, label_y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            color,
-            1,
-        )
-
-
 def _build_mosaic(
     frames: dict[str, np.ndarray],
     camera_ids: list[str],
@@ -294,31 +250,37 @@ def generate_overlay(
     scale: float = 0.5,
     show_bbox: bool = False,
     show_fish_id: bool = False,
+    unstitched: bool = False,
 ) -> Path:
-    """Generate a continuous mosaic overlay video across all chunks.
+    """Generate a continuous mosaic overlay video from 3D midline reprojections.
 
-    Loads all chunk caches from run_dir, builds calibration projection models,
-    then renders reprojected 3D midlines on top of camera frames. If video
-    frames are not available, falls back to synthetic black frames. All chunks
-    are stitched into a single continuous output video.
+    Reads midline data from the run's HDF5 file, builds projection models,
+    and renders reprojected 3D midlines on top of camera frames. If video
+    frames are not available, falls back to synthetic black frames.
+
+    By default, prefers ``midlines_stitched.h5`` if it exists (post-stitching
+    IDs). Pass ``unstitched=True`` to force reading ``midlines.h5``.
 
     Args:
         run_dir: Path to the pipeline run directory.
         output_dir: Directory for output. Defaults to ``{run_dir}/viz/``.
         fps: Output video frame rate.
         scale: Downscale factor applied to each frame before mosaic assembly.
-        show_bbox: If True, draw detection bounding boxes.
+        show_bbox: If True, draw detection bounding boxes (requires diagnostic
+            chunk caches; ignored when not available).
         show_fish_id: If True, annotate fish IDs on bounding boxes.
+        unstitched: If True, always use ``midlines.h5`` even when
+            ``midlines_stitched.h5`` exists.
 
     Returns:
         Path to the written ``overlay_mosaic.mp4`` file.
 
     Raises:
-        RuntimeError: If no chunk caches are found in run_dir.
+        RuntimeError: If no midlines HDF5 file is found.
     """
-    contexts = load_all_chunk_caches(run_dir)
-    if not contexts:
-        raise RuntimeError(f"No chunk caches found in {run_dir}")
+    h5_path = resolve_h5_path(run_dir, unstitched=unstitched)
+    if h5_path is None:
+        raise RuntimeError(f"No midlines HDF5 found in {run_dir}")
 
     out_dir = output_dir or run_dir / "viz"
     _ = show_fish_id  # reserved for future use
@@ -326,62 +288,58 @@ def generate_overlay(
     out_dir.mkdir(parents=True, exist_ok=True)
     output_path = out_dir / "overlay_mosaic.mp4"
 
-    # Use camera_ids from first chunk with data.
-    camera_ids: list[str] | None = None
-    for ctx in contexts:
-        camera_ids = getattr(ctx, "camera_ids", None)
-        if camera_ids:
-            break
-    if not camera_ids:
-        raise RuntimeError("No camera_ids found in any chunk cache")
+    # Load midlines from H5.
+    sys.stderr.write(f"Loading midlines from {h5_path.name}...\n")
+    sys.stderr.flush()
+    all_midlines_3d = load_midlines_from_h5(h5_path)
+    total_frames = len(all_midlines_3d)
+    if total_frames == 0:
+        raise RuntimeError(f"No midline data in {h5_path}")
 
     # Load calibration.
     config_yaml = read_config_yaml(run_dir)
     calibration_path_str = config_yaml.get("calibration_path", "")
-    # Resolve relative paths against run_dir parent (project dir).
     calib_path = Path(calibration_path_str)
     if not calib_path.is_absolute():
-        # Try relative to run_dir first, then run_dir.parent.
         for base in (run_dir, run_dir.parent):
             candidate = base / calib_path
             if candidate.exists():
                 calib_path = candidate
                 break
 
+    if not calib_path.exists():
+        raise RuntimeError(f"Calibration file not found: {calib_path}")
+
     models: dict[str, RefractiveProjectionModel] = {}
     frame_w: int = 0
     frame_h: int = 0
 
-    if calib_path.exists():
-        try:
-            from aquapose.calibration.loader import (
-                compute_undistortion_maps,
-                load_calibration_data,
-            )
-            from aquapose.calibration.projection import RefractiveProjectionModel
+    from aquapose.calibration.loader import (
+        compute_undistortion_maps,
+        load_calibration_data,
+    )
+    from aquapose.calibration.projection import RefractiveProjectionModel
 
-            calib_data = load_calibration_data(str(calib_path))
-            for cam_id in camera_ids:
-                if cam_id in calib_data.cameras:
-                    cam = calib_data.cameras[cam_id]
-                    undist_maps = compute_undistortion_maps(cam)
-                    models[cam_id] = RefractiveProjectionModel(
-                        K=undist_maps.K_new,
-                        R=cam.R,
-                        t=cam.t,
-                        water_z=calib_data.water_z,
-                        normal=calib_data.interface_normal,
-                        n_air=calib_data.n_air,
-                        n_water=calib_data.n_water,
-                    )
-            # Get frame dimensions from calibration.
-            first_cam = next(
-                (cid for cid in camera_ids if cid in calib_data.cameras), None
-            )
-            if first_cam is not None:
-                frame_w, frame_h = calib_data.cameras[first_cam].image_size
-        except Exception as exc:
-            logger.warning("Failed to load calibration for overlay: %s", exc)
+    calib_data = load_calibration_data(str(calib_path))
+    camera_ids = sorted(calib_data.cameras.keys())
+
+    for cam_id in camera_ids:
+        cam = calib_data.cameras[cam_id]
+        undist_maps = compute_undistortion_maps(cam)
+        models[cam_id] = RefractiveProjectionModel(
+            K=undist_maps.K_new,
+            R=cam.R,
+            t=cam.t,
+            water_z=calib_data.water_z,
+            normal=calib_data.interface_normal,
+            n_air=calib_data.n_air,
+            n_water=calib_data.n_water,
+        )
+
+    # Get frame dimensions from calibration.
+    first_cam = next((cid for cid in camera_ids if cid in calib_data.cameras), None)
+    if first_cam is not None:
+        frame_w, frame_h = calib_data.cameras[first_cam].image_size
 
     # Try to open a VideoFrameSource from config.
     frame_source = None
@@ -398,8 +356,6 @@ def generate_overlay(
             try:
                 from aquapose.core.types.frame_source import VideoFrameSource
 
-                if not calib_path.exists():
-                    raise FileNotFoundError(f"Calibration file not found: {calib_path}")
                 frame_source = VideoFrameSource(
                     video_dir=video_path,
                     calibration_path=calib_path,
@@ -411,20 +367,44 @@ def generate_overlay(
                 )
                 frame_source = None
 
-    # Compute per-chunk frame offsets for global frame index computation.
-    # Each chunk's frame_count tells us how many frames are in that chunk.
-    chunk_frame_counts: list[int] = []
-    for ctx in contexts:
-        fc = getattr(ctx, "frame_count", None) or 0
-        chunk_frame_counts.append(fc)
+    # Narrow camera list to those the frame source actually provides.
+    if frame_source is not None:
+        source_cams = set(frame_source.camera_ids)
+        camera_ids = [c for c in camera_ids if c in source_cams]
+        models = {c: m for c, m in models.items() if c in source_cams}
 
-    total_frames = sum(chunk_frame_counts)
-    if total_frames == 0:
-        raise RuntimeError("All chunk caches have zero frames")
+    # Build synthetic fallback frame sizes.
+    frame_sizes: dict[str, tuple[int, int]] = {}
+    if frame_w > 0 and frame_h > 0:
+        frame_sizes = {cam_id: (frame_w, frame_h) for cam_id in camera_ids}
 
     # Compute scaled output dimensions.
     out_w = max(1, int(frame_w * scale)) if frame_w > 0 else 0
     out_h = max(1, int(frame_h * scale)) if frame_h > 0 else 0
+
+    if frame_source is not None:
+        ctx_mgr = frame_source
+    elif frame_sizes:
+        ctx_mgr = contextlib.nullcontext(
+            synthetic_frame_iter(camera_ids, frame_sizes, total_frames)
+        )
+    else:
+        raise RuntimeError("No frame source or calibration data available for overlay")
+
+    # Load detection data from chunk caches if show_bbox requested.
+    all_detections: list[dict | None] = []
+    if show_bbox:
+        try:
+            from aquapose.evaluation.viz._loader import load_all_chunk_caches
+
+            contexts = load_all_chunk_caches(run_dir)
+            for ctx in contexts:
+                det = getattr(ctx, "detections", None) or [None] * getattr(
+                    ctx, "frame_count", 0
+                )
+                all_detections.extend(det)
+        except Exception as exc:
+            logger.warning("Could not load chunk caches for bbox overlay: %s", exc)
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
     writer: cv2.VideoWriter | None = None
@@ -433,37 +413,12 @@ def generate_overlay(
     sys.stderr.flush()
 
     try:
-        # Build synthetic fallback frame sizes.
-        frame_sizes: dict[str, tuple[int, int]] = {}
-        if frame_w > 0 and frame_h > 0:
-            frame_sizes = {cam_id: (frame_w, frame_h) for cam_id in camera_ids}
-
-        if frame_source is not None:
-            ctx_mgr = frame_source
-        elif frame_sizes:
-            ctx_mgr = contextlib.nullcontext(
-                synthetic_frame_iter(camera_ids, frame_sizes, total_frames)
-            )
-        else:
-            raise RuntimeError(
-                "No frame source or calibration data available for overlay"
-            )
-
-        # Merge all chunks' data lists.
-        all_midlines_3d: list[dict] = []
-        all_detections: list[dict | None] = []
-        for ctx in contexts:
-            mid = getattr(ctx, "midlines_3d", None) or []
-            det = getattr(ctx, "detections", None) or [None] * len(mid)
-            all_midlines_3d.extend(mid)
-            all_detections.extend(det)
-
         with ctx_mgr as frame_iter:
             for frame_idx, frames in frame_iter:
                 if frame_idx >= total_frames:
                     break
 
-                # Draw 2D keypoints from detections.
+                # Draw 2D keypoints from detections (optional).
                 if show_bbox and frame_idx < len(all_detections):
                     frame_dets = all_detections[frame_idx]
                     if isinstance(frame_dets, dict):
@@ -471,24 +426,11 @@ def generate_overlay(
                             if cam_id not in frames:
                                 continue
                             for det in dets:
-                                # Draw raw keypoints if available
                                 kpts = getattr(det, "keypoints", None)
                                 if kpts is not None:
                                     pts_arr = np.asarray(kpts, dtype=np.float32)
                                     _draw_midline_points(
                                         frames[cam_id], pts_arr, (255, 0, 0)
-                                    )
-                                bbox = getattr(det, "bbox", None)
-                                if bbox is not None:
-                                    obb_pts = getattr(det, "obb_points", None)
-                                    conf = getattr(det, "confidence", None)
-                                    _draw_detection_bbox(
-                                        frames[cam_id],
-                                        bbox,
-                                        (255, 0, 0),
-                                        obb_points=obb_pts,
-                                        fish_id=None,
-                                        confidence=conf,
                                     )
 
                 # Draw reprojected 3D midlines (batched per camera).

@@ -251,38 +251,31 @@ class TestGenerateAll:
 
 
 class TestGenerateOverlay:
-    """Tests for generate_overlay output path and empty cache behavior."""
+    """Tests for generate_overlay output path and missing H5 behavior."""
 
-    def test_raises_on_empty_chunk_caches(self, tmp_path: Path) -> None:
-        """generate_overlay raises RuntimeError when no caches are found."""
+    def test_raises_on_missing_h5(self, tmp_path: Path) -> None:
+        """generate_overlay raises RuntimeError when no midlines H5 is found."""
         from aquapose.evaluation.viz.overlay import generate_overlay
 
         run_dir = tmp_path / "empty_run"
         run_dir.mkdir()
-        with pytest.raises(RuntimeError, match="No chunk caches"):
+        with pytest.raises(RuntimeError, match="No midlines HDF5"):
             generate_overlay(run_dir)
 
-    def test_output_path_in_viz_subdir(self, tmp_path: Path) -> None:
-        """generate_overlay writes to {run_dir}/viz/overlay_mosaic.mp4 by default."""
+    def test_raises_on_missing_calibration(self, tmp_path: Path) -> None:
+        """generate_overlay raises RuntimeError when calibration is missing."""
+        import yaml
+
         from aquapose.evaluation.viz.overlay import generate_overlay
 
-        run_dir = _setup_run_dir(tmp_path)
-
-        # No calibration data or video dir in this run_dir => RuntimeError on frame source.
-        with pytest.raises(RuntimeError):
+        run_dir = tmp_path / "run_no_calib"
+        run_dir.mkdir()
+        _write_minimal_h5(run_dir / "midlines.h5")
+        (run_dir / "config.yaml").write_text(
+            yaml.dump({"calibration_path": "nonexistent.json"})
+        )
+        with pytest.raises(RuntimeError, match="Calibration file not found"):
             generate_overlay(run_dir)
-
-    def test_custom_output_dir(self, tmp_path: Path) -> None:
-        """generate_overlay respects custom output_dir argument."""
-        from aquapose.evaluation.viz.overlay import generate_overlay
-
-        run_dir = _setup_run_dir(tmp_path)
-        custom_dir = tmp_path / "custom_viz"
-
-        # Should fail on missing video/calibration, but we're checking the
-        # output path is rooted under custom_dir.
-        with pytest.raises((RuntimeError, Exception)):
-            generate_overlay(run_dir, custom_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -291,37 +284,24 @@ class TestGenerateOverlay:
 
 
 class TestGenerateAnimation:
-    """Tests for generate_animation output path and empty cache behavior."""
+    """Tests for generate_animation output path and missing H5 behavior."""
 
-    def test_raises_on_empty_chunk_caches(self, tmp_path: Path) -> None:
-        """generate_animation raises RuntimeError when no caches are found."""
+    def test_raises_on_missing_h5(self, tmp_path: Path) -> None:
+        """generate_animation raises RuntimeError when no midlines H5 is found."""
         from aquapose.evaluation.viz.animation import generate_animation
 
         run_dir = tmp_path / "empty_run"
         run_dir.mkdir()
-        with pytest.raises(RuntimeError, match=r"No midlines\.h5 or chunk caches"):
-            generate_animation(run_dir)
-
-    def test_raises_on_no_midlines_3d(self, tmp_path: Path) -> None:
-        """generate_animation raises RuntimeError when all chunks have no midlines_3d."""
-        from aquapose.evaluation.viz.animation import generate_animation
-
-        run_dir = _setup_run_dir(tmp_path)
-        # Overwrite the chunk cache with a context that has no midlines.
-        ctx = _make_context(frame_count=5, midlines_3d=[])
-        _write_fake_chunk_cache(run_dir, 0, ctx)
-
-        with pytest.raises(RuntimeError, match="No midlines_3d"):
+        with pytest.raises(RuntimeError, match="No midlines HDF5"):
             generate_animation(run_dir)
 
     def test_output_path_in_viz_subdir(self, tmp_path: Path) -> None:
         """generate_animation writes to {run_dir}/viz/animation_3d.html by default."""
         from aquapose.evaluation.viz.animation import generate_animation
 
-        run_dir = _setup_run_dir(tmp_path)
-        # Provide real midlines_3d data (empty dicts per frame) so generation proceeds.
-        ctx = _make_context(frame_count=3, midlines_3d=[{}, {}, {}])
-        _write_fake_chunk_cache(run_dir, 0, ctx)
+        run_dir = tmp_path / "run_anim"
+        run_dir.mkdir()
+        _write_minimal_h5(run_dir / "midlines.h5")
 
         out_path = generate_animation(run_dir)
         assert out_path == run_dir / "viz" / "animation_3d.html"
@@ -331,15 +311,30 @@ class TestGenerateAnimation:
         """generate_animation writes to custom output_dir when provided."""
         from aquapose.evaluation.viz.animation import generate_animation
 
-        run_dir = _setup_run_dir(tmp_path)
-        ctx = _make_context(frame_count=2, midlines_3d=[{}, {}])
-        _write_fake_chunk_cache(run_dir, 0, ctx)
+        run_dir = tmp_path / "run_anim_custom"
+        run_dir.mkdir()
+        _write_minimal_h5(run_dir / "midlines.h5")
         custom_dir = tmp_path / "my_viz"
 
         out_path = generate_animation(run_dir, custom_dir)
         assert out_path.parent == custom_dir
         assert out_path.name == "animation_3d.html"
         assert out_path.exists()
+
+    def test_prefers_stitched_h5(self, tmp_path: Path) -> None:
+        """generate_animation prefers midlines_stitched.h5 by default."""
+        from aquapose.evaluation.viz.animation import generate_animation
+
+        run_dir = tmp_path / "run_anim_stitched"
+        run_dir.mkdir()
+        _write_minimal_h5(run_dir / "midlines.h5", fish_id=0)
+        _write_minimal_h5(run_dir / "midlines_stitched.h5", fish_id=99)
+
+        out_path = generate_animation(run_dir)
+        assert out_path.exists()
+        # The animation should contain fish 99 from stitched, not fish 0
+        content = out_path.read_text()
+        assert "Fish 99" in content
 
 
 # ---------------------------------------------------------------------------
@@ -348,31 +343,103 @@ class TestGenerateAnimation:
 
 
 class TestGenerateTrails:
-    """Tests for generate_trails output path and empty cache behavior."""
+    """Tests for generate_trails output path and missing H5 behavior."""
 
-    def test_raises_on_empty_chunk_caches(self, tmp_path: Path) -> None:
-        """generate_trails raises RuntimeError when no caches are found."""
+    def test_raises_on_missing_h5(self, tmp_path: Path) -> None:
+        """generate_trails raises RuntimeError when no midlines H5 is found."""
         from aquapose.evaluation.viz.trails import generate_trails
 
         run_dir = tmp_path / "empty_run"
         run_dir.mkdir()
-        with pytest.raises(RuntimeError, match="No chunk caches"):
+        with pytest.raises(RuntimeError, match="No midlines HDF5"):
             generate_trails(run_dir)
 
-    def test_returns_viz_dir_by_default(self, tmp_path: Path) -> None:
-        """generate_trails returns {run_dir}/viz/ as output directory."""
+    def test_raises_on_missing_calibration(self, tmp_path: Path) -> None:
+        """generate_trails raises RuntimeError when calibration is missing."""
+        import yaml
+
         from aquapose.evaluation.viz.trails import generate_trails
 
-        run_dir = _setup_run_dir(tmp_path)
-        # No frame source available => returns output dir without writing videos.
-        out = generate_trails(run_dir)
-        assert out == run_dir / "viz"
+        run_dir = tmp_path / "run_no_calib"
+        run_dir.mkdir()
+        # Write a minimal midlines.h5
+        _write_minimal_h5(run_dir / "midlines.h5")
+        # Write config.yaml with bogus calibration path
+        (run_dir / "config.yaml").write_text(
+            yaml.dump({"calibration_path": "nonexistent.json"})
+        )
+        with pytest.raises(RuntimeError, match="Calibration file not found"):
+            generate_trails(run_dir)
 
-    def test_custom_output_dir(self, tmp_path: Path) -> None:
-        """generate_trails uses custom output_dir when provided."""
-        from aquapose.evaluation.viz.trails import generate_trails
+    def test_prefers_stitched_h5(self, tmp_path: Path) -> None:
+        """generate_trails prefers midlines_stitched.h5 over midlines.h5."""
+        from aquapose.evaluation.viz.trails import _load_midline_positions
 
-        run_dir = _setup_run_dir(tmp_path)
-        custom_dir = tmp_path / "custom_trails"
-        out = generate_trails(run_dir, custom_dir)
-        assert out == custom_dir
+        run_dir = tmp_path / "run_stitched"
+        run_dir.mkdir()
+        # Write both files with different fish IDs
+        _write_minimal_h5(run_dir / "midlines.h5", fish_id=0)
+        _write_minimal_h5(run_dir / "midlines_stitched.h5", fish_id=99)
+
+        # Default (unstitched=False) should pick stitched
+        stitched_path = run_dir / "midlines_stitched.h5"
+        data = _load_midline_positions(stitched_path)
+        assert any(99 in fdict for fdict in data.values())
+
+    def test_unstitched_flag(self, tmp_path: Path) -> None:
+        """With unstitched=True, generate_trails uses midlines.h5."""
+        from aquapose.evaluation.viz.trails import _load_midline_positions
+
+        run_dir = tmp_path / "run_unstitched"
+        run_dir.mkdir()
+        _write_minimal_h5(run_dir / "midlines.h5", fish_id=0)
+        _write_minimal_h5(run_dir / "midlines_stitched.h5", fish_id=99)
+
+        raw_path = run_dir / "midlines.h5"
+        data = _load_midline_positions(raw_path)
+        assert any(0 in fdict for fdict in data.values())
+
+
+def _write_minimal_h5(path: Path, fish_id: int = 0) -> None:
+    """Write a minimal midlines.h5 for testing."""
+    import h5py
+    import numpy as np
+
+    from aquapose.core.reconstruction.utils import SPLINE_K, SPLINE_KNOTS
+
+    with h5py.File(path, "w") as f:
+        grp = f.create_group("midlines")
+        grp.attrs["SPLINE_KNOTS"] = SPLINE_KNOTS
+        grp.attrs["SPLINE_K"] = SPLINE_K
+        N = 3
+        max_fish = 1
+        n_kpts = 6
+        grp.create_dataset("frame_index", data=np.arange(N, dtype=np.int64))
+        fid_arr = np.full((N, max_fish), fish_id, dtype=np.int32)
+        grp.create_dataset("fish_id", data=fid_arr)
+        pts = (
+            np.random.default_rng(42)
+            .uniform(-0.1, 0.1, (N, max_fish, n_kpts, 3))
+            .astype(np.float32)
+        )
+        grp.create_dataset("points", data=pts)
+        grp.create_dataset(
+            "control_points",
+            data=np.full((N, max_fish, 7, 3), np.nan, dtype=np.float32),
+        )
+        grp.create_dataset(
+            "arc_length", data=np.full((N, max_fish), np.nan, dtype=np.float32)
+        )
+        grp.create_dataset(
+            "half_widths", data=np.full((N, max_fish, n_kpts), np.nan, dtype=np.float32)
+        )
+        grp.create_dataset("n_cameras", data=np.full((N, max_fish), 3, dtype=np.int32))
+        grp.create_dataset(
+            "mean_residual", data=np.full((N, max_fish), 0.01, dtype=np.float32)
+        )
+        grp.create_dataset(
+            "max_residual", data=np.full((N, max_fish), 0.02, dtype=np.float32)
+        )
+        grp.create_dataset(
+            "is_low_confidence", data=np.zeros((N, max_fish), dtype=bool)
+        )

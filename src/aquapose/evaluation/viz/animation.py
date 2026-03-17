@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -11,8 +14,7 @@ import plotly.colors
 import plotly.graph_objects as go
 import scipy.interpolate
 
-from aquapose.evaluation.viz._loader import load_all_chunk_caches
-from aquapose.io.midline_writer import read_midline3d_results
+from aquapose.evaluation.viz._loader import load_midlines_from_h5, resolve_h5_path
 
 logger = logging.getLogger(__name__)
 
@@ -223,67 +225,107 @@ def _build_figure(
     return fig
 
 
-class _H5Spline:
-    """Lightweight spline-like object for _eval_spline compatibility."""
-
-    __slots__ = ("control_points", "degree", "knots", "points")
-
-    def __init__(
-        self,
-        control_points: np.ndarray,
-        knots: np.ndarray,
-        degree: int,
-        points: np.ndarray | None = None,
-    ) -> None:
-        self.control_points = control_points
-        self.knots = knots
-        self.degree = degree
-        self.points = points
-
-
-def _load_midlines_from_h5(h5_path: Path) -> list[dict[int, _H5Spline]]:
-    """Load per-frame midline dicts from an HDF5 file.
+def _export_mp4(
+    fig: go.Figure,
+    midlines_3d: list[dict],
+    fish_colors: dict[int, str],
+    sorted_fish_ids: list[int],
+    output_path: Path,
+    fps: int = 30,
+    width: int = 1280,
+    height: int = 720,
+) -> Path:
+    """Render each frame as a static image and stitch into an MP4 with ffmpeg.
 
     Args:
-        h5_path: Path to midlines.h5.
+        fig: Base Plotly figure (used for layout/scene settings).
+        midlines_3d: Per-frame dicts mapping fish_id to spline objects.
+        fish_colors: Mapping of fish_id to Plotly color string.
+        sorted_fish_ids: Sorted list of all unique fish IDs.
+        output_path: Destination MP4 path.
+        fps: Frames per second for the output video.
+        width: Frame width in pixels.
+        height: Frame height in pixels.
 
     Returns:
-        List of per-frame dicts mapping fish_id to _H5Spline objects.
-    """
-    data = read_midline3d_results(h5_path)
-    fish_ids = data["fish_id"]  # (N, max_fish)
-    control_points = data["control_points"]  # (N, max_fish, 7, 3)
-    raw_points = data.get("points")  # (N, max_fish, n_kpts, 3) or None
-    knots = np.asarray(data["SPLINE_KNOTS"], dtype=np.float64)
-    degree = int(data["SPLINE_K"])
-    n_frames, max_fish = fish_ids.shape
+        Path to the written MP4 file.
 
-    frames: list[dict[int, _H5Spline]] = []
-    for fi in range(n_frames):
-        frame_dict: dict[int, _H5Spline] = {}
-        for s in range(max_fish):
-            fid = int(fish_ids[fi, s])
-            if fid >= 0:
-                pts = raw_points[fi, s] if raw_points is not None else None
-                frame_dict[fid] = _H5Spline(
-                    control_points[fi, s],
-                    knots,
-                    degree,
-                    points=pts,
+    Raises:
+        RuntimeError: If ffmpeg is not found or encoding fails.
+    """
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError(
+            "ffmpeg not found on PATH. Install it (e.g. 'sudo apt install ffmpeg')."
+        )
+
+    n_frames = len(midlines_3d)
+    tmpdir = tempfile.mkdtemp(prefix="aquapose_mp4_")
+    try:
+        sys.stderr.write(f"Rendering {n_frames} frames to PNG...\n")
+        sys.stderr.flush()
+
+        for frame_idx, frame_dict in enumerate(midlines_3d):
+            if not isinstance(frame_dict, dict):
+                frame_dict = {}
+
+            # Update trace data in-place for this frame.
+            for trace_idx, fid in enumerate(sorted_fish_ids):
+                x, y, z = (
+                    _eval_spline(frame_dict[fid]) if fid in frame_dict else ([], [], [])
                 )
-        frames.append(frame_dict)
-    return frames
+                fig.data[trace_idx].x = x
+                fig.data[trace_idx].y = y
+                fig.data[trace_idx].z = z
+
+            png_path = Path(tmpdir) / f"frame_{frame_idx:06d}.png"
+            fig.write_image(str(png_path), width=width, height=height, scale=1)
+
+            if (frame_idx + 1) % 100 == 0 or frame_idx == n_frames - 1:
+                sys.stderr.write(f"  {frame_idx + 1}/{n_frames}\n")
+                sys.stderr.flush()
+
+        sys.stderr.write("Encoding MP4 with ffmpeg...\n")
+        sys.stderr.flush()
+
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-framerate",
+            str(fps),
+            "-i",
+            str(Path(tmpdir) / "frame_%06d.png"),
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-crf",
+            "18",
+            str(output_path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"ffmpeg failed:\n{result.stderr}")
+
+        sys.stderr.write(f"MP4 written to {output_path}\n")
+        sys.stderr.flush()
+        return output_path
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def generate_animation(
     run_dir: Path,
     output_dir: Path | None = None,
     stride: int = 1,
+    mp4: bool = False,
+    fps: int = 30,
+    *,
+    unstitched: bool = False,
 ) -> Path:
-    """Generate an interactive 3D midline animation HTML across all chunks.
+    """Generate a 3D midline animation (HTML and/or MP4) from midlines HDF5.
 
-    Prefers midlines.h5 (includes temporal smoothing if applied) over
-    diagnostic caches. Falls back to caches when no HDF5 is available.
+    Prefers ``midlines_stitched.h5`` (post-stitching IDs) unless
+    ``unstitched=True``, then falls back to ``midlines.h5``.
 
     Fish colors are deterministic: palette[fish_id % palette_length].
 
@@ -292,33 +334,27 @@ def generate_animation(
         output_dir: Directory for output. Defaults to ``{run_dir}/viz/``.
         stride: Keep every Nth frame. Default 1 (all frames). Use higher
             values (e.g. 3 or 5) to reduce HTML size for long videos.
+        mp4: If True, export an MP4 video instead of interactive HTML.
+        fps: Frames per second for MP4 output. Default 30.
+        unstitched: If True, always use ``midlines.h5`` even when
+            ``midlines_stitched.h5`` exists.
 
     Returns:
-        Path to the written ``animation_3d.html`` file.
+        Path to the written output file (HTML or MP4).
 
     Raises:
-        RuntimeError: If neither midlines.h5 nor chunk caches are found.
+        RuntimeError: If no midlines HDF5 file is found.
     """
     out_dir = output_dir or run_dir / "viz"
     out_dir.mkdir(parents=True, exist_ok=True)
-    output_path = out_dir / "animation_3d.html"
 
-    h5_path = run_dir / "midlines.h5"
-    if h5_path.exists():
-        sys.stderr.write("Loading midlines from HDF5...\n")
-        sys.stderr.flush()
-        all_midlines_3d = _load_midlines_from_h5(h5_path)
-    else:
-        contexts = load_all_chunk_caches(run_dir)
-        if not contexts:
-            raise RuntimeError(f"No midlines.h5 or chunk caches found in {run_dir}")
+    h5_path = resolve_h5_path(run_dir, unstitched=unstitched)
+    if h5_path is None:
+        raise RuntimeError(f"No midlines HDF5 found in {run_dir}")
 
-        # Merge midlines_3d from all chunks.
-        all_midlines_3d = []
-        for ctx in contexts:
-            mid = getattr(ctx, "midlines_3d", None)
-            if mid is not None and isinstance(mid, list):
-                all_midlines_3d.extend(mid)
+    sys.stderr.write(f"Loading midlines from {h5_path.name}...\n")
+    sys.stderr.flush()
+    all_midlines_3d = load_midlines_from_h5(h5_path)
 
     if not all_midlines_3d:
         raise RuntimeError("No midlines_3d data found")
@@ -347,9 +383,20 @@ def generate_animation(
     sys.stderr.flush()
 
     fig = _build_figure(all_midlines_3d, fish_colors, sorted_fish_ids)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.write_html(str(output_path), include_plotlyjs=True)
 
+    if mp4:
+        output_path = out_dir / "animation_3d.mp4"
+        return _export_mp4(
+            fig,
+            all_midlines_3d,
+            fish_colors,
+            sorted_fish_ids,
+            output_path,
+            fps=fps,
+        )
+
+    output_path = out_dir / "animation_3d.html"
+    fig.write_html(str(output_path), include_plotlyjs=True)
     logger.info("3D animation written to %s", output_path)
     return output_path
 

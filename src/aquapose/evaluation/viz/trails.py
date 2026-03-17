@@ -1,4 +1,4 @@
-"""Tracklet trail visualization: per-camera trail videos and association mosaic across all chunks."""
+"""Trail visualization: association mosaic from 3D midline reprojections."""
 
 from __future__ import annotations
 
@@ -6,14 +6,19 @@ import contextlib
 import logging
 import math
 import sys
+from collections import deque
 from contextlib import AbstractContextManager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
 
 from aquapose.evaluation.viz._frames import synthetic_frame_iter
-from aquapose.evaluation.viz._loader import load_all_chunk_caches, read_config_yaml
+from aquapose.evaluation.viz._loader import read_config_yaml
+
+if TYPE_CHECKING:
+    from aquapose.calibration.projection import RefractiveProjectionModel
 
 logger = logging.getLogger(__name__)
 
@@ -46,21 +51,6 @@ FISH_COLORS_BGR: list[tuple[int, int, int]] = [
 _GRAY_BGR: tuple[int, int, int] = (119, 119, 119)
 _TRAIL_LENGTH: int = 30
 _TILE_SCALE: float = 0.35
-_ANCHOR_KPT_IDX: int = 2  # spine1 — matches engine config default
-
-
-def _trail_positions(tracklet: object) -> tuple[tuple[float, float], ...]:
-    """Return per-frame (u, v) positions for trail drawing.
-
-    Uses keypoints[:, anchor, :] when available, falls back to centroids.
-    """
-    kpts = getattr(tracklet, "keypoints", None)
-    if kpts is not None:
-        return tuple(
-            (float(kpts[i, _ANCHOR_KPT_IDX, 0]), float(kpts[i, _ANCHOR_KPT_IDX, 1]))
-            for i in range(kpts.shape[0])
-        )
-    return tracklet.centroids  # type: ignore[return-value]
 
 
 def _fish_color(fish_id: int) -> tuple[int, int, int]:
@@ -75,189 +65,142 @@ def _fish_color(fish_id: int) -> tuple[int, int, int]:
     return FISH_COLORS_BGR[fish_id % len(FISH_COLORS_BGR)]
 
 
-def _coasted_color(base_color: tuple[int, int, int]) -> tuple[int, int, int]:
-    """Blend a BGR color toward gray (128) at 50% to indicate coasted frames.
+def _dim_color(base_color: tuple[int, int, int]) -> tuple[int, int, int]:
+    """Blend a BGR color toward gray (128) at 50% to indicate dimmed segments.
 
     Args:
-        base_color: BGR color tuple for a detected frame.
+        base_color: BGR color tuple.
 
     Returns:
-        Lighter BGR color tuple for coasted frames.
+        Lighter BGR color tuple.
     """
     return tuple(int(c * 0.5 + 128 * 0.5) for c in base_color)  # type: ignore[return-value]
 
 
-def _build_color_maps(
-    tracklet_groups: list,
-) -> tuple[dict[int, tuple[int, int, int]], dict[tuple[str, int], int]]:
-    """Build fish_id -> BGR color and (camera_id, track_id) -> fish_id maps.
+def _load_midline_positions(h5_path: Path) -> dict[int, dict[int, np.ndarray]]:
+    """Load per-fish per-frame 3D centroids from midlines.h5.
 
-    Singletons (1 tracklet) share _GRAY_BGR so multi-camera associations
-    visually stand out. Non-singleton groups are assigned deterministic
-    colors by fish_id % palette_length.
+    Reads ``frame_index``, ``fish_id``, and ``points`` datasets. For each
+    valid slot, the centroid is computed as the mean of non-NaN keypoints.
 
     Args:
-        tracklet_groups: List of TrackletGroup objects.
+        h5_path: Path to the midlines HDF5 file.
 
     Returns:
-        Tuple of (fish_color_map, track_to_fish_map).
+        Mapping ``{frame_idx: {fish_id: centroid_xyz}}``.
     """
-    fish_color_map: dict[int, tuple[int, int, int]] = {}
-    track_to_fish: dict[tuple[str, int], int] = {}
+    from aquapose.io.midline_writer import read_midline3d_results
 
-    for group in tracklet_groups:
-        fish_id: int = group.fish_id
-        is_singleton = len(group.tracklets) <= 1
-        if is_singleton:
-            fish_color_map[fish_id] = _GRAY_BGR
-        else:
-            fish_color_map[fish_id] = _fish_color(fish_id)
-        for tracklet in group.tracklets:
-            key = (tracklet.camera_id, tracklet.track_id)
-            track_to_fish[key] = fish_id
+    data = read_midline3d_results(h5_path)
+    frame_indices = data["frame_index"]  # (N,)
+    fish_ids = data["fish_id"]  # (N, max_fish)
+    points = data["points"]  # (N, max_fish, n_kpts, 3) or None
 
-    return fish_color_map, track_to_fish
+    N, max_fish = fish_ids.shape
+
+    frame_data: dict[int, dict[int, np.ndarray]] = {}
+    for i in range(N):
+        fidx = int(frame_indices[i])
+        fish_dict: dict[int, np.ndarray] = {}
+        for s in range(max_fish):
+            fid = int(fish_ids[i, s])
+            if fid < 0:
+                continue
+            if points is not None:
+                pts = points[i, s]  # (n_kpts, 3)
+                valid_mask = ~np.isnan(pts).any(axis=1)
+                if valid_mask.any():
+                    centroid = pts[valid_mask].mean(axis=0)
+                    fish_dict[fid] = centroid
+        if fish_dict:
+            frame_data[fidx] = fish_dict
+
+    return frame_data
 
 
-def _build_frame_lookup(
-    tracks_2d: dict,
-    track_to_fish: dict[tuple[str, int], int],
-) -> dict[str, dict[int, list[tuple[object, int, int]]]]:
-    """Build per-camera per-frame index for trail rendering.
+def _build_projected_frame_lookup(
+    frame_data: dict[int, dict[int, np.ndarray]],
+    models: dict[str, RefractiveProjectionModel],
+) -> dict[str, dict[int, list[tuple[int, float, float]]]]:
+    """Build per-camera per-frame index of projected centroids.
+
+    Batch-projects all fish centroids per frame per camera for efficiency.
 
     Args:
-        tracks_2d: dict[str, list[Tracklet2D]] from PipelineContext.
-        track_to_fish: Mapping (camera_id, track_id) -> fish_id.
+        frame_data: ``{frame_idx: {fish_id: centroid_xyz}}``.
+        models: Per-camera ``RefractiveProjectionModel``.
 
     Returns:
-        Per-camera per-frame lookup: camera_id -> frame_idx -> [(tracklet, idx, fish_id)].
+        ``{cam_id: {frame_idx: [(fish_id, u, v), ...]}}``.
     """
-    lookup: dict[str, dict[int, list[tuple[object, int, int]]]] = {}
-    for cam_id, tracklet_list in tracks_2d.items():
-        cam_lookup: dict[int, list[tuple[object, int, int]]] = {}
-        for tracklet in tracklet_list:
-            fish_id = track_to_fish.get((cam_id, tracklet.track_id), -1)
-            for idx, frame_idx in enumerate(tracklet.frames):
-                if frame_idx not in cam_lookup:
-                    cam_lookup[frame_idx] = []
-                cam_lookup[frame_idx].append((tracklet, idx, fish_id))
-        lookup[cam_id] = cam_lookup
+    import torch
+
+    lookup: dict[str, dict[int, list[tuple[int, float, float]]]] = {
+        cam_id: {} for cam_id in models
+    }
+
+    for frame_idx, fish_dict in frame_data.items():
+        if not fish_dict:
+            continue
+        fids = list(fish_dict.keys())
+        centroids = np.stack([fish_dict[fid] for fid in fids], axis=0)  # (K, 3)
+
+        for cam_id, model in models.items():
+            pts_tensor = torch.tensor(
+                centroids, dtype=torch.float32, device=model.C.device
+            )
+            try:
+                pixels, valid = model.project(pts_tensor)
+                pixels_np = (
+                    pixels.cpu().numpy()
+                    if hasattr(pixels, "cpu")
+                    else np.asarray(pixels)
+                )
+                valid_np = (
+                    valid.cpu().numpy() if hasattr(valid, "cpu") else np.asarray(valid)
+                )
+            except Exception:
+                continue
+
+            entries: list[tuple[int, float, float]] = []
+            for k, fid in enumerate(fids):
+                if valid_np[k]:
+                    entries.append(
+                        (fid, float(pixels_np[k, 0]), float(pixels_np[k, 1]))
+                    )
+            if entries:
+                lookup[cam_id][frame_idx] = entries
+
     return lookup
-
-
-def _draw_trail(
-    frame: np.ndarray,
-    tracklet: object,
-    current_idx: int,
-    fish_id: int,
-    fish_color_map: dict[int, tuple[int, int, int]],
-    trail_length: int = _TRAIL_LENGTH,
-    fade: bool = False,
-) -> None:
-    """Draw a polyline trail and fish ID label on a frame.
-
-    Args:
-        frame: BGR image to draw on (modified in-place).
-        tracklet: Tracklet2D with frames, centroids, frame_status.
-        current_idx: Current index within tracklet.frames.
-        fish_id: Global fish identity (or -1 for ungrouped).
-        fish_color_map: Mapping from fish_id to BGR color.
-        trail_length: Number of past frames to include in the trail.
-        fade: If True, alpha-blend each segment individually (slow).
-            If False, draw opaque lines directly (fast).
-    """
-    base_color = fish_color_map.get(fish_id, _GRAY_BGR)
-    start_idx = max(0, current_idx - trail_length)
-    positions = _trail_positions(tracklet)
-    trail_pts = list(positions[start_idx : current_idx + 1])
-    trail_statuses = list(tracklet.frame_status[start_idx : current_idx + 1])  # type: ignore[index]
-    n_pts = len(trail_pts)
-
-    if n_pts < 1:
-        return
-
-    if fade:
-        for seg_i in range(n_pts - 1):
-            alpha = 0.3 + 0.7 * (seg_i / max(n_pts - 1, 1))
-            status = trail_statuses[seg_i]
-            seg_color = (
-                base_color if status == "detected" else _coasted_color(base_color)
-            )
-            overlay = frame.copy()
-            pt1 = (int(trail_pts[seg_i][0]), int(trail_pts[seg_i][1]))
-            pt2 = (int(trail_pts[seg_i + 1][0]), int(trail_pts[seg_i + 1][1]))
-            cv2.line(overlay, pt1, pt2, seg_color, 2)
-            cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
-    else:
-        for seg_i in range(n_pts - 1):
-            status = trail_statuses[seg_i]
-            seg_color = (
-                base_color if status == "detected" else _coasted_color(base_color)
-            )
-            pt1 = (int(trail_pts[seg_i][0]), int(trail_pts[seg_i][1]))
-            pt2 = (int(trail_pts[seg_i + 1][0]), int(trail_pts[seg_i + 1][1]))
-            cv2.line(frame, pt1, pt2, seg_color, 2)
-
-    head_u = int(trail_pts[-1][0])
-    head_v = int(trail_pts[-1][1])
-    head_status = trail_statuses[-1]
-    head_color = base_color if head_status == "detected" else _coasted_color(base_color)
-    cv2.circle(frame, (head_u, head_v), 4, head_color, -1)
-
-    label = str(fish_id) if fish_id >= 0 else "?"
-    cv2.putText(
-        frame,
-        label,
-        (head_u + 6, head_v - 6),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,
-        head_color,
-        2,
-    )
 
 
 def _draw_trail_scaled(
     tile: np.ndarray,
-    tracklet: object,
-    current_idx: int,
+    trail_pts: list[tuple[float, float]],
+    color: tuple[int, int, int],
     fish_id: int,
-    fish_color_map: dict[int, tuple[int, int, int]],
     scale_x: float,
     scale_y: float,
-    trail_length: int = _TRAIL_LENGTH,
     fade: bool = False,
 ) -> None:
-    """Draw trail on a downsampled tile with pre-applied scale factors.
+    """Draw a trail on a downsampled tile with pre-applied scale factors.
 
     Args:
         tile: BGR tile image to draw on (modified in-place).
-        tracklet: Tracklet2D with frames, centroids, frame_status.
-        current_idx: Current index within tracklet.frames.
-        fish_id: Global fish identity (or -1 for ungrouped).
-        fish_color_map: fish_id -> BGR color.
+        trail_pts: List of ``(u, v)`` positions from oldest to newest.
+        color: BGR color for the trail.
+        fish_id: Fish ID for the label.
         scale_x: Horizontal scaling factor from original to tile.
         scale_y: Vertical scaling factor from original to tile.
-        trail_length: Number of past frames to include in the trail.
         fade: If True, alpha-blend each segment individually (slow).
-            If False, draw opaque lines directly (fast).
     """
-    base_color = fish_color_map.get(fish_id, _GRAY_BGR)
-    start_idx = max(0, current_idx - trail_length)
-    positions = _trail_positions(tracklet)
-    trail_pts = list(positions[start_idx : current_idx + 1])
-    trail_statuses = list(tracklet.frame_status[start_idx : current_idx + 1])  # type: ignore[index]
     n_pts = len(trail_pts)
-
     if n_pts < 1:
         return
 
     if fade:
         for seg_i in range(n_pts - 1):
             alpha = 0.3 + 0.7 * (seg_i / max(n_pts - 1, 1))
-            status = trail_statuses[seg_i]
-            seg_color = (
-                base_color if status == "detected" else _coasted_color(base_color)
-            )
             overlay = tile.copy()
             pt1 = (
                 int(trail_pts[seg_i][0] * scale_x),
@@ -267,14 +210,10 @@ def _draw_trail_scaled(
                 int(trail_pts[seg_i + 1][0] * scale_x),
                 int(trail_pts[seg_i + 1][1] * scale_y),
             )
-            cv2.line(overlay, pt1, pt2, seg_color, 1)
+            cv2.line(overlay, pt1, pt2, color, 1)
             cv2.addWeighted(overlay, alpha, tile, 1 - alpha, 0, tile)
     else:
         for seg_i in range(n_pts - 1):
-            status = trail_statuses[seg_i]
-            seg_color = (
-                base_color if status == "detected" else _coasted_color(base_color)
-            )
             pt1 = (
                 int(trail_pts[seg_i][0] * scale_x),
                 int(trail_pts[seg_i][1] * scale_y),
@@ -283,21 +222,19 @@ def _draw_trail_scaled(
                 int(trail_pts[seg_i + 1][0] * scale_x),
                 int(trail_pts[seg_i + 1][1] * scale_y),
             )
-            cv2.line(tile, pt1, pt2, seg_color, 1)
+            cv2.line(tile, pt1, pt2, color, 1)
 
     head_u = int(trail_pts[-1][0] * scale_x)
     head_v = int(trail_pts[-1][1] * scale_y)
-    head_status = trail_statuses[-1]
-    head_color = base_color if head_status == "detected" else _coasted_color(base_color)
-    cv2.circle(tile, (head_u, head_v), 2, head_color, -1)
-    label = str(fish_id) if fish_id >= 0 else "?"
+    cv2.circle(tile, (head_u, head_v), 2, color, -1)
+    label = str(fish_id)
     cv2.putText(
         tile,
         label,
         (head_u + 3, head_v - 3),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.3,
-        head_color,
+        color,
         1,
     )
 
@@ -341,341 +278,9 @@ def _build_mosaic(
     return mosaic
 
 
-def generate_trails(
-    run_dir: Path,
-    output_dir: Path | None = None,
-    *,
-    fps: float = 30.0,
-    trail_length: int = _TRAIL_LENGTH,
-    tile_scale: float = _TILE_SCALE,
-    fade_trails: bool = False,
-) -> Path:
-    """Generate per-camera trail videos and an association mosaic across all chunks.
-
-    Loads all chunk caches, merges track data, and renders continuous trail
-    videos spanning the full recording. All outputs go to ``{run_dir}/viz/``
-    (or output_dir if provided).
-
-    Fish colors are deterministic: palette[fish_id % palette_length]. Singletons
-    (only seen by one camera) use gray to highlight multi-camera associations.
-
-    Args:
-        run_dir: Path to the pipeline run directory.
-        output_dir: Directory for output. Defaults to ``{run_dir}/viz/``.
-        fps: Output video frame rate.
-        trail_length: Number of past frames to include in each trail.
-        tile_scale: Downsampling factor for mosaic tiles.
-        fade_trails: If True, alpha-blend each trail segment for a fade
-            effect (significantly slower due to per-segment frame copies).
-
-    Returns:
-        Path to the output directory (``{run_dir}/viz/`` or output_dir).
-
-    Raises:
-        RuntimeError: If no chunk caches are found in run_dir.
-    """
-    contexts = load_all_chunk_caches(run_dir)
-    if not contexts:
-        raise RuntimeError(f"No chunk caches found in {run_dir}")
-
-    out_dir = output_dir or run_dir / "viz"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    # Gather camera_ids and merge track data across all chunks.
-    camera_ids: list[str] | None = None
-    all_tracks_2d: dict[str, list] = {}
-    all_tracklet_groups: list = []
-    all_detections: list = []
-    total_frames: int = 0
-
-    # Chunk frame offsets for remapping frame indices to global.
-    chunk_offsets: list[int] = []
-    offset = 0
-    for ctx in contexts:
-        chunk_offsets.append(offset)
-        fc = getattr(ctx, "frame_count", None) or 0
-        offset += fc
-
-    total_frames = offset
-
-    for chunk_idx, ctx in enumerate(contexts):
-        frame_offset = chunk_offsets[chunk_idx]
-
-        if camera_ids is None:
-            cam = getattr(ctx, "camera_ids", None)
-            if cam:
-                camera_ids = cam
-
-        # Merge tracks_2d with global frame index offsets.
-        tracks_2d = getattr(ctx, "tracks_2d", None) or {}
-        for cam_id, tracklet_list in tracks_2d.items():
-            if cam_id not in all_tracks_2d:
-                all_tracks_2d[cam_id] = []
-            for tracklet in tracklet_list:
-                # Rebase frame indices to global space.
-                rebased = _rebase_tracklet(tracklet, frame_offset)
-                all_tracks_2d[cam_id].append(rebased)
-
-        # Merge tracklet_groups (fish_ids are already global).
-        groups = getattr(ctx, "tracklet_groups", None) or []
-        for group in groups:
-            rebased_group = _rebase_group(group, frame_offset)
-            all_tracklet_groups.append(rebased_group)
-
-        # Merge detections.
-        dets = getattr(ctx, "detections", None) or []
-        all_detections.extend(dets)
-
-    if not camera_ids:
-        camera_ids = list(all_tracks_2d.keys())
-    if not camera_ids:
-        raise RuntimeError("No camera_ids found in any chunk cache")
-
-    # Build color maps and frame lookup.
-    fish_color_map, track_to_fish = _build_color_maps(all_tracklet_groups)
-    frame_lookup = _build_frame_lookup(all_tracks_2d, track_to_fish)
-
-    # Resolve frame source.
-    config_yaml = read_config_yaml(run_dir)
-    frame_source = None
-    frame_sizes: dict[str, tuple[int, int]] | None = None
-
-    calibration_path_str = config_yaml.get("calibration_path", "")
-    calib_path = Path(calibration_path_str)
-    if not calib_path.is_absolute():
-        for base in (run_dir, run_dir.parent):
-            candidate = base / calib_path
-            if candidate.exists():
-                calib_path = candidate
-                break
-
-    if calib_path.exists():
-        try:
-            from aquapose.calibration.loader import load_calibration_data
-
-            calib_data = load_calibration_data(str(calib_path))
-            frame_sizes = {
-                cam_id: calib_data.cameras[cam_id].image_size
-                for cam_id in camera_ids
-                if cam_id in calib_data.cameras
-            }
-        except Exception as exc:
-            logger.warning("Failed to load calibration for trail sizes: %s", exc)
-
-    video_dir_str = config_yaml.get("video_dir", "")
-    if video_dir_str:
-        video_path = Path(video_dir_str)
-        if not video_path.is_absolute():
-            for base in (run_dir, run_dir.parent):
-                candidate = base / video_path
-                if candidate.exists():
-                    video_path = candidate
-                    break
-        if video_path.exists():
-            try:
-                from aquapose.core.types.frame_source import VideoFrameSource
-
-                if not calib_path.exists():
-                    raise FileNotFoundError(f"Calibration file not found: {calib_path}")
-                frame_source = VideoFrameSource(
-                    video_dir=video_path,
-                    calibration_path=calib_path,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Failed to open VideoFrameSource for trails; using black frames: %s",
-                    exc,
-                )
-                frame_source = None
-
-    use_synthetic = frame_source is None and bool(frame_sizes)
-    if not use_synthetic and frame_source is None:
-        logger.warning(
-            "No frame source or calibration data available; skipping trail video generation"
-        )
-        return out_dir
-
-    sys.stderr.write("Generating tracklet trail videos...\n")
-    sys.stderr.flush()
-
-    # Generate per-camera trail videos.
-    _write_per_camera_trails(
-        camera_ids=camera_ids,
-        tracks_2d=all_tracks_2d,
-        frame_lookup=frame_lookup,
-        fish_color_map=fish_color_map,
-        out_dir=out_dir,
-        frame_source=frame_source,
-        frame_sizes=frame_sizes,
-        total_frames=total_frames,
-        fps=fps,
-        trail_length=trail_length,
-        detections=all_detections if all_detections else None,
-        fade=fade_trails,
-    )
-
-    # Generate association mosaic.
-    _write_association_mosaic(
-        camera_ids=camera_ids,
-        frame_lookup=frame_lookup,
-        fish_color_map=fish_color_map,
-        out_dir=out_dir,
-        frame_source=frame_source,
-        frame_sizes=frame_sizes,
-        total_frames=total_frames,
-        fps=fps,
-        tile_scale=tile_scale,
-        trail_length=trail_length,
-        detections=all_detections if all_detections else None,
-        fade=fade_trails,
-    )
-
-    if frame_source is not None:
-        import contextlib
-
-        with contextlib.suppress(Exception):
-            frame_source.__exit__(None, None, None)
-
-    logger.info("Trail videos written to %s", out_dir)
-    return out_dir
-
-
-def _rebase_tracklet(tracklet: object, frame_offset: int) -> object:
-    """Return a lightweight proxy that offsets frame indices by frame_offset.
-
-    Creates a simple namespace object mirroring the tracklet's interface but
-    with frames offset to global frame space. Uses the same centroids and
-    frame_status arrays (no copies).
-
-    Args:
-        tracklet: Tracklet2D-like object with frames, centroids, frame_status,
-            camera_id, track_id attributes.
-        frame_offset: Number of frames to add to each frame index.
-
-    Returns:
-        Proxy object with rebased frames.
-    """
-    if frame_offset == 0:
-        return tracklet
-
-    class _RebasedTracklet:
-        def __init__(self, t: object, offset: int) -> None:
-            self._t = t
-            self.frames = [f + offset for f in t.frames]  # type: ignore[union-attr]
-            self.centroids = t.centroids  # type: ignore[union-attr]
-            self.keypoints = getattr(t, "keypoints", None)
-            self.frame_status = t.frame_status  # type: ignore[union-attr]
-            self.camera_id = t.camera_id  # type: ignore[union-attr]
-            self.track_id = t.track_id  # type: ignore[union-attr]
-
-    return _RebasedTracklet(tracklet, frame_offset)
-
-
-def _rebase_group(group: object, frame_offset: int) -> object:
-    """Return a proxy TrackletGroup with rebased tracklet frame indices.
-
-    Args:
-        group: TrackletGroup-like object with fish_id and tracklets attributes.
-        frame_offset: Number of frames to add to each tracklet's frame indices.
-
-    Returns:
-        Proxy group with rebased tracklets.
-    """
-    if frame_offset == 0:
-        return group
-
-    class _RebasedGroup:
-        def __init__(self, g: object, offset: int) -> None:
-            self.fish_id = g.fish_id  # type: ignore[union-attr]
-            self.tracklets = [_rebase_tracklet(t, offset) for t in g.tracklets]  # type: ignore[union-attr]
-
-    return _RebasedGroup(group, frame_offset)
-
-
-def _write_per_camera_trails(
-    camera_ids: list[str],
-    tracks_2d: dict,
-    frame_lookup: dict[str, dict[int, list]],
-    fish_color_map: dict[int, tuple[int, int, int]],
-    out_dir: Path,
-    frame_source: object | None,
-    frame_sizes: dict[str, tuple[int, int]] | None,
-    total_frames: int,
-    fps: float,
-    trail_length: int,
-    detections: list | None = None,
-    fade: bool = False,
-) -> None:
-    """Write per-camera trail MP4 files.
-
-    Args:
-        camera_ids: Ordered list of camera IDs.
-        tracks_2d: Per-camera tracklet lists.
-        frame_lookup: Pre-built frame lookup structure.
-        fish_color_map: fish_id -> BGR color.
-        out_dir: Output directory for trail videos.
-        frame_source: Optional VideoFrameSource.
-        frame_sizes: camera_id -> (width, height) for synthetic fallback.
-        total_frames: Total frame count for synthetic fallback.
-        fps: Output video frame rate.
-        trail_length: Trail length in frames.
-        detections: Per-frame per-camera detection lists (optional).
-        fade: If True, use per-segment alpha blending.
-    """
-    use_synthetic = frame_source is None and bool(frame_sizes)
-
-    for cam_id in camera_ids:
-        cam_lookup = frame_lookup.get(cam_id, {})
-        if not cam_lookup:
-            continue
-
-        ctx_mgr: AbstractContextManager  # type: ignore[type-arg]
-        if use_synthetic:
-            assert frame_sizes is not None
-            ctx_mgr = contextlib.nullcontext(
-                synthetic_frame_iter([cam_id], frame_sizes, total_frames)
-            )
-        elif frame_source is not None:
-            ctx_mgr = frame_source  # type: ignore[assignment]
-        else:
-            continue
-
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
-        writer: cv2.VideoWriter | None = None
-
-        try:
-            with ctx_mgr as frame_iter:
-                for frame_idx, frames in frame_iter:
-                    if frame_idx >= total_frames:
-                        break
-                    frame = frames.get(cam_id)
-                    if frame is None:
-                        continue
-                    if writer is None:
-                        h, w = frame.shape[:2]
-                        out_path = out_dir / f"tracklet_trails_{cam_id}.mp4"
-                        writer = cv2.VideoWriter(str(out_path), fourcc, fps, (w, h))
-                    active = cam_lookup.get(frame_idx, [])
-                    for tracklet, idx_in_tracklet, fish_id in active:
-                        _draw_trail(
-                            frame,
-                            tracklet,
-                            idx_in_tracklet,
-                            fish_id,
-                            fish_color_map,
-                            trail_length,
-                            fade=fade,
-                        )
-                    writer.write(frame)
-        finally:
-            if writer is not None:
-                writer.release()
-
-
 def _write_association_mosaic(
     camera_ids: list[str],
-    frame_lookup: dict[str, dict[int, list]],
-    fish_color_map: dict[int, tuple[int, int, int]],
+    projected_lookup: dict[str, dict[int, list[tuple[int, float, float]]]],
     out_dir: Path,
     frame_source: object | None,
     frame_sizes: dict[str, tuple[int, int]] | None,
@@ -683,23 +288,20 @@ def _write_association_mosaic(
     fps: float,
     tile_scale: float,
     trail_length: int,
-    detections: list | None = None,
     fade: bool = False,
 ) -> None:
-    """Write the association mosaic MP4.
+    """Write the association mosaic MP4 from projected 3D centroids.
 
     Args:
         camera_ids: Ordered list of all camera IDs.
-        frame_lookup: Pre-built frame lookup structure.
-        fish_color_map: fish_id -> BGR color.
+        projected_lookup: Per-camera per-frame projected positions.
         out_dir: Output directory for mosaic video.
         frame_source: Optional VideoFrameSource.
         frame_sizes: camera_id -> (width, height) for synthetic fallback.
-        total_frames: Total frame count for synthetic fallback.
+        total_frames: Total frame count.
         fps: Output video frame rate.
         tile_scale: Downsampling factor applied to each camera tile.
         trail_length: Trail length in frames.
-        detections: Per-frame per-camera detection lists (optional).
         fade: If True, use per-segment alpha blending.
     """
     use_synthetic = frame_source is None and bool(frame_sizes)
@@ -721,6 +323,22 @@ def _write_association_mosaic(
     writer: cv2.VideoWriter | None = None
     tile_w: int = 0
     tile_h: int = 0
+
+    # Per-camera per-fish trail buffer: cam_id -> fish_id -> deque of (u, v)
+    trail_buffers: dict[str, dict[int, deque[tuple[float, float]]]] = {
+        cam_id: {} for cam_id in camera_ids
+    }
+
+    # Collect all unique fish IDs to assign colors
+    all_fish_ids: set[int] = set()
+    for cam_lookup in projected_lookup.values():
+        for entries in cam_lookup.values():
+            for fid, _u, _v in entries:
+                all_fish_ids.add(fid)
+
+    fish_color_map: dict[int, tuple[int, int, int]] = {
+        fid: _fish_color(fid) for fid in all_fish_ids
+    }
 
     try:
         with ctx_mgr as frame_iter:
@@ -749,18 +367,30 @@ def _write_association_mosaic(
                     scale_x = tile_w / raw.shape[1]
                     scale_y = tile_h / raw.shape[0]
 
-                    cam_lookup = frame_lookup.get(cam_id, {})
-                    active = cam_lookup.get(frame_idx, [])
-                    for tracklet, idx_in_tracklet, fish_id in active:
+                    # Update trail buffers for this camera
+                    cam_entries = projected_lookup.get(cam_id, {}).get(frame_idx, [])
+                    cam_buf = trail_buffers[cam_id]
+
+                    # Track which fish are present this frame
+                    present_fids = set()
+                    for fid, u, v in cam_entries:
+                        present_fids.add(fid)
+                        if fid not in cam_buf:
+                            cam_buf[fid] = deque(maxlen=trail_length)
+                        cam_buf[fid].append((u, v))
+
+                    # Draw trails for all fish with buffered positions
+                    for fid, buf in cam_buf.items():
+                        if len(buf) == 0:
+                            continue
+                        color = fish_color_map.get(fid, _GRAY_BGR)
                         _draw_trail_scaled(
                             tile,
-                            tracklet,
-                            idx_in_tracklet,
-                            fish_id,
-                            fish_color_map,
+                            list(buf),
+                            color,
+                            fid,
                             scale_x,
                             scale_y,
-                            trail_length,
                             fade=fade,
                         )
 
@@ -796,6 +426,172 @@ def _write_association_mosaic(
     finally:
         if writer is not None:
             writer.release()
+
+
+def generate_trails(
+    run_dir: Path,
+    output_dir: Path | None = None,
+    *,
+    fps: float = 30.0,
+    trail_length: int = _TRAIL_LENGTH,
+    tile_scale: float = _TILE_SCALE,
+    fade_trails: bool = False,
+    unstitched: bool = False,
+) -> Path:
+    """Generate an association mosaic video from 3D midline reprojections.
+
+    Reads 3D midline data from the run's HDF5 file, reprojects centroids to
+    each camera, and renders a mosaic video with colored trails per fish.
+
+    By default, prefers ``midlines_stitched.h5`` if it exists (post-stitching
+    IDs). Pass ``unstitched=True`` to force reading ``midlines.h5``.
+
+    Args:
+        run_dir: Path to the pipeline run directory.
+        output_dir: Directory for output. Defaults to ``{run_dir}/viz/``.
+        fps: Output video frame rate.
+        trail_length: Number of past frames to include in each trail.
+        tile_scale: Downsampling factor for mosaic tiles.
+        fade_trails: If True, alpha-blend each trail segment for a fade
+            effect (significantly slower due to per-segment frame copies).
+        unstitched: If True, always use ``midlines.h5`` even when
+            ``midlines_stitched.h5`` exists.
+
+    Returns:
+        Path to the output directory (``{run_dir}/viz/`` or output_dir).
+
+    Raises:
+        RuntimeError: If no midlines HDF5 file is found.
+    """
+    # Select H5 file.
+    if not unstitched:
+        h5_path = run_dir / "midlines_stitched.h5"
+        if not h5_path.exists():
+            h5_path = run_dir / "midlines.h5"
+    else:
+        h5_path = run_dir / "midlines.h5"
+
+    if not h5_path.exists():
+        raise RuntimeError(f"No midlines HDF5 found in {run_dir}")
+
+    out_dir = output_dir or run_dir / "viz"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load 3D centroids from H5.
+    frame_data = _load_midline_positions(h5_path)
+    if not frame_data:
+        raise RuntimeError(f"No valid midline data in {h5_path}")
+
+    total_frames = max(frame_data.keys()) + 1
+
+    # Load calibration and build projection models.
+    config_yaml = read_config_yaml(run_dir)
+    calibration_path_str = config_yaml.get("calibration_path", "")
+    calib_path = Path(calibration_path_str)
+    if not calib_path.is_absolute():
+        for base in (run_dir, run_dir.parent):
+            candidate = base / calib_path
+            if candidate.exists():
+                calib_path = candidate
+                break
+
+    if not calib_path.exists():
+        raise RuntimeError(f"Calibration file not found: {calib_path}")
+
+    from aquapose.calibration.loader import (
+        compute_undistortion_maps,
+        load_calibration_data,
+    )
+    from aquapose.calibration.projection import RefractiveProjectionModel
+
+    calib_data = load_calibration_data(str(calib_path))
+    camera_ids = sorted(calib_data.cameras.keys())
+
+    models: dict[str, RefractiveProjectionModel] = {}
+    frame_sizes: dict[str, tuple[int, int]] = {}
+    for cam_id in camera_ids:
+        cam = calib_data.cameras[cam_id]
+        undist_maps = compute_undistortion_maps(cam)
+        models[cam_id] = RefractiveProjectionModel(
+            K=undist_maps.K_new,
+            R=cam.R,
+            t=cam.t,
+            water_z=calib_data.water_z,
+            normal=calib_data.interface_normal,
+            n_air=calib_data.n_air,
+            n_water=calib_data.n_water,
+        )
+        frame_sizes[cam_id] = cam.image_size
+
+    # Build projected lookup.
+    projected_lookup = _build_projected_frame_lookup(frame_data, models)
+
+    # Resolve frame source.
+    frame_source = None
+    video_dir_str = config_yaml.get("video_dir", "")
+    if video_dir_str:
+        video_path = Path(video_dir_str)
+        if not video_path.is_absolute():
+            for base in (run_dir, run_dir.parent):
+                candidate = base / video_path
+                if candidate.exists():
+                    video_path = candidate
+                    break
+        if video_path.exists():
+            try:
+                from aquapose.core.types.frame_source import VideoFrameSource
+
+                frame_source = VideoFrameSource(
+                    video_dir=video_path,
+                    calibration_path=calib_path,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to open VideoFrameSource for trails; using black frames: %s",
+                    exc,
+                )
+                frame_source = None
+
+    # Narrow camera list to those the frame source actually provides.
+    if frame_source is not None:
+        source_cams = set(frame_source.camera_ids)
+        camera_ids = [c for c in camera_ids if c in source_cams]
+        models = {c: m for c, m in models.items() if c in source_cams}
+        frame_sizes = {c: s for c, s in frame_sizes.items() if c in source_cams}
+        # Rebuild projected lookup with narrowed camera set.
+        projected_lookup = {
+            c: v for c, v in projected_lookup.items() if c in source_cams
+        }
+
+    use_synthetic = frame_source is None and bool(frame_sizes)
+    if not use_synthetic and frame_source is None:
+        logger.warning(
+            "No frame source or calibration data available; skipping trail video generation"
+        )
+        return out_dir
+
+    sys.stderr.write("Generating trail mosaic video...\n")
+    sys.stderr.flush()
+
+    _write_association_mosaic(
+        camera_ids=camera_ids,
+        projected_lookup=projected_lookup,
+        out_dir=out_dir,
+        frame_source=frame_source,
+        frame_sizes=frame_sizes,
+        total_frames=total_frames,
+        fps=fps,
+        tile_scale=tile_scale,
+        trail_length=trail_length,
+        fade=fade_trails,
+    )
+
+    if frame_source is not None:
+        with contextlib.suppress(Exception):
+            frame_source.__exit__(None, None, None)
+
+    logger.info("Trail mosaic written to %s", out_dir)
+    return out_dir
 
 
 __all__ = ["FISH_COLORS_BGR", "generate_trails"]

@@ -567,6 +567,104 @@ def viz(
             click.echo(f"  {name}: {reason}")
 
 
+@cli.command("stitch")
+@click.argument("run", default=None, required=False)
+@click.option(
+    "--target-k",
+    type=int,
+    default=None,
+    help="Number of fish identities (default: from config n_animals).",
+)
+@click.option(
+    "--min-frames",
+    "min_frames",
+    type=int,
+    default=5,
+    show_default=True,
+    help="Drop trajectories with fewer than N frames.",
+)
+@click.option(
+    "--min-cameras",
+    "min_cameras",
+    type=float,
+    default=2.0,
+    show_default=True,
+    help="Drop trajectories with mean camera count below this.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Report chain assignments without writing output.",
+)
+@click.pass_context
+def stitch_cmd(
+    ctx: click.Context,
+    run: str | None,
+    target_k: int | None,
+    min_frames: int,
+    min_cameras: float,
+    dry_run: bool,
+) -> None:
+    """Stitch fragmented 3D trajectories into true fish identities.
+
+    Reads midlines.h5 from a pipeline run, merges fragmented fish IDs across
+    the full video using conflict-graph coloring with spatial-cost tiebreaking,
+    and writes midlines_stitched.h5.
+    """
+    from aquapose.core.stitching import (
+        build_conflict_graph,
+        load_trajectories,
+        solve_coloring,
+        write_remapped_h5,
+    )
+    from aquapose.engine.config import load_config as _load_config
+
+    run_dir = resolve_run(run, get_project_dir(ctx))
+
+    # Read n_animals from run config for default target_k
+    config_path = run_dir / "config.yaml"
+    if not config_path.exists():
+        raise click.ClickException(f"No config.yaml found in {run_dir}.")
+    config = _load_config(config_path)
+
+    if target_k is None:
+        target_k = config.n_animals
+    click.echo(f"Target identities: {target_k}")
+
+    h5_path = run_dir / "midlines.h5"
+    if not h5_path.exists():
+        raise click.ClickException(
+            f"No midlines.h5 found in {run_dir}. Run the pipeline first."
+        )
+
+    click.echo(f"Loading {h5_path} ...")
+    trajectories, dropped = load_trajectories(
+        h5_path, min_frames=min_frames, min_mean_cameras=min_cameras
+    )
+    click.echo(f"  {len(trajectories)} trajectories, {len(dropped)} dropped")
+
+    click.echo("Building conflict graph...")
+    conflicts = build_conflict_graph(trajectories)
+    n_edges = sum(len(c) for c in conflicts) // 2
+    click.echo(f"  {n_edges} conflict edges")
+
+    click.echo(f"Solving {target_k}-coloring...")
+    chains = solve_coloring(trajectories, conflicts, target_k)
+    click.echo(f"  {len(chains)} chains")
+
+    for i, chain in enumerate(chains):
+        member_ids = [m.fish_id for m in chain]
+        click.echo(f"  Fish {i}: {member_ids}")
+
+    if dry_run:
+        click.echo("Dry run -- no output written.")
+        return
+
+    dst = run_dir / "midlines_stitched.h5"
+    write_remapped_h5(h5_path, dst, chains, dropped)
+    click.echo(f"Written: {dst}")
+
+
 @cli.command("smooth-z")
 @click.argument("run", default=None, required=False)
 @click.option(
@@ -594,6 +692,8 @@ def smooth_z_cmd(
     use for a given frame contains NaN, so ``NaN + dz == NaN`` ensures the
     unused dataset stays NaN.
     """
+    import shutil
+
     import h5py
     import numpy as np
 
@@ -601,10 +701,17 @@ def smooth_z_cmd(
     from aquapose.io.midline_writer import read_midline3d_results
 
     run_dir = resolve_run(run, get_project_dir(ctx))
-    input_path = run_dir / "midlines.h5"
-    if not input_path.exists():
+
+    # Prefer stitched midlines if available
+    stitched_path = run_dir / "midlines_stitched.h5"
+    raw_path = run_dir / "midlines.h5"
+    if stitched_path.exists():
+        input_path = stitched_path
+    elif raw_path.exists():
+        input_path = raw_path
+    else:
         raise click.ClickException(
-            f"midlines.h5 not found in {run_dir}. "
+            f"No midlines file found in {run_dir}. "
             "Run the pipeline first to generate midline data."
         )
 
@@ -689,6 +796,7 @@ def smooth_z_cmd(
     mean_jitter_before = (total_jitter_before / n_jitter * 100) if n_jitter else 0
     mean_jitter_after = (total_jitter_after / n_jitter * 100) if n_jitter else 0
 
+    click.echo(f"Input: {input_path}")
     click.echo(f"Fish processed: {len(unique_fish)}")
     click.echo(f"Frames processed: {total_frames}")
     click.echo(f"Sigma frames: {sigma_frames}")
@@ -701,7 +809,12 @@ def smooth_z_cmd(
         click.echo("Dry run -- no changes written.")
         return
 
-    with h5py.File(str(input_path), "r+") as f:
+    # Write to a new file, preserving the input
+    stem = input_path.stem  # e.g. "midlines" or "midlines_stitched"
+    output_path = input_path.with_name(f"{stem}_smoothed.h5")
+    shutil.copy2(input_path, output_path)
+
+    with h5py.File(str(output_path), "r+") as f:
         grp = f["midlines"]
         assert isinstance(grp, h5py.Group)
 
@@ -723,7 +836,7 @@ def smooth_z_cmd(
             assert isinstance(pts_ds, h5py.Dataset)
             pts_ds[...] = shifted_pts
 
-    click.echo(f"Written to {input_path}")
+    click.echo(f"Written to {output_path}")
 
 
 cli.add_command(data_group)

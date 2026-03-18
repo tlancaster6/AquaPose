@@ -25,6 +25,13 @@ from aquapose.core.detection import DetectionStage
 from aquapose.core.inference import BatchState, predict_with_oom_retry
 from aquapose.core.pose import PoseStage
 from aquapose.core.reconstruction import ReconstructionStage
+from aquapose.core.stitching import (
+    TrajectoryInfo,
+    build_conflict_graph,
+    load_trajectories,
+    solve_coloring,
+    write_remapped_h5,
+)
 from aquapose.core.synthetic import SyntheticDataStage
 
 __all__ = [
@@ -37,8 +44,13 @@ __all__ = [
     "Stage",
     "StaleCacheError",
     "SyntheticDataStage",
+    "TrajectoryInfo",
+    "build_conflict_graph",
     "context_fingerprint",
     "load_chunk_cache",
     "load_stage_cache",
+    "load_trajectories",
     "predict_with_oom_retry",
+    "solve_coloring",
+    "write_remapped_h5",
 ]

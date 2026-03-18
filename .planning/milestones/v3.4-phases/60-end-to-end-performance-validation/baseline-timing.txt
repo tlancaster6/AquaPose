@@ -1,9 +1,0 @@
-Timing Report — run: run_20260304_180748
-==================================================
-  DetectionStage                   303.45s ( 33.2%)
-  TrackingStage                      3.47s (  0.4%)
-  AssociationStage                  35.91s (  3.9%)
-  MidlineStage                     451.50s ( 49.4%)
-  ReconstructionStage              119.89s ( 13.1%)
---------------------------------------------------
-  TOTAL                            914.22s

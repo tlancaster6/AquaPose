@@ -328,6 +328,8 @@ def _write_association_mosaic(
     trail_buffers: dict[str, dict[int, deque[tuple[float, float]]]] = {
         cam_id: {} for cam_id in camera_ids
     }
+    # Per-camera per-fish absence counter: frames since last seen
+    absence_counters: dict[str, dict[int, int]] = {cam_id: {} for cam_id in camera_ids}
 
     # Collect all unique fish IDs to assign colors
     all_fish_ids: set[int] = set()
@@ -370,6 +372,7 @@ def _write_association_mosaic(
                     # Update trail buffers for this camera
                     cam_entries = projected_lookup.get(cam_id, {}).get(frame_idx, [])
                     cam_buf = trail_buffers[cam_id]
+                    cam_abs = absence_counters[cam_id]
 
                     # Track which fish are present this frame
                     present_fids = set()
@@ -378,6 +381,19 @@ def _write_association_mosaic(
                         if fid not in cam_buf:
                             cam_buf[fid] = deque(maxlen=trail_length)
                         cam_buf[fid].append((u, v))
+                        cam_abs[fid] = 0
+
+                    # Increment absence counter for fish not seen this frame;
+                    # clear buffer once absent longer than trail_length so
+                    # departed fish don't leave a permanent dot.
+                    stale_fids = []
+                    for fid in cam_buf:
+                        if fid not in present_fids:
+                            cam_abs[fid] = cam_abs.get(fid, 0) + 1
+                            if cam_abs[fid] >= trail_length:
+                                stale_fids.append(fid)
+                    for fid in stale_fids:
+                        cam_buf[fid].clear()
 
                     # Draw trails for all fish with buffered positions
                     for fid, buf in cam_buf.items():

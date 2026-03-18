@@ -264,6 +264,21 @@ def format_eval_report(result: EvalRunnerResult) -> str:
             f" {f.total_gaps} gaps"
         )
         has_summary = True
+    if result.stitching is not None:
+        s = result.stitching
+        lines.append(
+            f"  Stitching:       {s.post_stitch.unique_fish_ids}/{s.post_stitch.expected_fish} IDs,"
+            f" {s.continuity_improvement:+.1%} continuity"
+        )
+        has_summary = True
+    if result.smoothing is not None:
+        sm = result.smoothing
+        lines.append(
+            f"  Smoothing:       z-jitter {sm.mean_jitter_before:.2f}"
+            f"\u2192{sm.mean_jitter_after:.2f} cm"
+            f" ({sm.jitter_reduction:.1f}x reduction)"
+        )
+        has_summary = True
 
     if has_summary:
         lines.append("")
@@ -455,6 +470,110 @@ def format_eval_report(result: EvalRunnerResult) -> str:
         lines.append(_row("track_deaths", f.track_deaths))
         lines.append(_row("mean_track_lifespan", f.mean_track_lifespan))
         lines.append(_row("median_track_lifespan", f.median_track_lifespan))
+        lines.append("")
+
+    if result.stitching is not None:
+        lines.extend(_header("Stitching Quality"))
+        s = result.stitching
+        lines.append(_row("source", s.source_file))
+        lines.append("")
+        lines.append("  Identity Consolidation")
+        lines.append("  " + "-" * 30)
+        lines.append(_row("pre_stitch_ids", s.pre_stitch.unique_fish_ids))
+        lines.append(_row("post_stitch_ids", s.post_stitch.unique_fish_ids))
+        lines.append(_row("expected_fish", s.post_stitch.expected_fish))
+        lines.append(_row("id_ratio", s.id_ratio))
+        lines.append(_row("id_reduction", s.id_reduction))
+        lines.append("")
+        lines.append("  Fragmentation Improvement")
+        lines.append("  " + "-" * 30)
+        lines.append(_row("pre_continuity", s.pre_stitch.mean_continuity_ratio))
+        lines.append(_row("post_continuity", s.post_stitch.mean_continuity_ratio))
+        lines.append(_row("continuity_improvement", s.continuity_improvement))
+        lines.append(_row("pre_gaps", s.pre_stitch.total_gaps))
+        lines.append(_row("post_gaps", s.post_stitch.total_gaps))
+        lines.append(_row("gap_reduction", s.gap_reduction))
+        lines.append(_row("birth_reduction", s.birth_reduction))
+        lines.append(_row("death_reduction", s.death_reduction))
+        lines.append("")
+        lines.append("  Coverage")
+        lines.append("  " + "-" * 30)
+        lines.append(_row("full_coverage_ratio", s.full_coverage_ratio))
+        lines.append("")
+        lines.append("  Fish Count Distribution (stitched)")
+        lines.append("  " + "-" * 40)
+        total_frames = sum(s.fish_count_distribution.values())
+        lines.append(f"    {'Fish Present':>12}  {'Frames':>8}  {'Fraction':>8}")
+        lines.append(f"    {'------------':>12}  {'------':>8}  {'--------':>8}")
+        for n_fish, count in sorted(s.fish_count_distribution.items()):
+            frac = count / total_frames if total_frames > 0 else 0.0
+            lines.append(f"    {n_fish:>12}  {count:>8}  {frac:>8.1%}")
+        lines.append("")
+        lines.append("  Per-Fish Summary (stitched)")
+        lines.append("  " + "-" * 40)
+        lines.append(
+            f"    {'Fish ID':>7}  {'Span':>8}  {'Continuity':>10}  {'Gaps':>4}"
+        )
+        lines.append(
+            f"    {'-------':>7}  {'------':>8}  {'----------':>10}  {'----':>4}"
+        )
+        for fid, summary in sorted(s.per_fish_summary.items()):
+            lines.append(
+                f"    {fid:>7}  {summary['span']:>8}  {summary['continuity']:>10.3f}"
+                f"  {summary['gaps']:>4}"
+            )
+        lines.append("")
+
+    if result.smoothing is not None:
+        lines.extend(_header("Z-Smoothing Quality"))
+        sm = result.smoothing
+        lines.append(_row("source", sm.source_file))
+        lines.append("")
+        lines.append("  Z-Jitter (frame-to-frame centroid z)")
+        lines.append("  " + "-" * 40)
+        lines.append(_row("mean_jitter_before (cm)", sm.mean_jitter_before))
+        lines.append(_row("mean_jitter_after (cm)", sm.mean_jitter_after))
+        lines.append(_row("jitter_reduction", sm.jitter_reduction))
+        lines.append(_row("fish_processed", sm.fish_processed))
+        lines.append(_row("frames_processed", sm.frames_processed))
+        if sm.per_fish_jitter:
+            lines.append("")
+            lines.append("  Per-Fish Z-Jitter (cm)")
+            lines.append("  " + "-" * 40)
+            lines.append(f"    {'Fish ID':>7}  {'Before':>8}  {'After':>8}")
+            lines.append(f"    {'-------':>7}  {'------':>8}  {'-----':>8}")
+            for fid, jitter in sorted(sm.per_fish_jitter.items()):
+                lines.append(
+                    f"    {fid:>7}  {jitter['before_cm']:>8.3f}  {jitter['after_cm']:>8.3f}"
+                )
+        if sm.reproj_before and sm.reproj_after:
+            lines.append("")
+            lines.append("  Reprojection Error Impact")
+            lines.append("  " + "-" * 55)
+            lines.append(
+                f"    {'Statistic':<16} {'Before (px)':>11}  {'After (px)':>10}"
+                f"  {'Delta (px)':>10}"
+            )
+            lines.append(
+                f"    {'---------':<16} {'-----------':>11}  {'----------':>10}"
+                f"  {'----------':>10}"
+            )
+            for label, key in [
+                ("Mean", "mean"),
+                ("Median (p50)", "p50"),
+                ("p90", "p90"),
+                ("p95", "p95"),
+                ("p99", "p99"),
+            ]:
+                pre_val = sm.reproj_before.get(key, 0.0)
+                post_val = sm.reproj_after.get(key, 0.0)
+                delta = post_val - pre_val
+                lines.append(
+                    f"    {label:<16} {pre_val:>11.3f}  {post_val:>10.3f}"
+                    f"  {delta:>+10.3f}"
+                )
+            lines.append(_row("fish_frames_evaluated", sm.reproj_n_fish_frames))
+            lines.append(_row("total_residuals", sm.reproj_n_residuals))
         lines.append("")
 
     return "\n".join(lines)

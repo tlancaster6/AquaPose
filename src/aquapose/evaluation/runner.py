@@ -19,12 +19,16 @@ from aquapose.evaluation.stages import (
     FragmentationMetrics,
     MidlineMetrics,
     ReconstructionMetrics,
+    SmoothingMetrics,
+    StitchingMetrics,
     TrackingMetrics,
     evaluate_association,
     evaluate_detection,
     evaluate_fragmentation,
     evaluate_midline,
     evaluate_reconstruction,
+    evaluate_smoothing,
+    evaluate_stitching,
     evaluate_tracking,
 )
 from aquapose.evaluation.stages.reconstruction import (
@@ -273,6 +277,8 @@ class EvalRunnerResult:
     frames_evaluated: int
     frames_available: int
     fragmentation: FragmentationMetrics | None = None
+    stitching: StitchingMetrics | None = None
+    smoothing: SmoothingMetrics | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return a fully JSON-serializable nested dict representation.
@@ -296,6 +302,10 @@ class EvalRunnerResult:
             stages["reconstruction"] = self.reconstruction.to_dict()
         if self.fragmentation is not None:
             stages["fragmentation"] = self.fragmentation.to_dict()
+        if self.stitching is not None:
+            stages["stitching"] = self.stitching.to_dict()
+        if self.smoothing is not None:
+            stages["smoothing"] = self.smoothing.to_dict()
 
         return {
             "run_id": self.run_id,
@@ -435,6 +445,11 @@ class EvalRunner:
             ]
             midline_metrics = evaluate_midline(per_frame_midlines)
 
+        # These are populated by reconstruction eval and reused by smoothing eval.
+        frame_results: list[tuple[int, dict]] | None = None
+        midline_sets_by_frame: dict[int, MidlineSet] | None = None
+        projection_models: dict[str, Any] | None = None
+
         if "reconstruction" in stages_present:
             midlines_3d = ctx.midlines_3d or []
             frame_results = [
@@ -455,7 +470,7 @@ class EvalRunner:
 
             # Build midline_sets_by_frame for per-keypoint and curvature analysis
             midline_sets_for_recon = self._build_midline_sets(ctx, sampled_indices)
-            midline_sets_by_frame: dict[int, MidlineSet] = {}
+            midline_sets_by_frame = {}
             for idx, ms in zip(sampled_indices, midline_sets_for_recon, strict=False):
                 if ms:
                     midline_sets_by_frame[idx] = ms
@@ -491,6 +506,23 @@ class EvalRunner:
                     n_animals_frag = 0
             fragmentation_metrics = evaluate_fragmentation(midlines_3d, n_animals_frag)
 
+        # Stitch-quality evaluation (reads from H5, independent of cache.pkl)
+        stitching_metrics: StitchingMetrics | None = None
+        try:
+            n_animals_stitch = self._read_n_animals()
+            stitching_metrics = evaluate_stitching(self._run_dir, n_animals_stitch)
+        except FileNotFoundError:
+            pass
+
+        # Smoothing-quality evaluation (reads from smoothed H5, reuses recon data)
+        smoothing_metrics = evaluate_smoothing(
+            self._run_dir,
+            frame_results,
+            midline_sets_by_frame,
+            projection_models,
+            n_body_points=n_sample_points,
+        )
+
         return EvalRunnerResult(
             run_id=run_id,
             stages_present=frozenset(stages_present),
@@ -502,6 +534,8 @@ class EvalRunner:
             frames_evaluated=frames_evaluated,
             frames_available=frame_count,
             fragmentation=fragmentation_metrics,
+            stitching=stitching_metrics,
+            smoothing=smoothing_metrics,
         )
 
     def _read_n_animals(self) -> int:

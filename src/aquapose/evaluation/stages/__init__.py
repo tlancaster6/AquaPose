@@ -25,6 +25,8 @@ from aquapose.evaluation.stages.reconstruction import (
     compute_z_denoising_metrics,
     evaluate_reconstruction,
 )
+from aquapose.evaluation.stages.smoothing import SmoothingMetrics, evaluate_smoothing
+from aquapose.evaluation.stages.stitching import StitchingMetrics, evaluate_stitching
 from aquapose.evaluation.stages.tracking import TrackingMetrics, evaluate_tracking
 
 __all__ = [
@@ -35,6 +37,8 @@ __all__ = [
     "FragmentationMetrics",
     "MidlineMetrics",
     "ReconstructionMetrics",
+    "SmoothingMetrics",
+    "StitchingMetrics",
     "TrackingMetrics",
     "ZDenoisingMetrics",
     "compute_curvature_stratified",
@@ -46,5 +50,7 @@ __all__ = [
     "evaluate_fragmentation_2d",
     "evaluate_midline",
     "evaluate_reconstruction",
+    "evaluate_smoothing",
+    "evaluate_stitching",
     "evaluate_tracking",
 ]

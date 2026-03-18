@@ -161,9 +161,9 @@ def _build_figure(
         scene=dict(
             aspectmode="manual",
             aspectratio=aspect,
-            xaxis=dict(title="X", range=axis_range["x"]),
-            yaxis=dict(title="Y", range=axis_range["y"]),
-            zaxis=dict(title="Z", range=axis_range["z"]),
+            xaxis=dict(title="X", range=axis_range["x"], autorange=False),
+            yaxis=dict(title="Y", range=axis_range["y"], autorange=False),
+            zaxis=dict(title="Z", range=axis_range["z"], autorange=False),
         ),
         updatemenus=[
             dict(

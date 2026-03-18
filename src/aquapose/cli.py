@@ -456,6 +456,13 @@ def tune_cmd(
     help="For detection mosaics, only show camera views that have detections.",
 )
 @click.option(
+    "--n-samples",
+    type=int,
+    default=3,
+    show_default=True,
+    help="Number of evenly-spaced frames to render for detection mosaics.",
+)
+@click.option(
     "--unstitched",
     is_flag=True,
     default=False,
@@ -492,6 +499,7 @@ def viz(
     unstitched: bool,
     detections: bool,
     only_with_detections: bool,
+    n_samples: int,
     stride: int,
     mp4: bool,
     fps: int,
@@ -527,7 +535,10 @@ def viz(
             run_path, out_dir, stride=stride, mp4=mp4, fps=fps, unstitched=unstitched
         ),
         "detections": lambda: generate_detection_overlay(
-            run_path, out_dir, only_with_detections=only_with_detections
+            run_path,
+            out_dir,
+            n_samples=n_samples,
+            only_with_detections=only_with_detections,
         ),
         "trails": lambda: generate_trails(
             run_path, out_dir, fade_trails=fade_trails, unstitched=unstitched

@@ -13,8 +13,8 @@ Implements the single-pass keypoint tracker:
 - _KFTrack: per-track state with ORU/OCR mechanisms.
 - _KptTrackletBuilder: mutable per-track accumulator with keypoint storage.
 - _SinglePassTracker: predict/match/update/birth/death per-frame loop.
-- interpolate_gaps: Cubic-spline gap filling for small temporal gaps.
-- interpolate_low_confidence_keypoints: Per-keypoint cubic spline fill for low-confidence keypoints.
+- interpolate_gaps: Linear gap filling for small temporal gaps.
+- interpolate_low_confidence_keypoints: Per-keypoint PCHIP fill for low-confidence keypoints.
 - KeypointTracker: Public wrapper running a single forward pass with gap
   interpolation. The bidirectional merge was removed after Phase 84-01
   investigation showed it produced 44 duplicate-inflated tracks vs 37 for
@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from scipy.interpolate import CubicSpline
+from scipy.interpolate import PchipInterpolator
 from scipy.optimize import linear_sum_assignment
 
 from aquapose.core.tracking.types import Tracklet2D
@@ -1102,11 +1102,11 @@ def interpolate_gaps(
     builder: _KptTrackletBuilder,
     max_gap_frames: int = 5,
 ) -> _KptTrackletBuilder:
-    """Fill small temporal gaps in a tracklet using cubic-spline interpolation.
+    """Fill small temporal gaps in a tracklet using linear interpolation.
 
     For each gap <= max_gap_frames between consecutive frames, interpolates
-    keypoint positions using CubicSpline. Interpolated frames get status
-    "coasted". Gaps larger than max_gap_frames are left unfilled.
+    keypoint positions linearly from the bounding frames. Interpolated frames
+    get status "coasted". Gaps larger than max_gap_frames are left unfilled.
 
     Centroids for interpolated frames are derived from spine1 (index 2)
     keypoint when available. Bboxes use linear interpolation.
@@ -1151,42 +1151,29 @@ def interpolate_gaps(
         new_keypoints.append(row[4])
         new_kconfs.append(row[5])
 
-    # Scan for gaps and interpolate
+    # Scan for gaps and fill with linear interpolation between bounding frames
     i = 0
     while i < len(new_frames) - 1:
         gap = new_frames[i + 1] - new_frames[i] - 1
         if 0 < gap <= max_gap_frames:
-            # Build spline on the known frames around the gap
-            # For CubicSpline we need at least 2 knot points; use all known frames
-            known_f = np.array(new_frames, dtype=np.float64)
-            known_kpts = np.stack(new_keypoints, axis=0).astype(np.float64)  # (N, 6, 2)
-            known_bboxes_arr = np.array(new_bboxes, dtype=np.float64)  # (N, 4)
+            # Linearly interpolate between frame i and the next detected frame
+            kpts_start = new_keypoints[i].astype(np.float64)  # (K, 2)
+            kpts_end = new_keypoints[i + 1].astype(np.float64)
+            bbox_start = np.array(new_bboxes[i], dtype=np.float64)  # (4,)
+            bbox_end = np.array(new_bboxes[i + 1], dtype=np.float64)
+            n_kp = kpts_start.shape[0]
 
-            # Use monotone=True via 'not-a-knot' when possible
-            cs_kpts: list[list[CubicSpline]] = []
-            n_kp = known_kpts.shape[1]
-            for k in range(n_kp):
-                cs_kpts.append(
-                    [
-                        CubicSpline(known_f, known_kpts[:, k, 0]),
-                        CubicSpline(known_f, known_kpts[:, k, 1]),
-                    ]
-                )
-            cs_bbox = [CubicSpline(known_f, known_bboxes_arr[:, d]) for d in range(4)]
-
-            # Insert interpolated frames
             insert_idx = i + 1
-            for missing_f in range(new_frames[i] + 1, new_frames[i + 1]):
-                f_float = float(missing_f)
+            total_span = gap + 1  # distance from start to end frame
+            for j, missing_f in enumerate(
+                range(new_frames[i] + 1, new_frames[i + 1]), start=1
+            ):
+                t = j / total_span
 
-                # Interpolate keypoints
-                interp_kpts = np.zeros((n_kp, 2), dtype=np.float32)
-                for k in range(n_kp):
-                    interp_kpts[k, 0] = float(cs_kpts[k][0](f_float))
-                    interp_kpts[k, 1] = float(cs_kpts[k][1](f_float))
-
-                # Interpolate bbox
-                interp_bbox = tuple(float(cs_bbox[d](f_float)) for d in range(4))
+                interp_kpts = ((1 - t) * kpts_start + t * kpts_end).astype(np.float32)
+                interp_bbox = tuple(
+                    float(v) for v in (1 - t) * bbox_start + t * bbox_end
+                )
 
                 # Centroid from spine1 keypoint (index 2) if available
                 if n_kp > 2:
@@ -1197,7 +1184,6 @@ def interpolate_gaps(
                     cx = bx + bw / 2.0
                     cy = by + bh / 2.0
 
-                # Insert at correct sorted position
                 new_frames.insert(insert_idx, missing_f)
                 new_centroids.insert(insert_idx, (cx, cy))
                 new_bboxes.insert(insert_idx, interp_bbox)  # type: ignore[arg-type]
@@ -1232,11 +1218,14 @@ def interpolate_low_confidence_keypoints(
     builder: _KptTrackletBuilder,
     conf_threshold: float = 0.3,
 ) -> _KptTrackletBuilder:
-    """Fill low-confidence keypoints using per-keypoint cubic spline interpolation.
+    """Fill low-confidence keypoints using monotone piecewise cubic interpolation.
 
     For each keypoint index, identifies frames where the keypoint's confidence
-    is below ``conf_threshold`` and replaces the position with a cubic spline
-    value estimated from the confident frames (those with conf >= conf_threshold).
+    is below ``conf_threshold`` and replaces the position with a PCHIP
+    (monotone cubic Hermite) value estimated from the confident frames.
+    Only frames *within* the confident frame range are interpolated;
+    frames outside the range of confident knots are left unchanged to
+    avoid unbounded cubic extrapolation.
 
     This is designed to run *after* :func:`interpolate_gaps`, so that whole-frame
     gap-filled ("coasted") frames can also receive better keypoint estimates when
@@ -1272,7 +1261,7 @@ def interpolate_low_confidence_keypoints(
         conf_k = conf_arr[:, k]
         confident_mask = conf_k >= conf_threshold
 
-        # Need at least 2 confident frames to build a cubic spline
+        # Need at least 2 confident frames to build an interpolant
         if confident_mask.sum() < 2:
             continue
 
@@ -1286,13 +1275,18 @@ def interpolate_low_confidence_keypoints(
         knot_x = kpts_arr[confident_mask, k, 0]
         knot_y = kpts_arr[confident_mask, k, 1]
 
-        cs_x = CubicSpline(knot_frames, knot_x)
-        cs_y = CubicSpline(knot_frames, knot_y)
+        pchip_x = PchipInterpolator(knot_frames, knot_x)
+        pchip_y = PchipInterpolator(knot_frames, knot_y)
+
+        # Only interpolate within the range of confident knots (no extrapolation)
+        f_min, f_max = knot_frames[0], knot_frames[-1]
 
         for t in np.where(low_conf_mask)[0]:
             f_val = frames_arr[t]
-            kpts_arr[t, k, 0] = cs_x(f_val)
-            kpts_arr[t, k, 1] = cs_y(f_val)
+            if f_val < f_min or f_val > f_max:
+                continue  # skip extrapolation — leave original value
+            kpts_arr[t, k, 0] = pchip_x(f_val)
+            kpts_arr[t, k, 1] = pchip_y(f_val)
             conf_arr[t, k] = 0.0
 
     # Write updated arrays back into the builder in sorted order
@@ -1312,7 +1306,7 @@ class KeypointTracker:
     """Single-pass keypoint tracker with ORU/OCR occlusion recovery.
 
     Runs a single forward pass using _SinglePassTracker with ORU/OCR mechanisms
-    for occlusion recovery. Small temporal gaps are filled via cubic-spline
+    for occlusion recovery. Small temporal gaps are filled via linear
     interpolation before returning Tracklet2D objects.
 
     The bidirectional merge was removed after Phase 84-01 investigation showed

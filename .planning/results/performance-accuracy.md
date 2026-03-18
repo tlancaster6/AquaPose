@@ -4,7 +4,9 @@ All results below are validated as current against the v3.10 codebase (2026-03-1
 
 ---
 
-## 1. Pseudo-Label Iterative Training (Phase 73, v3.6)
+## 1. ~~Pseudo-Label Iterative Training (Phase 73, v3.6)~~ — DEPRECATED
+
+> **Superseded by Sections 13 (OBB) and 14 (Pose).** This 3-model comparison (baseline / uncurated / curated+aug) is replaced by a more granular incremental ablation: 5 OBB models and 4 pose models, each isolating exactly one data source, trained on YOLO26n (vs YOLO11 here). Retained for historical reference only.
 
 ### Methodology
 
@@ -60,7 +62,9 @@ After the ablation, production models were retrained on the full combined datase
 
 ---
 
-## 2. Curvature-Stratified Pose Accuracy (Phase 73, v3.6)
+## 2. ~~Curvature-Stratified Pose Accuracy (Phase 73, v3.6)~~ — DEPRECATED
+
+> **Superseded by Section 14 (curvature-stratified subsection).** This analysis used 3 models on a smaller val set (64 images, 66 instances). The replacement uses 4 ablation models on the full 128-image val set (131 instances) with per-instance OKS data for regression fitting. Retained for historical reference only.
 
 ### Methodology
 
@@ -82,7 +86,9 @@ Key result: Elastic augmentation + curation provides the largest gain on high-cu
 
 ---
 
-## 3. Elastic Augmentation A/B Experiment (v3.5)
+## 3. ~~Elastic Augmentation A/B Experiment (v3.5)~~ — DEPRECATED
+
+> **Superseded by Section 14, step C→D.** The isolated augmentation-only A/B comparison is now captured as one step in a controlled 4-model ablation. The deformation pipeline documentation and bug fix history below remain a useful reference for the TPS augmentation implementation. Retained for historical reference only.
 
 ### Motivation
 
@@ -150,7 +156,9 @@ This standalone A/B experiment (Section 3) established that elastic augmentation
 
 ---
 
-## 4. Training Curves (v3.5 Augmentation Experiment)
+## 4. ~~Training Curves (v3.5 Augmentation Experiment)~~ — DEPRECATED
+
+> **Superseded by Section 14.** Training curves for the deprecated Section 3 models (YOLO11, old data split). Retained for historical reference only.
 
 ### Methodology
 
@@ -582,6 +590,264 @@ Times from per-chunk stage_timing, summed across all 32 chunks (300 frames each)
 
 ---
 
+## 12. ~~Wall Augmentation OBB Experiment (2026-03-17)~~ — DEPRECATED
+
+> **Superseded by Section 13, step D→E.** This 2-model comparison (Production v2 vs Wall-Aug v1) is now captured as one step in a controlled 5-model OBB ablation. The augmentation pipeline documentation below remains a useful reference for the wall-fish inpainting implementation. Retained for historical reference only.
+
+### Motivation
+
+Fish adjacent to the white tank wall are harder to detect due to low contrast between the fish body and the bright wall background. Wall augmentation creates synthetic training images where sand-background fish are inpainted out, leaving only wall-adjacent fish with their annotations. This forces the detector to learn wall-fish features without relying on the easier sand-background examples in the same frame.
+
+### Methodology
+
+#### Augmentation Pipeline (`scripts/generate_wall_augments.py`)
+
+1. **Wall-fish classification**: For each annotated image, classify each fish as "wall-fish" or "sand-fish" by sampling 11x11 patches at OBB corners. If 2+ corners have mean brightness >= 135/255, the fish is classified as wall-adjacent.
+2. **Selective inpainting**: For images containing both wall-fish and sand-fish, sand-fish regions are masked and filled with tiled sand texture sampled from the lower-center of the image, blended with Gaussian feathering (15px radius).
+3. **Output**: Inpainted images with only wall-fish labels retained. 43 images qualified (had both wall-fish and sand-fish).
+
+The 43 inpainted images were imported into the OBB sample store as new samples (different content hash from originals, assigned fresh UUIDs).
+
+#### Training
+
+Two models were trained with identical hyperparameters (YOLO26n-obb, 300 epochs, patience 50, imgsz 640, mosaic 0.1) and the same 22-image val-tagged validation set:
+
+| Model | Training Set | Train Images |
+|-------|-------------|-------------|
+| Production v2 | Manual + curated pseudo-labels (no wall-aug) | 99 |
+| Wall-Aug v1 | Manual + curated pseudo-labels + 43 wall-augmented | 142 |
+
+#### Evaluation
+
+Both models were evaluated on:
+1. **Standard val set**: 22 val-tagged images (mixed wall and sand fish)
+2. **Wall-fish holdout**: 13 held-out wall-augmented images (18 fish instances, wall-adjacent only)
+
+### Results
+
+#### Standard Val Set (22 images)
+
+| Metric | Production v2 | Wall-Aug v1 | Delta |
+|--------|--------------|-------------|-------|
+| mAP50 | 0.977 | 0.967 | -1.0 |
+| mAP50-95 | 0.716 | **0.734** | **+1.8** |
+| Precision | 0.963 | 0.946 | -1.7 |
+| Recall | 0.927 | 0.900 | -2.7 |
+| Best epoch | 56 | 76 | |
+
+#### Wall-Fish Holdout (13 images, 18 instances)
+
+| Metric | Production v2 | Wall-Aug v1 | Delta |
+|--------|--------------|-------------|-------|
+| mAP50 | 0.947 | **0.981** | **+3.4** |
+| mAP50-95 | 0.613 | **0.699** | **+8.6** |
+| Precision | **1.000** | 0.893 | -10.7 |
+| Recall | 0.818 | **1.000** | **+18.2** |
+
+### Key Findings
+
+- On the standard val set, wall augmentation provides a modest **+1.8 pt mAP50-95** gain with a small precision/recall trade-off.
+- On wall-adjacent fish specifically, the gain is substantial: **+8.6 pts mAP50-95** and **perfect recall** (1.000 vs 0.818). Production v2 misses ~18% of wall-fish detections entirely.
+- Production v2 has zero false positives on wall-fish (precision 1.000) but at the cost of missed detections. Wall-Aug v1 trades some precision for much better coverage.
+
+### Run Details
+
+| | Production v2 | Wall-Aug v1 |
+|--|--------------|-------------|
+| Run ID | run_20260317_224325 | run_20260317_220112 |
+| Dataset | production_v2 | wall_aug_v1 |
+| Weights | `training/obb/run_20260317_224325/best_model.pt` | `training/obb/run_20260317_220112/best_model.pt` |
+
+---
+
+## 13. OBB Training Data Ablation (2026-03-18)
+
+### Motivation
+
+Measure the isolated impact of each training data type on OBB detection quality. Each model adds exactly one data source to the previous, enabling direct attribution of accuracy gains to specific data types.
+
+### Methodology
+
+Five models trained with identical hyperparameters (YOLO26n-obb, 100 epochs, patience 50, imgsz 640, mosaic 0.1) on incrementally larger training sets:
+
+| Model | Training Data | Train Size | Delta |
+|-------|-------------|------------|-------|
+| A | Manual annotations only (Mar-7 batch) | 43 | baseline |
+| B | A + raw pseudo-labels (from round1_selected) | 79 | +36 raw PL |
+| C | A + corrected pseudo-labels (from store) | 79 | +36 corrected PL |
+| D | C + hard-cases (Mar-11 batch: occlusion + wall fish) | 99 | +20 hard cases |
+| E | D + wall-augmented images (Mar-18 batch) | 142 | +43 wall-aug |
+
+All models share the same 22-image val set (6 Mar-7 + 13 Mar-9 + 3 Mar-11, corrected labels from store). Model B uses raw labels from `round1_selected/obb/` while Model C uses corrected labels from the store for the same 36 pseudo-label images.
+
+Evaluated on two test sets:
+1. **Standard val set**: 22 val-tagged images (mixed scenes)
+2. **Wall-fish holdout**: 13 images, 18 wall-adjacent fish instances
+
+### Results
+
+#### Standard Val Set (22 images)
+
+| Model | Data Added | mAP50 | mAP50-95 | Precision | Recall |
+|-------|-----------|-------|----------|-----------|--------|
+| A | Manual only | 0.929 | 0.658 | 0.877 | 0.853 |
+| B | + raw pseudo-labels | 0.928 | 0.612 | — | — |
+| C | + corrected pseudo-labels | 0.948 | 0.700 | — | — |
+| D | + hard cases | 0.967 | 0.736 | — | — |
+| E | + wall augmentation | **0.973** | **0.741** | — | — |
+
+#### Wall-Fish Holdout (13 images, 18 instances)
+
+| Model | Data Added | mAP50 | mAP50-95 |
+|-------|-----------|-------|----------|
+| A | Manual only | 0.712 | 0.398 |
+| B | + raw pseudo-labels | 0.651 | 0.401 |
+| C | + corrected pseudo-labels | 0.764 | 0.457 |
+| D | + hard cases | **0.947** | **0.617** |
+| E | + wall augmentation | 0.962 | 0.653 |
+
+### Key Findings
+
+1. **Raw pseudo-labels hurt** (A→B): Both val mAP50-95 (-4.6 pts) and wall-fish mAP50 (-6.1 pts) degrade. Noisy labels introduce more harm than the additional data diversity provides.
+
+2. **Label correction is critical** (B→C): Correcting the same 36 pseudo-labels recovers all losses and then some: +8.8 pts mAP50-95 on val, +11.3 pts mAP50 on wall-fish. This is the single largest improvement in the ablation.
+
+3. **Hard cases drive wall-fish performance** (C→D): The 20 hand-selected hard cases (occlusion, wall fish) deliver +18.3 pts mAP50 and +16.0 pts mAP50-95 on the wall-fish holdout — the largest single-step gain on that test set. Standard val also improves (+3.6 pts mAP50-95).
+
+4. **Wall augmentation adds incremental gains** (D→E): +1.5 pts wall-fish mAP50, +3.6 pts wall-fish mAP50-95, +0.5 pts standard val mAP50-95. Useful but diminishing returns on top of hard cases.
+
+5. **Cumulative A→E**: Standard val mAP50-95 improves 0.658 → 0.741 (+8.3 pts). Wall-fish mAP50-95 improves 0.398 → 0.653 (+25.5 pts, a 64% relative improvement).
+
+### Resolution Ablation (E dataset at 960 and 1280)
+
+Using the same ablation E dataset (142 train images) and model architecture (YOLO26n-obb), two additional models were trained at higher input resolutions to measure the impact of image size on detection quality. Hyperparameters: 100 epochs, patience 50, mosaic 0.1. Batch size reduced from 16 to 8 (960) and 4 (1280) to fit in GPU memory.
+
+#### Standard Val Set (22 images)
+
+| Model | imgsz | mAP50 | mAP50-95 | Precision | Recall | Inference (ms) |
+|-------|-------|-------|----------|-----------|--------|----------------|
+| E | 640 | 0.973 | 0.741 | — | — | — |
+| E_960 | 960 | **0.985** | 0.771 | 0.995 | 0.933 | 26.9 |
+| E_1280 | 1280 | 0.979 | **0.784** | 0.933 | 0.929 | 32.0 |
+
+#### Wall-Fish Holdout (13 images, 18 instances)
+
+| Model | imgsz | mAP50 | mAP50-95 | Precision | Recall |
+|-------|-------|-------|----------|-----------|--------|
+| E | 640 | 0.962 | 0.653 | — | — |
+| E_960 | 960 | **0.995** | 0.711 | 0.996 | 1.000 |
+| E_1280 | 1280 | 0.960 | **0.731** | 0.893 | 0.923 |
+
+#### Key Findings
+
+1. **Higher resolution improves mAP50-95**: E_960 gains +3.0 pts and E_1280 gains +4.3 pts over E at 640 on the standard val set. The gains come primarily from tighter box localization (mAP at higher IoU thresholds).
+
+2. **Wall-fish mAP50-95 also improves**: +5.8 pts (960) and +7.8 pts (1280) over the 640 baseline, though mAP50 tells a different story — 960 achieves near-perfect 0.995 while 1280 drops to 0.960.
+
+3. **960 is the sweet spot for wall-fish detection**: Perfect recall (1.000) and near-perfect precision (0.996) on the wall-fish holdout, with the highest mAP50 across all resolutions. The 1280 model trades wall-fish mAP50 for better mAP50-95 localization.
+
+4. **Diminishing returns with cost**: 960→1280 gains only +1.3 pts mAP50-95 on standard val while adding ~19% inference time (26.9→32.0 ms). Training also requires 4x smaller batch size.
+
+### Run Details
+
+| Model | Run ID | Weights |
+|-------|--------|---------|
+| A | run_20260317_232932 | `training/obb/run_20260317_232932/best_model.pt` |
+| B | run_20260317_233530 | `training/obb/run_20260317_233530/best_model.pt` |
+| C | run_20260317_234103 | `training/obb/run_20260317_234103/best_model.pt` |
+| D | run_20260317_234549 | `training/obb/run_20260317_234549/best_model.pt` |
+| E | run_20260317_235534 | `training/obb/run_20260317_235534/best_model.pt` |
+| E_960 | run_20260318_082016 | `training/obb/run_20260318_082016/best_model.pt` |
+| E_1280 | run_20260318_083836 | `training/obb/run_20260318_083836/best_model.pt` |
+
+**CSV (wall-fish holdout)**: `data/obb_ablation_wall_holdout.csv`
+**CSV (training curves)**: `data/obb_ablation_training_curves.csv`
+**Assembly script**: `scripts/assemble_ablation_datasets.py`
+**Datasets**: `~/aquapose/projects/YH/training_data/obb/datasets/ablation_{a..e}_*`
+
+---
+
+## 14. Pose Training Data Ablation (2026-03-18)
+
+### Motivation
+
+Measure the isolated impact of each training data type on pose estimation quality. Parallels the OBB ablation (Section 13) but focuses on the pose-specific dimension of **elastic augmentation** (TPS deformation), which was shown in Section 3 to reduce curvature bias.
+
+### Methodology
+
+Four models trained with identical hyperparameters (YOLO26n-pose, 100 epochs, patience 50, imgsz 320, --rect) on incrementally larger training sets:
+
+| Model | Training Data | Train Size | Delta |
+|-------|-------------|------------|-------|
+| A | Manual annotations only (258 Mar-7 originals) | 258 | baseline |
+| B | A + raw pseudo-labels (from round1_selected) | 514 | +256 raw PL |
+| C | A + corrected pseudo-labels (from store) | 514 | +256 corrected PL |
+| D | C + elastic augmentation (4x TPS per parent) | 2,554 | +2,040 TPS aug |
+
+All models share the same 128-image val set (64 Mar-7 + 64 Mar-9, corrected labels from store). Model B uses raw labels from `round1_selected/pose/` while Model C uses corrected labels from the store for the same 256 pseudo-label images.
+
+### Results
+
+| Model | Data Added | Pose mAP50 | Pose mAP50-95 | Box mAP50-95 | Precision | Recall | Best Epoch |
+|-------|-----------|-----------|--------------|-------------|-----------|--------|------------|
+| A | Manual only | 0.961 | 0.887 | 0.748 | 0.948 | 0.931 | 75 |
+| B | + raw pseudo-labels | 0.975 | 0.907 | 0.752 | 0.933 | 0.964 | 100 |
+| C | + corrected pseudo-labels | 0.973 | 0.941 | 0.843 | 0.976 | 0.948 | 96 |
+| D | + elastic augmentation | **0.980** | **0.971** | **0.821** | **0.992** | **0.969** | 83 |
+
+### Key Findings
+
+1. **Raw pseudo-labels help modestly** (A→B): +2.0 pts pose mAP50-95. Unlike OBB (where raw PLs hurt), the additional 256 images provide enough diversity to outweigh label noise for pose. However, Model B hit the epoch limit (best=100), suggesting it was still improving — the gain may be understated.
+
+2. **Label correction is the single biggest win** (B→C): +3.4 pts pose mAP50-95 (0.907→0.941) and a massive +9.1 pts box mAP50-95 (0.752→0.843). Correcting keypoint positions in the same 256 images delivers far more value than raw quantity. This mirrors the OBB finding where correction was the largest single-step gain.
+
+3. **Elastic augmentation adds substantial value** (C→D): +3.0 pts pose mAP50-95 (0.941→0.971). The 4x TPS deformation (C-curve + S-curve variants) effectively quintuples training data while specifically targeting the curvature weakness identified in Section 3. Note: box mAP50-95 dips slightly (0.843→0.821), possibly because augmented crops have warped bounding boxes.
+
+4. **Cumulative A→D**: Pose mAP50-95 improves 0.887→0.971 (+8.4 pts, a 74% relative error reduction). Precision rises 0.948→0.992. The full data pipeline (manual + corrected pseudo + augmentation) nearly saturates the metric.
+
+5. **Diminishing returns pattern**: Each step adds less than the previous (2.0 → 3.4 → 3.0 pts), though the augmentation step is larger than expected given the diminishing room for improvement at 0.941.
+
+### Comparison with OBB Ablation (Section 13)
+
+| Finding | OBB | Pose |
+|---------|-----|------|
+| Raw pseudo-labels | Hurt (-4.6 pts) | Help (+2.0 pts) |
+| Label correction | +8.8 pts | +3.4 pts |
+| Most impactful step | Correction (B→C) | Correction (B→C) |
+| Final mAP50-95 | 0.741 | 0.971 |
+
+The divergence on raw pseudo-labels is likely explained by pose having 12x more training images per step (256 vs 36 for OBB), diluting label noise more effectively.
+
+
+#### Curvature-Stratified OKS (Val Set, 128 images)
+
+Per-instance OKS computed for each model, binned by ground-truth midline curvature tercile (sigma=0.1).
+
+| Model | Data Added | Low (n=43) | Mid (n=42) | High (n=43) |
+|-------|-----------|------|------|------|
+| A | Manual only | 0.824 | 0.776 | 0.660 |
+| B | + raw pseudo-labels | 0.789 | 0.731 | 0.631 |
+| C | + corrected pseudo-labels | 0.917 | 0.849 | 0.700 |
+| D | + elastic augmentation | **0.921** | **0.863** | **0.733** |
+
+**CSV**: `data/pose_ablation_curvature_oks.csv`
+**CSV (per-instance)**: `data/pose_ablation_oks_per_instance.csv`
+**CSV (training curves)**: `data/pose_ablation_training_curves.csv`
+
+### Run Details
+
+| Model | Run ID | Weights |
+|-------|--------|---------|
+| A | run_20260318_002353 | `training/pose/run_20260318_002353/best_model.pt` |
+| B | run_20260318_003828 | `training/pose/run_20260318_003828/best_model.pt` |
+| C | run_20260318_010419 | `training/pose/run_20260318_010419/best_model.pt` |
+| D | run_20260318_013005 | `training/pose/run_20260318_013005/best_model.pt` |
+
+**Assembly script**: `scripts/assemble_pose_ablation_datasets.py`
+**Datasets**: `~/aquapose/projects/YH/training_data/pose/datasets/pose_ablation_{a..d}_*`
+
+---
+
 ## Stale Results (Needing Re-Run)
 
 All results in this document are current as of v3.10 (2026-03-15). No stale entries.
@@ -603,3 +869,10 @@ All results in this document are current as of v3.10 (2026-03-15). No stale entr
 | `data/reconstruction_quality_full_run.csv` | 32 | Reconstruction quality metrics from full 9,450-frame run (reproj error, per-keypoint, camera visibility) | Bar: per-keypoint mean/p90 error; histogram: camera visibility distribution |
 | `data/pipeline_timing_full_run.csv` | 32 | Per-chunk per-stage wall-time for all 5 pipeline stages across 32 chunks (full 9,450-frame run) | Stacked bar: per-stage time per chunk; pie: stage time share |
 | `data/tracking_association_full_run.csv` | 73 | Tracking, fragmentation, association, detection coverage, and per-chunk association timing from full 9,450-frame run | Bar: per-camera detection coverage; scatter: association time per chunk |
+| `data/obb_ablation_results.csv` | 14 | OBB ablation: 7 models × 2 eval sets (standard val + wall-fish holdout) | Grouped bar: mAP50-95 by model and eval set |
+| `data/pose_ablation_results.csv` | 4 | Pose ablation: 4 models (manual → raw PL → corrected PL → augmented) | Bar: pose mAP50-95 by model |
+| `data/obb_ablation_wall_holdout.csv` | 7 | OBB ablation wall-fish holdout: 7 models on 13-image wall-only val set | Bar: mAP50-95 by model |
+| `data/pose_ablation_curvature_oks.csv` | 4 | Pose ablation curvature-stratified OKS: 4 models × 3 curvature terciles | Grouped bar: OKS by model and curvature bin |
+| `data/pose_ablation_oks_per_instance.csv` | 131 | Per-instance curvature and OKS for 4 pose ablation models (128 val images) | Scatter: OKS vs curvature with per-model regression lines |
+| `data/pose_ablation_training_curves.csv` | 401 | Per-epoch training metrics for 4 pose ablation models (100 epochs each) | Line: overlaid pose mAP50-95 and loss curves by model |
+| `data/obb_ablation_training_curves.csv` | 700 | Per-epoch training metrics for 7 OBB ablation models (100 epochs each) | Line: overlaid box mAP50-95 and loss curves by model |

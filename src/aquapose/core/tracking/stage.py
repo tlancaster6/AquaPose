@@ -107,6 +107,8 @@ class TrackingStage:
                     max_age=self._config.max_coast_frames,
                     n_init=self._config.n_init,
                     det_thresh=self._config.det_thresh,
+                    track_thresh=self._config.track_thresh,
+                    birth_thresh=self._config.birth_thresh,
                     base_r=self._config.base_r,
                     lambda_ocm=self._config.lambda_ocm,
                     max_gap_frames=self._config.max_gap_frames,
@@ -115,6 +117,8 @@ class TrackingStage:
                     max_match_distance=self._config.max_match_distance,
                     centroid_keypoint_index=self._centroid_keypoint_index,
                     centroid_confidence_floor=self._centroid_confidence_floor,
+                    merger_distance=self._config.merger_distance_px,
+                    merger_max_age=self._config.merger_max_coast_frames,
                 )
 
         # Feed all frames to each camera's tracker

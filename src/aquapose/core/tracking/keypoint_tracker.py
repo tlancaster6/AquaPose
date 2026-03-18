@@ -484,6 +484,10 @@ class _KFTrack:
         self._pre_coast_x: np.ndarray | None = None
         self._pre_coast_P: np.ndarray | None = None
 
+        # Merger state: track coasting due to a nearby matched track absorbing it
+        self.merger_partner_id: int | None = None
+        self.merger_frames: int = 0
+
     def mark_missed(self) -> None:
         """Record a missed frame (no detection match)."""
         # Save pre-coast state on first miss
@@ -519,6 +523,10 @@ class _KFTrack:
         self.time_since_update = 0
         self.hit_streak += 1
         self.detected_count += 1
+
+        # Clear merger state — track re-acquired its own detection
+        self.merger_partner_id = None
+        self.merger_frames = 0
 
         if self.state == "tentative" and self.hit_streak >= self.n_init:
             self.state = "confirmed"
@@ -599,6 +607,14 @@ class _SinglePassTracker:
         self._max_match_distance: float = float(
             getattr(config, "max_match_distance", 75.0)
         )
+        self._merger_distance: float = float(getattr(config, "merger_distance", 30.0))
+        self._merger_max_age: int = int(getattr(config, "merger_max_age", 90))
+        self._track_thresh: float = float(
+            getattr(config, "track_thresh", self._det_thresh)
+        )
+        self._birth_thresh: float = float(
+            getattr(config, "birth_thresh", self._det_thresh)
+        )
 
         self._next_track_id: int = 0
         self._active_tracks: dict[int, _KFTrack] = {}
@@ -656,8 +672,89 @@ class _SinglePassTracker:
     # Public interface
     # ------------------------------------------------------------------
 
+    def _run_hungarian_match(
+        self,
+        track_ids: list[int],
+        pred_kpts_map: dict[int, np.ndarray],
+        valid_dets: list[tuple[Any, np.ndarray, np.ndarray]],
+        det_indices: list[int],
+    ) -> list[tuple[int, int]]:
+        """Run Hungarian matching between a subset of tracks and detections.
+
+        Args:
+            track_ids: Track IDs to match against.
+            pred_kpts_map: Mapping from track ID to predicted keypoints (6, 2).
+            valid_dets: Full list of validated detections (det, kpts, kconf).
+            det_indices: Indices into *valid_dets* for the detections to match.
+
+        Returns:
+            List of (track_id, det_index) matched pairs.
+        """
+        if not track_ids or not det_indices:
+            return []
+
+        pred_kpts_list = [pred_kpts_map[tid] for tid in track_ids]
+        pred_kpts = np.stack(pred_kpts_list, axis=0)  # (N, 6, 2)
+        det_kpts_arr = np.stack(
+            [valid_dets[i][1] for i in det_indices], axis=0
+        )  # (M, 6, 2)
+        det_confs_arr = np.stack(
+            [valid_dets[i][2] for i in det_indices], axis=0
+        )  # (M, 6)
+        det_scales_arr = np.array(
+            [self._det_scale(valid_dets[i][0]) for i in det_indices],
+            dtype=np.float64,
+        )  # (M,)
+
+        oks = compute_oks_matrix(
+            pred_kpts, det_kpts_arr, det_confs_arr, det_scales_arr, self._sigmas
+        )  # (N, M)
+
+        pred_headings = np.stack(
+            [compute_heading(p) for p in pred_kpts_list], axis=0
+        )  # (N, 2)
+        det_headings = np.stack(
+            [compute_heading(valid_dets[i][1]) for i in det_indices], axis=0
+        )  # (M, 2)
+        ocm = compute_ocm_matrix(pred_headings, det_headings)  # (N, M)
+
+        cost = build_cost_matrix(oks, ocm, lambda_ocm=self._lambda_ocm)  # (N, M)
+
+        _GATE_SENTINEL = 1e6
+
+        pred_spine1 = pred_kpts[:, _SPINE1_IDX, :]  # (N, 2)
+        det_spine1 = det_kpts_arr[:, _SPINE1_IDX, :]  # (M, 2)
+        spine1_dist = np.linalg.norm(
+            pred_spine1[:, np.newaxis, :] - det_spine1[np.newaxis, :, :],
+            axis=-1,
+        )  # (N, M)
+        distance_mask = spine1_dist > self._max_match_distance  # (N, M)
+
+        gated_cost = np.where(
+            (cost < self._match_cost_threshold) & ~distance_mask,
+            cost,
+            _GATE_SENTINEL,
+        )
+        row_idx, col_idx = linear_sum_assignment(gated_cost)
+
+        matches: list[tuple[int, int]] = []
+        for r, c in zip(row_idx, col_idx, strict=False):
+            if gated_cost[r, c] >= _GATE_SENTINEL:
+                continue
+            matches.append((track_ids[r], det_indices[c]))
+        return matches
+
     def update(self, frame_idx: int, detections: list[Any]) -> None:
-        """Process one frame: predict → match → update → birth → death.
+        """Process one frame: predict → two-phase match → birth → death.
+
+        Phase 1 matches high-confidence detections (conf >= track_thresh)
+        against all tracks.  Phase 2 matches low-confidence detections
+        against tracks that were actively matched on the previous frame
+        (time_since_update == 0 before this frame's matching), preventing
+        stale coasting tracks from latching onto low-confidence noise.
+
+        New tracks are only birthed from unmatched Phase 1 detections with
+        conf >= birth_thresh.
 
         Args:
             frame_idx: Current frame index.
@@ -666,8 +763,8 @@ class _SinglePassTracker:
                 ``keypoint_conf`` (K,) ndarray, ``bbox`` (x, y, w, h).
                 Detections missing keypoints are skipped.
         """
-        # 1. Filter detections
-        valid_dets = []
+        # 1. Filter detections by det_thresh
+        valid_dets: list[tuple[Any, np.ndarray, np.ndarray]] = []
         for det in detections:
             if float(det.confidence) < self._det_thresh:
                 continue
@@ -680,6 +777,15 @@ class _SinglePassTracker:
             if kpts_arr.shape[0] < 5:  # need at least up to spine3 index
                 continue
             valid_dets.append((det, kpts_arr, kconf_arr))
+
+        # 2. Split into high/low confidence by track_thresh
+        high_conf_indices: list[int] = []
+        low_conf_indices: list[int] = []
+        for i, (det, _kpts, _kconf) in enumerate(valid_dets):
+            if float(det.confidence) >= self._track_thresh:
+                high_conf_indices.append(i)
+            else:
+                low_conf_indices.append(i)
 
         # Update inferred image bounds from detection bboxes.
         for det, _kpts_arr, _kconf_arr in valid_dets:
@@ -696,88 +802,95 @@ class _SinglePassTracker:
 
         track_ids = list(self._active_tracks.keys())
 
-        # 2. Predict all active tracks
-        pred_kpts_list: list[np.ndarray] = []
+        # 3. Predict all active tracks
+        pred_kpts_map: dict[int, np.ndarray] = {}
         for tid in track_ids:
             trk = self._active_tracks[tid]
             pred = trk.kf.predict()  # (6, 2)
-            pred_kpts_list.append(pred)
+            pred_kpts_map[tid] = pred
+
+        # Snapshot time_since_update BEFORE matching for Phase 2 eligibility.
+        # Tracks with tsu == 0 were matched on the previous frame (actively
+        # tracked), not coasting.
+        pre_match_tsu: dict[int, int] = {
+            tid: self._active_tracks[tid].time_since_update for tid in track_ids
+        }
 
         matched_track_ids: set[int] = set()
         matched_det_indices: set[int] = set()
 
-        # 3. Hungarian assignment (only when both tracks and detections exist)
-        if track_ids and valid_dets:
-            # Build arrays
-            pred_kpts = np.stack(pred_kpts_list, axis=0)  # (N, 6, 2)
-            det_kpts_arr = np.stack([d[1] for d in valid_dets], axis=0)  # (M, 6, 2)
-            det_confs_arr = np.stack([d[2] for d in valid_dets], axis=0)  # (M, 6)
-            det_scales_arr = np.array(
-                [self._det_scale(d[0]) for d in valid_dets], dtype=np.float64
-            )  # (M,)
-
-            oks = compute_oks_matrix(
-                pred_kpts, det_kpts_arr, det_confs_arr, det_scales_arr, self._sigmas
-            )  # (N, M)
-
-            # OCM headings
-            pred_headings = np.stack(
-                [compute_heading(p) for p in pred_kpts_list], axis=0
-            )  # (N, 2)
-            det_headings = np.stack(
-                [compute_heading(d[1]) for d in valid_dets], axis=0
-            )  # (M, 2)
-            ocm = compute_ocm_matrix(pred_headings, det_headings)  # (N, M)
-
-            cost = build_cost_matrix(oks, ocm, lambda_ocm=self._lambda_ocm)  # (N, M)
-
-            # Gate the cost matrix BEFORE Hungarian assignment so that
-            # impossible pairings are never forced.  Cells above the
-            # threshold are set to a large sentinel that linear_sum_assignment
-            # will avoid whenever a feasible alternative exists.
-            _GATE_SENTINEL = 1e6
-
-            # Spatial distance gate: prevent matches where predicted and
-            # detected spine1 keypoints are too far apart.  This stops
-            # coasting tracks from stealing detections across the tank.
-            pred_spine1 = pred_kpts[:, _SPINE1_IDX, :]  # (N, 2)
-            det_spine1 = det_kpts_arr[:, _SPINE1_IDX, :]  # (M, 2)
-            spine1_dist = np.linalg.norm(
-                pred_spine1[:, np.newaxis, :] - det_spine1[np.newaxis, :, :],
-                axis=-1,
-            )  # (N, M)
-            distance_mask = spine1_dist > self._max_match_distance  # (N, M)
-
-            gated_cost = np.where(
-                (cost < self._match_cost_threshold) & ~distance_mask,
-                cost,
-                _GATE_SENTINEL,
+        # 4. Phase 1: match high-conf dets against ALL tracks
+        p1_matches = self._run_hungarian_match(
+            track_ids, pred_kpts_map, valid_dets, high_conf_indices
+        )
+        for tid, det_idx in p1_matches:
+            det, kpts_arr, kconf_arr = valid_dets[det_idx]
+            trk = self._active_tracks[tid]
+            trk.match_update(obs=kpts_arr, confs=kconf_arr)
+            x, y, w, h = det.bbox
+            self._builders[tid].add_frame(
+                frame_idx=frame_idx,
+                kpts=kpts_arr.astype(np.float32),
+                kconf=kconf_arr.astype(np.float32),
+                bbox_xywh=(float(x), float(y), float(w), float(h)),
+                status="detected",
             )
-            row_idx, col_idx = linear_sum_assignment(gated_cost)
+            matched_track_ids.add(tid)
+            matched_det_indices.add(det_idx)
 
-            for r, c in zip(row_idx, col_idx, strict=False):
-                if gated_cost[r, c] >= _GATE_SENTINEL:
-                    continue
-                tid = track_ids[r]
-                det, kpts_arr, kconf_arr = valid_dets[c]
-                trk = self._active_tracks[tid]
-                trk.match_update(obs=kpts_arr, confs=kconf_arr)
-                x, y, w, h = det.bbox
-                self._builders[tid].add_frame(
-                    frame_idx=frame_idx,
-                    kpts=kpts_arr.astype(np.float32),
-                    kconf=kconf_arr.astype(np.float32),
-                    bbox_xywh=(float(x), float(y), float(w), float(h)),
-                    status="detected",
-                )
-                matched_track_ids.add(tid)
-                matched_det_indices.add(c)
+        # 5. Phase 2: match low-conf dets against recently-active unmatched tracks
+        # Eligible: not matched in Phase 1 AND was actively tracked (tsu == 0)
+        # before this frame's matching began.
+        p2_track_ids = [
+            tid
+            for tid in track_ids
+            if tid not in matched_track_ids and pre_match_tsu[tid] == 0
+        ]
+        unmatched_low = [i for i in low_conf_indices if i not in matched_det_indices]
 
-        # 4. Unmatched tracks: coast or cull
+        p2_matches = self._run_hungarian_match(
+            p2_track_ids, pred_kpts_map, valid_dets, unmatched_low
+        )
+        for tid, det_idx in p2_matches:
+            det, kpts_arr, kconf_arr = valid_dets[det_idx]
+            trk = self._active_tracks[tid]
+            trk.match_update(obs=kpts_arr, confs=kconf_arr)
+            x, y, w, h = det.bbox
+            self._builders[tid].add_frame(
+                frame_idx=frame_idx,
+                kpts=kpts_arr.astype(np.float32),
+                kconf=kconf_arr.astype(np.float32),
+                bbox_xywh=(float(x), float(y), float(w), float(h)),
+                status="detected",
+            )
+            matched_track_ids.add(tid)
+            matched_det_indices.add(det_idx)
+
+        # 6. Unmatched tracks: coast or cull (with merger detection)
+        matched_spine1_positions: dict[int, np.ndarray] = {}
+        for mtid in matched_track_ids:
+            mtrk = self._active_tracks[mtid]
+            matched_spine1_positions[mtid] = mtrk.kf.get_positions()[_SPINE1_IDX]
+
         for tid in track_ids:
             if tid in matched_track_ids:
                 continue
             trk = self._active_tracks[tid]
+
+            # Merger detection: is a matched track very close?
+            pred_spine1 = trk.kf.get_positions()[_SPINE1_IDX]
+            is_merger = False
+            for mtid, mpos in matched_spine1_positions.items():
+                if np.linalg.norm(pred_spine1 - mpos) < self._merger_distance:
+                    trk.merger_partner_id = mtid
+                    trk.merger_frames += 1
+                    is_merger = True
+                    break
+
+            if not is_merger:
+                trk.merger_partner_id = None
+                trk.merger_frames = 0
+
             trk.mark_missed()
 
             # OCR attempt for confirmed coasting tracks
@@ -803,9 +916,12 @@ class _SinglePassTracker:
                     status="coasted",
                 )
 
-        # 5. Birth: unmatched detections → new tentative tracks
-        for c, (det, kpts_arr, kconf_arr) in enumerate(valid_dets):
+        # 7. Birth: only unmatched Phase 1 dets with conf >= birth_thresh
+        for c in high_conf_indices:
             if c in matched_det_indices:
+                continue
+            det, kpts_arr, kconf_arr = valid_dets[c]
+            if float(det.confidence) < self._birth_thresh:
                 continue
             trk = self._new_track(kpts=kpts_arr, confs=kconf_arr)
             x, y, w, h = det.bbox
@@ -818,11 +934,14 @@ class _SinglePassTracker:
                 status="detected",
             )
 
-        # 6. Death: cull tracks exceeding max_age or out of frame
+        # 8. Death: cull tracks exceeding max_age or out of frame
         _OOF_MARGIN = 50.0  # pixels beyond image edge before culling
         dead_ids = []
         for tid, trk in self._active_tracks.items():
-            if trk.time_since_update > self._max_age:
+            effective_max_age = self._max_age
+            if trk.merger_partner_id is not None:
+                effective_max_age = self._merger_max_age
+            if trk.time_since_update > effective_max_age:
                 dead_ids.append(tid)
                 continue
             # Out-of-frame culling: if predicted spine1 has left the image,
@@ -880,6 +999,8 @@ class _SinglePassTracker:
                 "pre_coast_P": trk._pre_coast_P.tolist()
                 if trk._pre_coast_P is not None
                 else None,
+                "merger_partner_id": trk.merger_partner_id,
+                "merger_frames": trk.merger_frames,
             }
         return {
             "tracks": tracks_state,
@@ -893,6 +1014,10 @@ class _SinglePassTracker:
             "match_cost_threshold": self._match_cost_threshold,
             "ocr_threshold": self._ocr_threshold,
             "max_match_distance": self._max_match_distance,
+            "merger_distance": self._merger_distance,
+            "merger_max_age": self._merger_max_age,
+            "track_thresh": self._track_thresh,
+            "birth_thresh": self._birth_thresh,
             "image_bounds": list(self._image_bounds)
             if self._image_bounds is not None
             else None,
@@ -911,16 +1036,21 @@ class _SinglePassTracker:
         """
         from types import SimpleNamespace
 
+        det_thresh = state["det_thresh"]
         config = SimpleNamespace(
             max_age=state["max_age"],
             n_init=state["n_init"],
-            det_thresh=state["det_thresh"],
+            det_thresh=det_thresh,
             base_r=state["base_r"],
             lambda_ocm=state["lambda_ocm"],
             sigmas=np.array(state["sigmas"], dtype=np.float64),
             match_cost_threshold=state.get("match_cost_threshold", 1.2),
             ocr_threshold=state.get("ocr_threshold", 0.5),
             max_match_distance=state.get("max_match_distance", 75.0),
+            merger_distance=state.get("merger_distance", 30.0),
+            merger_max_age=state.get("merger_max_age", 90),
+            track_thresh=state.get("track_thresh", det_thresh),
+            birth_thresh=state.get("birth_thresh", det_thresh),
         )
         instance = cls(camera_id=camera_id, config=config)
         instance._next_track_id = state["next_track_id"]
@@ -948,6 +1078,8 @@ class _SinglePassTracker:
             if ts["pre_coast_x"] is not None:
                 trk._pre_coast_x = np.array(ts["pre_coast_x"], dtype=np.float64)
                 trk._pre_coast_P = np.array(ts["pre_coast_P"], dtype=np.float64)
+            trk.merger_partner_id = ts.get("merger_partner_id")
+            trk.merger_frames = ts.get("merger_frames", 0)
             instance._active_tracks[tid] = trk
 
         # Create empty builders for active tracks so new detections in the
@@ -1193,7 +1325,11 @@ class KeypointTracker:
         max_age: Frames to coast before culling a track. Maps to
             TrackingConfig.max_coast_frames.
         n_init: Hit-streak threshold for track confirmation.
-        det_thresh: Minimum detection confidence to admit to the tracker.
+        det_thresh: Floor detection confidence — anything below is discarded.
+        track_thresh: High/low confidence split for two-phase matching.
+            Defaults to det_thresh (single-pass behavior) when not provided.
+        birth_thresh: Minimum confidence for unmatched Phase 1 detections
+            to birth new tracks. Defaults to det_thresh when not provided.
         base_r: KF base measurement noise variance.
         lambda_ocm: OCM weight in the cost matrix.
         sigmas: Per-keypoint OKS sigmas. Defaults to DEFAULT_SIGMAS.
@@ -1213,6 +1349,8 @@ class KeypointTracker:
         max_age: int = 15,
         n_init: int = 3,
         det_thresh: float = 0.5,
+        track_thresh: float | None = None,
+        birth_thresh: float | None = None,
         base_r: float = 10.0,
         lambda_ocm: float = 0.2,
         sigmas: np.ndarray | None = None,
@@ -1223,6 +1361,8 @@ class KeypointTracker:
         max_match_distance: float = 75.0,
         centroid_keypoint_index: int = 2,  # API symmetry only
         centroid_confidence_floor: float = 0.3,  # API symmetry only
+        merger_distance: float = 30.0,
+        merger_max_age: int = 90,
     ) -> None:
         from types import SimpleNamespace
 
@@ -1232,6 +1372,8 @@ class KeypointTracker:
         self._max_age = max_age
         self._n_init = n_init
         self._det_thresh = det_thresh
+        self._track_thresh = track_thresh if track_thresh is not None else det_thresh
+        self._birth_thresh = birth_thresh if birth_thresh is not None else det_thresh
         self._base_r = base_r
         self._lambda_ocm = lambda_ocm
         self._sigmas = sigmas if sigmas is not None else DEFAULT_SIGMAS.copy()
@@ -1240,17 +1382,23 @@ class KeypointTracker:
         self._match_cost_threshold = match_cost_threshold
         self._ocr_threshold = ocr_threshold
         self._max_match_distance = max_match_distance
+        self._merger_distance = merger_distance
+        self._merger_max_age = merger_max_age
 
         config = SimpleNamespace(
             max_age=max_age,
             n_init=n_init,
             det_thresh=det_thresh,
+            track_thresh=self._track_thresh,
+            birth_thresh=self._birth_thresh,
             base_r=base_r,
             lambda_ocm=lambda_ocm,
             sigmas=self._sigmas,
             match_cost_threshold=match_cost_threshold,
             ocr_threshold=ocr_threshold,
             max_match_distance=max_match_distance,
+            merger_distance=merger_distance,
+            merger_max_age=merger_max_age,
         )
 
         self._fwd_tracker = _SinglePassTracker(camera_id=camera_id, config=config)
@@ -1317,6 +1465,8 @@ class KeypointTracker:
             "max_age": self._max_age,
             "n_init": self._n_init,
             "det_thresh": self._det_thresh,
+            "track_thresh": self._track_thresh,
+            "birth_thresh": self._birth_thresh,
             "base_r": self._base_r,
             "lambda_ocm": self._lambda_ocm,
             "sigmas": self._sigmas.tolist(),
@@ -1325,6 +1475,8 @@ class KeypointTracker:
             "match_cost_threshold": self._match_cost_threshold,
             "ocr_threshold": self._ocr_threshold,
             "max_match_distance": self._max_match_distance,
+            "merger_distance": self._merger_distance,
+            "merger_max_age": self._merger_max_age,
             "fwd_state": self._fwd_tracker.get_state(),
         }
 
@@ -1343,11 +1495,14 @@ class KeypointTracker:
             Restored KeypointTracker ready to receive new frames.
         """
         sigmas = np.array(state["sigmas"], dtype=np.float64)
+        det_thresh = state["det_thresh"]
         instance = cls(
             camera_id=camera_id,
             max_age=state["max_age"],
             n_init=state["n_init"],
-            det_thresh=state["det_thresh"],
+            det_thresh=det_thresh,
+            track_thresh=state.get("track_thresh", det_thresh),
+            birth_thresh=state.get("birth_thresh", det_thresh),
             base_r=state["base_r"],
             lambda_ocm=state["lambda_ocm"],
             sigmas=sigmas,
@@ -1356,6 +1511,8 @@ class KeypointTracker:
             match_cost_threshold=state.get("match_cost_threshold", 1.2),
             ocr_threshold=state.get("ocr_threshold", 0.5),
             max_match_distance=state.get("max_match_distance", 75.0),
+            merger_distance=state.get("merger_distance", 30.0),
+            merger_max_age=state.get("merger_max_age", 90),
         )
         # Restore forward tracker from saved state
         instance._fwd_tracker = _SinglePassTracker.from_state(

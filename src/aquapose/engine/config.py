@@ -215,8 +215,14 @@ class TrackingConfig:
             observation) before dropping a track. Default 30.
         n_init: Minimum number of matched detection frames before a track is
             confirmed and included in stage output. Default 3.
-        det_thresh: Minimum detection confidence forwarded to the tracker.
-            Default 0.5.
+        det_thresh: Floor detection confidence — anything below is discarded
+            entirely. Default 0.05.
+        track_thresh: Confidence split between high and low detections.
+            High-confidence dets (>= track_thresh) enter Phase 1 matching;
+            low-confidence dets enter Phase 2 and can only extend
+            recently-active tracks. Default 0.3.
+        birth_thresh: Minimum confidence for an unmatched Phase 1 detection
+            to birth a new track. Default 0.5.
         base_r: KF base measurement noise variance. Default 10.0.
         lambda_ocm: OCM weight in the cost matrix. Default 0.2.
         max_gap_frames: Maximum gap size (frames) for spline interpolation.
@@ -232,6 +238,12 @@ class TrackingConfig:
             spine1 keypoints for a match to be considered. Pairs exceeding this
             distance are gated to infinity before Hungarian assignment, preventing
             cross-tank ID swaps. Default 200.0.
+        merger_distance_px: Spine1 pixel distance below which an unmatched track
+            is considered merged with a nearby matched track. During a merger the
+            track receives extended coasting. Default 30.0.
+        merger_max_coast_frames: Maximum coast frames for a track in merger state,
+            replacing the normal ``max_coast_frames`` limit. Default 90 (3 s at
+            30 fps).
 
     Note:
         ``oks_sigmas`` for the keypoint tracker are loaded from
@@ -242,13 +254,17 @@ class TrackingConfig:
     tracker_kind: str = "keypoint_oks"
     max_coast_frames: int = 30
     n_init: int = 3
-    det_thresh: float = 0.5
+    det_thresh: float = 0.05
+    track_thresh: float = 0.3
+    birth_thresh: float = 0.5
     base_r: float = 10.0
     lambda_ocm: float = 0.2
     max_gap_frames: int = 5
     match_cost_threshold: float = 1.2
     ocr_threshold: float = 0.5
     max_match_distance: float = 75.0
+    merger_distance_px: float = 30.0
+    merger_max_coast_frames: int = 90
 
     def __post_init__(self) -> None:
         """Validate tracker_kind on construction."""

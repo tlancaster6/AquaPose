@@ -39,12 +39,16 @@ class _FakeTrackingConfig:
     max_coast_frames: int = 15
     n_init: int = 3
     det_thresh: float = 0.3
+    track_thresh: float = 0.3
+    birth_thresh: float = 0.3
     base_r: float = 10.0
     lambda_ocm: float = 0.2
     max_gap_frames: int = 5
     match_cost_threshold: float = 1.2
     ocr_threshold: float = 0.5
     max_match_distance: float = 75.0
+    merger_distance_px: float = 30.0
+    merger_max_coast_frames: int = 90
 
 
 def _make_det(

@@ -56,9 +56,13 @@ def _make_tracker_config(
     max_age: int = 5,
     n_init: int = 3,
     det_thresh: float = 0.3,
+    track_thresh: float | None = None,
+    birth_thresh: float | None = None,
     base_r: float = 10.0,
     lambda_ocm: float = 0.2,
     sigmas: np.ndarray | None = None,
+    merger_distance: float = 30.0,
+    merger_max_age: int = 90,
 ) -> SimpleNamespace:
     if sigmas is None:
         sigmas = DEFAULT_SIGMAS
@@ -66,9 +70,13 @@ def _make_tracker_config(
         max_age=max_age,
         n_init=n_init,
         det_thresh=det_thresh,
+        track_thresh=track_thresh if track_thresh is not None else det_thresh,
+        birth_thresh=birth_thresh if birth_thresh is not None else det_thresh,
         base_r=base_r,
         lambda_ocm=lambda_ocm,
         sigmas=sigmas,
+        merger_distance=merger_distance,
+        merger_max_age=merger_max_age,
     )
 
 
@@ -517,6 +525,8 @@ def _make_keypoint_tracker(
     max_age: int = 5,
     n_init: int = 3,
     det_thresh: float = 0.3,
+    track_thresh: float | None = None,
+    birth_thresh: float | None = None,
     base_r: float = 10.0,
     lambda_ocm: float = 0.2,
     max_gap_frames: int = 5,
@@ -527,6 +537,8 @@ def _make_keypoint_tracker(
         max_age=max_age,
         n_init=n_init,
         det_thresh=det_thresh,
+        track_thresh=track_thresh,
+        birth_thresh=birth_thresh,
         base_r=base_r,
         lambda_ocm=lambda_ocm,
         max_gap_frames=max_gap_frames,
@@ -1204,3 +1216,289 @@ class TestInterpolateLowConfidenceKeypoints:
         # kpt 0 and kpt 1 and kpt 5 should be unchanged
         assert result.keypoint_conf[idx5][0] == pytest.approx(0.9), "kpt 0 conf changed"
         assert result.keypoint_conf[idx5][5] == pytest.approx(0.9), "kpt 5 conf changed"
+
+
+# ---------------------------------------------------------------------------
+# Merger-aware coasting tests
+# ---------------------------------------------------------------------------
+
+
+def _make_kpts_at(x: float, y: float) -> np.ndarray:
+    """Create 6 keypoints in a horizontal line starting at (x, y)."""
+    kpts = np.zeros((6, 2), dtype=np.float32)
+    for i in range(6):
+        kpts[i] = [x + i * 10, y]
+    return kpts
+
+
+class TestMergerDetection:
+    """Test that unmatched tracks near a matched track get merger flags."""
+
+    def test_merger_detection(self) -> None:
+        """Unmatched track close to a matched track gets merger_partner_id set."""
+        config = _make_tracker_config(max_age=30, n_init=1, merger_distance=60.0)
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
+
+        # Two fish close together (spine1 at x+20, so spine1s are 120 and 170)
+        kpts_a = _make_kpts_at(100, 200)
+        kpts_b = _make_kpts_at(150, 200)
+
+        for f in range(3):
+            det_a = _make_detection(bbox=(90, 190, 70, 20), kpts=kpts_a, confidence=0.9)
+            det_b = _make_detection(
+                bbox=(140, 190, 70, 20), kpts=kpts_b, confidence=0.9
+            )
+            tracker.update(frame_idx=f, detections=[det_a, det_b])
+
+        tracks = tracker._active_tracks
+        assert len(tracks) == 2
+
+        # Only one detection at fish A's position — fish B misses
+        det_merged = _make_detection(
+            bbox=(90, 190, 70, 20), kpts=kpts_a, confidence=0.9
+        )
+        tracker.update(frame_idx=3, detections=[det_merged])
+
+        # The unmatched track's predicted spine1 (~170) is within 50px of the
+        # matched track's spine1 (~120), so merger should be detected
+        unmatched = [t for t in tracks.values() if t.time_since_update > 0]
+        assert len(unmatched) == 1
+        assert unmatched[0].merger_partner_id is not None
+        assert unmatched[0].merger_frames == 1
+
+    def test_no_merger_normal_coast(self) -> None:
+        """Track missing detection with no nearby matched track dies at normal max_age."""
+        config = _make_tracker_config(max_age=5, n_init=1, merger_distance=30.0)
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
+
+        # One fish, confirmed
+        kpts = _make_kpts_at(100, 200)
+        for f in range(3):
+            det = _make_detection(bbox=(90, 190, 70, 20), kpts=kpts, confidence=0.9)
+            tracker.update(frame_idx=f, detections=[det])
+
+        assert len(tracker._active_tracks) == 1
+        tid = next(iter(tracker._active_tracks))
+
+        # No detections — track should coast then die
+        for f in range(3, 10):
+            tracker.update(frame_idx=f, detections=[])
+
+        trk = tracker._active_tracks.get(tid)
+        # Should be dead after max_age=5 frames with no merger partner
+        assert trk is None
+
+
+class TestMergerExtendedCoast:
+    """Test that merger tracks survive beyond normal max_age."""
+
+    def test_merger_extended_coast(self) -> None:
+        """Merged track survives past normal max_age and re-matches on separation."""
+        config = _make_tracker_config(
+            max_age=5, n_init=1, merger_distance=50.0, merger_max_age=50
+        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
+
+        # Two fish close together — spine1s at x=120 and x=150
+        kpts_a = _make_kpts_at(100, 200)
+        kpts_b = _make_kpts_at(130, 200)
+
+        for f in range(3):
+            det_a = _make_detection(bbox=(90, 190, 70, 20), kpts=kpts_a, confidence=0.9)
+            det_b = _make_detection(
+                bbox=(120, 190, 70, 20), kpts=kpts_b, confidence=0.9
+            )
+            tracker.update(frame_idx=f, detections=[det_a, det_b])
+
+        assert len(tracker._active_tracks) == 2
+
+        # Merger: only one detection at fish A's position for 12 frames
+        # (exceeds max_age=5, but merger should keep the other alive)
+        for f in range(3, 15):
+            det_merged = _make_detection(
+                bbox=(90, 190, 70, 20), kpts=kpts_a, confidence=0.9
+            )
+            tracker.update(frame_idx=f, detections=[det_merged])
+
+        # Both tracks should still be alive (merger extends coast)
+        assert len(tracker._active_tracks) == 2
+
+
+class TestMergerStateSerialization:
+    """Test that merger state survives get_state/from_state round-trip."""
+
+    def test_merger_state_serialization(self) -> None:
+        config = _make_tracker_config(
+            max_age=30, n_init=1, merger_distance=60.0, merger_max_age=90
+        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
+
+        # Two fish close together, then merger
+        kpts_a = _make_kpts_at(100, 200)
+        kpts_b = _make_kpts_at(150, 200)
+
+        for f in range(3):
+            det_a = _make_detection(bbox=(90, 190, 70, 20), kpts=kpts_a, confidence=0.9)
+            det_b = _make_detection(
+                bbox=(140, 190, 70, 20), kpts=kpts_b, confidence=0.9
+            )
+            tracker.update(frame_idx=f, detections=[det_a, det_b])
+
+        # Merge: single detection at fish A's position
+        det_merged = _make_detection(
+            bbox=(90, 190, 70, 20), kpts=kpts_a, confidence=0.9
+        )
+        tracker.update(frame_idx=3, detections=[det_merged])
+
+        # Find the merging track
+        merging = [
+            t
+            for t in tracker._active_tracks.values()
+            if t.merger_partner_id is not None
+        ]
+        assert len(merging) == 1
+        orig_partner = merging[0].merger_partner_id
+        orig_frames = merging[0].merger_frames
+
+        # Round-trip
+        state = tracker.get_state()
+        restored = _SinglePassTracker.from_state("cam0", state)
+
+        # Verify merger fields preserved
+        restored_merging = [
+            t
+            for t in restored._active_tracks.values()
+            if t.merger_partner_id is not None
+        ]
+        assert len(restored_merging) == 1
+        assert restored_merging[0].merger_partner_id == orig_partner
+        assert restored_merging[0].merger_frames == orig_frames
+
+        # Verify config preserved
+        assert restored._merger_distance == 60.0
+        assert restored._merger_max_age == 90
+
+
+# ---------------------------------------------------------------------------
+# Two-phase matching tests
+# ---------------------------------------------------------------------------
+
+
+class TestTwoPhaseMatching:
+    """Test ByteTrack-style two-phase matching with track_thresh / birth_thresh."""
+
+    def test_low_conf_det_does_not_birth(self) -> None:
+        """A low-confidence detection (below birth_thresh) must not start a track."""
+        config = _make_tracker_config(
+            n_init=1, det_thresh=0.05, track_thresh=0.3, birth_thresh=0.5
+        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
+        # Detection at 0.1 — above det_thresh but below both track_thresh and birth_thresh
+        det = _make_detection(confidence=0.1)
+        tracker.update(frame_idx=0, detections=[det])
+        assert len(tracker._active_tracks) == 0
+
+    def test_high_conf_below_birth_does_not_birth(self) -> None:
+        """A high-conf det (>= track_thresh) but below birth_thresh doesn't birth."""
+        config = _make_tracker_config(
+            n_init=1, det_thresh=0.05, track_thresh=0.3, birth_thresh=0.5
+        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
+        det = _make_detection(confidence=0.4)
+        tracker.update(frame_idx=0, detections=[det])
+        assert len(tracker._active_tracks) == 0
+
+    def test_high_conf_above_birth_births(self) -> None:
+        """A high-conf det (>= birth_thresh) births a new track."""
+        config = _make_tracker_config(
+            n_init=1, det_thresh=0.05, track_thresh=0.3, birth_thresh=0.5
+        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
+        det = _make_detection(confidence=0.6)
+        tracker.update(frame_idx=0, detections=[det])
+        assert len(tracker._active_tracks) == 1
+
+    def test_low_conf_extends_active_track(self) -> None:
+        """A low-conf det extends an actively-tracked track (tsu=0)."""
+        config = _make_tracker_config(
+            n_init=1, max_age=10, det_thresh=0.05, track_thresh=0.3, birth_thresh=0.5
+        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
+        kpts = _make_kpts_at(100, 200)
+
+        # Birth a track with high-conf det
+        det_high = _make_detection(bbox=(90, 190, 70, 20), kpts=kpts, confidence=0.9)
+        tracker.update(frame_idx=0, detections=[det_high])
+        assert len(tracker._active_tracks) == 1
+        tid = next(iter(tracker._active_tracks.keys()))
+
+        # Next frame: same position but low confidence
+        det_low = _make_detection(bbox=(90, 190, 70, 20), kpts=kpts, confidence=0.1)
+        tracker.update(frame_idx=1, detections=[det_low])
+
+        # Track should still be matched (tsu reset to 0 by match_update)
+        trk = tracker._active_tracks[tid]
+        assert trk.time_since_update == 0
+
+    def test_low_conf_does_not_extend_coasting_track(self) -> None:
+        """A low-conf det must NOT extend a coasting track (tsu > 0)."""
+        config = _make_tracker_config(
+            n_init=1, max_age=10, det_thresh=0.05, track_thresh=0.3, birth_thresh=0.5
+        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
+        kpts = _make_kpts_at(100, 200)
+
+        # Birth a track
+        det_high = _make_detection(bbox=(90, 190, 70, 20), kpts=kpts, confidence=0.9)
+        tracker.update(frame_idx=0, detections=[det_high])
+        tid = next(iter(tracker._active_tracks.keys()))
+
+        # Frame 1: no detections → track coasts (tsu becomes 1)
+        tracker.update(frame_idx=1, detections=[])
+        assert tracker._active_tracks[tid].time_since_update == 1
+
+        # Frame 2: low-conf det at same position → should NOT match
+        det_low = _make_detection(bbox=(90, 190, 70, 20), kpts=kpts, confidence=0.1)
+        tracker.update(frame_idx=2, detections=[det_low])
+        # Track should still be coasting (tsu incremented again)
+        assert tracker._active_tracks[tid].time_since_update == 2
+
+    def test_phase2_excludes_long_coasting_tracks(self) -> None:
+        """Phase 2 excludes tracks that have been coasting for multiple frames."""
+        config = _make_tracker_config(
+            n_init=1, max_age=10, det_thresh=0.05, track_thresh=0.3, birth_thresh=0.5
+        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
+        kpts = _make_kpts_at(100, 200)
+
+        # Birth a track
+        det_high = _make_detection(bbox=(90, 190, 70, 20), kpts=kpts, confidence=0.9)
+        tracker.update(frame_idx=0, detections=[det_high])
+        tid = next(iter(tracker._active_tracks.keys()))
+
+        # Coast for 3 frames
+        for f in range(1, 4):
+            tracker.update(frame_idx=f, detections=[])
+        assert tracker._active_tracks[tid].time_since_update == 3
+
+        # Low-conf det at same position — should NOT match (tsu=3)
+        det_low = _make_detection(bbox=(90, 190, 70, 20), kpts=kpts, confidence=0.1)
+        tracker.update(frame_idx=4, detections=[det_low])
+        assert tracker._active_tracks[tid].time_since_update == 4
+
+    def test_state_roundtrip_includes_new_fields(self) -> None:
+        """get_state/from_state preserves track_thresh and birth_thresh."""
+        config = _make_tracker_config(
+            det_thresh=0.05, track_thresh=0.3, birth_thresh=0.5
+        )
+        tracker = _SinglePassTracker(camera_id="cam0", config=config)
+        det = _make_detection(confidence=0.9)
+        tracker.update(frame_idx=0, detections=[det])
+
+        state = tracker.get_state()
+        assert state["track_thresh"] == 0.3
+        assert state["birth_thresh"] == 0.5
+
+        restored = _SinglePassTracker.from_state("cam0", state)
+        assert restored._track_thresh == 0.3
+        assert restored._birth_thresh == 0.5

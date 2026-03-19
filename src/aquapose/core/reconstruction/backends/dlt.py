@@ -371,13 +371,23 @@ class DltBackend:
         else:
             hw_metres_all = np.zeros(n_body_points, dtype=np.float32)
 
+        # Cameras that survived outlier rejection for at least one body point.
+        inlier_cam_set: set[str] = set()
+        for cams in tri_inlier_cams:
+            inlier_cam_set.update(cams)
+
         if not self._spline_enabled:
             # --- Raw-keypoint mode: skip spline fitting entirely ---
-            # Compute pixel-space reprojection residuals (same as spline path).
+            # Compute pixel-space reprojection residuals over inlier cameras
+            # only, so rejected (misassociated) cameras don't inflate the metric.
             pts_3d_tensor = torch.from_numpy(pts_3d_arr_full.astype(np.float32))
             all_residuals_raw: list[float] = []
             cam_residuals_raw: dict[str, float] = {}
-            cam_ids_active = [cid for cid in cam_midlines if cid in self._models]
+            cam_ids_active = [
+                cid
+                for cid in cam_midlines
+                if cid in self._models and cid in inlier_cam_set
+            ]
             for cid in cam_ids_active:
                 proj_px, valid = self._models[cid].project(pts_3d_tensor)
                 proj_np = proj_px.detach().cpu().numpy()
@@ -455,7 +465,7 @@ class DltBackend:
 
         control_points, arc_length = spline_result
 
-        # Compute spline-based per-camera residuals
+        # Compute spline-based per-camera residuals (inlier cameras only).
         spline_obj = scipy.interpolate.BSpline(
             self._spline_knots, control_points.astype(np.float64), SPLINE_K
         )
@@ -466,7 +476,9 @@ class DltBackend:
 
         all_residuals: list[float] = []
         cam_residuals: dict[str, float] = {}
-        cam_ids_active = [cid for cid in cam_midlines if cid in self._models]
+        cam_ids_active = [
+            cid for cid in cam_midlines if cid in self._models and cid in inlier_cam_set
+        ]
         for cid in cam_ids_active:
             proj_px, valid = self._models[cid].project(spline_pts_3d)
             proj_np = proj_px.detach().cpu().numpy()

@@ -519,9 +519,15 @@ def _classify_tracklet(
     """Classify a tracklet as keep, split, or evict.
 
     Decision tree:
-    1. If >50% frames are consistent (residual < threshold): keep
-    2. If a changepoint is found with valid segments: split
+    1. If a changepoint is found AND the remainder is mostly inconsistent: split
+    2. If >50% frames are consistent (residual < threshold): keep
     3. Otherwise: evict
+
+    Changepoint detection runs first so that tracklets with a clear
+    temporal boundary (e.g. 58% consistent in the first half, 0% in the
+    second) are split rather than kept whole.  The remainder-consistency
+    guard prevents spurious splits on uniformly good tracklets where
+    scattered noise breaks up contiguous runs.
 
     Args:
         residuals: Per-frame residual values.
@@ -539,17 +545,27 @@ def _classify_tracklet(
     if not residuals:
         return "keep", None, True
 
+    # Check for a changepoint first — a clear temporal boundary should
+    # trigger a split even if the overall consistent fraction exceeds 50%.
+    result = _find_changepoint_by_run(residuals, frames, threshold, min_segment_length)
+    if result is not None:
+        split_idx, consistent_is_before = result
+        # Only accept the split if the remainder segment is genuinely bad.
+        # A uniformly good tracklet with scattered noise can produce a
+        # spurious changepoint where both sides are mostly consistent.
+        if consistent_is_before:
+            remainder = residuals[split_idx:]
+        else:
+            remainder = residuals[:split_idx]
+        remainder_consistent = sum(1 for r in remainder if r < threshold)
+        if remainder_consistent / len(remainder) <= 0.5:
+            return "split", split_idx, consistent_is_before
+
     n_consistent = sum(1 for r in residuals if r < threshold)
     fraction_consistent = n_consistent / len(residuals)
 
     if fraction_consistent > 0.5:
         return "keep", None, True
-
-    # Check for a changepoint
-    result = _find_changepoint_by_run(residuals, frames, threshold, min_segment_length)
-    if result is not None:
-        split_idx, consistent_is_before = result
-        return "split", split_idx, consistent_is_before
 
     # Uniformly inconsistent — evict
     return "evict", None, True

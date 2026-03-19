@@ -26,8 +26,11 @@ from aquapose.core.inference import BatchState, predict_with_oom_retry
 from aquapose.core.pose import PoseStage
 from aquapose.core.reconstruction import ReconstructionStage
 from aquapose.core.stitching import (
+    SwapEvent,
     TrajectoryInfo,
+    apply_swap_repairs,
     build_conflict_graph,
+    detect_and_repair_swaps,
     load_trajectories,
     solve_coloring,
     write_remapped_h5,
@@ -43,10 +46,13 @@ __all__ = [
     "ReconstructionStage",
     "Stage",
     "StaleCacheError",
+    "SwapEvent",
     "SyntheticDataStage",
     "TrajectoryInfo",
+    "apply_swap_repairs",
     "build_conflict_graph",
     "context_fingerprint",
+    "detect_and_repair_swaps",
     "load_chunk_cache",
     "load_stage_cache",
     "load_trajectories",

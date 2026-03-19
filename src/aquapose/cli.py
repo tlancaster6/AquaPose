@@ -596,6 +596,19 @@ def viz(
     is_flag=True,
     help="Report chain assignments without writing output.",
 )
+@click.option(
+    "--repair-swaps/--no-repair-swaps",
+    default=True,
+    show_default=True,
+    help="Detect and auto-repair ID swaps via body-length changepoints.",
+)
+@click.option(
+    "--swap-min-score",
+    type=float,
+    default=1.5,
+    show_default=True,
+    help="Min changepoint score (cm) for auto-correction. Lower scores are flagged only.",
+)
 @click.pass_context
 def stitch_cmd(
     ctx: click.Context,
@@ -604,15 +617,20 @@ def stitch_cmd(
     min_frames: int,
     min_cameras: float,
     dry_run: bool,
+    repair_swaps: bool,
+    swap_min_score: float,
 ) -> None:
     """Stitch fragmented 3D trajectories into true fish identities.
 
     Reads midlines.h5 from a pipeline run, merges fragmented fish IDs across
     the full video using conflict-graph coloring with spatial-cost tiebreaking,
-    and writes midlines_stitched.h5.
+    and writes midlines_stitched.h5. Optionally detects and repairs ID swaps
+    using body-length changepoint analysis.
     """
     from aquapose.core.stitching import (
+        apply_swap_repairs,
         build_conflict_graph,
+        detect_and_repair_swaps,
         load_trajectories,
         solve_coloring,
         write_remapped_h5,
@@ -663,6 +681,25 @@ def stitch_cmd(
     dst = run_dir / "midlines_stitched.h5"
     write_remapped_h5(h5_path, dst, chains, dropped)
     click.echo(f"Written: {dst}")
+
+    # Post-stitch swap repair
+    if repair_swaps:
+        click.echo("\nDetecting ID swaps via body-length changepoints...")
+        swap_events = detect_and_repair_swaps(dst, min_score=swap_min_score)
+
+        if not swap_events:
+            click.echo("  No swaps detected.")
+        else:
+            for ev in swap_events:
+                status = "AUTO-CORRECTED" if ev.auto_corrected else "flagged"
+                click.echo(
+                    f"  Fish {ev.fish_a} <-> {ev.fish_b} @ frame {ev.frame} "
+                    f"(scores: {ev.score_a:.2f}, {ev.score_b:.2f}) [{status}]"
+                )
+
+            n_applied = apply_swap_repairs(dst, swap_events)
+            if n_applied:
+                click.echo(f"  Applied {n_applied} swap repair(s) to {dst}")
 
 
 @cli.command("smooth-z")

@@ -396,3 +396,301 @@ def write_remapped_h5(
             n_deduped,
         )
     logger.info("Remapped HDF5 written to %s", dst_path)
+
+
+# ---------------------------------------------------------------------------
+# Post-stitch swap repair via body-length changepoint detection
+# ---------------------------------------------------------------------------
+
+# Default parameters for swap detection
+_SWAP_WINDOW = 300  # frames for rolling median (10s at 30fps)
+_SWAP_PAIR_TOLERANCE = 200  # max frame gap between paired changepoints
+_SWAP_MIN_SCORE = 1.5  # cm; conservative — catches male-female but not same-sex
+_SWAP_MIN_GAP = 100  # min separation between changepoints on same fish
+_SWAP_PERCENTILE = 95  # internal threshold percentile
+
+
+@dataclass
+class SwapEvent:
+    """A detected ID swap between two fish at a specific frame."""
+
+    frame: int
+    fish_a: int
+    fish_b: int
+    score_a: float
+    score_b: float
+    auto_corrected: bool
+
+
+def _compute_body_lengths(
+    points: NDArray[np.float32],
+    fish_id: NDArray[np.int32],
+    frame_index: NDArray[np.int64],
+) -> dict[int, tuple[NDArray[np.int64], NDArray[np.float64]]]:
+    """Compute per-fish body length time series from 6-keypoint midlines.
+
+    Args:
+        points: Shape (N, max_fish, 6, 3) — 3D keypoints per fish per frame.
+        fish_id: Shape (N, max_fish) — fish ID assignments.
+        frame_index: Shape (N,) — frame indices.
+
+    Returns:
+        Dict mapping fish_id to (frames_array, body_length_cm_array).
+    """
+    n_frames, max_fish = fish_id.shape
+    result: dict[int, tuple[list[int], list[float]]] = {}
+
+    for row in range(n_frames):
+        for slot in range(max_fish):
+            fid = int(fish_id[row, slot])
+            if fid < 0:
+                continue
+            p = points[row, slot]  # (6, 3)
+            if np.isnan(p).any():
+                continue
+            diffs = np.diff(p, axis=0)
+            bl = float(np.sqrt((diffs**2).sum(axis=1)).sum()) * 100  # cm
+            if fid not in result:
+                result[fid] = ([], [])
+            result[fid][0].append(int(frame_index[row]))
+            result[fid][1].append(bl)
+
+    return {
+        fid: (np.array(frames, dtype=np.int64), np.array(lengths, dtype=np.float64))
+        for fid, (frames, lengths) in result.items()
+    }
+
+
+def _rolling_median(values: NDArray[np.float64], window: int) -> NDArray[np.float64]:
+    """Compute rolling median, returning NaN where insufficient data."""
+    n = len(values)
+    out = np.full(n, np.nan)
+    half = window // 2
+    for i in range(half, n - half):
+        chunk = values[i - half : i + half]
+        valid = chunk[np.isfinite(chunk)]
+        if len(valid) > 10:
+            out[i] = float(np.median(valid))
+    return out
+
+
+def _detect_changepoints(
+    values: NDArray[np.float64],
+    window: int = _SWAP_WINDOW,
+    min_gap: int = _SWAP_MIN_GAP,
+) -> list[tuple[int, float, float]]:
+    """Detect changepoints as peaks of |median(left) - median(right)|.
+
+    Returns list of (index, score, direction) tuples where direction is
+    right_median - left_median (positive = increase, negative = decrease).
+    """
+    n = len(values)
+    if n < 2 * window:
+        return []
+
+    scores = np.full(n, np.nan)
+    directions = np.full(n, np.nan)
+    for i in range(window, n - window):
+        left = values[i - window : i]
+        right = values[i : i + window]
+        lv = left[np.isfinite(left)]
+        rv = right[np.isfinite(right)]
+        if len(lv) > 10 and len(rv) > 10:
+            diff = float(np.median(rv) - np.median(lv))
+            scores[i] = abs(diff)
+            directions[i] = diff
+
+    valid_scores = scores[np.isfinite(scores)]
+    if len(valid_scores) == 0:
+        return []
+
+    threshold = float(np.percentile(valid_scores, _SWAP_PERCENTILE))
+
+    above = np.where(np.isfinite(scores) & (scores >= threshold))[0]
+    if len(above) == 0:
+        return []
+
+    # Group nearby detections, keep peak of each group
+    groups: list[list[int]] = []
+    current: list[int] = [int(above[0])]
+    for idx in above[1:]:
+        if idx - current[-1] <= min_gap:
+            current.append(int(idx))
+        else:
+            groups.append(current)
+            current = [int(idx)]
+    groups.append(current)
+
+    results = []
+    for group in groups:
+        best = group[int(np.argmax(scores[group]))]
+        results.append((best, float(scores[best]), float(directions[best])))
+    return results
+
+
+def detect_and_repair_swaps(
+    h5_path: str | Path,
+    *,
+    window: int = _SWAP_WINDOW,
+    pair_tolerance: int = _SWAP_PAIR_TOLERANCE,
+    min_score: float = _SWAP_MIN_SCORE,
+) -> list[SwapEvent]:
+    """Detect ID swaps in stitched midlines using body-length changepoints.
+
+    Looks for temporally coincident, anti-correlated body-length shifts
+    between pairs of fish — the signature of an ID swap.
+
+    Args:
+        h5_path: Path to stitched midlines HDF5 file.
+        window: Rolling median window size in frames.
+        pair_tolerance: Max frame gap between paired changepoints.
+        min_score: Minimum score (cm) for auto-correction. Pairs below
+            this are reported but not marked for auto-correction.
+
+    Returns:
+        List of SwapEvent instances, sorted by frame. Each event indicates
+        a detected swap and whether it was auto-corrected.
+    """
+    h5_path = Path(h5_path)
+    with h5py.File(h5_path, "r") as f:
+        grp = f["midlines"]
+        points = grp["points"][:]
+        fish_id = grp["fish_id"][:]
+        frame_index = grp["frame_index"][:]
+
+    if points is None:
+        logger.warning(
+            "No points dataset in %s — swap detection requires raw keypoints", h5_path
+        )
+        return []
+
+    # Compute per-fish body length time series
+    body_lengths = _compute_body_lengths(points, fish_id, frame_index)
+    if not body_lengths:
+        return []
+
+    # Run changepoint detection on each fish
+    all_cps: list[
+        tuple[int, int, float, float]
+    ] = []  # (fish_id, frame, score, direction)
+    for fid, (frames, lengths) in body_lengths.items():
+        cps = _detect_changepoints(lengths, window=window)
+        for idx, score, direction in cps:
+            all_cps.append((fid, int(frames[idx]), score, direction))
+
+    if not all_cps:
+        return []
+
+    logger.info(
+        "Detected %d changepoints across %d fish", len(all_cps), len(body_lengths)
+    )
+
+    # Find anti-correlated pairs within tolerance
+    swap_events: list[SwapEvent] = []
+    used: set[int] = set()  # indices into all_cps already paired
+
+    for i in range(len(all_cps)):
+        if i in used:
+            continue
+        fid_i, frame_i, score_i, dir_i = all_cps[i]
+        best_j: int | None = None
+        best_combined_score = 0.0
+
+        for j in range(i + 1, len(all_cps)):
+            if j in used:
+                continue
+            fid_j, frame_j, score_j, dir_j = all_cps[j]
+
+            # Must be different fish
+            if fid_i == fid_j:
+                continue
+            # Must be temporally close
+            if abs(frame_i - frame_j) > pair_tolerance:
+                continue
+            # Must be anti-correlated (opposite signs)
+            if (dir_i > 0) == (dir_j > 0):
+                continue
+
+            combined = score_i + score_j
+            if combined > best_combined_score:
+                best_combined_score = combined
+                best_j = j
+
+        if best_j is not None:
+            fid_j, frame_j, score_j, dir_j = all_cps[best_j]
+            used.add(i)
+            used.add(best_j)
+
+            # Use the earlier frame as the swap point
+            swap_frame = min(frame_i, frame_j)
+            auto = min(score_i, score_j) >= min_score
+
+            swap_events.append(
+                SwapEvent(
+                    frame=swap_frame,
+                    fish_a=fid_i,
+                    fish_b=fid_j,
+                    score_a=score_i,
+                    score_b=score_j,
+                    auto_corrected=auto,
+                )
+            )
+
+    swap_events.sort(key=lambda e: e.frame)
+    return swap_events
+
+
+def apply_swap_repairs(h5_path: str | Path, swaps: list[SwapEvent]) -> int:
+    """Apply auto-corrected swap repairs to a stitched midlines HDF5 file.
+
+    For each auto-corrected swap event, swaps the fish_id values for the
+    two fish at all frames >= the swap frame. Modifies the file in-place.
+
+    Args:
+        h5_path: Path to the stitched midlines HDF5 file.
+        swaps: List of SwapEvent instances (only auto_corrected=True are applied).
+
+    Returns:
+        Number of swaps applied.
+    """
+    auto_swaps = [s for s in swaps if s.auto_corrected]
+    if not auto_swaps:
+        return 0
+
+    # Apply in chronological order
+    auto_swaps.sort(key=lambda e: e.frame)
+
+    with h5py.File(h5_path, "r+") as f:
+        grp = cast(h5py.Group, f["midlines"])
+        fish_id_ds = cast(h5py.Dataset, grp["fish_id"])
+        data = fish_id_ds[()]
+        frame_index = grp["frame_index"][:]
+
+        for swap in auto_swaps:
+            # Find row index where frame >= swap.frame
+            start_row = int(np.searchsorted(frame_index, swap.frame))
+
+            n_swapped = 0
+            for row in range(start_row, data.shape[0]):
+                # Find slots for fish_a and fish_b
+                slots_a = np.where(data[row] == swap.fish_a)[0]
+                slots_b = np.where(data[row] == swap.fish_b)[0]
+
+                for sa in slots_a:
+                    data[row, sa] = swap.fish_b
+                    n_swapped += 1
+                for sb in slots_b:
+                    data[row, sb] = swap.fish_a
+                    n_swapped += 1
+
+            logger.info(
+                "Swap repair: Fish %d <-> %d from frame %d (%d slot updates)",
+                swap.fish_a,
+                swap.fish_b,
+                swap.frame,
+                n_swapped,
+            )
+
+        fish_id_ds[...] = data
+
+    return len(auto_swaps)

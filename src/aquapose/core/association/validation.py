@@ -63,6 +63,10 @@ class ValidationConfigLike(Protocol):
     keypoint_confidence_floor: float
 
 
+_MAX_VALIDATION_PASSES = 3
+"""Maximum iterations of the validate→re-evaluate loop per group."""
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -121,50 +125,25 @@ def validate_groups(
             validated.append(group)
             continue
 
-        kept_tracklets: list[Tracklet2D] = []
+        kept_tracklets = list(tracklets)
         evicted_tracklets: list[Tracklet2D] = []
         split_singletons: list[Tracklet2D] = []
 
-        for target in tracklets:
-            others = [t for t in tracklets if t is not target]
-
-            valid_frames, residuals = _compute_tracklet_residuals(
-                target, others, forward_luts, config
+        for _pass_num in range(_MAX_VALIDATION_PASSES):
+            kept, evicted, splits, next_track_id = _validate_group_pass(
+                kept_tracklets, forward_luts, config, next_track_id
             )
+            evicted_tracklets.extend(evicted)
+            split_singletons.extend(splits)
+            total_splits += len(splits)
+            total_evictions += len(evicted)
 
-            if not residuals:
-                # Not enough data to evaluate — keep as-is
-                kept_tracklets.append(target)
-                continue
+            if not evicted and not splits:
+                break  # converged
 
-            action, split_idx, consistent_is_before = _classify_tracklet(
-                residuals,
-                valid_frames,
-                config.eviction_reproj_threshold,
-                config.min_segment_length,
-            )
-
-            if action == "keep":
-                kept_tracklets.append(target)
-            elif action == "split":
-                assert split_idx is not None
-                # Map split_idx (index into valid_frames) back to tracklet index
-                split_frame = valid_frames[split_idx]
-                tracklet_split_idx = _find_tracklet_frame_index(target, split_frame)
-                before, after = _split_tracklet_at(
-                    target, tracklet_split_idx, next_track_id, next_track_id + 1
-                )
-                next_track_id += 2
-                if consistent_is_before:
-                    kept_tracklets.append(before)
-                    split_singletons.append(after)
-                else:
-                    kept_tracklets.append(after)
-                    split_singletons.append(before)
-                total_splits += 1
-            else:  # evict
-                evicted_tracklets.append(target)
-                total_evictions += 1
+            kept_tracklets = kept
+            if len({t.camera_id for t in kept_tracklets}) < config.min_cameras_validate:
+                break  # too few cameras to re-validate
 
         # Check thin group dissolution: if only 1 camera remaining, dissolve
         kept_cam_ids = {t.camera_id for t in kept_tracklets}
@@ -256,6 +235,75 @@ def validate_groups(
         )
 
     return validated
+
+
+# ---------------------------------------------------------------------------
+# Single-pass validation
+# ---------------------------------------------------------------------------
+
+
+def _validate_group_pass(
+    tracklets: list[Tracklet2D],
+    forward_luts: dict[str, ForwardLUT],
+    config: ValidationConfigLike,
+    next_track_id: int,
+) -> tuple[list[Tracklet2D], list[Tracklet2D], list[Tracklet2D], int]:
+    """Run one validation pass over a group's tracklets.
+
+    Evaluates each tracklet against all others and classifies it as
+    keep, split, or evict.
+
+    Args:
+        tracklets: Current group members to evaluate.
+        forward_luts: Per-camera ForwardLUT dict.
+        config: Validation configuration.
+        next_track_id: Next available track ID for split tracklets.
+
+    Returns:
+        Tuple of (kept, evicted, split_singletons, next_track_id).
+    """
+    kept: list[Tracklet2D] = []
+    evicted: list[Tracklet2D] = []
+    split_singletons: list[Tracklet2D] = []
+
+    for target in tracklets:
+        others = [t for t in tracklets if t is not target]
+
+        valid_frames, residuals = _compute_tracklet_residuals(
+            target, others, forward_luts, config
+        )
+
+        if not residuals:
+            kept.append(target)
+            continue
+
+        action, split_idx, consistent_is_before = _classify_tracklet(
+            residuals,
+            valid_frames,
+            config.eviction_reproj_threshold,
+            config.min_segment_length,
+        )
+
+        if action == "keep":
+            kept.append(target)
+        elif action == "split":
+            assert split_idx is not None
+            split_frame = valid_frames[split_idx]
+            tracklet_split_idx = _find_tracklet_frame_index(target, split_frame)
+            before, after = _split_tracklet_at(
+                target, tracklet_split_idx, next_track_id, next_track_id + 1
+            )
+            next_track_id += 2
+            if consistent_is_before:
+                kept.append(before)
+                split_singletons.append(after)
+            else:
+                kept.append(after)
+                split_singletons.append(before)
+        else:  # evict
+            evicted.append(target)
+
+    return kept, evicted, split_singletons, next_track_id
 
 
 # ---------------------------------------------------------------------------

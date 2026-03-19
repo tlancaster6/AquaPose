@@ -640,11 +640,49 @@ def detect_and_repair_swaps(
     return swap_events
 
 
+def _write_swap_events(h5_path: str | Path, swaps: list[SwapEvent]) -> None:
+    """Write swap events to the stitched H5 file under /midlines/swap_events.
+
+    Stores all detected swaps (both auto-corrected and flagged) as a
+    structured dataset for downstream analysis.
+    """
+    if not swaps:
+        return
+
+    dt = np.dtype(
+        [
+            ("frame", np.int32),
+            ("fish_a", np.int32),
+            ("fish_b", np.int32),
+            ("score_a", np.float32),
+            ("score_b", np.float32),
+            ("auto_corrected", np.bool_),
+        ]
+    )
+    arr = np.array(
+        [
+            (s.frame, s.fish_a, s.fish_b, s.score_a, s.score_b, s.auto_corrected)
+            for s in swaps
+        ],
+        dtype=dt,
+    )
+
+    with h5py.File(h5_path, "r+") as f:
+        grp = cast(h5py.Group, f["midlines"])
+        if "swap_events" in grp:
+            del grp["swap_events"]
+        grp.create_dataset("swap_events", data=arr)
+
+    logger.info("Wrote %d swap events to %s", len(swaps), h5_path)
+
+
 def apply_swap_repairs(h5_path: str | Path, swaps: list[SwapEvent]) -> int:
     """Apply auto-corrected swap repairs to a stitched midlines HDF5 file.
 
     For each auto-corrected swap event, swaps the fish_id values for the
     two fish at all frames >= the swap frame. Modifies the file in-place.
+    All swap events (including flagged-only) are persisted to the H5 file
+    under /midlines/swap_events.
 
     Args:
         h5_path: Path to the stitched midlines HDF5 file.
@@ -653,6 +691,9 @@ def apply_swap_repairs(h5_path: str | Path, swaps: list[SwapEvent]) -> int:
     Returns:
         Number of swaps applied.
     """
+    # Persist all events (auto-corrected and flagged) to H5
+    _write_swap_events(h5_path, swaps)
+
     auto_swaps = [s for s in swaps if s.auto_corrected]
     if not auto_swaps:
         return 0

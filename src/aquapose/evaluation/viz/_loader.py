@@ -159,8 +159,15 @@ def resolve_h5_path(run_dir: Path, *, unstitched: bool = False) -> Path | None:
         Path to the HDF5 file, or None if neither file exists.
     """
     if not unstitched:
-        stitched = run_dir / "midlines_stitched.h5"
-        if stitched.exists():
-            return stitched
-    raw = run_dir / "midlines.h5"
-    return raw if raw.exists() else None
+        for name in (
+            "midlines_stitched_smoothed.h5",
+            "midlines_stitched.h5",
+        ):
+            path = run_dir / name
+            if path.exists():
+                return path
+    for name in ("midlines_smoothed.h5", "midlines.h5"):
+        path = run_dir / name
+        if path.exists():
+            return path
+    return None

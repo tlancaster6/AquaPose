@@ -28,6 +28,7 @@ class EmbedRunner:
         config: ReidConfig (or any object with model_name, batch_size,
             crop_size, device, embedding_dim attributes).
         save_crops: If True, save individual crops to ``reid/crops/``.
+        frame_stride: Embed every Nth frame (default 1 = all frames).
     """
 
     def __init__(
@@ -35,10 +36,12 @@ class EmbedRunner:
         run_dir: Path,
         config: Any,
         save_crops: bool = False,
+        frame_stride: int = 1,
     ) -> None:
         self._run_dir = Path(run_dir)
         self._config = config
         self._save_crops = save_crops
+        self._frame_stride = frame_stride
 
         diag_dir = self._run_dir / "diagnostics"
         if not diag_dir.exists():
@@ -318,6 +321,11 @@ class EmbedRunner:
 
                 for local_frame in sorted(frames_needed.keys()):
                     global_frame = chunk_start + local_frame
+                    if (
+                        self._frame_stride > 1
+                        and global_frame % self._frame_stride != 0
+                    ):
+                        continue
                     try:
                         cam_frames = frame_source.read_frame(global_frame)
                     except Exception:

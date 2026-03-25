@@ -336,7 +336,9 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
   2. `aquapose -p YH reid repair` runs swap detection and repair, writing `midlines_reid.h5` with a summary of events detected and repaired
   3. `aquapose -p YH reid mine-crops` extracts and filters training crops, reporting accept/reject counts per fish identity
   4. All subcommands follow existing CLI patterns (top-level `-p` project flag, run resolution, consistent error messaging) — smoke test passes without errors
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 106-01-PLAN.md — Create reid_group Click group with embed, repair, mine-crops, fine-tune subcommands + add frame_stride to EmbedRunner
+- [ ] 106-02-PLAN.md — Wire reid_group into main CLI, remove old mine-reid-crops, delete standalone script, smoke test
 
 ## Progress
 

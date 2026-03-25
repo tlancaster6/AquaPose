@@ -244,7 +244,7 @@ def fine_tune_cmd(
     )
 
     run_dir = resolve_run(run, get_project_dir(ctx))
-    reid_crops_dir = run_dir / "reid" / "reid_crops"
+    reid_crops_dir = run_dir / "reid_crops"
     output_dir = run_dir / "reid" / "fine_tune"
     embeddings_path = run_dir / "reid" / "embeddings.npz"
 

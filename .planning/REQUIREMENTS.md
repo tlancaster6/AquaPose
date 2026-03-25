@@ -21,8 +21,8 @@ Requirements for appearance-based re-identification milestone. Each maps to road
 
 ### Swap Repair
 
-- [ ] **SWAP-01**: Swap detector identifies ID swap candidates at occlusion events by comparing pre/post-event mean embeddings via cosine similarity
-- [ ] **SWAP-02**: Margin-gated repair re-assigns fish IDs only when cosine margin exceeds threshold, writes corrected output to `midlines_reid.h5`
+- [x] **SWAP-01**: Swap detector identifies ID swap candidates at occlusion events by comparing pre/post-event mean embeddings via cosine similarity
+- [x] **SWAP-02**: Margin-gated repair re-assigns fish IDs only when cosine margin exceeds threshold, writes corrected output to `midlines_reid.h5`
 
 ### CLI
 
@@ -69,8 +69,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TRAIN-01 | Phase 103 | Pending |
 | TRAIN-02 | Phase 103 | Pending |
 | TRAIN-03 | Phase 104 | Pending |
-| SWAP-01 | Phase 105 | Pending |
-| SWAP-02 | Phase 105 | Pending |
+| SWAP-01 | Phase 105 | Complete |
+| SWAP-02 | Phase 105 | Complete |
 | CLI-01 | Phase 106 | Pending |
 
 **Coverage:**

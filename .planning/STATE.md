@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v3.11
 milestone_name: Appearance-Based ReID
-status: executing
-last_updated: "2026-03-25T20:03:28.000Z"
+status: unknown
+last_updated: "2026-03-25T20:05:58.950Z"
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 8
+  total_phases: 5
+  completed_phases: 4
+  total_plans: 10
   completed_plans: 8
 ---
 

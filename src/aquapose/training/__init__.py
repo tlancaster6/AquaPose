@@ -58,6 +58,16 @@ from .pseudo_labels import (
     generate_gap_fish_labels,
     reproject_spline_keypoints,
 )
+from .reid_training import (
+    CachedFeatureDataset,
+    ProjectionHead,
+    ReidTrainingConfig,
+    build_feature_cache,
+    compute_female_auc,
+    compute_per_pair_auc,
+    split_by_group,
+    train_reid_head,
+)
 from .run_manager import (
     create_run_dir,
     extract_dataset_provenance,
@@ -73,17 +83,23 @@ from .store import SampleStore
 from .yolo_training import train_yolo, train_yolo_obb, train_yolo_pose, train_yolo_seg
 
 __all__ = [
+    "CachedFeatureDataset",
     "CropDataset",
     "EarlyStopping",
     "MetricsLogger",
+    "ProjectionHead",
+    "ReidTrainingConfig",
     "SampleStore",
     "affine_warp_crop",
     "apply_augmentation",
+    "build_feature_cache",
     "coco_to_yolo_pose",
     "compute_arc_length",
     "compute_confidence_score",
     "compute_curvature",
+    "compute_female_auc",
     "compute_median_arc_length",
+    "compute_per_pair_auc",
     "create_run_dir",
     "data_group",
     "deform_keypoints_c_curve",
@@ -119,9 +135,11 @@ __all__ = [
     "select_obb_subset",
     "select_pose_subset",
     "snapshot_config",
+    "split_by_group",
     "stratified_split",
     "temporal_split",
     "tps_warp_image",
+    "train_reid_head",
     "train_yolo",
     "train_yolo_obb",
     "train_yolo_pose",

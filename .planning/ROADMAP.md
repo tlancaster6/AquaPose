@@ -310,7 +310,9 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
   1. Fine-tuning loop runs to completion and saves `best_reid_model.pt` with training loss curves visible in logs
   2. Female-female pair AUC on the temporal holdout set is measured and reported; a value >= 0.75 is required to proceed to Phase 105
   3. Re-embedding all detections with the fine-tuned model produces updated `embeddings.h5` with measurably tighter within-identity cosine similarity compared to zero-shot baseline
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 104-01-PLAN.md — ReID training module (ProjectionHead, feature caching, SubcenterArcFace training loop, AUC evaluation, unit tests)
+- [ ] 104-02-PLAN.md — Standalone driver script (end-to-end workflow with AUC gate and conditional re-embedding)
 
 ### Phase 105: Swap Detection and Repair
 **Goal**: Known identity swap events are detected and repaired, producing corrected output with no increase in reprojection error
@@ -342,6 +344,6 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
 |-------|-----------|----------------|--------|-----------|
 | 102. Embedding Infrastructure | 2/2 | Complete    | 2026-03-25 | - |
 | 103. Training Data Mining | 2/2 | Complete    | 2026-03-25 | - |
-| 104. Backbone Fine-Tuning | v3.11 | 0/TBD | Not started | - |
+| 104. Backbone Fine-Tuning | v3.11 | 0/2 | Not started | - |
 | 105. Swap Detection and Repair | v3.11 | 0/TBD | Not started | - |
 | 106. CLI Integration | v3.11 | 0/TBD | Not started | - |

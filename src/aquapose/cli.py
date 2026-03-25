@@ -702,6 +702,111 @@ def stitch_cmd(
                 click.echo(f"  Applied {n_applied} swap repair(s) to {dst}")
 
 
+@cli.command("mine-reid-crops")
+@click.argument("run", default=None, required=False)
+@click.option(
+    "--window-size",
+    type=int,
+    default=300,
+    show_default=True,
+    help="Frames per temporal window.",
+)
+@click.option(
+    "--window-stride",
+    type=int,
+    default=150,
+    show_default=True,
+    help="Stride between windows.",
+)
+@click.option(
+    "--min-cooccurring",
+    type=int,
+    default=3,
+    show_default=True,
+    help="Minimum fish per grouping.",
+)
+@click.option(
+    "--min-cameras",
+    type=int,
+    default=3,
+    show_default=True,
+    help="Minimum cameras for quality gate.",
+)
+@click.option(
+    "--max-residual",
+    type=float,
+    default=5.0,
+    show_default=True,
+    help="Maximum mean residual (px).",
+)
+@click.option(
+    "--min-duration",
+    type=int,
+    default=10,
+    show_default=True,
+    help="Minimum contiguous frames per segment.",
+)
+@click.option(
+    "--crops-per-fish",
+    type=int,
+    default=8,
+    show_default=True,
+    help="Target crops per fish per grouping.",
+)
+@click.option(
+    "--overwrite/--no-overwrite",
+    default=False,
+    show_default=True,
+    help="Overwrite existing reid_crops/ directory.",
+)
+@click.pass_context
+def mine_reid_crops_cmd(
+    ctx: click.Context,
+    run: str | None,
+    window_size: int,
+    window_stride: int,
+    min_cooccurring: int,
+    min_cameras: int,
+    max_residual: float,
+    min_duration: int,
+    crops_per_fish: int,
+    overwrite: bool,
+) -> None:
+    """Mine training crops from a completed pipeline run for ReID fine-tuning.
+
+    Slides temporal windows across the run, applies quality gates, and extracts
+    OBB-aligned crops organized into groupings suitable for contrastive learning.
+    """
+    import shutil
+
+    from aquapose.core.reid.miner import MinerConfig, TrainingDataMiner
+
+    run_dir = resolve_run(run, get_project_dir(ctx))
+
+    config = MinerConfig(
+        window_size=window_size,
+        window_stride=window_stride,
+        min_cooccurring=min_cooccurring,
+        min_cameras=min_cameras,
+        max_residual=max_residual,
+        min_duration=min_duration,
+        crops_per_fish=crops_per_fish,
+    )
+
+    if overwrite:
+        crops_dir = run_dir / "reid_crops"
+        if crops_dir.exists():
+            shutil.rmtree(crops_dir)
+            click.echo(f"Removed existing {crops_dir}")
+
+    miner = TrainingDataMiner(run_dir, config=config)
+    stats = miner.run()
+
+    click.echo(f"Mined {stats['n_groups']} groupings, {stats['n_crops']} total crops")
+    for fid, count in sorted(stats["per_fish_counts"].items()):
+        click.echo(f"  Fish {fid}: {count} crops")
+
+
 @cli.command("smooth-z")
 @click.argument("run", default=None, required=False)
 @click.option(

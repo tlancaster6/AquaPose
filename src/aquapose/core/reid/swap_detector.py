@@ -315,6 +315,25 @@ class SwapDetector:
         self._frame_source = None
         self._projection_head = None
 
+        # Load projection head eagerly if provided (needed for cached embeddings too)
+        if self._projection_head_path and self._projection_head_path.exists():
+            import torch
+
+            from aquapose.training.reid_training import ProjectionHead
+
+            self._projection_head = ProjectionHead(
+                in_dim=768, hidden_dim=256, out_dim=128
+            )
+            self._projection_head.load_state_dict(
+                torch.load(
+                    self._projection_head_path,
+                    map_location="cuda",
+                    weights_only=True,
+                )
+            )
+            self._projection_head.to("cuda").eval()
+            logger.info("Loaded projection head from %s", self._projection_head_path)
+
     def _ensure_embedder(self) -> None:
         """Lazy-initialize FishEmbedder and VideoFrameSource if needed."""
         if self._embedder is not None:
@@ -344,17 +363,7 @@ class SwapDetector:
 
         self._embedder = FishEmbedder(_EmbedConfig())
 
-        # Load projection head if provided
-        if self._projection_head_path and self._projection_head_path.exists():
-            import torch
-
-            self._projection_head = torch.load(
-                self._projection_head_path,
-                map_location="cuda",
-                weights_only=True,
-            )
-            self._projection_head.eval()
-            logger.info("Loaded projection head from %s", self._projection_head_path)
+        # Projection head already loaded eagerly in __init__ if provided.
 
         # Open video frame source
         from aquapose.core.types.frame_source import VideoFrameSource

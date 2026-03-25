@@ -332,10 +332,10 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
 **Depends on**: Phase 105
 **Requirements**: CLI-01
 **Success Criteria** (what must be TRUE):
-  1. `aquapose reid embed -p YH` runs the batch embed runner on a completed run and writes `embeddings.h5` with progress output
-  2. `aquapose reid repair -p YH` runs swap detection and repair, writing `midlines_reid.h5` with a summary of events detected and repaired
-  3. `aquapose reid train-data -p YH` extracts and filters training crops, reporting accept/reject counts per fish identity
-  4. All subcommands follow existing CLI patterns (project flag `-p`, run resolution, consistent error messaging) — smoke test passes without errors
+  1. `aquapose -p YH reid embed` runs the batch embed runner on a completed run and writes `embeddings.npz` with progress output
+  2. `aquapose -p YH reid repair` runs swap detection and repair, writing `midlines_reid.h5` with a summary of events detected and repaired
+  3. `aquapose -p YH reid mine-crops` extracts and filters training crops, reporting accept/reject counts per fish identity
+  4. All subcommands follow existing CLI patterns (top-level `-p` project flag, run resolution, consistent error messaging) — smoke test passes without errors
 **Plans**: TBD
 
 ## Progress
@@ -347,5 +347,5 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
 | 102. Embedding Infrastructure | 2/2 | Complete    | 2026-03-25 | - |
 | 103. Training Data Mining | 2/2 | Complete    | 2026-03-25 | - |
 | 104. Backbone Fine-Tuning | v3.11 | 2/2 | Complete | 2026-03-25 |
-| 105. Swap Detection and Repair | v3.11 | 0/TBD | Not started | - |
+| 105. Swap Detection and Repair | 1/2 | In Progress|  | - |
 | 106. CLI Integration | v3.11 | 0/TBD | Not started | - |

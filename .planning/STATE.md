@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.11
 milestone_name: Appearance-Based ReID
-status: unknown
-last_updated: "2026-03-25T18:23:32.431Z"
+status: executing
+last_updated: "2026-03-25T19:53:53.000Z"
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  total_phases: 3
+  completed_phases: 3
+  total_plans: 8
+  completed_plans: 7
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.11 Appearance-Based ReID — Phase 104: Backbone Fine-Tuning
+**Current focus:** v3.11 Appearance-Based ReID — Phase 105 in progress (Plan 01 complete)
 
 ## Current Position
 
-Phase: 104 of 106 (Backbone Fine-Tuning)
-Plan: 01 of 02 complete
-Status: Executing
-Last activity: 2026-03-25 — Plan 104-01 complete (ReID training module), executing Plan 104-02
+Phase: 105 of 106 (Swap Detection and Repair) — IN PROGRESS
+Plan: 1 of 2 complete
+Status: Executing Phase 105
+Last activity: 2026-03-25 — Plan 105-01 complete (SwapDetector module + unit tests)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [███████░░░] 70%
 
 ## Performance Metrics
 
@@ -46,6 +46,7 @@ Recent decisions affecting current work:
 - [v3.11 roadmap]: Post-hoc ReID only — no changes to the chunk pipeline; all work in `core/reid/` and `training/`
 - [v3.11 roadmap]: MegaDescriptor-T (timm) as backbone; pytorch-metric-learning for losses; zero-shot baseline evaluated in Phase 102 before committing to fine-tuning
 - [v3.11 roadmap]: Female-female AUC >= 0.75 gate in Phase 104; milestone downscopes to male-female only if gate fails
+- [Phase 102 testing]: Zero-shot MegaDescriptor-T achieves 97.4% Rank-1, 73.6% mAP on clean segment (frames 0-599). Fish 2↔8 pair most confusable (0.869 cosine similarity).
 
 ### Pending Todos
 
@@ -57,6 +58,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last activity: 2026-03-25 — Plan 104-01 complete, executing 104-02
-Stopped at: Wave 2 execution
-Resume file: .planning/phases/104-backbone-fine-tuning/104-01-SUMMARY.md
+Last activity: 2026-03-25 — Plan 105-01 complete (SwapDetector module)
+Stopped at: Executing Phase 105, Plan 02 next
+Resume file: .planning/phases/105-swap-detection-and-repair/105-01-SUMMARY.md

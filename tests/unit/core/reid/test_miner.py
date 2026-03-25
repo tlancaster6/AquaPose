@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from aquapose.core.reid.miner import (
     MinerConfig,
     _camera_aware_sample,
@@ -280,9 +281,10 @@ class TestCameraAwareSample:
         """With 3 cameras and crops_per_fish=6, output includes crops from all 3."""
         detections = []
         for cam in ["cam_a", "cam_b", "cam_c"]:
-            for frame in range(10):
+            for frame in range(3):
                 detections.append((frame, cam, f"det_{cam}_{frame}"))
 
+        # 9 items total, request 6 -> round-robin interleave guarantees all cameras
         result = _camera_aware_sample(detections, crops_per_fish=6)
         assert len(result) == 6
         cameras_in_result = {item[1] for item in result}

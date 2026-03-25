@@ -6,5 +6,7 @@ completed pipeline runs and zero-shot evaluation utilities.
 """
 
 from .embedder import FishEmbedder
+from .eval import compute_reid_metrics, print_reid_report
+from .runner import EmbedRunner
 
-__all__ = ["FishEmbedder"]
+__all__ = ["EmbedRunner", "FishEmbedder", "compute_reid_metrics", "print_reid_report"]

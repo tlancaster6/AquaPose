@@ -26,7 +26,7 @@ Requirements for appearance-based re-identification milestone. Each maps to road
 
 ### CLI
 
-- [ ] **CLI-01**: `aquapose reid` command group with subcommands (embed, repair, train-data) following existing CLI patterns
+- [x] **CLI-01**: `aquapose reid` command group with subcommands (embed, repair, train-data) following existing CLI patterns
 
 ## Future Requirements
 
@@ -71,7 +71,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TRAIN-03 | Phase 104 | Pending |
 | SWAP-01 | Phase 105 | Complete |
 | SWAP-02 | Phase 105 | Complete |
-| CLI-01 | Phase 106 | Pending |
+| CLI-01 | Phase 106 | Complete |
 
 **Coverage:**
 - v3.11 requirements: 9 total

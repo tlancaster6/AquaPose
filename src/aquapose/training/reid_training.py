@@ -426,11 +426,12 @@ def train_reid_head(
         cache["labels"][train_idx],
         cache["group_ids"][train_idx],
     )
-    # Batch size = samples_per_class * num_classes.
-    batch_size = config.samples_per_class * config.num_classes
-
     # Create sampler and dataloader.
     train_labels = train_ds.get_labels()
+
+    # Derive num_classes from actual data (some fish may be absent from mined crops).
+    actual_num_classes = len(set(train_labels))
+    batch_size = config.samples_per_class * actual_num_classes
     sampler = MPerClassSampler(
         labels=train_labels,
         m=config.samples_per_class,
@@ -448,7 +449,7 @@ def train_reid_head(
     ).to(device)
 
     loss_func = losses.SubCenterArcFaceLoss(
-        num_classes=config.num_classes,
+        num_classes=actual_num_classes,
         embedding_size=config.embedding_dim,
         margin=config.arcface_margin,
         scale=config.arcface_scale,

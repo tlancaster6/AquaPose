@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.11 Appearance-Based ReID — Phase 103: Training Data Mining
+**Current focus:** v3.11 Appearance-Based ReID — Phase 104: Backbone Fine-Tuning
 
 ## Current Position
 
-Phase: 103 of 106 (Training Data Mining)
-Plan: All plans complete
-Status: Verifying
-Last activity: 2026-03-25 — All plans complete, running verification
+Phase: 104 of 106 (Backbone Fine-Tuning)
+Plan: 01 of 02 complete
+Status: Executing
+Last activity: 2026-03-25 — Plan 104-01 complete (ReID training module), executing Plan 104-02
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -57,6 +57,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last activity: 2026-03-25 — Phase 103 all plans complete, verifying
-Stopped at: Verification step
-Resume file: .planning/phases/103-training-data-mining/103-02-SUMMARY.md
+Last activity: 2026-03-25 — Plan 104-01 complete, executing 104-02
+Stopped at: Wave 2 execution
+Resume file: .planning/phases/104-backbone-fine-tuning/104-01-SUMMARY.md

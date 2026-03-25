@@ -344,6 +344,6 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
 |-------|-----------|----------------|--------|-----------|
 | 102. Embedding Infrastructure | 2/2 | Complete    | 2026-03-25 | - |
 | 103. Training Data Mining | 2/2 | Complete    | 2026-03-25 | - |
-| 104. Backbone Fine-Tuning | v3.11 | 0/2 | Not started | - |
+| 104. Backbone Fine-Tuning | 1/2 | In Progress|  | - |
 | 105. Swap Detection and Repair | v3.11 | 0/TBD | Not started | - |
 | 106. CLI Integration | v3.11 | 0/TBD | Not started | - |

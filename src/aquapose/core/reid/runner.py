@@ -259,9 +259,10 @@ class EmbedRunner:
                     )
                     continue
 
-                # Build detection-to-fish_id mapping for this chunk
-                # (local_frame, camera_id) -> (fish_id, detection)
-                detection_map: dict[tuple[int, str], tuple[int, Any, float]] = {}
+                # Build detection-to-fish_id mapping for this chunk.
+                # Key includes fish_id so multiple fish per (frame, camera)
+                # are all retained.
+                detection_map: dict[tuple[int, str, int], tuple[int, Any, float]] = {}
 
                 for group in ctx.tracklet_groups:
                     # Map cache fish_id to stitched fish_id
@@ -296,7 +297,7 @@ class EmbedRunner:
                                     best_det = det
 
                             if best_det is not None:
-                                detection_map[(local_frame, cam_id)] = (
+                                detection_map[(local_frame, cam_id, fish_id)] = (
                                     fish_id,
                                     best_det,
                                     best_det.confidence,
@@ -309,10 +310,10 @@ class EmbedRunner:
                 sorted_entries = sorted(detection_map.keys(), key=lambda x: x[0])
 
                 # Group by local_frame for efficient frame reads
-                frames_needed: dict[int, list[tuple[int, str]]] = {}
-                for local_frame, cam_id in sorted_entries:
+                frames_needed: dict[int, list[tuple[int, str, int]]] = {}
+                for local_frame, cam_id, fid in sorted_entries:
                     frames_needed.setdefault(local_frame, []).append(
-                        (local_frame, cam_id)
+                        (local_frame, cam_id, fid)
                     )
 
                 for local_frame in sorted(frames_needed.keys()):
@@ -325,11 +326,11 @@ class EmbedRunner:
                         )
                         continue
 
-                    for lf, cam_id in frames_needed[local_frame]:
+                    for lf, cam_id, fid in frames_needed[local_frame]:
                         if cam_id not in cam_frames:
                             continue
 
-                        fish_id, det, conf = detection_map[(lf, cam_id)]
+                        fish_id, det, conf = detection_map[(lf, cam_id, fid)]
                         bgr_frame = cam_frames[cam_id]
 
                         # Extract OBB-aligned crop

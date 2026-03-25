@@ -298,7 +298,9 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
   2. No crops appear within 150 frames of a detected changepoint or swap event (contamination filter is verifiable by checking frame indices against the swap event list)
   3. Quality filter parameters (min cameras, min duration, max residual) are configurable and documented; filtering logs show how many segments were accepted vs rejected
   4. The dataset contains at least one valid segment per fish identity, or the run exits with a clear diagnostic message
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 103-01-PLAN.md — TrainingDataMiner core logic with quality gates, temporal windowing, sampling, and unit tests
+- [ ] 103-02-PLAN.md — mine-reid-crops CLI command wiring
 
 ### Phase 104: Backbone Fine-Tuning
 **Goal**: A fine-tuned backbone produces embeddings that discriminate female cichlids well enough to gate swap repair
@@ -339,7 +341,7 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 102. Embedding Infrastructure | 2/2 | Complete    | 2026-03-25 | - |
-| 103. Training Data Mining | v3.11 | 0/TBD | Not started | - |
+| 103. Training Data Mining | v3.11 | 0/2 | Not started | - |
 | 104. Backbone Fine-Tuning | v3.11 | 0/TBD | Not started | - |
 | 105. Swap Detection and Repair | v3.11 | 0/TBD | Not started | - |
 | 106. CLI Integration | v3.11 | 0/TBD | Not started | - |

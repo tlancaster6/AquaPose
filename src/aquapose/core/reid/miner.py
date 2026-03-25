@@ -248,6 +248,68 @@ class TrainingDataMiner:
 
         return quality
 
+    def _build_prestitch_map(self) -> dict[int, int]:
+        """Map pre-stitch (chunk-local) fish IDs to stitched global IDs.
+
+        Compares 3D centroids between ``midlines.h5`` (pre-stitch) and
+        ``midlines_stitched.h5`` (post-stitch) to match fragment IDs.
+
+        Returns:
+            Dict mapping pre-stitch fish_id to stitched fish_id.
+        """
+        pre_path = self._run_dir / "midlines.h5"
+        post_path = self._run_dir / "midlines_stitched.h5"
+
+        if not pre_path.exists() or not post_path.exists():
+            logger.warning(
+                "Cannot build ID mapping — midlines.h5 or "
+                "midlines_stitched.h5 missing. Using raw cache IDs."
+            )
+            return {}
+
+        with h5py.File(pre_path, "r") as pre, h5py.File(post_path, "r") as post:
+            fid_pre = cast(h5py.Dataset, pre["midlines/fish_id"])[:]
+            fid_post = cast(h5py.Dataset, post["midlines/fish_id"])[:]
+            pts_pre = cast(h5py.Dataset, pre["midlines/points"])[:]
+            pts_post = cast(h5py.Dataset, post["midlines/points"])[:]
+
+        mapping: dict[int, int] = {}
+        n_frames = fid_pre.shape[0]
+        mid_kpt = pts_pre.shape[2] // 2
+
+        for fr in range(n_frames):
+            for slot in range(fid_pre.shape[1]):
+                pid = int(fid_pre[fr, slot])
+                if pid < 0 or pid in mapping:
+                    continue
+
+                centroid_pre = pts_pre[fr, slot, mid_kpt, :]
+                if np.any(np.isnan(centroid_pre)):
+                    continue
+
+                best_dist = np.inf
+                best_post_id = -1
+                for s2 in range(fid_post.shape[1]):
+                    if fid_post[fr, s2] < 0:
+                        continue
+                    centroid_post = pts_post[fr, s2, mid_kpt, :]
+                    if np.any(np.isnan(centroid_post)):
+                        continue
+                    d = float(np.linalg.norm(centroid_pre - centroid_post))
+                    if d < best_dist:
+                        best_dist = d
+                        best_post_id = int(fid_post[fr, s2])
+
+                if best_dist < 0.01:
+                    mapping[pid] = best_post_id
+
+        logger.info(
+            "Pre->post stitch mapping: %d fragment IDs -> %d stitched IDs",
+            len(mapping),
+            len(set(mapping.values())),
+        )
+        return mapping
+
     def _load_run_config(self) -> dict[str, Any]:
         """Load the run's ``config.yaml``."""
         config_path = self._run_dir / "config.yaml"
@@ -274,6 +336,7 @@ class TrainingDataMiner:
         ctx: Any,
         chunk_start: int,
         valid_frames: set[int],
+        prestitch_map: dict[int, int] | None = None,
     ) -> dict[tuple[int, str], tuple[int, Any]]:
         """Build ``(global_frame, camera_id) -> (fish_id, Detection)`` map.
 
@@ -284,6 +347,9 @@ class TrainingDataMiner:
             ctx: Loaded pipeline context from ``cache.pkl``.
             chunk_start: Global frame offset for this chunk.
             valid_frames: Set of global frames with H5 quality data.
+            prestitch_map: Maps pre-stitch (chunk-local) fish IDs to
+                post-stitch (global) fish IDs.  When provided, cache
+                fish IDs are remapped before use.
 
         Returns:
             Detection map keyed by ``(global_frame, camera_id)``.
@@ -294,7 +360,13 @@ class TrainingDataMiner:
             return detection_map
 
         for group in ctx.tracklet_groups:
-            fish_id = group.fish_id
+            raw_id = group.fish_id
+            if prestitch_map:
+                fish_id = prestitch_map.get(raw_id, -1)
+                if fish_id < 0:
+                    continue
+            else:
+                fish_id = raw_id
             for tracklet in group.tracklets:
                 cam_id = tracklet.camera_id
                 for i, local_frame in enumerate(tracklet.frames):
@@ -487,7 +559,10 @@ class TrainingDataMiner:
                 "Run config.yaml must contain video_dir and calibration_path"
             )
 
-        # Step 4: Discover chunk caches and build global detection map
+        # Step 4: Build pre-stitch -> stitched ID mapping
+        prestitch_map = self._build_prestitch_map()
+
+        # Step 5: Discover chunk caches and build global detection map
         chunk_caches = self._discover_chunk_caches()
         if not chunk_caches:
             raise FileNotFoundError(
@@ -515,7 +590,9 @@ class TrainingDataMiner:
                 )
                 continue
 
-            chunk_map = self._build_detection_map(ctx, chunk_start, all_valid_frames)
+            chunk_map = self._build_detection_map(
+                ctx, chunk_start, all_valid_frames, prestitch_map or None
+            )
             global_det_map.update(chunk_map)
 
         logger.info(

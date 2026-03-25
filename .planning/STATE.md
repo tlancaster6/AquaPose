@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** Accurate 3D fish midline reconstruction from multi-view silhouettes via refractive multi-view triangulation
-**Current focus:** v3.11 Appearance-Based ReID — Phase 102: Embedding Infrastructure
+**Current focus:** v3.11 Appearance-Based ReID — Phase 103: Training Data Mining
 
 ## Current Position
 
-Phase: 102 of 106 (Embedding Infrastructure)
-Plan: All plans complete
-Status: Verifying
-Last activity: 2026-03-25 — All plans complete, running verification
+Phase: 103 of 106 (Training Data Mining)
+Plan: 103-01 complete, executing 103-02
+Status: Executing
+Last activity: 2026-03-25 — Plan 103-01 complete (TrainingDataMiner core logic)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -57,6 +57,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last activity: 2026-03-25 — Phase 102 execution complete, verifying
-Stopped at: Verification step
-Resume file: .planning/phases/102-embedding-infrastructure/102-02-SUMMARY.md
+Last activity: 2026-03-25 — Plan 103-01 complete, starting 103-02
+Stopped at: Wave 2 (Plan 103-02)
+Resume file: .planning/phases/103-training-data-mining/103-01-SUMMARY.md

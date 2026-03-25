@@ -375,6 +375,32 @@ class ReconstructionConfig:
     z_denoising: ZDenoisingConfig = dataclasses.field(default_factory=ZDenoisingConfig)
 
 
+@dataclass(frozen=True)
+class ReidConfig:
+    """Config for fish re-identification embedding.
+
+    Controls the MegaDescriptor backbone wrapper used to produce per-crop
+    embedding vectors for cross-chunk identity matching.
+
+    Attributes:
+        model_name: timm model identifier for the embedding backbone.
+            Default is MegaDescriptor-T-224 (Swin-Tiny, 768-dim output).
+        batch_size: Maximum number of crops per GPU forward pass.
+        crop_size: Square input size in pixels for the embedding model.
+            MegaDescriptor-T expects 224x224 inputs.
+        device: Torch device string (e.g. ``"cuda:0"``, ``"cpu"``).
+        embedding_dim: Expected output embedding dimension. Used for
+            shape validation at construction time. Swin-Tiny hidden
+            dimension is 768.
+    """
+
+    model_name: str = "hf-hub:BVRA/MegaDescriptor-T-224"
+    batch_size: int = 32
+    crop_size: int = 224
+    device: str = "cuda:0"
+    embedding_dim: int = 768
+
+
 # ---------------------------------------------------------------------------
 # Top-level config helpers
 # ---------------------------------------------------------------------------

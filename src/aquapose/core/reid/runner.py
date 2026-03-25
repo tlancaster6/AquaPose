@@ -92,6 +92,70 @@ class EmbedRunner:
         valid_frames = set(frame_to_fish_ids.keys())
         return valid_frames, frame_to_fish_ids
 
+    def _build_prestitch_to_stitched_map(self) -> dict[int, int]:
+        """Map pre-stitch fish IDs (used in chunk caches) to stitched IDs.
+
+        Compares 3D centroids between ``midlines.h5`` and
+        ``midlines_stitched.h5`` to match fragment IDs to their
+        post-stitch equivalents.  Cache fish IDs that don't appear in
+        ``midlines.h5`` (singletons filtered during H5 write) map to -1.
+
+        Returns:
+            Dict mapping pre-stitch fish_id to stitched fish_id.
+        """
+        pre_path = self._run_dir / "midlines.h5"
+        post_path = self._run_dir / "midlines_stitched.h5"
+
+        if not pre_path.exists() or not post_path.exists():
+            logger.warning(
+                "Cannot build ID mapping — midlines.h5 or "
+                "midlines_stitched.h5 missing. Using raw cache IDs."
+            )
+            return {}
+
+        with h5py.File(pre_path, "r") as pre, h5py.File(post_path, "r") as post:
+            fid_pre = pre["midlines/fish_id"][:]
+            fid_post = post["midlines/fish_id"][:]
+            pts_pre = pre["midlines/points"][:]
+            pts_post = post["midlines/points"][:]
+
+        mapping: dict[int, int] = {}
+        n_frames = fid_pre.shape[0]
+        mid_kpt = pts_pre.shape[2] // 2  # spine midpoint index
+
+        for fr in range(n_frames):
+            for slot in range(fid_pre.shape[1]):
+                pid = int(fid_pre[fr, slot])
+                if pid < 0 or pid in mapping:
+                    continue
+
+                centroid_pre = pts_pre[fr, slot, mid_kpt, :]
+                if np.any(np.isnan(centroid_pre)):
+                    continue
+
+                best_dist = np.inf
+                best_post_id = -1
+                for s2 in range(fid_post.shape[1]):
+                    if fid_post[fr, s2] < 0:
+                        continue
+                    centroid_post = pts_post[fr, s2, mid_kpt, :]
+                    if np.any(np.isnan(centroid_post)):
+                        continue
+                    d = float(np.linalg.norm(centroid_pre - centroid_post))
+                    if d < best_dist:
+                        best_dist = d
+                        best_post_id = int(fid_post[fr, s2])
+
+                if best_dist < 0.01:  # 1 cm — true matches are ~0
+                    mapping[pid] = best_post_id
+
+        logger.info(
+            "Pre->post stitch mapping: %d fragment IDs -> %d stitched IDs",
+            len(mapping),
+            len(set(mapping.values())),
+        )
+        return mapping
+
     def _load_run_config(self) -> dict[str, Any]:
         """Load the run's config.yaml."""
         config_path = self._run_dir / "config.yaml"
@@ -122,12 +186,16 @@ class EmbedRunner:
         """
         from aquapose.core.reid.eval import compute_reid_metrics, print_reid_report
 
-        # Step 1: Load H5 frame mapping
+        # Step 1: Load H5 frame mapping and ID remapping
         valid_frames, frame_to_fish_ids = self._load_h5_frame_mapping()
+        prestitch_map = self._build_prestitch_to_stitched_map()
+        stitched_ids = set(fid for fids in frame_to_fish_ids.values() for fid in fids)
         logger.info(
-            "H5 mapping: %d valid frames, %d unique fish",
+            "H5 mapping: %d valid frames, %d unique stitched fish, "
+            "%d pre-stitch fragments mapped",
             len(valid_frames),
-            len({fid for fids in frame_to_fish_ids.values() for fid in fids}),
+            len(stitched_ids),
+            len(prestitch_map),
         )
 
         # Step 2: Load run config for chunk_size and video/calib paths
@@ -196,7 +264,11 @@ class EmbedRunner:
                 detection_map: dict[tuple[int, str], tuple[int, Any, float]] = {}
 
                 for group in ctx.tracklet_groups:
-                    fish_id = group.fish_id
+                    # Map cache fish_id to stitched fish_id
+                    raw_id = group.fish_id
+                    fish_id = prestitch_map.get(raw_id, -1)
+                    if fish_id < 0:
+                        continue  # singleton or unmapped fragment
                     for tracklet in group.tracklets:
                         cam_id = tracklet.camera_id
                         for i, local_frame in enumerate(tracklet.frames):

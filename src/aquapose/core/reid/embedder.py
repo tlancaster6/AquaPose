@@ -77,30 +77,29 @@ class FishEmbedder:
         if len(crops) == 0:
             return np.empty((0, self._embedding_dim), dtype=np.float32)
 
-        # Preprocess all crops into a single tensor.
-        tensors = []
-        for crop in crops:
-            # BGR -> RGB
-            rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-            # Resize to model input size
-            resized = cv2.resize(
-                rgb, (self._crop_size, self._crop_size), interpolation=cv2.INTER_LINEAR
-            )
-            # float32 [0, 1] -> [-1, 1]
-            arr = resized.astype(np.float32) / 255.0
-            arr = (arr - 0.5) / 0.5
-            # HWC -> CHW
-            tensors.append(torch.from_numpy(arr.transpose(2, 0, 1)))
-
-        batch_tensor = torch.stack(tensors)  # (N, 3, H, W)
-
-        # Process in sub-batches.
+        # Process in sub-batches to avoid materializing all crops at once.
         all_feats = []
         with torch.no_grad():
-            for i in range(0, len(batch_tensor), self._batch_size):
-                sub = batch_tensor[i : i + self._batch_size].to(self._device)
-                feats = self._model(sub)
+            for i in range(0, len(crops), self._batch_size):
+                sub_crops = crops[i : i + self._batch_size]
+
+                # Preprocess this sub-batch only.
+                tensors = []
+                for crop in sub_crops:
+                    rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+                    resized = cv2.resize(
+                        rgb,
+                        (self._crop_size, self._crop_size),
+                        interpolation=cv2.INTER_LINEAR,
+                    )
+                    arr = resized.astype(np.float32) / 255.0
+                    arr = (arr - 0.5) / 0.5
+                    tensors.append(torch.from_numpy(arr.transpose(2, 0, 1)))
+
+                batch_tensor = torch.stack(tensors).to(self._device)
+                feats = self._model(batch_tensor)
                 feats = F.normalize(feats, p=2, dim=1)
                 all_feats.append(feats.cpu().numpy())
+                del batch_tensor, feats  # free GPU memory promptly
 
         return np.concatenate(all_feats, axis=0).astype(np.float32)

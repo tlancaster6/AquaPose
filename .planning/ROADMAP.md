@@ -269,7 +269,7 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
 #### Phases
 
 - [x] **Phase 102: Embedding Infrastructure** - Crop extraction, backbone wrapper, and batch embed runner producing `embeddings.h5` for a completed run (completed 2026-03-25)
-- [ ] **Phase 103: Training Data Mining** - High-confidence trajectory mining with swap-buffer contamination filtering to produce quality-gated training crops
+- [x] **Phase 103: Training Data Mining** - High-confidence trajectory mining with swap-buffer contamination filtering to produce quality-gated training crops (completed 2026-03-25)
 - [ ] **Phase 104: Backbone Fine-Tuning** - Metric learning fine-tune of MegaDescriptor-T with discriminability gate (female-female AUC >= 0.75)
 - [ ] **Phase 105: Swap Detection and Repair** - Cosine-similarity swap detection at occlusion events and margin-gated repair writing `midlines_reid.h5`
 - [ ] **Phase 106: CLI Integration** - `aquapose reid` command group wiring all ReID subcommands into the existing CLI pattern
@@ -341,7 +341,7 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 102. Embedding Infrastructure | 2/2 | Complete    | 2026-03-25 | - |
-| 103. Training Data Mining | 1/2 | In Progress|  | - |
+| 103. Training Data Mining | 2/2 | Complete   | 2026-03-25 | - |
 | 104. Backbone Fine-Tuning | v3.11 | 0/TBD | Not started | - |
 | 105. Swap Detection and Repair | v3.11 | 0/TBD | Not started | - |
 | 106. CLI Integration | v3.11 | 0/TBD | Not started | - |

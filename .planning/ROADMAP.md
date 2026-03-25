@@ -270,7 +270,7 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
 
 - [x] **Phase 102: Embedding Infrastructure** - Crop extraction, backbone wrapper, and batch embed runner producing `embeddings.h5` for a completed run (completed 2026-03-25)
 - [x] **Phase 103: Training Data Mining** - High-confidence trajectory mining with swap-buffer contamination filtering to produce quality-gated training crops (completed 2026-03-25)
-- [ ] **Phase 104: Backbone Fine-Tuning** - Metric learning fine-tune of MegaDescriptor-T with discriminability gate (female-female AUC >= 0.75)
+- [x] **Phase 104: Backbone Fine-Tuning** - Metric learning fine-tune of MegaDescriptor-T with discriminability gate (female-female AUC >= 0.75) (completed 2026-03-25)
 - [ ] **Phase 105: Swap Detection and Repair** - Cosine-similarity swap detection at occlusion events and margin-gated repair writing `midlines_reid.h5`
 - [ ] **Phase 106: CLI Integration** - `aquapose reid` command group wiring all ReID subcommands into the existing CLI pattern
 
@@ -311,8 +311,8 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
   2. Female-female pair AUC on the temporal holdout set is measured and reported; a value >= 0.75 is required to proceed to Phase 105
   3. Re-embedding all detections with the fine-tuned model produces updated `embeddings.h5` with measurably tighter within-identity cosine similarity compared to zero-shot baseline
 **Plans**: 2 plans
-- [ ] 104-01-PLAN.md — ReID training module (ProjectionHead, feature caching, SubcenterArcFace training loop, AUC evaluation, unit tests)
-- [ ] 104-02-PLAN.md — Standalone driver script (end-to-end workflow with AUC gate and conditional re-embedding)
+- [x] 104-01-PLAN.md — ReID training module (ProjectionHead, feature caching, SubcenterArcFace training loop, AUC evaluation, unit tests)
+- [x] 104-02-PLAN.md — Standalone driver script (end-to-end workflow with AUC gate and conditional re-embedding)
 
 ### Phase 105: Swap Detection and Repair
 **Goal**: Known identity swap events are detected and repaired, producing corrected output with no increase in reprojection error
@@ -323,7 +323,9 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
   2. Repair is applied only at detected occlusion events with cosine margin > 0.15 — stable segments are not modified
   3. `midlines_reid.h5` is written as a corrected copy; mean reprojection error in repaired segments does not increase versus the pre-repair baseline
   4. False positive rate on confirmed-clean segments is below 5% (measurable by running repair on segments with no known swaps)
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 105-01-PLAN.md — Core swap detector module (SwapDetector class, ReidEvent, cross-pattern confirmation, seeded + scan modes, repair, unit tests)
+- [ ] 105-02-PLAN.md — Standalone validation script (driver on YH data, validates known swaps, FP rate, produces midlines_reid.h5)
 
 ### Phase 106: CLI Integration
 **Goal**: All ReID capabilities are accessible via `aquapose reid` subcommands following existing CLI patterns
@@ -344,6 +346,6 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
 |-------|-----------|----------------|--------|-----------|
 | 102. Embedding Infrastructure | 2/2 | Complete    | 2026-03-25 | - |
 | 103. Training Data Mining | 2/2 | Complete    | 2026-03-25 | - |
-| 104. Backbone Fine-Tuning | 1/2 | In Progress|  | - |
+| 104. Backbone Fine-Tuning | v3.11 | 2/2 | Complete | 2026-03-25 |
 | 105. Swap Detection and Repair | v3.11 | 0/TBD | Not started | - |
 | 106. CLI Integration | v3.11 | 0/TBD | Not started | - |

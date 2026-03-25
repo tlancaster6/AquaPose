@@ -412,6 +412,18 @@ def train_reid_head(
 
     device = torch.device(config.device)
 
+    # Remap labels to contiguous 0..N-1 (ArcFace indexes a weight matrix by label).
+    unique_labels = np.unique(cache["labels"])
+    label_map = {int(old): new for new, old in enumerate(unique_labels)}
+    remapped_labels = np.array([label_map[int(lbl)] for lbl in cache["labels"]])
+    logger.info(
+        "Label remap (%d classes): %s",
+        len(unique_labels),
+        {int(k): v for k, v in label_map.items()},
+    )
+    cache["labels_original"] = cache["labels"]
+    cache["labels"] = remapped_labels
+
     # Split by group.
     train_idx, val_idx = split_by_group(cache, config.val_fraction)
     logger.info(
@@ -504,7 +516,7 @@ def train_reid_head(
             )
             val_embeddings = head(val_features).cpu().numpy()
 
-        val_fish_ids = cache["labels"][val_idx]
+        val_fish_ids = cache["labels_original"][val_idx]
         val_auc = compute_female_auc(val_embeddings, val_fish_ids)
         val_auc_history.append(val_auc)
 

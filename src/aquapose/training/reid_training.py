@@ -47,8 +47,10 @@ class ReidTrainingConfig:
         arcface_scale: Scale factor for ArcFace loss.
         epochs: Maximum training epochs.
         patience: Early stopping patience (epochs without AUC improvement).
+            Set to 0 to disable early stopping.
         lr_head: Learning rate for projection head optimizer.
         lr_loss: Learning rate for ArcFace loss optimizer.
+        warmup_epochs: Linear warmup epochs (ramps LR from 0 to target).
         samples_per_class: Samples per class per batch for MPerClassSampler.
         val_fraction: Fraction of groups to hold out for validation.
         device: PyTorch device string.
@@ -67,10 +69,11 @@ class ReidTrainingConfig:
     arcface_margin: float = 28.6
     arcface_scale: float = 64
     epochs: int = 50
-    patience: int = 10
+    patience: int = 0
     lr_head: float = 3e-4
     lr_loss: float = 0.01
-    samples_per_class: int = 4
+    warmup_epochs: int = 5
+    samples_per_class: int = 16
     val_fraction: float = 0.2
     device: str = "cuda"
     model_name: str = "hf-hub:BVRA/MegaDescriptor-T-224"
@@ -474,6 +477,15 @@ def train_reid_head(
     head_optimizer = torch.optim.Adam(head.parameters(), lr=config.lr_head)
     loss_optimizer = torch.optim.SGD(loss_func.parameters(), lr=config.lr_loss)
 
+    # Cosine annealing scheduler (applied after warmup).
+    cosine_epochs = max(1, config.epochs - config.warmup_epochs)
+    head_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        head_optimizer, T_max=cosine_epochs, eta_min=config.lr_head * 0.01
+    )
+    loss_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        loss_optimizer, T_max=cosine_epochs, eta_min=config.lr_loss * 0.01
+    )
+
     # Training loop.
     best_auc = -1.0
     best_epoch = 0
@@ -482,6 +494,14 @@ def train_reid_head(
     best_state_dict: dict[str, Any] | None = None
 
     for epoch in range(config.epochs):
+        # Linear warmup: scale LR from 0 to target over warmup_epochs.
+        if config.warmup_epochs > 0 and epoch < config.warmup_epochs:
+            warmup_factor = (epoch + 1) / config.warmup_epochs
+            for pg in head_optimizer.param_groups:
+                pg["lr"] = config.lr_head * warmup_factor
+            for pg in loss_optimizer.param_groups:
+                pg["lr"] = config.lr_loss * warmup_factor
+
         # Train.
         head.train()
         loss_func.train()
@@ -505,6 +525,11 @@ def train_reid_head(
 
             epoch_loss += loss.item()
             n_batches += 1
+
+        # Step schedulers after warmup completes.
+        if epoch >= config.warmup_epochs:
+            head_scheduler.step()
+            loss_scheduler.step()
 
         avg_loss = epoch_loss / max(n_batches, 1)
 
@@ -537,7 +562,7 @@ def train_reid_head(
         else:
             epochs_without_improvement += 1
 
-        if epochs_without_improvement >= config.patience:
+        if config.patience > 0 and epochs_without_improvement >= config.patience:
             logger.info(
                 "Early stopping at epoch %d (no improvement for %d epochs)",
                 epoch + 1,

@@ -369,4 +369,4 @@ Plans:
 | 104. Backbone Fine-Tuning | v3.11 | 2/2 | Complete | 2026-03-25 |
 | 105. Swap Detection and Repair | 2/2 | Complete    | 2026-03-25 | - |
 | 106. CLI Integration | 2/2 | Complete    | 2026-03-25 | - |
-| 107. Unfrozen Backbone Fine-Tuning | 2/2 | Complete   | 2026-03-26 | - |
+| 107. Unfrozen Backbone Fine-Tuning | 2/2 | Complete    | 2026-03-26 | - |

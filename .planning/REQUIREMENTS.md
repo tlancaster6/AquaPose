@@ -21,9 +21,9 @@ Requirements for appearance-based re-identification milestone. Each maps to road
 
 ### Unfrozen Backbone Fine-Tuning
 
-- [ ] **UNFREEZE-01**: Configurable partial backbone unfreezing (last N Swin transformer blocks) with differential learning rates (backbone LR 10-100x lower than head LR)
-- [ ] **UNFREEZE-02**: End-to-end training path loads raw crop images through backbone+head each epoch (no stale cached features) and saves combined checkpoint with backbone_state_dict + head_state_dict
-- [ ] **UNFREEZE-03**: CLI `reid fine-tune --unfreeze-blocks N` transparently selects end-to-end training and re-embeds using the fine-tuned backbone, producing embeddings_finetuned.npz compatible with SwapDetector
+- [x] **UNFREEZE-01**: Configurable partial backbone unfreezing (last N Swin transformer blocks) with differential learning rates (backbone LR 10-100x lower than head LR)
+- [x] **UNFREEZE-02**: End-to-end training path loads raw crop images through backbone+head each epoch (no stale cached features) and saves combined checkpoint with backbone_state_dict + head_state_dict
+- [x] **UNFREEZE-03**: CLI `reid fine-tune --unfreeze-blocks N` transparently selects end-to-end training and re-embeds using the fine-tuned backbone, producing embeddings_finetuned.npz compatible with SwapDetector
 
 ### Swap Repair
 
@@ -75,9 +75,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TRAIN-01 | Phase 103 | Pending |
 | TRAIN-02 | Phase 103 | Pending |
 | TRAIN-03 | Phase 104 | Pending |
-| UNFREEZE-01 | Phase 107 | Pending |
-| UNFREEZE-02 | Phase 107 | Pending |
-| UNFREEZE-03 | Phase 107 | Pending |
+| UNFREEZE-01 | Phase 107 | Complete |
+| UNFREEZE-02 | Phase 107 | Complete |
+| UNFREEZE-03 | Phase 107 | Complete |
 | SWAP-01 | Phase 105 | Complete |
 | SWAP-02 | Phase 105 | Complete |
 | CLI-01 | Phase 106 | Complete |

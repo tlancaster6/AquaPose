@@ -300,12 +300,25 @@ def fine_tune_cmd(
         lr_backbone_factor=lr_backbone_factor,
     )
 
+    def _epoch_progress(epoch: int, total: int, loss: float, auc: float) -> None:
+        marker = " *" if auc == result_holder.get("best_auc", -1) else ""
+        click.echo(
+            f"  Epoch {epoch:3d}/{total}  loss={loss:.4f}  val_auc={auc:.4f}{marker}"
+        )
+
+    result_holder: dict[str, float] = {}
+
+    def _epoch_cb(epoch: int, total: int, loss: float, auc: float) -> None:
+        if auc > result_holder.get("best_auc", -1):
+            result_holder["best_auc"] = auc
+        _epoch_progress(epoch, total, loss, auc)
+
     if unfreeze_blocks > 0:
         # End-to-end training path: skip feature caching, train backbone + head.
         click.echo(
             f"[Step 1] End-to-end training (unfreezing last {unfreeze_blocks} blocks)..."
         )
-        result = train_reid_end_to_end(config)
+        result = train_reid_end_to_end(config, epoch_callback=_epoch_cb)
     else:
         # Frozen path: cached features + projection head only.
         click.echo("[Step 1] Building backbone feature cache...")
@@ -318,10 +331,16 @@ def fine_tune_cmd(
         )
 
         click.echo("[Step 2] Training projection head...")
-        result = train_reid_head(cache, config)
+        result = train_reid_head(cache, config, epoch_callback=_epoch_cb)
 
     click.echo(f"  Best AUC:   {result['best_auc']:.4f}")
     click.echo(f"  Best epoch: {result['best_epoch']}")
+
+    # Print per-pair AUC breakdown if available.
+    if result.get("per_pair_auc"):
+        click.echo("  Per-pair AUC (females):")
+        for (fish_a, fish_b), auc in sorted(result["per_pair_auc"].items()):
+            click.echo(f"    Fish {fish_a} vs {fish_b}: {auc:.4f}")
 
     # AUC gate decision.
     if result["best_auc"] < auc_gate:
@@ -567,4 +586,25 @@ def repair_cmd(
         f"Detected {len(events)} events, confirmed {len(confirmed)} swaps, "
         f"repaired {len(confirmed)} fish ID relabelings."
     )
+
+    # Margin distribution summary.
+    margins = [e.cosine_margin for e in events if e.cosine_margin is not None]
+    if margins:
+        import numpy as np
+
+        arr = np.array(margins)
+        click.echo(
+            f"  Margin stats: min={arr.min():.3f} max={arr.max():.3f} "
+            f"mean={arr.mean():.3f} median={np.median(arr):.3f}"
+        )
+        click.echo(
+            f"  Margins > 0: {(arr > 0).sum()}/{len(arr)}, "
+            f"> threshold ({cosine_margin}): {(arr > cosine_margin).sum()}/{len(arr)}"
+        )
+    skipped = [e for e in events if e.action == "skipped_insufficient_data"]
+    if skipped:
+        click.echo(
+            f"  Skipped {len(skipped)} events due to insufficient embedding data"
+        )
+
     click.echo(f"Corrected midlines written to {repaired_path}")

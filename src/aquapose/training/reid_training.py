@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -393,6 +394,7 @@ def compute_per_pair_auc(
 def train_reid_head(
     cache_dict_or_path: dict[str, Any] | Path | str,
     config: ReidTrainingConfig,
+    epoch_callback: Callable[[int, int, float, float], None] | None = None,
 ) -> dict[str, Any]:
     """Train projection head with SubCenterArcFace + BatchHardMiner.
 
@@ -542,6 +544,8 @@ def train_reid_head(
             avg_loss,
             val_auc,
         )
+        if epoch_callback is not None:
+            epoch_callback(epoch + 1, config.epochs, avg_loss, val_auc)
 
         # Track best.
         if val_auc > best_auc:
@@ -716,7 +720,10 @@ def _collect_crop_paths(
     )
 
 
-def train_reid_end_to_end(config: ReidTrainingConfig) -> dict[str, Any]:
+def train_reid_end_to_end(
+    config: ReidTrainingConfig,
+    epoch_callback: Callable[[int, int, float, float], None] | None = None,
+) -> dict[str, Any]:
     """Train backbone + projection head end-to-end with partial unfreezing.
 
     Loads crop images from disk each epoch (no feature caching), runs them
@@ -894,6 +901,8 @@ def train_reid_end_to_end(config: ReidTrainingConfig) -> dict[str, Any]:
             avg_loss,
             val_auc,
         )
+        if epoch_callback is not None:
+            epoch_callback(epoch + 1, config.epochs, avg_loss, val_auc)
 
         # Track best.
         if val_auc > best_auc:

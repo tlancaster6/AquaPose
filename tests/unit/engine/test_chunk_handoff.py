@@ -61,11 +61,11 @@ def test_pipeline_config_chunk_size_field():
     assert cfg.chunk_size == 1000
 
 
-def test_pipeline_config_chunk_size_default_none():
+def test_pipeline_config_chunk_size_default_300():
     from aquapose.engine.config import PipelineConfig
 
     cfg = PipelineConfig(run_id="test", output_dir="/tmp", n_animals=1)
-    assert cfg.chunk_size is None
+    assert cfg.chunk_size == 300
 
 
 # ---------------------------------------------------------------------------

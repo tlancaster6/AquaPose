@@ -458,9 +458,10 @@ class PipelineConfig:
         stop_after: If set, truncate the stage list after the named stage.
             Valid values: ``"detection"``, ``"pose"``, ``"tracking"``,
             ``"association"``, or ``None`` (run all stages).
-        chunk_size: Number of frames per processing chunk. None or 0 means
-            process the entire video as a single chunk. Callers should check
-            ``config.chunk_size or None`` to treat 0 as None.
+        chunk_size: Number of frames per processing chunk (default 300).
+            None or 0 means process the entire video as a single chunk.
+            Callers should check ``config.chunk_size or None`` to treat 0
+            as None.
     """
 
     run_id: str = dataclasses.field(default="")
@@ -484,7 +485,7 @@ class PipelineConfig:
     synthetic: SyntheticConfig = dataclasses.field(default_factory=SyntheticConfig)
     lut: LutConfig = dataclasses.field(default_factory=LutConfig)
     stop_after: str | None = None
-    chunk_size: int | None = None
+    chunk_size: int | None = 300
 
 
 # ---------------------------------------------------------------------------

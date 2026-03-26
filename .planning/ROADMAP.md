@@ -273,7 +273,7 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
 - [x] **Phase 104: Backbone Fine-Tuning** - Metric learning fine-tune of MegaDescriptor-T with discriminability gate (female-female AUC >= 0.75) (completed 2026-03-25)
 - [x] **Phase 105: Swap Detection and Repair** - Cosine-similarity swap detection at occlusion events and margin-gated repair writing `midlines_reid.h5` (completed 2026-03-25)
 - [x] **Phase 106: CLI Integration** - `aquapose reid` command group wiring all ReID subcommands into the existing CLI pattern (completed 2026-03-25)
-- [ ] **Phase 107: Unfrozen Backbone Fine-Tuning** - Partial backbone unfreezing with end-to-end training and fine-tuned re-embedding
+- [x] **Phase 107: Unfrozen Backbone Fine-Tuning** - Partial backbone unfreezing with end-to-end training and fine-tuned re-embedding (completed 2026-03-26)
 
 ## Phase Details
 
@@ -369,4 +369,4 @@ Plans:
 | 104. Backbone Fine-Tuning | v3.11 | 2/2 | Complete | 2026-03-25 |
 | 105. Swap Detection and Repair | 2/2 | Complete    | 2026-03-25 | - |
 | 106. CLI Integration | 2/2 | Complete    | 2026-03-25 | - |
-| 107. Unfrozen Backbone Fine-Tuning | 1/2 | In Progress|  | - |
+| 107. Unfrozen Backbone Fine-Tuning | 2/2 | Complete   | 2026-03-26 | - |

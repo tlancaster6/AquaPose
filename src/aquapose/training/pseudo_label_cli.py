@@ -767,6 +767,684 @@ def _yaml_dump(data: dict) -> str:
     return yaml.dump(data, default_flow_style=False, sort_keys=False)
 
 
+@pseudo_label_group.command("mine-hard")
+@click.argument("run", default=None, required=False)
+@click.option(
+    "--categories",
+    type=click.Choice(
+        ["tracking_gaps", "low_cameras", "high_curvature", "high_residual"],
+        case_sensitive=False,
+    ),
+    multiple=True,
+    default=None,
+    help="Categories to mine. Default: all four.",
+)
+@click.option(
+    "--max-cameras",
+    type=int,
+    default=2,
+    show_default=True,
+    help="Threshold for low_cameras: fish seen by <= this many cameras.",
+)
+@click.option(
+    "--min-gap-length",
+    type=int,
+    default=1,
+    show_default=True,
+    help="Minimum consecutive coasted frames for tracking_gaps category.",
+)
+@click.option(
+    "--curvature-percentile",
+    type=float,
+    default=95.0,
+    show_default=True,
+    help="Percentile threshold for high_curvature category.",
+)
+@click.option(
+    "--residual-percentile",
+    type=float,
+    default=95.0,
+    show_default=True,
+    help="Percentile threshold for high_residual category.",
+)
+@click.option(
+    "--curvature-threshold",
+    type=float,
+    default=None,
+    help="Absolute curvature threshold (overrides percentile).",
+)
+@click.option(
+    "--residual-threshold",
+    type=float,
+    default=None,
+    help="Absolute residual threshold in pixels (overrides percentile).",
+)
+@click.option(
+    "--temporal-step",
+    type=int,
+    default=1,
+    show_default=True,
+    help="Process every Nth frame.",
+)
+@click.option(
+    "--max-per-category",
+    type=int,
+    default=None,
+    help="Maximum examples per category.",
+)
+@click.option(
+    "--lateral-ratio",
+    type=float,
+    default=0.18,
+    show_default=True,
+    help="OBB lateral padding as fraction of fish arc length.",
+)
+@click.option(
+    "--max-camera-residual",
+    type=float,
+    default=15.0,
+    show_default=True,
+    help="Per-camera residual threshold in pixels for consensus labels.",
+)
+@click.option(
+    "--crop-width",
+    type=int,
+    default=128,
+    show_default=True,
+    help="Pose crop width in pixels.",
+)
+@click.option(
+    "--crop-height",
+    type=int,
+    default=64,
+    show_default=True,
+    help="Pose crop height in pixels.",
+)
+@click.pass_context
+def mine_hard(
+    ctx: click.Context,
+    run: str | None,
+    categories: tuple[str, ...] | None,
+    max_cameras: int,
+    min_gap_length: int,
+    curvature_percentile: float,
+    residual_percentile: float,
+    curvature_threshold: float | None,
+    residual_threshold: float | None,
+    temporal_step: int,
+    max_per_category: int | None,
+    lateral_ratio: float,
+    max_camera_residual: float,
+    crop_width: int,
+    crop_height: int,
+) -> None:
+    """Mine hard examples from pipeline results for manual annotation.
+
+    Identifies four categories of hard examples from a pipeline run's
+    diagnostic caches and writes them as YOLO-format datasets for manual
+    annotation:
+
+    \b
+    - tracking_gaps: per-camera frames where detector missed a tracked fish (OBB)
+    - low_cameras: fish seen by few cameras, filtered by geometric visibility (OBB)
+    - high_curvature: extreme body bends (pose crops)
+    - high_residual: high reprojection error (pose crops)
+    """
+    import importlib
+
+    from aquapose.cli_utils import get_project_dir, resolve_run
+
+    _engine_config = importlib.import_module("aquapose.engine.config")
+    load_config = _engine_config.load_config
+
+    from aquapose.calibration.loader import (
+        compute_undistortion_maps,
+        load_calibration_data,
+    )
+    from aquapose.calibration.projection import RefractiveProjectionModel
+    from aquapose.core.types.frame_source import VideoFrameSource
+    from aquapose.evaluation.runner import load_run_context
+    from aquapose.training.hard_mining import (
+        compute_thresholds,
+        mine_high_curvature,
+        mine_high_residual,
+        mine_low_cameras,
+        mine_tracking_gaps,
+    )
+
+    all_categories = {"tracking_gaps", "low_cameras", "high_curvature", "high_residual"}
+    active = set(categories) if categories else all_categories
+
+    # 1. Resolve run and load config
+    run_dir = resolve_run(run, get_project_dir(ctx))
+    config_path = run_dir / "config.yaml"
+    if not config_path.exists():
+        raise click.ClickException(f"config.yaml not found in {run_dir}.")
+    pipeline_config = load_config(yaml_path=str(config_path))
+
+    keypoint_t_values = pipeline_config.pose.keypoint_t_values
+    if keypoint_t_values is None:
+        raise click.ClickException(
+            "keypoint_t_values is None. Run 'aquapose prep calibrate-keypoints' first."
+        )
+
+    # 2. Load diagnostic caches
+    context, _metadata = load_run_context(run_dir)
+    if context is None or context.midlines_3d is None:
+        raise click.ClickException(
+            f"No diagnostic caches with 3D midlines found in {run_dir}/diagnostics/."
+        )
+
+    midlines_3d = context.midlines_3d
+
+    # Fail fast: tracking_gaps needs tracks_2d
+    if "tracking_gaps" in active and context.tracks_2d is None:
+        raise click.ClickException(
+            "Diagnostic caches contain no 2D tracks. "
+            "tracking_gaps requires tracking data."
+        )
+
+    # 3. Load calibration and build projection models
+    calibration = load_calibration_data(pipeline_config.calibration_path)
+    proj_models: dict[str, RefractiveProjectionModel] = {}
+    for cam_id in calibration.ring_cameras:
+        cam = calibration.cameras[cam_id]
+        undist_maps = compute_undistortion_maps(cam)
+        proj_models[cam_id] = RefractiveProjectionModel(
+            K=undist_maps.K_new,
+            R=cam.R,
+            t=cam.t,
+            water_z=calibration.water_z,
+            normal=calibration.interface_normal,
+            n_air=calibration.n_air,
+            n_water=calibration.n_water,
+        )
+
+    # 4. Load InverseLUT if low_cameras is active
+    inverse_lut = None
+    if "low_cameras" in active:
+        _luts_mod = importlib.import_module("aquapose.calibration.luts")
+        load_inverse_luts = _luts_mod.load_inverse_luts
+        lut_raw = pipeline_config.lut.__dict__
+        lut_config = _LutConfigFromDict(lut_raw)
+        inverse_lut = load_inverse_luts(pipeline_config.calibration_path, lut_config)
+        if inverse_lut is None:
+            raise click.ClickException(
+                "Failed to load InverseLUT. Run 'aquapose prep generate-luts' first."
+            )
+
+    # 5. Compute thresholds
+    need_thresholds = active & {"high_curvature", "high_residual"}
+    if need_thresholds:
+        curv_thresh, resid_thresh = compute_thresholds(
+            midlines_3d,
+            curvature_percentile=curvature_percentile,
+            residual_percentile=residual_percentile,
+        )
+        if curvature_threshold is not None:
+            curv_thresh = curvature_threshold
+        if residual_threshold is not None:
+            resid_thresh = residual_threshold
+        click.echo(
+            f"Thresholds: curvature={curv_thresh:.4f}, residual={resid_thresh:.2f}px"
+        )
+    else:
+        curv_thresh = 0.0
+        resid_thresh = 0.0
+
+    # 6. Run mining
+    tracking_gap_examples = (
+        mine_tracking_gaps(
+            context.tracks_2d,
+            temporal_step=temporal_step,
+            max_examples=max_per_category,
+            min_gap_length=min_gap_length,
+        )
+        if "tracking_gaps" in active and context.tracks_2d is not None
+        else []
+    )
+    low_cameras_examples = (
+        mine_low_cameras(
+            midlines_3d,
+            inverse_lut=inverse_lut,
+            max_cameras=max_cameras,
+            temporal_step=temporal_step,
+            max_examples=max_per_category,
+        )
+        if "low_cameras" in active and inverse_lut is not None
+        else []
+    )
+    high_curvature_examples = (
+        mine_high_curvature(
+            midlines_3d,
+            curvature_threshold=curv_thresh,
+            temporal_step=temporal_step,
+            max_examples=max_per_category,
+        )
+        if "high_curvature" in active
+        else []
+    )
+    high_residual_examples = (
+        mine_high_residual(
+            midlines_3d,
+            residual_threshold=resid_thresh,
+            temporal_step=temporal_step,
+            max_examples=max_per_category,
+        )
+        if "high_residual" in active
+        else []
+    )
+
+    click.echo(
+        f"\nMined: {len(tracking_gap_examples)} tracking_gaps, "
+        f"{len(low_cameras_examples)} low_cameras, "
+        f"{len(high_curvature_examples)} high_curvature, "
+        f"{len(high_residual_examples)} high_residual"
+    )
+
+    total = (
+        len(tracking_gap_examples)
+        + len(low_cameras_examples)
+        + len(high_curvature_examples)
+        + len(high_residual_examples)
+    )
+    if total == 0:
+        click.echo("No hard examples found.")
+        return
+
+    # 7. Create output directories
+    hard_dir = run_dir / "pseudo_labels" / "hard"
+    cat_dirs: dict[str, tuple[Path, Path]] = {}
+    for cat in active:
+        img_dir = hard_dir / cat / "images" / "train"
+        lbl_dir = hard_dir / cat / "labels" / "train"
+        img_dir.mkdir(parents=True, exist_ok=True)
+        lbl_dir.mkdir(parents=True, exist_ok=True)
+        cat_dirs[cat] = (img_dir, lbl_dir)
+
+    # 8. Build frame dispatch map
+    frame_dispatch: dict[int, dict[str, list]] = {}
+    for ex in tracking_gap_examples:
+        frame_dispatch.setdefault(ex.frame_idx, {}).setdefault(
+            "tracking_gaps", []
+        ).append(ex)
+    for ex in low_cameras_examples:
+        frame_dispatch.setdefault(ex.frame_idx, {}).setdefault(
+            "low_cameras", []
+        ).append(ex)
+    for ex in high_curvature_examples:
+        frame_dispatch.setdefault(ex.frame_idx, {}).setdefault(
+            "high_curvature", []
+        ).append(ex)
+    for ex in high_residual_examples:
+        frame_dispatch.setdefault(ex.frame_idx, {}).setdefault(
+            "high_residual", []
+        ).append(ex)
+
+    # 9. Iterate frames and write outputs
+    n_keypoints = len(keypoint_t_values)
+    min_visible = max(1, round(0.67 * n_keypoints))
+    all_camera_ids = sorted(proj_models.keys())
+    n_written: dict[str, int] = {cat: 0 for cat in active}
+
+    click.echo(f"Writing outputs for {len(frame_dispatch)} unique frames...")
+
+    with VideoFrameSource(
+        pipeline_config.video_dir,
+        pipeline_config.calibration_path,
+    ) as frame_source:
+        for frame_idx in sorted(frame_dispatch):
+            frames = frame_source.read_frame(frame_idx)
+            cats_for_frame = frame_dispatch[frame_idx]
+            fish_dict = midlines_3d[frame_idx] if frame_idx < len(midlines_3d) else {}
+
+            # --- tracking_gaps: specific camera only, partial OBB labels ---
+            if "tracking_gaps" in cats_for_frame:
+                img_dir, lbl_dir = cat_dirs["tracking_gaps"]
+                for ex in cats_for_frame["tracking_gaps"]:
+                    cam_id = ex.camera_id
+                    if cam_id not in frames or cam_id not in proj_models:
+                        continue
+                    cam_data = calibration.cameras[cam_id]
+                    img_w, img_h = cam_data.image_size
+
+                    # OBB labels for fish visible in this camera view
+                    obb_lines: list[str] = []
+                    for _fid, midline in (fish_dict or {}).items():
+                        result = _project_raw_points(
+                            midline=midline,
+                            projection_model=proj_models[cam_id],
+                            img_w=img_w,
+                            img_h=img_h,
+                            lateral_ratio=lateral_ratio,
+                            min_visible_keypoints=min_visible,
+                        )
+                        if result is not None:
+                            obb_lines.append(
+                                " ".join(str(v) for v in result["obb_line"])
+                            )
+
+                    stem = f"{frame_idx:06d}_{cam_id}_trk{ex.track_id}"
+                    cv2.imwrite(str(img_dir / f"{stem}.jpg"), frames[cam_id])
+                    (lbl_dir / f"{stem}.txt").write_text(
+                        "\n".join(obb_lines) + "\n" if obb_lines else ""
+                    )
+                    n_written["tracking_gaps"] += 1
+
+            # --- low_cameras: InverseLUT-filtered gap cameras only ---
+            if "low_cameras" in cats_for_frame:
+                img_dir, lbl_dir = cat_dirs["low_cameras"]
+                for ex in cats_for_frame["low_cameras"]:
+                    for cam_id in ex.visible_gap_cameras:
+                        if cam_id not in frames or cam_id not in proj_models:
+                            continue
+                        cam_data = calibration.cameras[cam_id]
+                        img_w, img_h = cam_data.image_size
+
+                        # OBB labels for fish visible in this view
+                        obb_lines = []
+                        for _fid, midline in (fish_dict or {}).items():
+                            result = _project_raw_points(
+                                midline=midline,
+                                projection_model=proj_models[cam_id],
+                                img_w=img_w,
+                                img_h=img_h,
+                                lateral_ratio=lateral_ratio,
+                                min_visible_keypoints=min_visible,
+                            )
+                            if result is not None:
+                                obb_lines.append(
+                                    " ".join(str(v) for v in result["obb_line"])
+                                )
+
+                        stem = f"{frame_idx:06d}_{cam_id}_fish{ex.fish_id:02d}"
+                        cv2.imwrite(str(img_dir / f"{stem}.jpg"), frames[cam_id])
+                        (lbl_dir / f"{stem}.txt").write_text(
+                            "\n".join(obb_lines) + "\n" if obb_lines else ""
+                        )
+                        n_written["low_cameras"] += 1
+
+            # --- high_curvature / high_residual: pose crops ---
+            for pose_cat in ("high_curvature", "high_residual"):
+                if pose_cat not in cats_for_frame:
+                    continue
+                img_dir, lbl_dir = cat_dirs[pose_cat]
+                target_fish_ids = {ex.fish_id for ex in cats_for_frame[pose_cat]}
+
+                for cam_id in all_camera_ids:
+                    if cam_id not in frames or cam_id not in proj_models:
+                        continue
+                    cam_data = calibration.cameras[cam_id]
+                    img_w, img_h = cam_data.image_size
+
+                    # Collect label data for all fish in this view
+                    fish_data_list: list[dict] = []
+                    for fid, midline in (fish_dict or {}).items():
+                        result = _project_raw_points(
+                            midline=midline,
+                            projection_model=proj_models[cam_id],
+                            img_w=img_w,
+                            img_h=img_h,
+                            lateral_ratio=lateral_ratio,
+                            min_visible_keypoints=min_visible,
+                        )
+                        if result is not None and "pose_line" in result:
+                            fish_data_list.append(
+                                {
+                                    "keypoints_2d": result["keypoints_2d"],
+                                    "visibility": result["visibility"],
+                                    "lateral_pad": result["lateral_pad"],
+                                    "fish_id": int(fid),
+                                }
+                            )
+
+                    # Only write crops for target fish
+                    target_data = [
+                        d for d in fish_data_list if d["fish_id"] in target_fish_ids
+                    ]
+                    if not target_data:
+                        continue
+
+                    _write_pose_crops(
+                        frame=frames[cam_id],
+                        fish_data_list=target_data,
+                        frame_idx=frame_idx,
+                        cam_id=cam_id,
+                        crop_w=crop_width,
+                        crop_h=crop_height,
+                        pose_images_dir=img_dir,
+                        pose_labels_dir=lbl_dir,
+                        min_visible=min_visible,
+                    )
+                    n_written[pose_cat] += len(target_data)
+
+    # 10. Write manifests and dataset.yaml
+    for cat in active:
+        cat_dir = hard_dir / cat
+        if cat in ("tracking_gaps", "low_cameras"):
+            _write_obb_dataset_yaml(cat_dir)
+        else:
+            _write_pose_dataset_yaml(cat_dir, n_keypoints)
+
+    _write_mine_hard_manifests(
+        hard_dir,
+        tracking_gap_examples,
+        low_cameras_examples,
+        high_curvature_examples,
+        high_residual_examples,
+        active,
+        temporal_step,
+        curv_thresh,
+        resid_thresh,
+        max_cameras,
+        min_gap_length,
+    )
+
+    # 11. Summary
+    click.echo("\nResults:")
+    for cat in sorted(active):
+        cat_dir = hard_dir / cat
+        click.echo(f"  {cat}: {n_written.get(cat, 0)} images -> {cat_dir}")
+
+
+def _project_raw_points(
+    midline: object,
+    projection_model: object,
+    img_w: int,
+    img_h: int,
+    lateral_ratio: float,
+    min_visible_keypoints: int = 2,
+    edge_factor: float = 2.0,
+) -> dict | None:
+    """Project raw 3D keypoints to 2D and generate OBB/pose label data.
+
+    Unlike :func:`generate_fish_labels`, this works with raw-keypoint mode
+    (no spline fitting required). Projects ``midline.points`` directly.
+
+    Returns:
+        Dict with ``obb_line``, ``keypoints_2d``, ``visibility``,
+        ``lateral_pad``, and optionally ``pose_line``; or None on failure.
+    """
+    import torch
+
+    from aquapose.training.geometry import (
+        compute_arc_length as _compute_arc_length,
+    )
+    from aquapose.training.geometry import (
+        extrapolate_edge_keypoints as _extrapolate_edge,
+    )
+    from aquapose.training.geometry import (
+        format_obb_annotation as _format_obb,
+    )
+    from aquapose.training.geometry import (
+        format_pose_annotation as _format_pose,
+    )
+    from aquapose.training.geometry import (
+        pca_obb as _pca_obb,
+    )
+
+    pts = midline.points  # type: ignore[union-attr]
+    if pts is None:
+        return None
+
+    # Filter out NaN points
+    valid_mask = ~np.isnan(pts[:, 0])
+    if valid_mask.sum() < 2:
+        return None
+
+    # Project all points
+    pts_tensor = torch.from_numpy(pts).float()
+    pixels_t, proj_valid = projection_model.project(pts_tensor)  # type: ignore[union-attr]
+    pixels = pixels_t.cpu().detach().numpy().astype(np.float64)
+    visibility = proj_valid.cpu().detach().numpy().astype(bool) & valid_mask
+
+    # Mark out-of-bounds as invisible
+    oob = (
+        (pixels[:, 0] < 0)
+        | (pixels[:, 0] >= img_w)
+        | (pixels[:, 1] < 0)
+        | (pixels[:, 1] >= img_h)
+    )
+    visibility = visibility & ~oob
+
+    n_visible = int(visibility.sum())
+    if n_visible < 2:
+        return None
+
+    arc_length = _compute_arc_length(pixels, visibility)
+    lateral_pad = max(arc_length * lateral_ratio, 5.0)
+
+    kp_ext, vis_ext = _extrapolate_edge(
+        pixels, visibility, img_w, img_h, lateral_pad, edge_factor
+    )
+
+    obb_corners = _pca_obb(kp_ext, vis_ext, lateral_pad)
+    obb_line = _format_obb(obb_corners, img_w, img_h)
+
+    result: dict = {
+        "obb_line": obb_line,
+        "keypoints_2d": pixels,
+        "visibility": visibility,
+        "lateral_pad": lateral_pad,
+    }
+
+    if n_visible >= min_visible_keypoints:
+        x_min, y_min = obb_corners.min(axis=0)
+        x_max, y_max = obb_corners.max(axis=0)
+        cx = (x_min + x_max) / 2.0 / img_w
+        cy = (y_min + y_max) / 2.0 / img_h
+        bw = (x_max - x_min) / img_w
+        bh = (y_max - y_min) / img_h
+        result["pose_line"] = _format_pose(
+            cx, cy, bw, bh, pixels, visibility, img_w, img_h
+        )
+
+    return result
+
+
+def _write_mine_hard_manifests(
+    hard_dir: Path,
+    tracking_gap_examples: list,
+    low_cameras_examples: list,
+    high_curvature_examples: list,
+    high_residual_examples: list,
+    active: set[str],
+    temporal_step: int,
+    curv_thresh: float,
+    resid_thresh: float,
+    max_cameras: int,
+    min_gap_length: int,
+) -> None:
+    """Write manifest.json for each active hard-mining category."""
+    if "tracking_gaps" in active:
+        manifest = {
+            "category": "tracking_gaps",
+            "n_examples": len(tracking_gap_examples),
+            "selection_criteria": {
+                "min_gap_length": min_gap_length,
+                "temporal_step": temporal_step,
+            },
+            "examples": [
+                {
+                    "frame_idx": ex.frame_idx,
+                    "camera_id": ex.camera_id,
+                    "track_id": ex.track_id,
+                    "gap_length": ex.gap_length,
+                }
+                for ex in tracking_gap_examples
+            ],
+        }
+        (hard_dir / "tracking_gaps" / "manifest.json").write_text(
+            json.dumps(manifest, indent=2), encoding="utf-8"
+        )
+
+    if "low_cameras" in active:
+        manifest = {
+            "category": "low_cameras",
+            "n_examples": len(low_cameras_examples),
+            "selection_criteria": {
+                "max_cameras": max_cameras,
+                "temporal_step": temporal_step,
+            },
+            "examples": [
+                {
+                    "frame_idx": ex.frame_idx,
+                    "fish_id": ex.fish_id,
+                    "n_cameras": ex.n_cameras,
+                    "contributing_cameras": ex.contributing_cameras,
+                    "visible_gap_cameras": ex.visible_gap_cameras,
+                }
+                for ex in low_cameras_examples
+            ],
+        }
+        (hard_dir / "low_cameras" / "manifest.json").write_text(
+            json.dumps(manifest, indent=2), encoding="utf-8"
+        )
+
+    if "high_curvature" in active:
+        manifest = {
+            "category": "high_curvature",
+            "n_examples": len(high_curvature_examples),
+            "selection_criteria": {
+                "curvature_threshold": curv_thresh,
+                "temporal_step": temporal_step,
+            },
+            "examples": [
+                {
+                    "frame_idx": ex.frame_idx,
+                    "fish_id": ex.fish_id,
+                    "curvature": round(ex.curvature, 6),
+                }
+                for ex in high_curvature_examples
+            ],
+        }
+        (hard_dir / "high_curvature" / "manifest.json").write_text(
+            json.dumps(manifest, indent=2), encoding="utf-8"
+        )
+
+    if "high_residual" in active:
+        manifest = {
+            "category": "high_residual",
+            "n_examples": len(high_residual_examples),
+            "selection_criteria": {
+                "residual_threshold": resid_thresh,
+                "temporal_step": temporal_step,
+            },
+            "examples": [
+                {
+                    "frame_idx": ex.frame_idx,
+                    "fish_id": ex.fish_id,
+                    "mean_residual": round(ex.mean_residual, 4),
+                    "n_cameras": ex.n_cameras,
+                }
+                for ex in high_residual_examples
+            ],
+        }
+        (hard_dir / "high_residual" / "manifest.json").write_text(
+            json.dumps(manifest, indent=2), encoding="utf-8"
+        )
+
+
 @pseudo_label_group.command("select")
 @click.argument("run", default=None, required=False)
 @click.option(

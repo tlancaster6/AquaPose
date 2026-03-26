@@ -47,6 +47,17 @@ from .geometry import (
     pca_obb,
     transform_keypoints,
 )
+from .hard_mining import (
+    HighCurvatureExample,
+    HighResidualExample,
+    LowCamerasExample,
+    TrackingGapExample,
+    compute_thresholds,
+    mine_high_curvature,
+    mine_high_residual,
+    mine_low_cameras,
+    mine_tracking_gaps,
+)
 from .labelstudio_export import export_labelstudio_json
 from .labelstudio_import import import_labelstudio_json
 from .prep import prep_group
@@ -89,11 +100,15 @@ __all__ = [
     "CachedFeatureDataset",
     "CropDataset",
     "EarlyStopping",
+    "HighCurvatureExample",
+    "HighResidualExample",
     "ImageCropDataset",
+    "LowCamerasExample",
     "MetricsLogger",
     "ProjectionHead",
     "ReidTrainingConfig",
     "SampleStore",
+    "TrackingGapExample",
     "affine_warp_crop",
     "apply_augmentation",
     "build_feature_cache",
@@ -104,6 +119,7 @@ __all__ = [
     "compute_female_auc",
     "compute_median_arc_length",
     "compute_per_pair_auc",
+    "compute_thresholds",
     "create_run_dir",
     "data_group",
     "deform_keypoints_c_curve",
@@ -126,6 +142,10 @@ __all__ = [
     "load_coco",
     "load_run_summaries",
     "make_loader",
+    "mine_high_curvature",
+    "mine_high_residual",
+    "mine_low_cameras",
+    "mine_tracking_gaps",
     "parse_best_metrics",
     "parse_frame_index",
     "parse_keypoints",

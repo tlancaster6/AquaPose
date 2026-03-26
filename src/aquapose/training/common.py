@@ -20,11 +20,11 @@ class _LutConfigFromDict:
     """
 
     def __init__(self, d: dict) -> None:
-        self.tank_diameter: float = float(d.get("tank_diameter", 1.0))
-        self.tank_height: float = float(d.get("tank_height", 0.5))
-        self.voxel_resolution_m: float = float(d.get("voxel_resolution_m", 0.01))
+        self.tank_diameter: float = float(d.get("tank_diameter", 2.0))
+        self.tank_height: float = float(d.get("tank_height", 1.0))
+        self.voxel_resolution_m: float = float(d.get("voxel_resolution_m", 0.02))
         self.margin_fraction: float = float(d.get("margin_fraction", 0.1))
-        self.forward_grid_step: int = int(d.get("forward_grid_step", 4))
+        self.forward_grid_step: int = int(d.get("forward_grid_step", 1))
 
 
 class EarlyStopping:

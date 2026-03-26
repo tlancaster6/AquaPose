@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import click
 
 from aquapose.cli_utils import get_project_dir, resolve_run
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import numpy as np
+
+    from aquapose.training.reid_training import ReidTrainingConfig
 
 
 @click.group("reid")
@@ -216,6 +225,20 @@ def mine_crops_cmd(
     default=None,
     help="Torch device (e.g. cuda, cpu). Auto-detect if omitted.",
 )
+@click.option(
+    "--unfreeze-blocks",
+    type=int,
+    default=0,
+    show_default=True,
+    help="Number of Swin blocks to unfreeze (0 = frozen, use cached features).",
+)
+@click.option(
+    "--lr-backbone-factor",
+    type=float,
+    default=0.1,
+    show_default=True,
+    help="Backbone LR = head LR * this factor.",
+)
 @click.pass_context
 def fine_tune_cmd(
     ctx: click.Context,
@@ -224,12 +247,17 @@ def fine_tune_cmd(
     lr: float,
     auc_gate: float,
     device: str | None,
+    unfreeze_blocks: int,
+    lr_backbone_factor: float,
 ) -> None:
     """Fine-tune a ReID projection head and conditionally re-embed.
 
     Orchestrates the full workflow: build backbone feature cache, train
     projection head, evaluate AUC gate, and re-embed detections if gate passes.
     Prerequisites: run `reid mine-crops` and `reid embed` first.
+
+    With --unfreeze-blocks > 0, trains the backbone end-to-end (no cached
+    features) and re-embeds using the fine-tuned backbone + head.
     """
     import sys
 
@@ -240,6 +268,7 @@ def fine_tune_cmd(
         ProjectionHead,
         ReidTrainingConfig,
         build_feature_cache,
+        train_reid_end_to_end,
         train_reid_head,
     )
 
@@ -267,34 +296,62 @@ def fine_tune_cmd(
         epochs=epochs,
         lr_head=lr,
         device=resolved_device,
+        unfreeze_blocks=unfreeze_blocks,
+        lr_backbone_factor=lr_backbone_factor,
     )
 
-    # Step 1: Build backbone feature cache
-    click.echo("[Step 1] Building backbone feature cache...")
-    cache = build_feature_cache(reid_crops_dir, config)
-    n_crops = len(cache["labels"])
-    n_groups = len(set(cache["group_ids"].tolist()))
-    unique_fish = sorted({int(x) for x in cache["labels"]})
-    click.echo(
-        f"  Cache: {n_crops} crops, {n_groups} groups, {len(unique_fish)} fish IDs"
-    )
+    if unfreeze_blocks > 0:
+        # End-to-end training path: skip feature caching, train backbone + head.
+        click.echo(
+            f"[Step 1] End-to-end training (unfreezing last {unfreeze_blocks} blocks)..."
+        )
+        result = train_reid_end_to_end(config)
+    else:
+        # Frozen path: cached features + projection head only.
+        click.echo("[Step 1] Building backbone feature cache...")
+        cache = build_feature_cache(reid_crops_dir, config)
+        n_crops = len(cache["labels"])
+        n_groups = len(set(cache["group_ids"].tolist()))
+        unique_fish = sorted({int(x) for x in cache["labels"]})
+        click.echo(
+            f"  Cache: {n_crops} crops, {n_groups} groups, {len(unique_fish)} fish IDs"
+        )
 
-    # Step 2: Train projection head
-    click.echo("[Step 2] Training projection head...")
-    result = train_reid_head(cache, config)
+        click.echo("[Step 2] Training projection head...")
+        result = train_reid_head(cache, config)
+
     click.echo(f"  Best AUC:   {result['best_auc']:.4f}")
     click.echo(f"  Best epoch: {result['best_epoch']}")
 
-    # Step 3: AUC gate decision
-    if result["best_auc"] >= auc_gate:
-        click.echo(f"GATE PASSED (AUC {result['best_auc']:.4f} >= {auc_gate})")
+    # AUC gate decision.
+    if result["best_auc"] < auc_gate:
+        click.echo(
+            f"GATE FAILED (AUC {result['best_auc']:.4f} < {auc_gate}). "
+            "Consider more training data or adjusted hyperparameters."
+        )
+        sys.exit(1)
 
-        # Re-embed all detections using the trained projection head.
-        click.echo("[Step 4] Re-embedding detections with fine-tuned head...")
-        data = np.load(str(embeddings_path), allow_pickle=True)
+    click.echo(f"GATE PASSED (AUC {result['best_auc']:.4f} >= {auc_gate})")
+
+    # Re-embed all detections.
+    model_path = output_dir / "best_reid_model.pt"
+    data = np.load(str(embeddings_path), allow_pickle=True)
+
+    if unfreeze_blocks > 0:
+        # Fine-tuned backbone: re-embed by running crops through backbone + head.
+        click.echo(
+            "[Step 3] Re-embedding detections with fine-tuned backbone + head..."
+        )
+        ft_embeddings = _reembed_finetuned(
+            run_dir=run_dir,
+            checkpoint_path=model_path,
+            config=config,
+        )
+    else:
+        # Frozen path: apply projection head to zero-shot embeddings.
+        click.echo("[Step 3] Re-embedding detections with fine-tuned head...")
         zs_embeddings = data["embeddings"]
 
-        model_path = output_dir / "best_reid_model.pt"
         head = ProjectionHead(
             in_dim=config.backbone_dim,
             hidden_dim=config.hidden_dim,
@@ -309,22 +366,148 @@ def fine_tune_cmd(
             zs_tensor = torch.from_numpy(zs_embeddings).float()
             ft_embeddings = head(zs_tensor).cpu().numpy()
 
-        finetuned_path = run_dir / "reid" / "embeddings_finetuned.npz"
-        np.savez(
-            finetuned_path,
-            embeddings=ft_embeddings,
-            frame_index=data["frame_index"],
-            fish_id=data["fish_id"],
-            camera_id=data["camera_id"],
-            detection_confidence=data["detection_confidence"],
-        )
-        click.echo(f"Fine-tuned embeddings saved to {finetuned_path}")
-    else:
-        click.echo(
-            f"GATE FAILED (AUC {result['best_auc']:.4f} < {auc_gate}). "
-            "Consider more training data or adjusted hyperparameters."
-        )
-        sys.exit(1)
+    finetuned_path = run_dir / "reid" / "embeddings_finetuned.npz"
+    np.savez(
+        finetuned_path,
+        embeddings=ft_embeddings,
+        frame_index=data["frame_index"],
+        fish_id=data["fish_id"],
+        camera_id=data["camera_id"],
+        detection_confidence=data["detection_confidence"],
+    )
+    click.echo(f"Fine-tuned embeddings saved to {finetuned_path}")
+
+
+def _reembed_finetuned(
+    run_dir: Path,
+    checkpoint_path: Path,
+    config: ReidTrainingConfig,
+) -> np.ndarray:
+    """Re-embed all detections using a fine-tuned backbone + projection head.
+
+    Runs ``EmbedRunner`` with a monkey-patched ``FishEmbedder`` that wraps
+    the fine-tuned backbone and projection head.  The runner handles all crop
+    extraction from video; the patched embedder replaces only the forward pass.
+
+    The original ``embeddings.npz`` is backed up before re-embedding and
+    restored afterward so that only ``embeddings_finetuned.npz`` (written
+    by the caller) reflects the fine-tuned model.
+
+    Args:
+        run_dir: Path to the completed pipeline run directory.
+        checkpoint_path: Path to the combined checkpoint
+            (backbone_state_dict + head_state_dict + config).
+        config: Training config (for model_name, crop_size, device, dims).
+
+    Returns:
+        Fine-tuned embeddings array of shape ``(N, embedding_dim)``.
+    """
+    import shutil
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    import numpy as np
+    import timm
+    import torch
+
+    import aquapose.core.reid.runner as runner_module
+    from aquapose.core.reid.runner import EmbedRunner
+    from aquapose.training.reid_training import ProjectionHead
+
+    device = torch.device(config.device)
+
+    # Load checkpoint.
+    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+
+    # Build fine-tuned backbone + head.
+    backbone = timm.create_model(config.model_name, num_classes=0, pretrained=False)
+    backbone.load_state_dict(ckpt["backbone_state_dict"])
+    backbone.to(device)
+    backbone.eval()
+
+    head_cfg = ckpt.get("config", {})
+    head = ProjectionHead(
+        in_dim=head_cfg.get("backbone_dim", config.backbone_dim),
+        hidden_dim=head_cfg.get("hidden_dim", config.hidden_dim),
+        out_dim=head_cfg.get("embedding_dim", config.embedding_dim),
+    )
+    head.load_state_dict(ckpt["head_state_dict"])
+    head.to(device)
+    head.eval()
+
+    # FishEmbedder-compatible wrapper using fine-tuned backbone + head.
+    class _FineTunedEmbedder:
+        """Drop-in for FishEmbedder using fine-tuned backbone + head."""
+
+        def __init__(self, _config: object) -> None:
+            self._crop_size = config.crop_size
+            self._batch_size = config.batch_size
+            self._embedding_dim = config.embedding_dim
+
+        def embed_batch(self, crops: list[np.ndarray]) -> np.ndarray:
+            """Embed BGR crops through fine-tuned backbone + head."""
+            import cv2
+
+            if len(crops) == 0:
+                return np.empty((0, config.embedding_dim), dtype=np.float32)
+
+            all_feats = []
+            with torch.no_grad():
+                for i in range(0, len(crops), self._batch_size):
+                    sub = crops[i : i + self._batch_size]
+                    tensors = []
+                    for crop in sub:
+                        rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+                        resized = cv2.resize(
+                            rgb,
+                            (self._crop_size, self._crop_size),
+                            interpolation=cv2.INTER_LINEAR,
+                        )
+                        arr = resized.astype(np.float32) / 255.0
+                        arr = (arr - 0.5) / 0.5
+                        tensors.append(torch.from_numpy(arr.transpose(2, 0, 1)))
+                    batch_tensor = torch.stack(tensors).to(device)
+                    raw_feats = backbone(batch_tensor)
+                    emb = head(raw_feats)  # ProjectionHead L2-normalizes
+                    all_feats.append(emb.cpu().numpy())
+                    del batch_tensor, raw_feats, emb
+
+            return np.concatenate(all_feats, axis=0).astype(np.float32)
+
+    # Config namespace for EmbedRunner (matches ReidConfigLike protocol).
+    runner_config = SimpleNamespace(
+        model_name=config.model_name,
+        batch_size=config.batch_size,
+        crop_size=config.crop_size,
+        device=config.device,
+        embedding_dim=config.embedding_dim,
+    )
+
+    # Back up original embeddings.npz so EmbedRunner.run() doesn't destroy it.
+    embeddings_path = Path(run_dir) / "reid" / "embeddings.npz"
+    backup_path = embeddings_path.with_suffix(".npz.bak")
+    if embeddings_path.exists():
+        shutil.copy2(embeddings_path, backup_path)
+
+    runner = EmbedRunner(run_dir, runner_config, frame_stride=1)
+
+    # Monkey-patch FishEmbedder so EmbedRunner uses our fine-tuned model.
+    original_cls = runner_module.FishEmbedder  # type: ignore[attr-defined]
+    runner_module.FishEmbedder = _FineTunedEmbedder  # type: ignore[assignment,attr-defined]
+    try:
+        output_path = runner.run()
+    finally:
+        runner_module.FishEmbedder = original_cls  # type: ignore[assignment,attr-defined]
+
+    # Read fine-tuned embeddings from the file EmbedRunner wrote.
+    data = np.load(str(output_path), allow_pickle=True)
+    ft_embeddings: np.ndarray = data["embeddings"]
+
+    # Restore original embeddings.npz.
+    if backup_path.exists():
+        shutil.move(str(backup_path), str(embeddings_path))
+
+    return ft_embeddings
 
 
 @reid_group.command("repair")

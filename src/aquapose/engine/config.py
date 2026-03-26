@@ -58,7 +58,7 @@ class DetectionConfig:
     """
 
     detector_kind: str = "yolo"
-    conf_threshold: float = 0.2
+    conf_threshold: float = 0.05
     iou_threshold: float = 0.45
     weights_path: str | None = None
     crop_size: list[int] = field(default_factory=lambda: [128, 64])
@@ -183,11 +183,11 @@ class AssociationConfig:
     score_min: float = 0.3
     t_min: int = 3
     t_saturate: int = 100
-    early_k: int = 5
+    early_k: int = 10
     expected_fish_count: int = 9
     min_shared_voxels: int = 100
     leiden_resolution: float = 1.0
-    eviction_reproj_threshold: float = 0.025
+    eviction_reproj_threshold: float = 0.02
     min_cameras_validate: int = 2
     validation_enabled: bool = True
     min_segment_length: int = 10

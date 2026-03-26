@@ -252,6 +252,9 @@ class VideoFrameSource:
         return frames
 
 
+# TODO: detection and pose stages each iterate the chunk independently, causing
+# double decode+undistortion (~15s overhead per chunk). Consider fusing into a
+# single pass or adding NVDEC hardware decoding.
 class ChunkFrameSource:
     """Windowed view into a VideoFrameSource for chunk-mode processing.
 

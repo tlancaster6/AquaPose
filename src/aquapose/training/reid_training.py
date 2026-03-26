@@ -786,7 +786,13 @@ def train_reid_end_to_end(
         batch_size=batch_size,
     )
     train_loader = DataLoader(
-        train_ds, batch_size=batch_size, sampler=sampler, drop_last=True
+        train_ds,
+        batch_size=batch_size,
+        sampler=sampler,
+        drop_last=True,
+        num_workers=4,
+        pin_memory=True,
+        persistent_workers=True,
     )
 
     # Load backbone and unfreeze.
@@ -882,7 +888,13 @@ def train_reid_end_to_end(
         head.eval()
         val_embeddings_list: list[np.ndarray] = []
         with torch.no_grad():
-            val_loader = DataLoader(val_ds, batch_size=config.batch_size, shuffle=False)
+            val_loader = DataLoader(
+                val_ds,
+                batch_size=config.batch_size,
+                shuffle=False,
+                num_workers=4,
+                pin_memory=True,
+            )
             for val_imgs, _ in val_loader:
                 val_imgs = val_imgs.to(device)
                 val_feats = backbone(val_imgs)

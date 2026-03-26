@@ -57,6 +57,10 @@ class ReidTrainingConfig:
         model_name: Backbone model name for FishEmbedder.
         batch_size: Batch size for backbone embedding during cache build.
         crop_size: Crop size for backbone embedding during cache build.
+        unfreeze_blocks: Number of Swin blocks to unfreeze from the end.
+            0 = fully frozen (use cached features), >0 = end-to-end training.
+        lr_backbone_factor: Backbone LR multiplier (backbone LR = lr_head * this).
+        gradient_clip_val: Max gradient norm for clipping. None to disable.
     """
 
     reid_crops_dir: Path = field(default_factory=lambda: Path("."))
@@ -79,6 +83,9 @@ class ReidTrainingConfig:
     model_name: str = "hf-hub:BVRA/MegaDescriptor-T-224"
     batch_size: int = 32
     crop_size: int = 224
+    unfreeze_blocks: int = 0
+    lr_backbone_factor: float = 0.1
+    gradient_clip_val: float | None = 1.0
 
 
 class ProjectionHead(nn.Module):
@@ -575,6 +582,379 @@ def train_reid_head(
                 torch.from_numpy(cache["features"][val_idx]).float().to(device)
             )
             val_emb_best = head(val_features_t).cpu().numpy()
+        per_pair_auc = compute_per_pair_auc(val_emb_best, val_fish_ids)
+
+    return {
+        "best_auc": best_auc,
+        "best_epoch": best_epoch,
+        "epochs_run": epoch + 1 if config.epochs > 0 else 0,
+        "per_pair_auc": per_pair_auc,
+        "val_auc_history": val_auc_history,
+    }
+
+
+def unfreeze_last_n_blocks(backbone: nn.Module, n: int) -> None:
+    """Freeze all backbone params, then unfreeze last N Swin blocks + final norm.
+
+    Collects all ``SwinTransformerBlock`` instances across stages in order,
+    then enables gradients on the last ``n`` blocks and on ``backbone.norm``.
+
+    Args:
+        backbone: SwinTransformer from timm (MegaDescriptor-T).
+        n: Number of blocks to unfreeze from the end. 0 = fully frozen.
+    """
+    backbone.requires_grad_(False)
+    if n <= 0:
+        return
+    all_blocks: list[nn.Module] = []
+    for layer in backbone.layers:  # type: ignore[union-attr]
+        if hasattr(layer, "blocks"):
+            all_blocks.extend(layer.blocks)
+    for blk in all_blocks[-n:]:
+        blk.requires_grad_(True)
+    backbone.norm.requires_grad_(True)  # type: ignore[union-attr]
+
+
+class ImageCropDataset(Dataset):  # type: ignore[type-arg]
+    """Dataset loading crop images from disk for end-to-end training.
+
+    Applies the same preprocessing as ``FishEmbedder.embed_batch``:
+    BGR -> RGB, resize, float32/255, ``(arr - 0.5) / 0.5``, transpose to CHW.
+
+    Args:
+        crop_paths: List of paths to crop image files.
+        labels: Integer label array of shape ``(N,)``.
+        group_ids: Group ID array of shape ``(N,)``.
+        crop_size: Target spatial size for resizing.
+    """
+
+    def __init__(
+        self,
+        crop_paths: list[Path],
+        labels: np.ndarray,
+        group_ids: np.ndarray,
+        crop_size: int = 224,
+    ) -> None:
+        self._paths = crop_paths
+        self._labels = torch.from_numpy(labels).long()
+        self._group_ids = group_ids
+        self._crop_size = crop_size
+
+    def __len__(self) -> int:
+        return len(self._paths)
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return (image_tensor, label) with FishEmbedder-compatible normalization."""
+        img = cv2.imread(str(self._paths[idx]))
+        if img is None:
+            msg = f"Failed to read image: {self._paths[idx]}"
+            raise FileNotFoundError(msg)
+        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        resized = cv2.resize(
+            rgb, (self._crop_size, self._crop_size), interpolation=cv2.INTER_LINEAR
+        )
+        arr = resized.astype(np.float32) / 255.0
+        arr = (arr - 0.5) / 0.5
+        tensor = torch.from_numpy(arr.transpose(2, 0, 1))
+        return tensor, self._labels[idx]
+
+    def get_labels(self) -> list[int]:
+        """Return list of integer labels for MPerClassSampler."""
+        return self._labels.tolist()
+
+
+def _collect_crop_paths(
+    reid_crops_dir: Path,
+) -> tuple[list[Path], np.ndarray, np.ndarray]:
+    """Walk reid_crops group manifests and collect crop paths with metadata.
+
+    Discovers groups in the same order as ``build_feature_cache`` but returns
+    file paths instead of loading images.
+
+    Args:
+        reid_crops_dir: Path to the reid_crops directory with group subdirs.
+
+    Returns:
+        Tuple of (crop_paths, labels, group_ids).
+
+    Raises:
+        FileNotFoundError: If no group directories are found.
+    """
+    group_dirs = sorted(reid_crops_dir.glob("group_*"))
+    if not group_dirs:
+        msg = f"No group directories found in {reid_crops_dir}"
+        raise FileNotFoundError(msg)
+
+    all_paths: list[Path] = []
+    all_labels: list[int] = []
+    all_group_ids: list[int] = []
+
+    for group_dir in group_dirs:
+        manifest_path = group_dir / "manifest.json"
+        if not manifest_path.exists():
+            logger.warning("No manifest.json in %s, skipping", group_dir)
+            continue
+
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+
+        group_id = manifest["group_id"]
+
+        for entry in manifest["crops"]:
+            img_path = group_dir / entry["filename"]
+            if not img_path.exists():
+                logger.warning("Missing crop image: %s", img_path)
+                continue
+            all_paths.append(img_path)
+            all_labels.append(entry["fish_id"])
+            all_group_ids.append(group_id)
+
+    return (
+        all_paths,
+        np.array(all_labels, dtype=np.int32),
+        np.array(all_group_ids, dtype=np.int32),
+    )
+
+
+def train_reid_end_to_end(config: ReidTrainingConfig) -> dict[str, Any]:
+    """Train backbone + projection head end-to-end with partial unfreezing.
+
+    Loads crop images from disk each epoch (no feature caching), runs them
+    through the unfrozen backbone and projection head, and optimises with
+    differential learning rates. Saves a combined checkpoint containing both
+    backbone and head state dicts.
+
+    Args:
+        config: Training configuration with ``unfreeze_blocks > 0``.
+
+    Returns:
+        Dict with ``best_auc``, ``best_epoch``, ``epochs_run``,
+        ``per_pair_auc``, and ``val_auc_history``.
+    """
+    import timm
+
+    device = torch.device(config.device)
+
+    # Collect crop paths and metadata.
+    crop_paths, labels, group_ids = _collect_crop_paths(config.reid_crops_dir)
+    logger.info(
+        "Collected %d crops from %d groups",
+        len(crop_paths),
+        len(np.unique(group_ids)),
+    )
+
+    # Remap labels to contiguous 0..N-1.
+    unique_labels = np.unique(labels)
+    label_map = {int(old): new for new, old in enumerate(unique_labels)}
+    original_labels = labels.copy()
+    remapped_labels = np.array([label_map[int(lbl)] for lbl in labels])
+    logger.info(
+        "Label remap (%d classes): %s",
+        len(unique_labels),
+        {int(k): v for k, v in label_map.items()},
+    )
+
+    # Split by group.
+    cache_for_split: dict[str, Any] = {"group_ids": group_ids}
+    train_idx, val_idx = split_by_group(cache_for_split, config.val_fraction)
+    logger.info("Split: %d train samples, %d val samples", len(train_idx), len(val_idx))
+
+    # Create datasets.
+    train_paths = [crop_paths[i] for i in train_idx]
+    val_paths = [crop_paths[i] for i in val_idx]
+    train_ds = ImageCropDataset(
+        train_paths, remapped_labels[train_idx], group_ids[train_idx], config.crop_size
+    )
+    val_ds = ImageCropDataset(
+        val_paths, remapped_labels[val_idx], group_ids[val_idx], config.crop_size
+    )
+
+    # Sampler and dataloader.
+    train_labels = train_ds.get_labels()
+    actual_num_classes = len(set(train_labels))
+    batch_size = config.samples_per_class * actual_num_classes
+    sampler = MPerClassSampler(
+        labels=train_labels,
+        m=config.samples_per_class,
+        batch_size=batch_size,
+    )
+    train_loader = DataLoader(
+        train_ds, batch_size=batch_size, sampler=sampler, drop_last=True
+    )
+
+    # Load backbone and unfreeze.
+    backbone = timm.create_model(config.model_name, num_classes=0, pretrained=True)
+    unfreeze_last_n_blocks(backbone, config.unfreeze_blocks)
+    backbone = backbone.to(device)
+
+    # Projection head.
+    head = ProjectionHead(
+        in_dim=config.backbone_dim,
+        hidden_dim=config.hidden_dim,
+        out_dim=config.embedding_dim,
+    ).to(device)
+
+    # Loss and miner.
+    loss_func = losses.MultiSimilarityLoss(alpha=2.0, beta=50.0, base=0.5)
+    miner_func = miners.MultiSimilarityMiner(epsilon=0.1)
+
+    # Differential LR optimizer.
+    backbone_params = [p for p in backbone.parameters() if p.requires_grad]
+    optimizer = torch.optim.Adam(
+        [
+            {
+                "params": backbone_params,
+                "lr": config.lr_head * config.lr_backbone_factor,
+            },
+            {"params": list(head.parameters()), "lr": config.lr_head},
+        ]
+    )
+
+    # Cosine annealing scheduler.
+    cosine_epochs = max(1, config.epochs - config.warmup_epochs)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=cosine_epochs, eta_min=config.lr_head * 0.01
+    )
+
+    # Training loop.
+    best_auc = -1.0
+    best_epoch = 0
+    epochs_without_improvement = 0
+    val_auc_history: list[float] = []
+    best_backbone_sd: dict[str, Any] | None = None
+    best_head_sd: dict[str, Any] | None = None
+
+    for epoch in range(config.epochs):
+        # Linear warmup.
+        if config.warmup_epochs > 0 and epoch < config.warmup_epochs:
+            warmup_factor = (epoch + 1) / config.warmup_epochs
+            for pg in optimizer.param_groups:
+                base_lr = (
+                    config.lr_head * config.lr_backbone_factor
+                    if pg is optimizer.param_groups[0]
+                    else config.lr_head
+                )
+                pg["lr"] = base_lr * warmup_factor
+
+        # Train mode.
+        backbone.train()
+        head.train()
+        epoch_loss = 0.0
+        n_batches = 0
+
+        for images_batch, labels_batch in train_loader:
+            images_batch = images_batch.to(device)
+            labels_batch = labels_batch.to(device)
+
+            optimizer.zero_grad()
+
+            features = backbone(images_batch)
+            embeddings = head(features)
+            mined_tuples = miner_func(embeddings, labels_batch)
+            loss = loss_func(embeddings, labels_batch, mined_tuples)
+
+            loss.backward()
+
+            if config.gradient_clip_val is not None:
+                all_params = list(backbone.parameters()) + list(head.parameters())
+                torch.nn.utils.clip_grad_norm_(all_params, config.gradient_clip_val)
+
+            optimizer.step()
+
+            epoch_loss += loss.item()
+            n_batches += 1
+
+        # Step scheduler after warmup.
+        if epoch >= config.warmup_epochs:
+            scheduler.step()
+
+        avg_loss = epoch_loss / max(n_batches, 1)
+
+        # Validate.
+        backbone.eval()
+        head.eval()
+        val_embeddings_list: list[np.ndarray] = []
+        with torch.no_grad():
+            val_loader = DataLoader(val_ds, batch_size=config.batch_size, shuffle=False)
+            for val_imgs, _ in val_loader:
+                val_imgs = val_imgs.to(device)
+                val_feats = backbone(val_imgs)
+                val_emb = head(val_feats)
+                val_embeddings_list.append(val_emb.cpu().numpy())
+
+        val_embeddings = np.concatenate(val_embeddings_list, axis=0)
+        val_fish_ids = original_labels[val_idx]
+        val_auc = compute_female_auc(val_embeddings, val_fish_ids)
+        val_auc_history.append(val_auc)
+
+        logger.info(
+            "Epoch %d/%d  loss=%.4f  val_auc=%.4f",
+            epoch + 1,
+            config.epochs,
+            avg_loss,
+            val_auc,
+        )
+
+        # Track best.
+        if val_auc > best_auc:
+            best_auc = val_auc
+            best_epoch = epoch + 1
+            epochs_without_improvement = 0
+            best_backbone_sd = {
+                k: v.cpu().clone() for k, v in backbone.state_dict().items()
+            }
+            best_head_sd = {k: v.cpu().clone() for k, v in head.state_dict().items()}
+        else:
+            epochs_without_improvement += 1
+
+        if config.patience > 0 and epochs_without_improvement >= config.patience:
+            logger.info(
+                "Early stopping at epoch %d (no improvement for %d epochs)",
+                epoch + 1,
+                config.patience,
+            )
+            break
+
+    # Save combined checkpoint.
+    if best_backbone_sd is not None and best_head_sd is not None:
+        config.output_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint: dict[str, Any] = {
+            "backbone_state_dict": best_backbone_sd,
+            "head_state_dict": best_head_sd,
+            "config": {
+                "unfreeze_blocks": config.unfreeze_blocks,
+                "embedding_dim": config.embedding_dim,
+                "hidden_dim": config.hidden_dim,
+                "backbone_dim": config.backbone_dim,
+            },
+        }
+        save_path = config.output_dir / "best_reid_model.pt"
+        torch.save(checkpoint, save_path)
+        logger.info(
+            "Saved best model (epoch %d, AUC %.4f) to %s",
+            best_epoch,
+            best_auc,
+            save_path,
+        )
+
+    # Compute per-pair AUC on best model.
+    per_pair_auc: dict[tuple[int, int], float] = {}
+    if best_backbone_sd is not None and best_head_sd is not None:
+        backbone.load_state_dict(best_backbone_sd)
+        head.load_state_dict(best_head_sd)
+        backbone.eval()
+        head.eval()
+        val_emb_best_list: list[np.ndarray] = []
+        with torch.no_grad():
+            val_loader_best = DataLoader(
+                val_ds, batch_size=config.batch_size, shuffle=False
+            )
+            for val_imgs, _ in val_loader_best:
+                val_imgs = val_imgs.to(device)
+                val_feats = backbone(val_imgs)
+                val_emb = head(val_feats)
+                val_emb_best_list.append(val_emb.cpu().numpy())
+        val_emb_best = np.concatenate(val_emb_best_list, axis=0)
         per_pair_auc = compute_per_pair_auc(val_emb_best, val_fish_ids)
 
     return {

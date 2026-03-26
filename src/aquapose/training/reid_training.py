@@ -463,27 +463,16 @@ def train_reid_head(
         out_dim=config.embedding_dim,
     ).to(device)
 
-    loss_func = losses.SubCenterArcFaceLoss(
-        num_classes=actual_num_classes,
-        embedding_size=config.embedding_dim,
-        margin=config.arcface_margin,
-        scale=config.arcface_scale,
-        sub_centers=config.sub_centers,
-    ).to(device)
+    loss_func = losses.MultiSimilarityLoss(alpha=2.0, beta=50.0, base=0.5)
+    miner_func = miners.MultiSimilarityMiner(epsilon=0.1)
 
-    miner_func = miners.BatchHardMiner()
-
-    # Two optimizers: head params + ArcFace params.
+    # Single optimizer — MultiSimilarityLoss has no learnable parameters.
     head_optimizer = torch.optim.Adam(head.parameters(), lr=config.lr_head)
-    loss_optimizer = torch.optim.SGD(loss_func.parameters(), lr=config.lr_loss)
 
     # Cosine annealing scheduler (applied after warmup).
     cosine_epochs = max(1, config.epochs - config.warmup_epochs)
     head_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         head_optimizer, T_max=cosine_epochs, eta_min=config.lr_head * 0.01
-    )
-    loss_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        loss_optimizer, T_max=cosine_epochs, eta_min=config.lr_loss * 0.01
     )
 
     # Training loop.
@@ -499,12 +488,9 @@ def train_reid_head(
             warmup_factor = (epoch + 1) / config.warmup_epochs
             for pg in head_optimizer.param_groups:
                 pg["lr"] = config.lr_head * warmup_factor
-            for pg in loss_optimizer.param_groups:
-                pg["lr"] = config.lr_loss * warmup_factor
 
         # Train.
         head.train()
-        loss_func.train()
         epoch_loss = 0.0
         n_batches = 0
 
@@ -513,7 +499,6 @@ def train_reid_head(
             labels_batch = labels_batch.to(device)
 
             head_optimizer.zero_grad()
-            loss_optimizer.zero_grad()
 
             embeddings = head(features_batch)
             mined_tuples = miner_func(embeddings, labels_batch)
@@ -521,15 +506,13 @@ def train_reid_head(
 
             loss.backward()
             head_optimizer.step()
-            loss_optimizer.step()
 
             epoch_loss += loss.item()
             n_batches += 1
 
-        # Step schedulers after warmup completes.
+        # Step scheduler after warmup completes.
         if epoch >= config.warmup_epochs:
             head_scheduler.step()
-            loss_scheduler.step()
 
         avg_loss = epoch_loss / max(n_batches, 1)
 

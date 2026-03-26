@@ -58,6 +58,10 @@ Recent decisions affecting current work:
 
 - [Phase 104]: Female-female discriminability ceiling is unknown — if AUC < 0.75, Phase 105 is replaced by a downscope task
 
+### Roadmap Evolution
+
+- Phase 107 added: Unfrozen Backbone Fine-Tuning — frozen MegaDescriptor-T hits discrimination ceiling (fish 2v4 at chance, overall female AUC 0.64); need end-to-end backbone fine-tuning
+
 ## Session Continuity
 
 Last activity: 2026-03-25 — Phase 106 Plan 02 complete (CLI wiring verification)

@@ -351,3 +351,13 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
 | 104. Backbone Fine-Tuning | v3.11 | 2/2 | Complete | 2026-03-25 |
 | 105. Swap Detection and Repair | 2/2 | Complete    | 2026-03-25 | - |
 | 106. CLI Integration | 2/2 | Complete    | 2026-03-25 | - |
+
+### Phase 107: Unfrozen Backbone Fine-Tuning
+
+**Goal:** Support partial backbone unfreezing in ReID training so the model can learn fish-specific features beyond what frozen MegaDescriptor-T provides. Changes: (1) training runs crops through backbone end-to-end instead of using cached features, (2) re-embedding uses the fine-tuned backbone not a projection head on stale features, (3) swap detector loads fine-tuned backbone for embedding transform. Configurable unfreeze depth (last N transformer blocks).
+**Requirements**: TBD
+**Depends on:** Phase 106
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 107 to break down)

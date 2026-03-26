@@ -19,6 +19,12 @@ Requirements for appearance-based re-identification milestone. Each maps to road
 - [ ] **TRAIN-02**: Contamination filter excludes crops within 150-frame buffer around detected changepoints/swap events
 - [ ] **TRAIN-03**: Fine-tuning loop trains backbone with metric learning loss (triplet or SubcenterArcFace) and BatchHardMiner on extracted fish crops
 
+### Unfrozen Backbone Fine-Tuning
+
+- [ ] **UNFREEZE-01**: Configurable partial backbone unfreezing (last N Swin transformer blocks) with differential learning rates (backbone LR 10-100x lower than head LR)
+- [ ] **UNFREEZE-02**: End-to-end training path loads raw crop images through backbone+head each epoch (no stale cached features) and saves combined checkpoint with backbone_state_dict + head_state_dict
+- [ ] **UNFREEZE-03**: CLI `reid fine-tune --unfreeze-blocks N` transparently selects end-to-end training and re-embeds using the fine-tuned backbone, producing embeddings_finetuned.npz compatible with SwapDetector
+
 ### Swap Repair
 
 - [x] **SWAP-01**: Swap detector identifies ID swap candidates at occlusion events by comparing pre/post-event mean embeddings via cosine similarity
@@ -69,15 +75,18 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TRAIN-01 | Phase 103 | Pending |
 | TRAIN-02 | Phase 103 | Pending |
 | TRAIN-03 | Phase 104 | Pending |
+| UNFREEZE-01 | Phase 107 | Pending |
+| UNFREEZE-02 | Phase 107 | Pending |
+| UNFREEZE-03 | Phase 107 | Pending |
 | SWAP-01 | Phase 105 | Complete |
 | SWAP-02 | Phase 105 | Complete |
 | CLI-01 | Phase 106 | Complete |
 
 **Coverage:**
-- v3.11 requirements: 9 total
-- Mapped to phases: 9
-- Unmapped: 0 ✓
+- v3.11 requirements: 12 total
+- Mapped to phases: 12
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-25*
-*Last updated: 2026-03-25 after roadmap creation*
+*Last updated: 2026-03-25 after Phase 107 planning*

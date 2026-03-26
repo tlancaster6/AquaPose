@@ -17,7 +17,7 @@
 - ✅ **v3.8 Improved Association** - Phases 87-92 (shipped 2026-03-12)
 - ✅ **v3.9 Reconstruction Modernization** - Phases 93-96 (shipped 2026-03-14)
 - ✅ **v3.10 Publication Metrics** - Phases 97-101 (shipped 2026-03-15)
-- 🚧 **v3.11 Appearance-Based ReID** - Phases 102-106 (in progress)
+- 🚧 **v3.11 Appearance-Based ReID** - Phases 102-107 (in progress)
 
 ## Phases
 
@@ -262,7 +262,7 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
 
 </details>
 
-### 🚧 v3.11 Appearance-Based ReID (In Progress)
+### v3.11 Appearance-Based ReID (In Progress)
 
 **Milestone Goal:** Add post-hoc appearance-based re-identification to resolve identity swaps that geometry cannot catch — specifically the known female-female cichlid swap. A new `aquapose reid` command group operates on completed pipeline output, embeds fish crops through a fine-tuned MegaDescriptor-T backbone, detects swaps at occlusion events via cosine similarity, and writes corrected trajectories to `midlines_reid.h5`.
 
@@ -273,6 +273,7 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
 - [x] **Phase 104: Backbone Fine-Tuning** - Metric learning fine-tune of MegaDescriptor-T with discriminability gate (female-female AUC >= 0.75) (completed 2026-03-25)
 - [x] **Phase 105: Swap Detection and Repair** - Cosine-similarity swap detection at occlusion events and margin-gated repair writing `midlines_reid.h5` (completed 2026-03-25)
 - [x] **Phase 106: CLI Integration** - `aquapose reid` command group wiring all ReID subcommands into the existing CLI pattern (completed 2026-03-25)
+- [ ] **Phase 107: Unfrozen Backbone Fine-Tuning** - Partial backbone unfreezing with end-to-end training and fine-tuned re-embedding
 
 ## Phase Details
 
@@ -340,9 +341,26 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
 - [ ] 106-01-PLAN.md — Create reid_group Click group with embed, repair, mine-crops, fine-tune subcommands + add frame_stride to EmbedRunner
 - [ ] 106-02-PLAN.md — Wire reid_group into main CLI, remove old mine-reid-crops, delete standalone script, smoke test
 
+### Phase 107: Unfrozen Backbone Fine-Tuning
+
+**Goal:** Support partial backbone unfreezing in ReID training so the model can learn fish-specific features beyond what frozen MegaDescriptor-T provides. Changes: (1) training runs crops through backbone end-to-end instead of using cached features, (2) re-embedding uses the fine-tuned backbone not a projection head on stale features. Configurable unfreeze depth (last N transformer blocks).
+**Requirements**: UNFREEZE-01, UNFREEZE-02, UNFREEZE-03
+**Depends on:** Phase 106
+**Success Criteria** (what must be TRUE):
+  1. `reid fine-tune --unfreeze-blocks 2` trains end-to-end through last 2 Swin blocks with differential LR (backbone 10x lower than head)
+  2. Training saves combined checkpoint with `backbone_state_dict` + `head_state_dict` + config metadata
+  3. Re-embedding runs crops through fine-tuned backbone+head (not stale zero-shot features), producing `embeddings_finetuned.npz`
+  4. `reid fine-tune` with default (unfreeze_blocks=0) still uses cached features path unchanged
+  5. SwapDetector reads `embeddings_finetuned.npz` without code changes (same NPZ schema)
+**Plans**: 2 plans
+
+Plans:
+- [ ] 107-01-PLAN.md — Training module: unfreeze_last_n_blocks, ImageCropDataset, train_reid_end_to_end + unit tests
+- [ ] 107-02-PLAN.md — CLI integration: --unfreeze-blocks flag, backbone-aware re-embedding in fine_tune_cmd
+
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 102 → 103 → 104 → 105 → 106
+**Execution Order:** Phases execute in numeric order: 102 -> 103 -> 104 -> 105 -> 106 -> 107
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -351,13 +369,4 @@ Full details: `.planning/milestones/v3.10-ROADMAP.md`
 | 104. Backbone Fine-Tuning | v3.11 | 2/2 | Complete | 2026-03-25 |
 | 105. Swap Detection and Repair | 2/2 | Complete    | 2026-03-25 | - |
 | 106. CLI Integration | 2/2 | Complete    | 2026-03-25 | - |
-
-### Phase 107: Unfrozen Backbone Fine-Tuning
-
-**Goal:** Support partial backbone unfreezing in ReID training so the model can learn fish-specific features beyond what frozen MegaDescriptor-T provides. Changes: (1) training runs crops through backbone end-to-end instead of using cached features, (2) re-embedding uses the fine-tuned backbone not a projection head on stale features, (3) swap detector loads fine-tuned backbone for embedding transform. Configurable unfreeze depth (last N transformer blocks).
-**Requirements**: TBD
-**Depends on:** Phase 106
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (run /gsd:plan-phase 107 to break down)
+| 107. Unfrozen Backbone Fine-Tuning | v3.11 | 0/2 | In Progress | - |

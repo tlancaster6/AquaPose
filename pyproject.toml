@@ -60,6 +60,7 @@ exclude = [".planning/", ".claude/", ".hooks/"]
 packages = ["src/aquapose"]
 
 [tool.hatch.envs.default]
+installer = "uv"
 dependencies = [
     "pytest",
     "pytest-cov",
@@ -67,6 +68,9 @@ dependencies = [
     "pre-commit",
     "basedpyright",
 ]
+
+[tool.hatch.envs.default.env-vars]
+UV_EXTRA_INDEX_URL = "https://download.pytorch.org/whl/cu121"
 
 [tool.hatch.envs.default.scripts]
 test = "pytest tests/ -m \"not slow\" {args}"

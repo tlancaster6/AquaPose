@@ -1131,55 +1131,27 @@ def mine_hard(
                     )
                     n_written["tracking_gaps"] += 1
 
-            # --- low_cameras: InverseLUT-filtered gap cameras only ---
+            # --- low_cameras: one random gap camera per example ---
             if "low_cameras" in cats_for_frame:
+                import random
+
                 img_dir, lbl_dir = cat_dirs["low_cameras"]
                 for ex in cats_for_frame["low_cameras"]:
-                    for cam_id in ex.visible_gap_cameras:
-                        if cam_id not in frames or cam_id not in proj_models:
-                            continue
-                        cam_data = calibration.cameras[cam_id]
-                        img_w, img_h = cam_data.image_size
-
-                        # OBB labels for fish visible in this view
-                        obb_lines = []
-                        for _fid, midline in (fish_dict or {}).items():
-                            result = _project_raw_points(
-                                midline=midline,
-                                projection_model=proj_models[cam_id],
-                                img_w=img_w,
-                                img_h=img_h,
-                                lateral_ratio=lateral_ratio,
-                                min_visible_keypoints=min_visible,
-                            )
-                            if result is not None:
-                                obb_lines.append(
-                                    " ".join(str(v) for v in result["obb_line"])
-                                )
-
-                        stem = f"{frame_idx:06d}_{cam_id}_fish{ex.fish_id:02d}"
-                        cv2.imwrite(str(img_dir / f"{stem}.jpg"), frames[cam_id])
-                        (lbl_dir / f"{stem}.txt").write_text(
-                            "\n".join(obb_lines) + "\n" if obb_lines else ""
-                        )
-                        n_written["low_cameras"] += 1
-
-            # --- high_curvature / high_residual: pose crops ---
-            for pose_cat in ("high_curvature", "high_residual"):
-                if pose_cat not in cats_for_frame:
-                    continue
-                img_dir, lbl_dir = cat_dirs[pose_cat]
-                target_fish_ids = {ex.fish_id for ex in cats_for_frame[pose_cat]}
-
-                for cam_id in all_camera_ids:
-                    if cam_id not in frames or cam_id not in proj_models:
+                    # Pick one random gap camera for this example
+                    available = [
+                        c
+                        for c in ex.visible_gap_cameras
+                        if c in frames and c in proj_models
+                    ]
+                    if not available:
                         continue
+                    cam_id = random.choice(available)
                     cam_data = calibration.cameras[cam_id]
                     img_w, img_h = cam_data.image_size
 
-                    # Collect label data for all fish in this view
-                    fish_data_list: list[dict] = []
-                    for fid, midline in (fish_dict or {}).items():
+                    # OBB labels for fish visible in this view
+                    obb_lines = []
+                    for _fid, midline in (fish_dict or {}).items():
                         result = _project_raw_points(
                             midline=midline,
                             projection_model=proj_models[cam_id],
@@ -1188,35 +1160,71 @@ def mine_hard(
                             lateral_ratio=lateral_ratio,
                             min_visible_keypoints=min_visible,
                         )
-                        if result is not None and "pose_line" in result:
-                            fish_data_list.append(
-                                {
-                                    "keypoints_2d": result["keypoints_2d"],
-                                    "visibility": result["visibility"],
-                                    "lateral_pad": result["lateral_pad"],
-                                    "fish_id": int(fid),
-                                }
+                        if result is not None:
+                            obb_lines.append(
+                                " ".join(str(v) for v in result["obb_line"])
                             )
 
-                    # Only write crops for target fish
-                    target_data = [
-                        d for d in fish_data_list if d["fish_id"] in target_fish_ids
-                    ]
-                    if not target_data:
-                        continue
-
-                    _write_pose_crops(
-                        frame=frames[cam_id],
-                        fish_data_list=target_data,
-                        frame_idx=frame_idx,
-                        cam_id=cam_id,
-                        crop_w=crop_width,
-                        crop_h=crop_height,
-                        pose_images_dir=img_dir,
-                        pose_labels_dir=lbl_dir,
-                        min_visible=min_visible,
+                    stem = f"{frame_idx:06d}_{cam_id}_fish{ex.fish_id:02d}"
+                    cv2.imwrite(str(img_dir / f"{stem}.jpg"), frames[cam_id])
+                    (lbl_dir / f"{stem}.txt").write_text(
+                        "\n".join(obb_lines) + "\n" if obb_lines else ""
                     )
-                    n_written[pose_cat] += len(target_data)
+                    n_written["low_cameras"] += 1
+
+            # --- high_curvature / high_residual: one crop per example ---
+            for pose_cat in ("high_curvature", "high_residual"):
+                if pose_cat not in cats_for_frame:
+                    continue
+                img_dir, lbl_dir = cat_dirs[pose_cat]
+
+                for ex in cats_for_frame[pose_cat]:
+                    # Find a camera where this fish projects successfully
+                    import random
+
+                    shuffled_cams = list(all_camera_ids)
+                    random.shuffle(shuffled_cams)
+                    for cam_id in shuffled_cams:
+                        if cam_id not in frames or cam_id not in proj_models:
+                            continue
+                        cam_data = calibration.cameras[cam_id]
+                        img_w, img_h = cam_data.image_size
+
+                        midline = (fish_dict or {}).get(ex.fish_id)
+                        if midline is None:
+                            continue
+                        result = _project_raw_points(
+                            midline=midline,
+                            projection_model=proj_models[cam_id],
+                            img_w=img_w,
+                            img_h=img_h,
+                            lateral_ratio=lateral_ratio,
+                            min_visible_keypoints=min_visible,
+                        )
+                        if result is None or "pose_line" not in result:
+                            continue
+
+                        fish_data = [
+                            {
+                                "keypoints_2d": result["keypoints_2d"],
+                                "visibility": result["visibility"],
+                                "lateral_pad": result["lateral_pad"],
+                                "fish_id": int(ex.fish_id),
+                            }
+                        ]
+                        _write_pose_crops(
+                            frame=frames[cam_id],
+                            fish_data_list=fish_data,
+                            frame_idx=frame_idx,
+                            cam_id=cam_id,
+                            crop_w=crop_width,
+                            crop_h=crop_height,
+                            pose_images_dir=img_dir,
+                            pose_labels_dir=lbl_dir,
+                            min_visible=min_visible,
+                        )
+                        n_written[pose_cat] += 1
+                        break  # one crop per example
 
     # 10. Write manifests and dataset.yaml
     for cat in active:

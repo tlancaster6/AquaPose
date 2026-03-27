@@ -81,7 +81,10 @@ def _midline_curvature(midline: Midline3D) -> float | None:
     )
     if pts is None or pts.shape[0] < 3:
         return None
-    if np.all(np.isnan(pts)):
+    # Filter out rows with any NaN (partial triangulation failures)
+    valid = ~np.any(np.isnan(pts), axis=1)
+    pts = pts[valid]
+    if pts.shape[0] < 3:
         return None
     return compute_curvature(pts)
 

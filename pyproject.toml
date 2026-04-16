@@ -31,7 +31,7 @@ dependencies = [
     "opencv-python>=4.8",
     "scipy>=1.11",
     "scikit-image>=0.21",
-    "h5py>=3.9",
+    "h5py>=3.16.0",
     "aquacal",
     "pycocotools>=2.0",
     "ultralytics>=8.0",

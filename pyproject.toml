@@ -37,7 +37,7 @@ dependencies = [
     "ultralytics>=8.0",
     "plotly>=5.18",
     "click>=8.1",
-    "boxmot>=11.0",
+    "boxmot>=18.0.0",
     "igraph>=0.11",
     "leidenalg>=0.10",
 ]
